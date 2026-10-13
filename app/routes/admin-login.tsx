@@ -1,0 +1,26 @@
+import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { Form, useActionData } from "@remix-run/react";
+import { checkPassword, loginRedirect } from "~/lib/auth.server";
+
+export const meta: MetaFunction = () => [{ title: "Admin login" }, { name: "robots", content: "noindex" }];
+
+export async function action({ request }: ActionFunctionArgs) {
+  const fd = await request.formData();
+  if (!checkPassword(String(fd.get("password") ?? ""))) return json({ error: "Galat password" }, { status: 401 });
+  return loginRedirect(request);
+}
+
+export default function AdminLogin() {
+  const data = useActionData<typeof action>();
+  return (
+    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
+      <Form method="post" className="card space-y-4">
+        <h1 className="text-lg font-bold">Checkout admin</h1>
+        <input name="password" type="password" className="input" placeholder="Password" autoFocus required />
+        {data?.error && <p className="text-sm text-red-600">{data.error}</p>}
+        <button className="btn-primary w-full py-3">Login</button>
+      </Form>
+    </main>
+  );
+}
