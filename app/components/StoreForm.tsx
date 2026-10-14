@@ -25,7 +25,7 @@ export function StoreForm({ values = {}, errors = {}, submitLabel, busy }: {
         <Check name="active" label="Checkout live hai" defaultChecked={v.active ?? true} />
       </Section>
 
-      <Section title="Shopify API access" hint="Option A: Admin API access token (shpat_…). Option B: Dev Dashboard app ka Client ID + Secret. Scopes: read_products, write_orders.">
+      <Section title="Shopify API access" hint="Partner / Dev Dashboard app ka Client ID + Client secret daalo, save karo, phir Install tab → “Connect with Shopify”. Purana shpat_ token ho toh seedha woh bhi chalega. Scopes ki list Install tab mein hai.">
         <F label={`Admin API token ${v.hasAdminToken ? "(saved — naya daalo toh replace hoga)" : ""}`} name="adminToken" type="password" error={errors.adminToken} placeholder="shpat_…" />
         {v.hasAdminToken && <Check name="clearAdminToken" label="Saved admin token hata do" />}
         <F label="Client ID" name="clientId" defaultValue={v.clientId ?? ""} />

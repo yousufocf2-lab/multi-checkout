@@ -44,7 +44,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   if (!data.slug) errors.slug = "Required";
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "xyz.myshopify.com format chahiye";
   if (!/^https?:\/\//.test(data.storefrontUrl)) errors.storefrontUrl = "https:// se shuru hona chahiye";
-  if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.adminToken = "Admin token ya Client ID + Secret mein se ek chahiye";
+  if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.adminToken = "Client ID + Client secret (ya purana shpat_ token) chahiye";
 
   return { data, errors };
 }

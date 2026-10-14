@@ -12,6 +12,7 @@ import { pushToShopify } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
 import { clearTokenCache, testConnection } from "~/lib/shopify.server";
 import { testPayu } from "~/lib/payu.server";
+import { SHOPIFY_SCOPES } from "~/lib/scopes";
 import { testMeta } from "~/lib/meta.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 
@@ -199,6 +200,7 @@ export default function StoreDetail() {
       </nav>
 
       <div className="mt-5 max-w-4xl space-y-4">
+        {params.get("connected") === "1" && !result && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Shopify connect ho gaya ✓ Token save ho gaya. Ab “Test connection” dabao.</p>}
         {result?.ok && <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{result.ok}</p>}
         {errors.form && <p className="break-words rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{errors.form}</p>}
 
@@ -206,7 +208,7 @@ export default function StoreDetail() {
         {tab === "coupons" && <CouponsTab coupons={data.coupons} error={errors.coupon} />}
         {tab === "offers" && <OffersTab offers={data.offers} error={errors.offer} />}
         {tab === "orders" && <OrdersTab orders={data.orders} />}
-        {tab === "install" && <InstallTab appUrl={data.appUrl} slug={data.store.slug} />}
+        {tab === "install" && <InstallTab appUrl={data.appUrl} slug={data.store.slug} shop={data.store.shopDomain} hasToken={data.store.hasAdminToken} hasClient={Boolean(data.store.clientId && data.store.hasClientSecret)} />}
       </div>
     </div>
   );
@@ -399,11 +401,30 @@ function OrdersTab({ orders }: { orders: Data["orders"] }) {
   );
 }
 
-function InstallTab({ appUrl, slug }: { appUrl: string; slug: string }) {
+function InstallTab({ appUrl, slug, shop, hasToken, hasClient }: { appUrl: string; slug: string; shop: string; hasToken: boolean; hasClient: boolean }) {
   const snippet = `<script src="${appUrl}/embed.js?store=${slug}" defer></script>`;
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-4">
+      <section className="card space-y-3">
+        <h2 className="font-semibold">0. Shopify app connect (Partner app)</h2>
+        <p className="text-sm text-gray-600">
+          Partner app ki configuration mein ye do URL daalo, phir Settings mein app ka <b>Client ID + Client secret</b> save karke neeche wala button dabao.
+        </p>
+        <div className="space-y-2 text-xs">
+          <CopyRow label="App URL" value={`${appUrl}/shopify/install`} />
+          <CopyRow label="Allowed redirection URL" value={`${appUrl}/shopify/callback`} />
+          <CopyRow label="Scopes" value={SHOPIFY_SCOPES} />
+        </div>
+        {hasClient ? (
+          <a href={`/shopify/install?shop=${encodeURIComponent(shop)}`} className="btn-primary">
+            {hasToken ? "Shopify dobara connect karo" : "Connect with Shopify"}
+          </a>
+        ) : (
+          <p className="text-sm text-amber-700">Pehle Settings → Shopify API access mein Client ID aur Client secret save karo.</p>
+        )}
+        {hasToken && <p className="text-xs text-emerald-700">Access token saved hai ✓</p>}
+      </section>
       <section className="card space-y-3">
         <h2 className="font-semibold">1. Shopify connection test</h2>
         <Form method="post">
@@ -436,6 +457,19 @@ function InstallTab({ appUrl, slug }: { appUrl: string; slug: string }) {
         <h2 className="font-semibold text-gray-900">3. Test order</h2>
         <p>PayU mode “Test” rakh ke ek prepaid aur ek COD order karo, phir Orders tab mein Shopify order number check karo.</p>
       </section>
+    </div>
+  );
+}
+
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2">
+      <span className="w-40 shrink-0 text-gray-500">{label}</span>
+      <code className="min-w-0 flex-1 truncate">{value}</code>
+      <button type="button" className="shrink-0 font-medium text-gray-700" onClick={() => { navigator.clipboard.writeText(value); setDone(true); setTimeout(() => setDone(false), 1200); }}>
+        {done ? "✓" : "Copy"}
+      </button>
     </div>
   );
 }
