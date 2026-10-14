@@ -54,3 +54,24 @@ export function verifyPayuResponse(store: Store, f: Record<string, string>) {
   const got = (f.hash ?? "").toLowerCase();
   return got.length === expected.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
 }
+
+/** Checks key + salt by calling PayU's verify_payment API with a dummy txnid. */
+export async function testPayu(store: Store) {
+  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key/salt set nahi hai");
+  const host = store.payuMode === "live" ? "https://info.payu.in" : "https://test.payu.in";
+  const command = "verify_payment";
+  const var1 = `CXTEST${Date.now()}`;
+  const hash = sha512([store.payuKey, command, var1, store.payuSalt].join("|"));
+  const res = await fetch(`${host}/merchant/postservice.php?form=2`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ key: store.payuKey, command, var1, hash }),
+  });
+  const text = await res.text();
+  let data: { status?: number | string; msg?: string } = {};
+  try { data = JSON.parse(text); } catch { /* PayU sometimes returns plain text */ }
+  const msg = data.msg ?? text.slice(0, 200);
+  // Valid credentials -> "0 out of 1 Transactions Fetched Successfully" (status 0 or 1)
+  if (/transactions? fetched/i.test(msg)) return `PayU ${store.payuMode} credentials sahi hain ✓`;
+  throw new Error(`PayU: ${msg || `HTTP ${res.status}`}`);
+}

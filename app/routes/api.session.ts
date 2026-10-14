@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { checkoutSessions, db, stores } from "~/db.server";
 import { env } from "~/lib/env.server";
+import { clientIp } from "~/lib/orders.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +20,7 @@ export const loader = () => reply({ error: "POST only" }, 405);
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-  let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[] };
+  let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown };
   try {
     body = JSON.parse(await request.text());
   } catch {
@@ -48,6 +49,17 @@ export async function action({ request }: ActionFunctionArgs) {
     id,
     storeId: store.id,
     items: [...merged].map(([variantId, quantity]) => ({ variantId, quantity })),
+    tracking: {
+      fbp: clip(body.fbp),
+      fbc: clip(body.fbc),
+      sourceUrl: clip(body.url, 500),
+      ip: clientIp(request),
+      ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined,
+    },
   });
   return reply({ url: `${env.appUrl}/c/${id}` });
+}
+
+function clip(v: unknown, max = 200) {
+  return typeof v === "string" && v ? v.slice(0, max) : undefined;
 }

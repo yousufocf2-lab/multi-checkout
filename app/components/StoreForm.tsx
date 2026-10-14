@@ -6,6 +6,8 @@ export type StoreFormValues = {
   supportPhone?: string | null; prepaidDiscountPct?: number; codDiscountPct?: number; codEnabled?: boolean;
   payuKey?: string | null; payuMode?: string; active?: boolean;
   hasAdminToken?: boolean; hasClientSecret?: boolean; hasPayuSalt?: boolean;
+  metaAdAccountId?: string | null; metaPixelId?: string | null; metaApiVersion?: string; metaFireCodPurchase?: boolean;
+  hasMetaToken?: boolean; hasCapiToken?: boolean;
 };
 
 export function StoreForm({ values = {}, errors = {}, submitLabel, busy }: {
@@ -47,6 +49,16 @@ export function StoreForm({ values = {}, errors = {}, submitLabel, busy }: {
             <option value="live">Live</option>
           </select>
         </label>
+      </Section>
+
+      <Section title="Facebook / Meta" hint="Business Settings → Users → System users → Generate token (permissions: ads_read, ads_management, business_management). System user ko ad account + pixel ka access dena zaroori hai.">
+        <F label="Ad account ID" name="metaAdAccountId" defaultValue={v.metaAdAccountId ?? ""} placeholder="act_ ke baad wale digits" />
+        <F label={`Access token ${v.hasMetaToken ? "(saved — naya daalo toh replace hoga)" : ""}`} name="metaAccessToken" type="password" placeholder="EAAG…" />
+        {v.hasMetaToken && <Check name="clearMetaToken" label="Saved Meta token hata do" />}
+        <F label="Pixel ID (Purchase tracking)" name="metaPixelId" defaultValue={v.metaPixelId ?? ""} />
+        <F label={`CAPI token (optional) ${v.hasCapiToken ? "(saved)" : ""}`} name="metaCapiToken" type="password" placeholder="Khaali = upar wala token" />
+        <F label="Graph API version" name="metaApiVersion" defaultValue={v.metaApiVersion ?? "v23.0"} />
+        <Check name="metaFireCodPurchase" label="COD order pe bhi Purchase event bhejo" defaultChecked={v.metaFireCodPurchase ?? true} />
       </Section>
 
       <Section title="Branding">

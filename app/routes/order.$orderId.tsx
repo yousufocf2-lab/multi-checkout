@@ -3,6 +3,8 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
+import { MetaPixel } from "~/components/MetaPixel";
+import { purchaseValue, shouldTrackPurchase } from "~/lib/meta.server";
 
 export const meta: MetaFunction = () => [{ title: "Order status" }, { name: "robots", content: "noindex" }];
 
@@ -27,6 +29,9 @@ export async function loader({ params }: LoaderFunctionArgs) {
     sessionId: order.sessionId,
     store: { name: store.name, logoUrl: store.logoUrl, supportPhone: store.supportPhone },
     continueUrl,
+    pixel: shouldTrackPurchase(store, order)
+      ? { id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0) }
+      : null,
     plainStoreUrl: store.storefrontUrl,
   });
 }
@@ -43,6 +48,15 @@ export default function OrderStatus() {
 
         {ok && (
           <>
+            {d.pixel && (
+              <MetaPixel
+                pixelId={d.pixel.id}
+                event="Purchase"
+                eventId={d.id}
+                onceKey={`purchase_${d.id}`}
+                data={{ currency: "INR", value: d.pixel.value, content_ids: d.pixel.items, content_type: "product", num_items: d.pixel.count }}
+              />
+            )}
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl">✓</div>
             <h1 className="mt-4 text-xl font-bold">Order confirmed!</h1>
             <p className="mt-1 text-gray-600">Shukriya {d.name}, aapka order place ho gaya hai.</p>

@@ -34,7 +34,23 @@ Ek checkout, multiple Shopify stores. Remix + Postgres (Railway), mobile-first.
    ```
    Cart "Checkout" aur "Buy it now" button apne aap yahan aayenge.
    Custom button: `data-cx-checkout` attribute, ya `MultiCheckout.go()` / `MultiCheckout.buyNow(variantId, qty)`.
-4. PayU key/salt daalo, mode **Test** rakh ke ek prepaid + ek COD test order karo.
+4. PayU key/salt daalo → Install tab → **Test PayU**. Mode **Test** rakh ke ek prepaid + ek COD test order karo.
+
+## Facebook / Meta (har store ka alag)
+
+1. Business Settings → **Users → System users** → system user banao (Admin).
+2. **Assign assets**: ad account (Manage/View performance) aur pixel/dataset (Manage) do.
+3. **Generate token** → permissions: `ads_read`, `ads_management`, `business_management` → token copy karo.
+4. Admin → store **Settings → Facebook / Meta**: Ad account ID (sirf digits), token, Pixel ID → Save.
+5. **Install** tab → **Test Facebook**.
+
+Isse milta hai:
+- **Facebook Ads** page: spend, cost per purchase (Meta), real cost per order (checkout ke actual orders se), ROAS,
+  CTR/CPC/CPM, day-wise aur campaign-wise data, prepaid balance, lifetime spend, recharges/billing.
+- Checkout pe **InitiateCheckout** + **Purchase** pixel, aur server-side **Conversions API** Purchase
+  (same `event_id` = order id, toh double count nahi hota). COD pe Purchase bhejna setting se on/off.
+
+Recharge history Meta API pe har account ke liye available nahi hoti — na mile toh page pe note dikhega.
 
 ## Bank offers
 

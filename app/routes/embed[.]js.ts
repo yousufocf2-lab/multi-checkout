@@ -18,6 +18,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     fetch(root+"cart/clear.js",{method:"POST"}).finally(function(){u.searchParams.delete("cx_clear");history.replaceState(null,"",u.toString());});
   }}catch(e){}
 
+  function ck(n){var m=document.cookie.match(new RegExp("(?:^|; )"+n+"=([^;]*)"));return m?decodeURIComponent(m[1]):null;}
+  function fbcFromUrl(){try{var id=new URL(location.href).searchParams.get("fbclid");return id?"fb.1."+Date.now()+"."+id:null}catch(e){return null}}
   var busy=false;
   function overlay(on){var id="cx-overlay",el=document.getElementById(id);
     if(!on){if(el)el.remove();return;}
@@ -32,7 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return (c.items||[]).map(function(i){return {variantId:String(i.variant_id),quantity:i.quantity}});});
     p.then(function(list){
       if(!list.length){throw new Error("empty")}
-      return fetch(APP+"/api/session",{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({store:STORE,items:list})});
+      return fetch(APP+"/api/session",{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({store:STORE,items:list,fbp:ck("_fbp"),fbc:ck("_fbc")||fbcFromUrl(),url:location.href})});
     }).then(function(r){return r.json()}).then(function(d){
       if(!d.url)throw new Error(d.error||"no url"); location.href=d.url;
     }).catch(function(e){busy=false;overlay(false);

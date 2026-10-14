@@ -29,7 +29,14 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuSalt: secret("payuSalt", existing?.payuSalt),
     payuMode: s("payuMode") === "live" ? "live" : "test",
     active: fd.get("active") === "on",
+    metaAdAccountId: s("metaAdAccountId").replace(/\D/g, "") || null,
+    metaAccessToken: secret("metaAccessToken", existing?.metaAccessToken),
+    metaPixelId: s("metaPixelId").replace(/\D/g, "") || null,
+    metaCapiToken: secret("metaCapiToken", existing?.metaCapiToken),
+    metaApiVersion: /^v\d+\.\d+$/.test(s("metaApiVersion")) ? s("metaApiVersion") : "v23.0",
+    metaFireCodPurchase: fd.get("metaFireCodPurchase") === "on",
   };
+  if (fd.get("clearMetaToken") === "on") data.metaAccessToken = null;
 
   if (fd.get("clearAdminToken") === "on") data.adminToken = null;
 

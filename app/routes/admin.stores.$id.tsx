@@ -11,6 +11,8 @@ import { env } from "~/lib/env.server";
 import { pushToShopify } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
 import { clearTokenCache, testConnection } from "~/lib/shopify.server";
+import { testPayu } from "~/lib/payu.server";
+import { testMeta } from "~/lib/meta.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 
 const TABS = [
@@ -35,9 +37,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     db.select().from(bankOffers).where(eq(bankOffers.storeId, store.id)).orderBy(asc(bankOffers.sort), asc(bankOffers.id)),
     db.select().from(orders).where(eq(orders.storeId, store.id)).orderBy(desc(orders.createdAt)).limit(100),
   ]);
-  const { adminToken, clientSecret, payuSalt, ...safe } = store;
+  const { adminToken, clientSecret, payuSalt, metaAccessToken, metaCapiToken, ...safe } = store;
   return json({
-    store: { ...safe, hasAdminToken: Boolean(adminToken), hasClientSecret: Boolean(clientSecret), hasPayuSalt: Boolean(payuSalt) },
+    store: { ...safe, hasAdminToken: Boolean(adminToken), hasClientSecret: Boolean(clientSecret), hasPayuSalt: Boolean(payuSalt), hasMetaToken: Boolean(metaAccessToken), hasCapiToken: Boolean(metaCapiToken) },
     coupons: couponRows.map((c) => ({ ...c, problem: c.active ? couponProblem(c) : null })),
     offers: offerRows,
     orders: orderRows,
@@ -72,6 +74,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return json({ ok: `Connected ✓ ${shop.name} (${shop.currencyCode})`, errors: null });
       } catch (e) {
         return json({ ok: null, errors: { form: e instanceof Error ? e.message : String(e) } });
+      }
+    }
+    case "testPayu": {
+      try {
+        return json({ ok: await testPayu(store), errors: null });
+      } catch (e) {
+        return json({ ok: null, errors: { form: e instanceof Error ? e.message : String(e) } });
+      }
+    }
+    case "testMeta": {
+      try {
+        const r = await testMeta(store);
+        return json({
+          ok: `Meta connected ✓ ${r.account.name} (${r.account.status}, balance ₹${r.account.balance.toLocaleString("en-IN")})${r.pixel ? ` · Pixel: ${r.pixel}` : " · Pixel set nahi"}`,
+          errors: null,
+        });
+      } catch (e) {
+        return json({ ok: null, errors: { form: `Meta: ${e instanceof Error ? e.message : String(e)}` } });
       }
     }
     case "addCoupon": {
@@ -173,6 +193,9 @@ export default function StoreDetail() {
             {t.label}
           </Link>
         ))}
+        <Link to={`/admin/stores/${data.store.id}/ads`} className="whitespace-nowrap border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-blue-700">
+          Facebook Ads →
+        </Link>
       </nav>
 
       <div className="mt-5 max-w-4xl space-y-4">
@@ -387,6 +410,14 @@ function InstallTab({ appUrl, slug }: { appUrl: string; slug: string }) {
           <input type="hidden" name="intent" value="testConnection" />
           <button className="btn-ghost">Test connection</button>
         </Form>
+      </section>
+      <section className="card space-y-3">
+        <h2 className="font-semibold">PayU & Facebook test</h2>
+        <p className="text-sm text-gray-600">Settings mein credentials save karne ke baad yahan check karo.</p>
+        <div className="flex flex-wrap gap-2">
+          <Form method="post"><input type="hidden" name="intent" value="testPayu" /><button className="btn-ghost">Test PayU</button></Form>
+          <Form method="post"><input type="hidden" name="intent" value="testMeta" /><button className="btn-ghost">Test Facebook</button></Form>
+        </div>
       </section>
       <section className="card space-y-3">
         <h2 className="font-semibold">2. Theme mein script lagao</h2>

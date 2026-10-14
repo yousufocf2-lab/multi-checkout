@@ -34,6 +34,13 @@ export const stores = pgTable("stores", {
   payuKey: text("payu_key"),
   payuSalt: text("payu_salt"),
   payuMode: text("payu_mode").notNull().default("test"), // test | live
+  // Meta (Facebook) ads
+  metaAdAccountId: text("meta_ad_account_id"), // digits only, without act_
+  metaAccessToken: text("meta_access_token"), // System User token: ads_read (+ ads_management for CAPI)
+  metaPixelId: text("meta_pixel_id"),
+  metaCapiToken: text("meta_capi_token"), // optional; falls back to metaAccessToken
+  metaApiVersion: text("meta_api_version").notNull().default("v23.0"),
+  metaFireCodPurchase: boolean("meta_fire_cod_purchase").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -90,8 +97,17 @@ export const checkoutSessions = pgTable("checkout_sessions", {
     .notNull()
     .references(() => stores.id, { onDelete: "cascade" }),
   items: jsonb("items").$type<{ variantId: string; quantity: number }[]>().notNull(),
+  tracking: jsonb("tracking").$type<TrackingInfo>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type TrackingInfo = {
+  fbp?: string;
+  fbc?: string;
+  ip?: string;
+  ua?: string;
+  sourceUrl?: string;
+};
 
 export type OrderCustomer = {
   firstName: string;
@@ -140,6 +156,8 @@ export const orders = pgTable(
     shopifyOrderId: text("shopify_order_id"),
     shopifyOrderName: text("shopify_order_name"),
     error: text("error"),
+    tracking: jsonb("tracking").$type<TrackingInfo>(),
+    capiSentAt: timestamp("capi_sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

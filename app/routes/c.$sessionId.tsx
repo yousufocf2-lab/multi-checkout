@@ -5,7 +5,8 @@ import { and, asc, eq } from "drizzle-orm";
 import { useEffect, useMemo, useState } from "react";
 import { bankOffers, checkoutSessions, db, orders, stores, type OrderCustomer } from "~/db.server";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
-import { finalizeOrder, newOrderId } from "~/lib/orders.server";
+import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
+import { MetaPixel } from "~/components/MetaPixel";
 import {
   bankOfferEstimate,
   computePricing,
@@ -62,6 +63,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       codDiscountPct: store.codDiscountPct,
       codEnabled: store.codEnabled,
       payuReady: Boolean(store.payuKey && store.payuSalt),
+      pixelId: store.metaPixelId,
     },
     lines,
     coupons,
@@ -145,6 +147,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
       couponCode: p.couponApplied ? coupon!.code : null,
       couponDiscount: p.couponDiscount,
       total: p.total,
+      tracking: {
+        ...(session.tracking ?? {}),
+        ip: clientIp(request) ?? session.tracking?.ip,
+        ua: request.headers.get("user-agent")?.slice(0, 500) ?? session.tracking?.ua,
+      },
     })
     .returning();
 
@@ -238,6 +245,14 @@ export default function Checkout() {
 
   return (
     <div style={{ ["--brand" as string]: hexToRgb(store.primaryColor) }} className="pb-28 lg:pb-10">
+      {store.pixelId && (
+        <MetaPixel
+          pixelId={store.pixelId}
+          event="InitiateCheckout"
+          data={{ currency: "INR", value: p.total / 100, num_items: itemCount, content_ids: lines.map((l) => l.variantId), content_type: "product" }}
+          onceKey={`ic_${lines.map((l) => l.variantId + "x" + l.quantity).join("_")}`}
+        />
+      )}
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">

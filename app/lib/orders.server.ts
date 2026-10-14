@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, orders, stores, type Order, type Store } from "~/db.server";
 import { incrementCouponUse } from "./coupons.server";
+import { sendCapiPurchase } from "./meta.server";
 import { createShopifyOrder } from "./shopify.server";
 
 export function newOrderId() {
@@ -50,5 +51,24 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
     .where(eq(orders.id, order.id))
     .returning();
   await incrementCouponUse(store.id, updated.couponCode);
+  void trackPurchase(store, updated);
   return pushToShopify(store, updated);
+}
+
+/** Fires the Meta CAPI Purchase once per order (never blocks the customer). */
+export async function trackPurchase(store: Store, order: Order) {
+  if (order.capiSentAt) return;
+  try {
+    if (await sendCapiPurchase(store, order)) {
+      await db.update(orders).set({ capiSentAt: new Date() }).where(eq(orders.id, order.id));
+    }
+  } catch (e) {
+    console.error(`[capi] order ${order.id}:`, e instanceof Error ? e.message : e);
+  }
+}
+
+/** Best-effort client IP behind Railway's proxy. */
+export function clientIp(request: Request) {
+  const xff = request.headers.get("x-forwarded-for");
+  return (xff ? xff.split(",")[0] : request.headers.get("x-real-ip") ?? "").trim() || undefined;
 }
