@@ -13,6 +13,7 @@ import { formatINR } from "~/lib/pricing";
 import { clearTokenCache, testConnection } from "~/lib/shopify.server";
 import { testPayu } from "~/lib/payu.server";
 import { SHOPIFY_SCOPES } from "~/lib/scopes";
+import { storeBaseUrl } from "~/lib/urls.server";
 import { testMeta } from "~/lib/meta.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 
@@ -45,6 +46,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     offers: offerRows,
     orders: orderRows,
     appUrl: env.appUrl,
+    checkoutBase: storeBaseUrl(store),
   });
 }
 
@@ -63,6 +65,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
         const [dupe] = await db.select({ id: stores.id }).from(stores)
           .where(and(eq(stores.slug, data.slug), ne(stores.id, store.id))).limit(1);
         if (dupe) errors.slug = "Ye slug already use ho raha hai";
+      }
+      if (data.checkoutDomain && !errors.checkoutDomain) {
+        const [d] = await db.select({ id: stores.id }).from(stores)
+          .where(and(eq(stores.checkoutDomain, data.checkoutDomain), ne(stores.id, store.id))).limit(1);
+        if (d) errors.checkoutDomain = "Ye domain kisi aur store pe laga hai";
       }
       if (Object.keys(errors).length) return json({ errors, ok: null }, { status: 400 });
       await db.update(stores).set(data).where(eq(stores.id, store.id));
@@ -208,7 +215,7 @@ export default function StoreDetail() {
         {tab === "coupons" && <CouponsTab coupons={data.coupons} error={errors.coupon} />}
         {tab === "offers" && <OffersTab offers={data.offers} error={errors.offer} />}
         {tab === "orders" && <OrdersTab orders={data.orders} />}
-        {tab === "install" && <InstallTab appUrl={data.appUrl} slug={data.store.slug} shop={data.store.shopDomain} hasToken={data.store.hasAdminToken} hasClient={Boolean(data.store.clientId && data.store.hasClientSecret)} />}
+        {tab === "install" && <InstallTab appUrl={data.appUrl} checkoutBase={data.checkoutBase} checkoutDomain={data.store.checkoutDomain} slug={data.store.slug} shop={data.store.shopDomain} hasToken={data.store.hasAdminToken} hasClient={Boolean(data.store.clientId && data.store.hasClientSecret)} />}
       </div>
     </div>
   );
@@ -401,8 +408,8 @@ function OrdersTab({ orders }: { orders: Data["orders"] }) {
   );
 }
 
-function InstallTab({ appUrl, slug, shop, hasToken, hasClient }: { appUrl: string; slug: string; shop: string; hasToken: boolean; hasClient: boolean }) {
-  const snippet = `<script src="${appUrl}/embed.js?store=${slug}" defer></script>`;
+function InstallTab({ appUrl, checkoutBase, checkoutDomain, slug, shop, hasToken, hasClient }: { appUrl: string; checkoutBase: string; checkoutDomain: string | null; slug: string; shop: string; hasToken: boolean; hasClient: boolean }) {
+  const snippet = `<script src="${checkoutBase}/embed.js?store=${slug}" defer></script>`;
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-4">
@@ -439,6 +446,24 @@ function InstallTab({ appUrl, slug, shop, hasToken, hasClient }: { appUrl: strin
           <Form method="post"><input type="hidden" name="intent" value="testPayu" /><button className="btn-ghost">Test PayU</button></Form>
           <Form method="post"><input type="hidden" name="intent" value="testMeta" /><button className="btn-ghost">Test Facebook</button></Form>
         </div>
+      </section>
+      <section className="card space-y-3">
+        <h2 className="font-semibold">Checkout domain</h2>
+        {checkoutDomain ? (
+          <div className="space-y-2 text-sm text-gray-600">
+            <p>Customers ko checkout <b>{checkoutDomain}</b> pe dikhega. DNS mein ye record hona chahiye:</p>
+            <div className="space-y-2 text-xs">
+              <CopyRow label="Type" value="CNAME" />
+              <CopyRow label="Name / Host" value={checkoutDomain.split(".")[0]} />
+              <CopyRow label="Value / Target" value="Railway → Settings → Networking → Custom Domain se milega" />
+            </div>
+            <p className="text-xs">PayU dashboard mein bhi website/URL ke roop mein <b>https://{checkoutDomain}</b> add karwana.</p>
+          </div>
+        ) : (
+          <p className="text-sm text-amber-700">
+            Abhi checkout Railway URL pe khulega. Settings mein <b>Checkout domain</b> (jaise checkout.brand.com) daalo — PayU aur customer trust ke liye zaroori hai.
+          </p>
+        )}
       </section>
       <section className="card space-y-3">
         <h2 className="font-semibold">2. Theme mein script lagao</h2>

@@ -4,16 +4,17 @@ import { useLoaderData } from "@remix-run/react";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { useEffect, useRef } from "react";
 import { bankOffers, db } from "~/db.server";
-import { env } from "~/lib/env.server";
+import { ensureStoreHost, storeBaseUrl } from "~/lib/urls.server";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { buildPayuParams, payuEndpoint } from "~/lib/payu.server";
 
 export const meta: MetaFunction = () => [{ title: "Redirecting to payment…" }, { name: "robots", content: "noindex" }];
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const row = await getOrderWithStore(params.orderId!);
   if (!row) throw new Response("Order not found", { status: 404 });
   const { order, store } = row;
+  ensureStoreHost(request, store);
   if (order.status !== "pending_payment") return redirect(`/order/${order.id}`);
 
   const offers = await db
@@ -22,7 +23,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     .where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true), isNotNull(bankOffers.payuOfferKey)));
 
   const fields = buildPayuParams(store, order, {
-    callbackUrl: `${env.appUrl}/payu/callback`,
+    callbackUrl: `${storeBaseUrl(store)}/payu/callback`,
     offerKeys: offers.map((o) => o.key!).filter(Boolean),
   });
   return json({ action: payuEndpoint(store), fields });

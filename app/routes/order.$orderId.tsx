@@ -3,15 +3,17 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
+import { ensureStoreHost } from "~/lib/urls.server";
 import { MetaPixel } from "~/components/MetaPixel";
 import { purchaseValue, shouldTrackPurchase } from "~/lib/meta.server";
 
 export const meta: MetaFunction = () => [{ title: "Order status" }, { name: "robots", content: "noindex" }];
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const row = await getOrderWithStore(params.orderId!);
   if (!row) throw new Response("Order not found", { status: 404 });
   const { order, store } = row;
+  ensureStoreHost(request, store);
   let continueUrl = store.storefrontUrl;
   try {
     const u = new URL(store.storefrontUrl);

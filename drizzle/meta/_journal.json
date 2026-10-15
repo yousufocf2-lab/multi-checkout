@@ -15,6 +15,13 @@
       "when": 1791953136366,
       "tag": "0001_meta_ads",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792047865544,
+      "tag": "0002_checkout_domain",
+      "breakpoints": true
     }
   ]
 }

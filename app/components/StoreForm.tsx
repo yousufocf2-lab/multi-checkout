@@ -1,7 +1,7 @@
 import { Form } from "@remix-run/react";
 
 export type StoreFormValues = {
-  name?: string; slug?: string; shopDomain?: string; storefrontUrl?: string;
+  name?: string; slug?: string; shopDomain?: string; storefrontUrl?: string; checkoutDomain?: string | null;
   clientId?: string | null; apiVersion?: string; logoUrl?: string | null; primaryColor?: string;
   supportPhone?: string | null; prepaidDiscountPct?: number; codDiscountPct?: number; codEnabled?: boolean;
   payuKey?: string | null; payuMode?: string; active?: boolean;
@@ -22,6 +22,7 @@ export function StoreForm({ values = {}, errors = {}, submitLabel, busy }: {
         <F label="Slug (embed script mein use hoga)" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="fusion-prime" required />
         <F label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="xyz.myshopify.com" required />
         <F label="Storefront URL" name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://brand.com" required />
+        <F label="Checkout domain (recommended)" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.brand.com" />
         <Check name="active" label="Checkout live hai" defaultChecked={v.active ?? true} />
       </Section>
 

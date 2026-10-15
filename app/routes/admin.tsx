@@ -1,10 +1,14 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { Form, Link, Outlet } from "@remix-run/react";
+import { redirect } from "@remix-run/node";
 import { requireAdmin } from "~/lib/auth.server";
+import { env } from "~/lib/env.server";
+import { isAppHost, sameUrlOn } from "~/lib/urls.server";
 
 export const meta: MetaFunction = () => [{ title: "Checkout admin" }, { name: "robots", content: "noindex" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
+  if (!isAppHost(request)) throw redirect(sameUrlOn(env.appUrl, request));
   await requireAdmin(request);
   return null;
 }

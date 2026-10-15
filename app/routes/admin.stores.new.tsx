@@ -19,6 +19,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const [dupe] = await db.select({ id: stores.id }).from(stores).where(eq(stores.slug, data.slug)).limit(1);
     if (dupe) errors.slug = "Ye slug already use ho raha hai";
   }
+  if (data.checkoutDomain && !errors.checkoutDomain) {
+    const [d] = await db.select({ id: stores.id }).from(stores).where(eq(stores.checkoutDomain, data.checkoutDomain)).limit(1);
+    if (d) errors.checkoutDomain = "Ye domain kisi aur store pe laga hai";
+  }
   if (Object.keys(errors).length) return json({ errors }, { status: 400 });
   const [created] = await db.insert(stores).values(data).returning({ id: stores.id });
   return redirect(`/admin/stores/${created.id}?tab=install`);

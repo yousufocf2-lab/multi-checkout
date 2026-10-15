@@ -2,7 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { and, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { checkoutSessions, db, stores } from "~/db.server";
-import { env } from "~/lib/env.server";
+import { storeBaseUrl } from "~/lib/urls.server";
 import { clientIp } from "~/lib/orders.server";
 
 const cors = {
@@ -28,7 +28,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const [store] = await db
-    .select({ id: stores.id })
+    .select({ id: stores.id, checkoutDomain: stores.checkoutDomain })
     .from(stores)
     .where(and(eq(stores.slug, String(body.store ?? "")), eq(stores.active, true)))
     .limit(1);
@@ -57,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
       ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined,
     },
   });
-  return reply({ url: `${env.appUrl}/c/${id}` });
+  return reply({ url: `${storeBaseUrl(store)}/c/${id}` });
 }
 
 function clip(v: unknown, max = 200) {

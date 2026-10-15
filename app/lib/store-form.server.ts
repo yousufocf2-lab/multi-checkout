@@ -1,4 +1,5 @@
 import type { Store } from "~/db/schema";
+import { appHost, cleanDomain } from "./urls.server";
 
 type StoreInput = Omit<Store, "id" | "createdAt">;
 
@@ -15,6 +16,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     slug: s("slug").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""),
     shopDomain,
     storefrontUrl: s("storefrontUrl").replace(/\/+$/, ""),
+    checkoutDomain: s("checkoutDomain") ? cleanDomain(s("checkoutDomain")) : null,
     adminToken: secret("adminToken", existing?.adminToken),
     clientId: s("clientId") || null,
     clientSecret: secret("clientSecret", existing?.clientSecret),
@@ -40,6 +42,8 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
 
   if (fd.get("clearAdminToken") === "on") data.adminToken = null;
 
+  if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Sirf domain likho, jaise checkout.brand.com";
+  if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Ye Railway wala domain hai — store ka apna subdomain daalo";
   if (!data.name) errors.name = "Required";
   if (!data.slug) errors.slug = "Required";
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "xyz.myshopify.com format chahiye";

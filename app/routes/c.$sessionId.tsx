@@ -7,6 +7,7 @@ import { bankOffers, checkoutSessions, db, orders, stores, type OrderCustomer } 
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
 import { MetaPixel } from "~/components/MetaPixel";
+import { ensureStoreHost } from "~/lib/urls.server";
 import {
   bankOfferEstimate,
   computePricing,
@@ -39,8 +40,9 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => [
   { name: "robots", content: "noindex" },
 ];
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session, store } = await loadSession(params.sessionId!);
+  ensureStoreHost(request, store);
   const [lines, coupons, offers] = await Promise.all([
     fetchLines(store, session.items),
     listVisibleCoupons(store.id),

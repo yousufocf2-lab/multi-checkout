@@ -1,5 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { env } from "~/lib/env.server";
+import { eq } from "drizzle-orm";
+import { db, stores } from "~/db.server";
+import { storeBaseUrl } from "~/lib/urls.server";
 
 /**
  * Storefront script. Add to theme.liquid before </body>:
@@ -8,8 +10,12 @@ import { env } from "~/lib/env.server";
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const slug = (new URL(request.url).searchParams.get("store") ?? "").replace(/[^a-z0-9-]/gi, "");
+  const [store] = slug
+    ? await db.select({ checkoutDomain: stores.checkoutDomain }).from(stores).where(eq(stores.slug, slug)).limit(1)
+    : [];
+  const base = storeBaseUrl(store ?? { checkoutDomain: null });
   const js = `(function(){
-  var APP=${JSON.stringify(env.appUrl)}, STORE=${JSON.stringify(slug)};
+  var APP=${JSON.stringify(base)}, STORE=${JSON.stringify(slug)};
   if(!STORE||window.__CX_LOADED)return; window.__CX_LOADED=true;
   var root=(window.Shopify&&Shopify.routes&&Shopify.routes.root)||"/";
 

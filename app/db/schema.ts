@@ -17,6 +17,7 @@ export const stores = pgTable("stores", {
   name: text("name").notNull(),
   shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com
   storefrontUrl: text("storefront_url").notNull(), // https://brand.com
+  checkoutDomain: text("checkout_domain").unique(), // e.g. checkout.brand.com (CNAME -> Railway)
   // Shopify auth: either a static Admin API token (shpat_...) or client id + secret
   adminToken: text("admin_token"),
   clientId: text("client_id"),

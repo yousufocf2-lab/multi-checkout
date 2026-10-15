@@ -1,11 +1,19 @@
-import type { ActionFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import { env } from "~/lib/env.server";
+import { isAppHost, sameUrlOn } from "~/lib/urls.server";
 import { Form, useActionData } from "@remix-run/react";
 import { checkPassword, loginRedirect } from "~/lib/auth.server";
 
 export const meta: MetaFunction = () => [{ title: "Admin login" }, { name: "robots", content: "noindex" }];
 
+export function loader({ request }: LoaderFunctionArgs) {
+  if (!isAppHost(request)) throw redirect(sameUrlOn(env.appUrl, request));
+  return null;
+}
+
 export async function action({ request }: ActionFunctionArgs) {
+  if (!isAppHost(request)) throw redirect(sameUrlOn(env.appUrl, request));
   const fd = await request.formData();
   if (!checkPassword(String(fd.get("password") ?? ""))) return json({ error: "Galat password" }, { status: 401 });
   return loginRedirect(request);
