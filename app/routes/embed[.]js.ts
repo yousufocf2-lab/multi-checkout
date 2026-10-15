@@ -27,7 +27,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   function ck(n){var m=document.cookie.match(new RegExp("(?:^|; )"+n+"=([^;]*)"));return m?decodeURIComponent(m[1]):null;}
   function fbcFromUrl(){try{var id=new URL(location.href).searchParams.get("fbclid");return id?"fb.1."+Date.now()+"."+id:null}catch(e){return null}}
   var busy=false;
-  function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
+  function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
   function overlay(on){var id="cx-overlay",el=document.getElementById(id);
     if(!on){if(el)el.remove();return;}
     if(el)return; el=document.createElement("div"); el.id=id; el.setAttribute("role","status");
