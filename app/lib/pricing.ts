@@ -4,6 +4,7 @@ export type PaymentMethod = "prepaid" | "cod";
 
 export interface PricedLine {
   variantId: string;
+  productId: string;
   title: string;
   variantTitle: string | null;
   image: string | null;
@@ -12,9 +13,16 @@ export interface PricedLine {
   comparePaise: number | null;
 }
 
+export interface ProductRule {
+  productIds: string[];
+  prepaidPct: number;
+  codPct: number;
+}
+
 export interface StoreRule {
   prepaidDiscountPct: number;
   codDiscountPct: number;
+  rules?: ProductRule[];
 }
 
 export interface CouponRule {
@@ -26,6 +34,7 @@ export interface CouponRule {
   maxDiscountRupees: number | null;
   stackable: boolean;
   paymentRestriction: "any" | "prepaid" | "cod";
+  productIds?: string[] | null; // null/empty = whole cart
 }
 
 export interface BankOfferRule {
@@ -42,7 +51,9 @@ export interface PricingResult {
   subtotal: number;
   mrpTotal: number;
   paymentDiscount: number;
-  paymentDiscountPct: number;
+  /** Single % when every line gets the same payment discount, else null ("up to"). */
+  paymentDiscountPct: number | null;
+  maxPaymentPct: number;
   couponDiscount: number;
   couponApplied: boolean;
   couponMessage: string | null;
@@ -52,52 +63,70 @@ export interface PricingResult {
 
 const MIN_TOTAL = 100; // ₹1
 
+const clampPct = (p: number) => Math.max(0, Math.min(100, p));
+const lineTotal = (l: PricedLine) => l.pricePaise * l.quantity;
+
+/** Payment discount % for one line: first matching product rule, else store default. */
+export function linePct(line: PricedLine, store: StoreRule, method: PaymentMethod) {
+  const rule = store.rules?.find((r) => r.productIds.includes(line.productId));
+  const pct = rule ? (method === "prepaid" ? rule.prepaidPct : rule.codPct) : method === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
+  return clampPct(pct);
+}
+
 export function computePricing(
   lines: PricedLine[],
   store: StoreRule,
   method: PaymentMethod,
   coupon: CouponRule | null,
 ): PricingResult {
-  const subtotal = lines.reduce((s, l) => s + l.pricePaise * l.quantity, 0);
-  const mrpTotal = lines.reduce(
-    (s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity,
-    0,
-  );
+  const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const mrpTotal = lines.reduce((s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity, 0);
 
-  const pct = method === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
-  let paymentDiscount = Math.round((subtotal * clampPct(pct)) / 100);
+  const perLine = lines.map((l) => {
+    const pct = linePct(l, store, method);
+    return { line: l, pct, discount: Math.round((lineTotal(l) * pct) / 100) };
+  });
+  let paymentDiscount = perLine.reduce((s, x) => s + x.discount, 0);
+  const pcts = [...new Set(perLine.map((x) => x.pct))];
+  const maxPaymentPct = Math.max(0, ...pcts);
+  let paymentDiscountPct: number | null = pcts.length === 1 ? pcts[0] : null;
+
   let couponDiscount = 0;
   let couponApplied = false;
   let couponMessage: string | null = null;
 
   if (coupon) {
+    const restricted = Boolean(coupon.productIds?.length);
+    const eligible = restricted ? perLine.filter((x) => coupon.productIds!.includes(x.line.productId)) : perLine;
+    const eligibleSubtotal = eligible.reduce((s, x) => s + lineTotal(x.line), 0);
+    const eligibleAfterPayment = eligible.reduce((s, x) => s + lineTotal(x.line) - x.discount, 0);
+    const eligiblePayment = eligibleSubtotal - eligibleAfterPayment;
+
     if (coupon.paymentRestriction !== "any" && coupon.paymentRestriction !== method) {
-      couponMessage =
-        coupon.paymentRestriction === "prepaid"
-          ? "Ye coupon sirf prepaid payment pe valid hai"
-          : "Ye coupon sirf Cash on Delivery pe valid hai";
+      couponMessage = coupon.paymentRestriction === "prepaid" ? "Valid only when you pay online" : "Valid only on Cash on Delivery";
+    } else if (restricted && eligible.length === 0) {
+      couponMessage = "Not valid on the products in your cart";
     } else if (subtotal < coupon.minCartRupees * 100) {
-      couponMessage = `Minimum cart value ₹${coupon.minCartRupees} chahiye`;
+      couponMessage = `Add items worth ${formatINR(coupon.minCartRupees * 100 - subtotal)} more to use this coupon`;
     } else {
-      const base = coupon.stackable ? subtotal - paymentDiscount : subtotal;
-      let raw =
-        coupon.type === "percent"
-          ? Math.round((base * clampPct(coupon.value)) / 100)
-          : coupon.value * 100;
+      const base = coupon.stackable ? eligibleAfterPayment : eligibleSubtotal;
+      let raw = coupon.type === "percent" ? Math.round((base * clampPct(coupon.value)) / 100) : coupon.value * 100;
       if (coupon.maxDiscountRupees != null) raw = Math.min(raw, coupon.maxDiscountRupees * 100);
       raw = Math.max(0, Math.min(raw, base));
 
       if (coupon.stackable) {
         couponDiscount = raw;
         couponApplied = true;
-      } else if (raw > paymentDiscount) {
-        // Non-stackable coupon replaces the payment discount when it's bigger
+      } else if (raw > eligiblePayment) {
+        // Non-stackable coupon replaces the payment discount on eligible items when it saves more
         couponDiscount = raw;
-        paymentDiscount = 0;
+        paymentDiscount -= eligiblePayment;
+        if (restricted) paymentDiscountPct = null;
+        else paymentDiscountPct = 0;
         couponApplied = true;
-        couponMessage = "Coupon ne payment discount ko replace kiya (zyada bachat)";
+        couponMessage = "Replaces the payment discount on these items (you save more)";
       } else {
-        couponMessage = "Aapka payment discount is coupon se zyada hai";
+        couponMessage = "Your payment discount already saves you more";
       }
     }
   }
@@ -107,7 +136,8 @@ export function computePricing(
     subtotal,
     mrpTotal,
     paymentDiscount,
-    paymentDiscountPct: paymentDiscount > 0 ? pct : 0,
+    paymentDiscountPct: paymentDiscount > 0 ? paymentDiscountPct : 0,
+    maxPaymentPct,
     couponDiscount,
     couponApplied,
     couponMessage,
@@ -119,14 +149,9 @@ export function computePricing(
 /** Estimated extra saving from a bank offer on a given payable amount (display only). */
 export function bankOfferEstimate(offer: BankOfferRule, subtotal: number, payable: number) {
   if (subtotal < offer.minCartRupees * 100) return 0;
-  let d =
-    offer.type === "percent" ? Math.round((payable * clampPct(offer.value)) / 100) : offer.value * 100;
+  let d = offer.type === "percent" ? Math.round((payable * clampPct(offer.value)) / 100) : offer.value * 100;
   if (offer.maxDiscountRupees != null) d = Math.min(d, offer.maxDiscountRupees * 100);
   return Math.max(0, Math.min(d, payable - MIN_TOTAL));
-}
-
-function clampPct(p: number) {
-  return Math.max(0, Math.min(100, p));
 }
 
 export function formatINR(paise: number) {
@@ -139,6 +164,17 @@ export function formatINR(paise: number) {
     })
   );
 }
+
+/** Compact rupees for dashboards: ₹950, ₹12.4K, ₹3.2L, ₹1.1Cr */
+export function compactINR(rupees: number) {
+  const a = Math.abs(rupees);
+  const sign = rupees < 0 ? "-" : "";
+  if (a >= 1e7) return `${sign}₹${trim(a / 1e7)}Cr`;
+  if (a >= 1e5) return `${sign}₹${trim(a / 1e5)}L`;
+  if (a >= 1e3) return `${sign}₹${trim(a / 1e3)}K`;
+  return `${sign}₹${Math.round(a).toLocaleString("en-IN")}`;
+}
+const trim = (n: number) => (n >= 100 ? Math.round(n).toString() : n.toFixed(1).replace(/\.0$/, ""));
 
 export function rupeesToPaise(v: string | number | null | undefined): number | null {
   if (v == null || v === "") return null;

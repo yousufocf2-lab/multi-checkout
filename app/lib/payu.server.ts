@@ -13,7 +13,7 @@ export function buildPayuParams(
   order: Order,
   opts: { callbackUrl: string; offerKeys: string[] },
 ) {
-  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key/salt not configured for this store");
+  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key and salt are not set for this store");
   const c = order.customer;
   const p: Record<string, string> = {
     key: store.payuKey,
@@ -57,7 +57,7 @@ export function verifyPayuResponse(store: Store, f: Record<string, string>) {
 
 /** Checks key + salt by calling PayU's verify_payment API with a dummy txnid. */
 export async function testPayu(store: Store) {
-  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key/salt set nahi hai");
+  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key and salt are not set");
   const host = store.payuMode === "live" ? "https://info.payu.in" : "https://test.payu.in";
   const command = "verify_payment";
   const var1 = `CXTEST${Date.now()}`;
@@ -72,6 +72,6 @@ export async function testPayu(store: Store) {
   try { data = JSON.parse(text); } catch { /* PayU sometimes returns plain text */ }
   const msg = data.msg ?? text.slice(0, 200);
   // Valid credentials -> "0 out of 1 Transactions Fetched Successfully" (status 0 or 1)
-  if (/transactions? fetched/i.test(msg)) return `PayU ${store.payuMode} credentials sahi hain ✓`;
+  if (/transactions? fetched/i.test(msg)) return `PayU ${store.payuMode} credentials are valid`;
   throw new Error(`PayU: ${msg || `HTTP ${res.status}`}`);
 }

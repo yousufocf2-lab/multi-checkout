@@ -1,54 +1,65 @@
 import type { Store } from "~/db/schema";
+import { MAX_COOLDOWN_HOURS } from "./cod.server";
 import { appHost, cleanDomain } from "./urls.server";
 
-type StoreInput = Omit<Store, "id" | "createdAt">;
+export type StoreInput = Pick<
+  Store,
+  | "name" | "slug" | "shopDomain" | "storefrontUrl" | "checkoutDomain" | "active"
+  | "adminToken" | "clientId" | "clientSecret" | "apiVersion"
+  | "payuKey" | "payuSalt" | "payuMode"
+  | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
+  | "metaAdAccountId" | "metaAccessToken" | "metaPixelId" | "metaCapiToken" | "metaApiVersion" | "metaFireCodPurchase"
+  | "logoUrl" | "primaryColor" | "supportPhone"
+>;
 
-/** Parses + validates the store settings form. Blank secret fields keep the old value. */
+/** Parses + validates the store settings form. Blank secret fields keep the saved value. */
 export function parseStoreForm(fd: FormData, existing?: Store) {
   const s = (k: string) => String(fd.get(k) ?? "").trim();
-  const pct = (k: string) => Math.max(0, Math.min(100, Math.round(Number(s(k)) || 0)));
   const secret = (k: string, old: string | null | undefined) => s(k) || old || null;
+  const on = (k: string) => fd.get(k) === "on";
   const errors: Record<string, string> = {};
 
-  const shopDomain = s("shopDomain").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+  const cooldownValue = Math.max(0, Number(s("codCooldownValue")) || 0);
+  const cooldownUnit = s("codCooldownUnit");
+  const unitHours = cooldownUnit === "days" ? 24 : cooldownUnit === "months" ? 730 : 1;
+  const cooldownHours = Math.round(cooldownValue * unitHours);
+
   const data: StoreInput = {
     name: s("name"),
     slug: s("slug").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""),
-    shopDomain,
+    shopDomain: s("shopDomain").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase(),
     storefrontUrl: s("storefrontUrl").replace(/\/+$/, ""),
     checkoutDomain: s("checkoutDomain") ? cleanDomain(s("checkoutDomain")) : null,
-    adminToken: secret("adminToken", existing?.adminToken),
+    active: on("active"),
+    adminToken: on("clearAdminToken") ? null : secret("adminToken", existing?.adminToken),
     clientId: s("clientId") || null,
     clientSecret: secret("clientSecret", existing?.clientSecret),
     apiVersion: s("apiVersion") || "2025-07",
-    logoUrl: s("logoUrl") || null,
-    primaryColor: /^#[0-9a-f]{6}$/i.test(s("primaryColor")) ? s("primaryColor") : "#111827",
-    supportPhone: s("supportPhone") || null,
-    prepaidDiscountPct: pct("prepaidDiscountPct"),
-    codDiscountPct: pct("codDiscountPct"),
-    codEnabled: fd.get("codEnabled") === "on",
     payuKey: s("payuKey") || null,
     payuSalt: secret("payuSalt", existing?.payuSalt),
     payuMode: s("payuMode") === "live" ? "live" : "test",
-    active: fd.get("active") === "on",
+    codEnabled: on("codEnabled"),
+    codCooldownHours: Math.min(MAX_COOLDOWN_HOURS, Math.max(0, cooldownHours)),
+    codBlockAfterPrepaid: on("codBlockAfterPrepaid"),
     metaAdAccountId: s("metaAdAccountId").replace(/\D/g, "") || null,
-    metaAccessToken: secret("metaAccessToken", existing?.metaAccessToken),
+    metaAccessToken: on("clearMetaToken") ? null : secret("metaAccessToken", existing?.metaAccessToken),
     metaPixelId: s("metaPixelId").replace(/\D/g, "") || null,
     metaCapiToken: secret("metaCapiToken", existing?.metaCapiToken),
     metaApiVersion: /^v\d+\.\d+$/.test(s("metaApiVersion")) ? s("metaApiVersion") : "v23.0",
-    metaFireCodPurchase: fd.get("metaFireCodPurchase") === "on",
+    metaFireCodPurchase: on("metaFireCodPurchase"),
+    logoUrl: s("logoUrl") || null,
+    primaryColor: /^#[0-9a-f]{6}$/i.test(s("primaryColor")) ? s("primaryColor") : "#111827",
+    supportPhone: s("supportPhone") || null,
   };
-  if (fd.get("clearMetaToken") === "on") data.metaAccessToken = null;
 
-  if (fd.get("clearAdminToken") === "on") data.adminToken = null;
-
-  if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Sirf domain likho, jaise checkout.brand.com";
-  if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Ye Railway wala domain hai — store ka apna subdomain daalo";
-  if (!data.name) errors.name = "Required";
-  if (!data.slug) errors.slug = "Required";
-  if (!/^[a-z0-9-]+\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "xyz.myshopify.com format chahiye";
-  if (!/^https?:\/\//.test(data.storefrontUrl)) errors.storefrontUrl = "https:// se shuru hona chahiye";
-  if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.adminToken = "Client ID + Client secret (ya purana shpat_ token) chahiye";
+  if (!data.name) errors.name = "Enter the store name";
+  if (!data.slug) errors.slug = "Enter a short ID, e.g. budverse";
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
+  if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://budverse.in";
+  if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Enter only the domain, e.g. checkout.budverse.in";
+  if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Use your store's own subdomain, not the platform domain";
+  if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
+  if (data.codEnabled && (cooldownHours < 1 || cooldownHours > MAX_COOLDOWN_HOURS)) errors.codCooldown = "Choose between 1 hour and 1 year";
 
   return { data, errors };
 }

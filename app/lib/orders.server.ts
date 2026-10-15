@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, orders, stores, type Order, type Store } from "~/db.server";
+import { recordOrderForCod } from "./cod.server";
 import { incrementCouponUse } from "./coupons.server";
 import { sendCapiPurchase } from "./meta.server";
 import { createShopifyOrder } from "./shopify.server";
@@ -51,6 +52,7 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
     .where(eq(orders.id, order.id))
     .returning();
   await incrementCouponUse(store.id, updated.couponCode);
+  await recordOrderForCod(store.id, updated.customer.phone, updated.paymentMethod === "cod" ? "cod" : "prepaid");
   void trackPurchase(store, updated);
   return pushToShopify(store, updated);
 }

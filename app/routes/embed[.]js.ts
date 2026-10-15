@@ -11,11 +11,11 @@ import { storeBaseUrl } from "~/lib/urls.server";
 export async function loader({ request }: LoaderFunctionArgs) {
   const slug = (new URL(request.url).searchParams.get("store") ?? "").replace(/[^a-z0-9-]/gi, "");
   const [store] = slug
-    ? await db.select({ checkoutDomain: stores.checkoutDomain }).from(stores).where(eq(stores.slug, slug)).limit(1)
+    ? await db.select({ checkoutDomain: stores.checkoutDomain, logo: stores.logoUrl, color: stores.primaryColor, name: stores.name }).from(stores).where(eq(stores.slug, slug)).limit(1)
     : [];
   const base = storeBaseUrl(store ?? { checkoutDomain: null });
   const js = `(function(){
-  var APP=${JSON.stringify(base)}, STORE=${JSON.stringify(slug)};
+  var APP=${JSON.stringify(base)}, STORE=${JSON.stringify(slug)}, BRAND=${JSON.stringify({ logo: store?.logo ?? null, color: store?.color ?? "#111827", name: store?.name ?? "" })};
   if(!STORE||window.__CX_LOADED)return; window.__CX_LOADED=true;
   var root=(window.Shopify&&Shopify.routes&&Shopify.routes.root)||"/";
 
@@ -27,12 +27,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
   function ck(n){var m=document.cookie.match(new RegExp("(?:^|; )"+n+"=([^;]*)"));return m?decodeURIComponent(m[1]):null;}
   function fbcFromUrl(){try{var id=new URL(location.href).searchParams.get("fbclid");return id?"fb.1."+Date.now()+"."+id:null}catch(e){return null}}
   var busy=false;
+  function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]})}
   function overlay(on){var id="cx-overlay",el=document.getElementById(id);
     if(!on){if(el)el.remove();return;}
-    if(el)return; el=document.createElement("div"); el.id=id;
-    el.style.cssText="position:fixed;inset:0;z-index:2147483647;background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;font:600 15px system-ui,sans-serif;color:#111";
-    el.innerHTML='<div style="text-align:center"><div style="width:36px;height:36px;margin:0 auto 12px;border:3px solid #ddd;border-top-color:#111;border-radius:50%;animation:cxspin .8s linear infinite"></div>Secure checkout khul raha hai…</div><style>@keyframes cxspin{to{transform:rotate(360deg)}}</style>';
-    document.body.appendChild(el);}
+    if(el)return; el=document.createElement("div"); el.id=id; el.setAttribute("role","status");
+    el.style.cssText="position:fixed;inset:0;z-index:2147483647;background:rgba(255,255,255,.96);display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1C2430;opacity:0;transition:opacity .18s ease-out";
+    var head=BRAND.logo?'<img src="'+esc(BRAND.logo)+'" alt="" style="height:34px;max-width:160px;object-fit:contain;margin:0 auto 22px;display:block">':(BRAND.name?'<div style="font-weight:600;font-size:18px;margin-bottom:22px">'+esc(BRAND.name)+'</div>':'');
+    el.innerHTML='<div style="text-align:center;padding:24px">'+head+'<div style="width:180px;height:4px;border-radius:4px;background:#ECEEEA;overflow:hidden;margin:0 auto"><div class="cx-bar" style="width:45%;height:100%;border-radius:4px;background:'+esc(BRAND.color)+'"></div></div><div style="margin-top:18px;font-weight:600;font-size:15px">Opening secure checkout</div><div style="margin-top:4px;font-size:13px;color:#7A8494">This takes a second</div></div><style>.cx-bar{animation:cxbar 1.1s cubic-bezier(.4,0,.2,1) infinite}@keyframes cxbar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}@media (prefers-reduced-motion:reduce){.cx-bar{animation:none}}</style>';
+    document.body.appendChild(el); requestAnimationFrame(function(){el.style.opacity="1"});}
+  window.addEventListener("pageshow",function(e){if(e.persisted){busy=false;overlay(false);}});
 
   function go(items){
     if(busy)return; busy=true; overlay(true);
@@ -44,7 +47,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }).then(function(r){return r.json()}).then(function(d){
       if(!d.url)throw new Error(d.error||"no url"); location.href=d.url;
     }).catch(function(e){busy=false;overlay(false);
-      if(String(e&&e.message)!=="empty")alert("Checkout abhi khul nahi paya, dobara try karein.");});
+      if(String(e&&e.message)!=="empty")alert("We couldn\u2019t open checkout. Please try again.");});
   }
 
   function buyNow(variantId,qty){go([{variantId:String(variantId),quantity:Math.max(1,parseInt(qty||1,10))}]);}

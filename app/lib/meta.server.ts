@@ -13,12 +13,12 @@ function graphBase(store: Store) {
 
 export function actId(store: Store) {
   const id = (store.metaAdAccountId ?? "").replace(/\D/g, "");
-  if (!id) throw new MetaError("Ad account ID set nahi hai");
+  if (!id) throw new MetaError("Ad account ID is not set");
   return `act_${id}`;
 }
 
 async function graphGet<T = Json>(store: Store, path: string, params: Record<string, string> = {}): Promise<T> {
-  if (!store.metaAccessToken) throw new MetaError("Meta access token set nahi hai");
+  if (!store.metaAccessToken) throw new MetaError("Meta access token is not set");
   const qs = new URLSearchParams({ ...params, access_token: store.metaAccessToken });
   const res = await fetch(`${graphBase(store)}/${path}?${qs}`);
   const body = (await res.json().catch(() => ({}))) as Json & { error?: { message?: string; code?: number } };
@@ -202,7 +202,7 @@ export async function fetchRecharges(store: Store, range: DateRange): Promise<{ 
       const funding = rows.filter((r) => /fund|billing|payment|charge/i.test(String(r.event_type ?? "")));
       return {
         source: "activities",
-        note: "Billing API se direct access nahi mila, isliye account activity log se funding events dikhaye hain.",
+        note: "Billing API access isn't available for this account, so funding events are shown from the account activity log.",
         items: funding.map((r) => ({
           time: String(r.event_time ?? ""),
           amount: amountFromExtra(r.extra_data),
@@ -214,7 +214,7 @@ export async function fetchRecharges(store: Store, range: DateRange): Promise<{ 
       return {
         source: "none",
         items: [],
-        note: `Recharge history Meta API se nahi mili: ${(e1 as Error).message}. Business Settings → Billing mein dekh sakte ho.`,
+        note: `Meta did not return recharge history (${(e1 as Error).message}). Check Business Settings → Billing.`,
       };
     }
   }
@@ -318,4 +318,46 @@ export async function sendCapiPurchase(store: Store, order: Order) {
   });
   if (!res.ok) throw new MetaError(`CAPI ${res.status}: ${await res.text()}`);
   return true;
+}
+
+// ---------------- spend for dashboards ----------------
+
+const spendCache = new Map<string, { at: number; value: SpendSummary }>();
+export type SpendSummary = { spend: number; purchases: number; series: Record<string, number>; error: string | null };
+
+/** Ad spend for a range, bucketed by day or month (hourly ranges return totals only). Cached 5 min. */
+export async function fetchSpend(store: Store, range: DateRange, granularity: "hour" | "day" | "month"): Promise<SpendSummary> {
+  const key = `${store.id}:${range.since}:${range.until}:${granularity}`;
+  const hit = spendCache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.value;
+
+  // Meta keeps ~37 months of insights
+  const minSince = new Date();
+  minSince.setMonth(minSince.getMonth() - 36);
+  const since = range.since < minSince.toISOString().slice(0, 10) ? minSince.toISOString().slice(0, 10) : range.since;
+  const time_range = JSON.stringify({ since, until: range.until });
+
+  let value: SpendSummary;
+  try {
+    const [summary, rows] = await Promise.all([
+      graphGet<{ data: Json[] }>(store, `${actId(store)}/insights`, { fields: "spend,actions", time_range, level: "account" }),
+      granularity === "hour"
+        ? Promise.resolve([] as Json[])
+        : graphGetAll<Json>(store, `${actId(store)}/insights`, {
+            fields: "spend", time_range, level: "account", limit: "500",
+            time_increment: granularity === "day" ? "1" : "monthly",
+          }),
+    ]);
+    const t = summary.data?.[0];
+    const series: Record<string, number> = {};
+    for (const r of rows) {
+      const k = granularity === "day" ? String(r.date_start) : String(r.date_start).slice(0, 7);
+      series[k] = (series[k] ?? 0) + num(r.spend);
+    }
+    value = { spend: num(t?.spend), purchases: pickAction(t?.actions as ActionRow[] | undefined), series, error: null };
+  } catch (e) {
+    value = { spend: 0, purchases: 0, series: {}, error: e instanceof Error ? e.message : String(e) };
+  }
+  spendCache.set(key, { at: Date.now(), value });
+  return value;
 }

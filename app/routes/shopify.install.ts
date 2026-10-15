@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { requireAdmin } from "~/lib/auth.server";
+import { requireStore, requireViewer } from "~/lib/auth.server";
 import { beginOAuth, cleanShop, storeByShop, verifyShopifyHmac } from "~/lib/shopify-oauth.server";
 
 /**
@@ -13,9 +13,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (!shop) throw new Response("shop missing", { status: 400 });
 
   const store = await storeByShop(shop);
-  if (!store) throw new Response(`${shop} pehle checkout admin mein add karo`, { status: 404 });
+  if (!store) throw new Response(`Add ${shop} in the checkout dashboard first`, { status: 404 });
 
   const signed = store.clientSecret && url.searchParams.has("hmac") && verifyShopifyHmac(url, store.clientSecret);
-  if (!signed) await requireAdmin(request);
+  if (!signed) await requireStore(await requireViewer(request), store.id);
   return beginOAuth(store);
 }

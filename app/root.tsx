@@ -6,14 +6,16 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  useNavigation,
   useRouteError,
 } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import stylesheet from "./tailwind.css?url";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" },
+  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" },
   { rel: "stylesheet", href: stylesheet },
 ];
 
@@ -27,7 +29,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Meta />
         <Links />
       </head>
-      <body className="min-h-screen bg-gray-50 font-sans text-gray-900 antialiased">
+      <body className="min-h-screen bg-paper font-sans text-ink antialiased">
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -36,20 +38,45 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Thin top bar while a page or form is loading (appears after 150ms to avoid flicker). */
+function NavigationProgress() {
+  const nav = useNavigation();
+  const busy = nav.state !== "idle";
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!busy) { setShow(false); return; }
+    const t = setTimeout(() => setShow(true), 150);
+    return () => clearTimeout(t);
+  }, [busy]);
+  return (
+    <div aria-hidden className={`pointer-events-none fixed inset-x-0 top-0 z-[100] h-[3px] overflow-hidden transition-opacity ${show ? "opacity-100" : "opacity-0"}`}>
+      <div className="h-full w-2/5 animate-bar rounded-full bg-brand" />
+    </div>
+  );
+}
+
 export default function App() {
-  return <Outlet />;
+  return (
+    <>
+      <NavigationProgress />
+      <Outlet />
+    </>
+  );
 }
 
 export function ErrorBoundary() {
   const error = useRouteError();
-  const title = isRouteErrorResponse(error) ? `${error.status}` : "Kuch gadbad ho gayi";
+  const status = isRouteErrorResponse(error) ? error.status : 500;
   const message = isRouteErrorResponse(error)
-    ? typeof error.data === "string" ? error.data : error.statusText
-    : "Page reload karke dobara try karein.";
+    ? typeof error.data === "string" && error.data ? error.data : error.statusText
+    : "Please refresh the page and try again.";
+  const title = status === 404 ? "Page not found" : status === 410 ? "This link has expired" : status === 403 ? "No access" : "Something went wrong";
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center">
-      <p className="text-4xl font-bold">{title}</p>
-      <p className="mt-2 text-gray-600">{message}</p>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+      <p className="num text-sm font-medium text-ink-faint">Error {status}</p>
+      <h1 className="mt-1 text-2xl font-semibold">{title}</h1>
+      <p className="mt-2 text-ink-soft">{message}</p>
+      <a href="/" className="btn-secondary mt-6 self-start">Go to home</a>
     </main>
   );
 }

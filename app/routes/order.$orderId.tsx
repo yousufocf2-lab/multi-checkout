@@ -1,13 +1,14 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { Link, useLoaderData, useRevalidator } from "@remix-run/react";
+import { useEffect } from "react";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
 import { ensureStoreHost } from "~/lib/urls.server";
 import { MetaPixel } from "~/components/MetaPixel";
 import { purchaseValue, shouldTrackPurchase } from "~/lib/meta.server";
 
-export const meta: MetaFunction = () => [{ title: "Order status" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Your order" }, { name: "robots", content: "noindex" }];
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const row = await getOrderWithStore(params.orderId!);
@@ -29,7 +30,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     total: order.amountPaid ?? order.total,
     savings: order.subtotal - (order.amountPaid ?? order.total),
     sessionId: order.sessionId,
-    store: { name: store.name, logoUrl: store.logoUrl, supportPhone: store.supportPhone },
+    store: { name: store.name, logoUrl: store.logoUrl, supportPhone: store.supportPhone, color: store.primaryColor },
+    items: order.items.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity })),
+    address: `${order.customer.address1}${order.customer.address2 ? ", " + order.customer.address2 : ""}, ${order.customer.city} ${order.customer.pincode}`,
     continueUrl,
     pixel: shouldTrackPurchase(store, order)
       ? { id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0) }
@@ -38,59 +41,77 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 }
 
+function rgb(hex: string) {
+  const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  return m ? `${parseInt(m[1], 16)} ${parseInt(m[2], 16)} ${parseInt(m[3], 16)}` : "17 24 39";
+}
+
 export default function OrderStatus() {
   const d = useLoaderData<typeof loader>();
+  const revalidator = useRevalidator();
   const ok = d.status === "paid" || d.status === "cod_placed";
   const pending = d.status === "pending_payment" || d.status === "cod_placing";
 
+  // Payment confirmations can take a few seconds; check again automatically.
+  useEffect(() => {
+    if (!pending) return;
+    const t = setInterval(() => revalidator.state === "idle" && revalidator.revalidate(), 3000);
+    return () => clearInterval(t);
+  }, [pending, revalidator]);
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
-      <div className="card text-center">
-        {d.store.logoUrl ? <img src={d.store.logoUrl} alt={d.store.name} className="mx-auto mb-4 h-8" /> : <p className="mb-4 font-bold">{d.store.name}</p>}
+    <main style={{ ["--brand" as string]: rgb(d.store.color) }} className="min-h-screen bg-paper px-4 py-10">
+      <div className="mx-auto max-w-md">
+        <div className="mb-6 flex justify-center">
+          {d.store.logoUrl ? <img src={d.store.logoUrl} alt={d.store.name} className="h-8 w-auto max-w-[150px] object-contain" /> : <p className="text-lg font-semibold">{d.store.name}</p>}
+        </div>
+        <div className="rounded-2xl border border-rule bg-white p-6">
+          {ok && (
+            <>
+              {d.pixel && (
+                <MetaPixel pixelId={d.pixel.id} event="Purchase" eventId={d.id} onceKey={`purchase_${d.id}`}
+                  data={{ currency: "INR", value: d.pixel.value, content_ids: d.pixel.items, content_type: "product", num_items: d.pixel.count }} />
+              )}
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-xl text-good" aria-hidden>✓</div>
+              <h1 className="mt-4 text-2xl font-semibold tracking-tight">Thank you, {d.name}</h1>
+              <p className="mt-1 text-ink-soft">Your order is confirmed{d.shopifyName ? ` as ${d.shopifyName}` : ""}. We'll send updates to your phone.</p>
+              <dl className="mt-6 space-y-2 rounded-xl bg-paper p-4 text-sm">
+                <div className="flex justify-between"><dt className="text-ink-soft">{d.method === "cod" ? "Pay on delivery" : "Paid"}</dt><dd className="num font-semibold">{formatINR(d.total)}</dd></div>
+                {d.savings > 0 && <div className="flex justify-between"><dt className="text-ink-soft">You saved</dt><dd className="num font-medium text-good">{formatINR(d.savings)}</dd></div>}
+                <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>
+              </dl>
+              <ul className="mt-5 space-y-3">
+                {d.items.map((l, i) => (
+                  <li key={i} className="flex items-center gap-3">
+                    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-rule bg-paper">{l.image && <img src={l.image} alt="" className="h-full w-full object-cover" />}</div>
+                    <p className="min-w-0 flex-1 text-sm"><span className="line-clamp-1 font-medium">{l.title}</span>{l.variantTitle && <span className="text-xs text-ink-faint">{l.variantTitle}</span>}</p>
+                    <span className="num text-sm text-ink-soft">×{l.quantity}</span>
+                  </li>
+                ))}
+              </ul>
+              <a href={d.continueUrl} className="btn-primary mt-6 w-full py-3">Continue shopping</a>
+            </>
+          )}
 
-        {ok && (
-          <>
-            {d.pixel && (
-              <MetaPixel
-                pixelId={d.pixel.id}
-                event="Purchase"
-                eventId={d.id}
-                onceKey={`purchase_${d.id}`}
-                data={{ currency: "INR", value: d.pixel.value, content_ids: d.pixel.items, content_type: "product", num_items: d.pixel.count }}
-              />
-            )}
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl">✓</div>
-            <h1 className="mt-4 text-xl font-bold">Order confirmed!</h1>
-            <p className="mt-1 text-gray-600">Shukriya {d.name}, aapka order place ho gaya hai.</p>
-            <div className="mt-5 space-y-1 rounded-xl bg-gray-50 p-4 text-sm">
-              <p>Order: <b>{d.shopifyName ?? d.id}</b></p>
-              <p>{d.method === "cod" ? "Delivery pe pay karein" : "Paid"}: <b>{formatINR(d.total)}</b></p>
-              {d.savings > 0 && <p className="font-medium text-emerald-700">Aapne {formatINR(d.savings)} bachaye 🎉</p>}
+          {d.status === "failed" && (
+            <>
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-xl font-semibold text-bad" aria-hidden>!</div>
+              <h1 className="mt-4 text-2xl font-semibold tracking-tight">Payment didn't go through</h1>
+              <p className="mt-1 text-ink-soft">No order was placed. If money left your account, your bank will return it in 5 to 7 working days.</p>
+              {d.sessionId && <Link to={`/c/${d.sessionId}`} className="btn-primary mt-6 w-full py-3">Try again</Link>}
+              <a href={d.plainStoreUrl} className="btn-secondary mt-3 w-full py-3">Back to store</a>
+            </>
+          )}
+
+          {pending && (
+            <div className="py-6 text-center" role="status" aria-live="polite">
+              <div className="mx-auto h-1 w-40 overflow-hidden rounded-full bg-paper-sunk"><div className="h-full w-1/2 animate-bar rounded-full bg-brand" /></div>
+              <h1 className="mt-6 text-lg font-semibold">Confirming your payment</h1>
+              <p className="mt-1 text-sm text-ink-soft">This usually takes a few seconds. Please keep this page open.</p>
             </div>
-            <a href={d.continueUrl} className="btn-primary mt-6 w-full py-3">Continue shopping</a>
-          </>
-        )}
-
-        {d.status === "failed" && (
-          <>
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-2xl">!</div>
-            <h1 className="mt-4 text-xl font-bold">Payment fail ho gaya</h1>
-            <p className="mt-1 text-gray-600">Paisa kata hai toh 5–7 din mein wapas aa jayega. Dobara try karein.</p>
-            {d.sessionId && <Link to={`/c/${d.sessionId}`} className="btn-primary mt-6 w-full py-3">Try again</Link>}
-            <a href={d.plainStoreUrl} className="btn-ghost mt-3 w-full py-3">Back to store</a>
-          </>
-        )}
-
-        {pending && (
-          <>
-            <h1 className="text-xl font-bold">Order process ho raha hai…</h1>
-            <p className="mt-1 text-gray-600">Kuch second baad page refresh karein.</p>
-          </>
-        )}
-
-        {d.store.supportPhone && (
-          <p className="mt-6 text-xs text-gray-500">Help: <a className="underline" href={`tel:${d.store.supportPhone}`}>{d.store.supportPhone}</a></p>
-        )}
+          )}
+        </div>
+        {d.store.supportPhone && <p className="mt-5 text-center text-xs text-ink-faint">Questions about your order? Call <a className="underline" href={`tel:${d.store.supportPhone}`}>{d.store.supportPhone}</a></p>}
       </div>
     </main>
   );

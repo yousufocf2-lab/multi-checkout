@@ -22,6 +22,13 @@
       "when": 1792047865544,
       "tag": "0002_checkout_domain",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792052667736,
+      "tag": "0003_owners_rules_cod",
+      "breakpoints": true
     }
   ]
 }

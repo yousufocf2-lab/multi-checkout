@@ -74,8 +74,10 @@ type VariantNode = {
   compareAtPrice: string | null;
   availableForSale: boolean;
   image: { url: string } | null;
-  product: { title: string; featuredImage: { url: string } | null };
+  product: { id: string; title: string; featuredImage: { url: string } | null };
 } | null;
+
+const numId = (gid: string) => gid.split("/").pop() ?? gid;
 
 /** Re-reads live prices from Shopify — never trust prices sent from the browser. */
 export async function fetchLines(
@@ -91,7 +93,7 @@ export async function fetchLines(
         ... on ProductVariant {
           id title price compareAtPrice availableForSale
           image { url(transform: { maxWidth: 200 }) }
-          product { title featuredImage { url(transform: { maxWidth: 200 }) } }
+          product { id title featuredImage { url(transform: { maxWidth: 200 }) } }
         }
       }
     }`,
@@ -105,6 +107,7 @@ export async function fetchLines(
     const compare = rupeesToPaise(n.compareAtPrice);
     lines.push({
       variantId: items[idx].variantId,
+      productId: numId(n.product.id),
       title: n.product.title,
       variantTitle: n.title === "Default Title" ? null : n.title,
       image: n.image?.url ?? n.product.featuredImage?.url ?? null,
@@ -114,6 +117,80 @@ export async function fetchLines(
     });
   });
   return lines;
+}
+
+// ---------- product catalog (picker + upsell) ----------
+
+export type CatalogVariant = { id: string; title: string; pricePaise: number; comparePaise: number | null; available: boolean };
+export type CatalogProduct = { id: string; title: string; image: string | null; variants: CatalogVariant[] };
+
+type ProductNode = {
+  id: string;
+  title: string;
+  featuredImage: { url: string } | null;
+  variants: { nodes: { id: string; title: string; price: string; compareAtPrice: string | null; availableForSale: boolean }[] };
+};
+
+const PRODUCT_FIELDS = `id title featuredImage { url(transform: { maxWidth: 300 }) }
+  variants(first: 20) { nodes { id title price compareAtPrice availableForSale } }`;
+
+function toCatalog(p: ProductNode): CatalogProduct {
+  return {
+    id: numId(p.id),
+    title: p.title,
+    image: p.featuredImage?.url ?? null,
+    variants: p.variants.nodes.map((v) => {
+      const price = rupeesToPaise(v.price) ?? 0;
+      const compare = rupeesToPaise(v.compareAtPrice);
+      return {
+        id: numId(v.id),
+        title: v.title === "Default Title" ? "" : v.title,
+        pricePaise: price,
+        comparePaise: compare && compare > price ? compare : null,
+        available: v.availableForSale,
+      };
+    }),
+  };
+}
+
+/** Product search for the dashboard picker. */
+export async function searchProducts(store: Store, q: string) {
+  const term = q.trim().replace(/[\\"():*]/g, " ").replace(/\s+/g, " ").trim();
+  const query = term ? `status:active AND ${term.split(" ").map((w) => `title:*${w}*`).join(" AND ")}` : "status:active";
+  const data = await adminGraphql<{ products: { nodes: ProductNode[] } }>(
+    store,
+    `query($q: String!) { products(first: 20, query: $q, sortKey: TITLE) { nodes { ${PRODUCT_FIELDS} } } }`,
+    { q: query },
+  );
+  return data.products.nodes.map(toCatalog);
+}
+
+const upsellCache = new Map<string, { at: number; items: CatalogProduct[] }>();
+
+/** Products shown under "You may also like": chosen list, or the newest active products. */
+export async function fetchUpsellProducts(store: Store, chosenIds: string[]) {
+  const key = `${store.id}:${chosenIds.join(",")}`;
+  const hit = upsellCache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.items;
+
+  let items: CatalogProduct[];
+  if (chosenIds.length) {
+    const data = await adminGraphql<{ nodes: (ProductNode | null)[] }>(
+      store,
+      `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { ${PRODUCT_FIELDS} status } } }`,
+      { ids: chosenIds.map((id) => `gid://shopify/Product/${id}`) },
+    );
+    items = data.nodes.filter((n): n is ProductNode => Boolean(n?.id)).map(toCatalog);
+  } else {
+    const data = await adminGraphql<{ products: { nodes: ProductNode[] } }>(
+      store,
+      `{ products(first: 12, query: "status:active", sortKey: CREATED_AT, reverse: true) { nodes { ${PRODUCT_FIELDS} } } }`,
+    );
+    items = data.products.nodes.map(toCatalog);
+  }
+  items = items.filter((p) => p.variants.some((v) => v.available));
+  upsellCache.set(key, { at: Date.now(), items });
+  return items;
 }
 
 // ---------- order creation ----------

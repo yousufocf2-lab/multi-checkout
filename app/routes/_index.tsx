@@ -9,7 +9,7 @@ export const meta: MetaFunction = () => [{ title: "Checkout" }];
 
 /** checkout.brand.com/ -> brand storefront; app domain -> status page. */
 export async function loader({ request }: LoaderFunctionArgs) {
-  if (isAppHost(request)) return null;
+  if (isAppHost(request)) throw redirect("/dashboard");
   const [store] = await db
     .select({ url: stores.storefrontUrl })
     .from(stores)
@@ -22,8 +22,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function Index() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center p-6 text-center">
-      <p className="text-xl font-semibold">Checkout is running ✓</p>
-      <Link to="/admin" className="mt-4 text-sm text-gray-500 underline">Admin</Link>
+      <p className="text-xl font-semibold">Nothing here</p>
+      <Link to="/dashboard" className="mt-4 text-sm text-ink-soft underline">Go to dashboard</Link>
     </main>
   );
 }

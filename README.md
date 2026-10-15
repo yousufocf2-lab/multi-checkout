@@ -1,4 +1,21 @@
-# Multi-store Checkout
+# Multi Checkout
+
+One checkout for many Shopify stores. Remix + Postgres on Railway, mobile-first, in English.
+
+## Logins
+- **Super admin**: email `admin` (or `ADMIN_EMAIL`) + `ADMIN_PASSWORD`. Sees every store and the Store owners page.
+- **Store owners**: sign up at `/signup` (turn off with `ALLOW_SIGNUP=false`) or get an account from the super admin.
+  Owners only see and manage their own stores.
+
+## Features
+- Overview dashboard (all stores or one): revenue, orders, prepaid vs COD, AOV, checkout conversion,
+  ad spend, ROAS, cost per order, top products, recent orders. Today by default; any range or All time.
+- Store-wide online/COD discount plus product-specific discounts.
+- Coupons for all products or selected products.
+- "You may also like" products at checkout (chosen products or newest).
+- COD rules: a phone that has paid online can only pay online afterwards; after a COD order the same phone
+  waits 6 hours (configurable up to 1 year) before COD again. Online payment is always open.
+
 
 Ek checkout, multiple Shopify stores. Remix + Postgres (Railway), mobile-first.
 
@@ -19,15 +36,21 @@ Ek checkout, multiple Shopify stores. Remix + Postgres (Railway), mobile-first.
    - `APP_URL` = `https://<service-domain>` (Settings → Networking → Generate domain, ya custom domain)
    - `ADMIN_PASSWORD` = strong password
    - `SESSION_SECRET` = lamba random string
+   - `ADMIN_EMAIL` (optional, default `admin`) and `ALLOW_SIGNUP` (optional, `false` to stop self sign-up)
 4. Deploy. Har start pe migrations apne aap chalte hain.
-5. `https://<APP_URL>/admin` kholo.
+5. `https://<APP_URL>/login` kholo (purana `/admin` link bhi yahin aata hai).
 
 ## Store connect karna
 
-1. **Shopify app** banao (store ke admin / Dev Dashboard mein). Scopes: `read_products`, `write_orders`
-   (inventory adjust ke liye `write_inventory` bhi de do).
-   - Admin API token (`shpat_…`) mile toh wo daalo, **ya** Client ID + Secret daalo (client-credentials token).
-2. Admin → **Connect store** → details bharo → **Install** tab → **Test connection**.
+1. **Shopify app** banao — Partner Dashboard (partners.shopify.com) → Apps → Create app (manually):
+   - **App URL**: `https://APP_URL/shopify/install`
+   - **Allowed redirection URL**: `https://APP_URL/shopify/callback`
+   - Distribution: **Custom distribution** → apne store ka `xyz.myshopify.com` daalo
+   - Scopes: `app/lib/scopes.ts` wali poori list (Install tab mein copy button bhi hai)
+   - Client ID + Client secret copy karo
+2. Admin → **Connect store** → details + Client ID/secret bharo → **Install** tab → **Connect with Shopify**
+   (ya Partner wala install link kholo) → permission approve karo → **Test connection**.
+   Purana `shpat_` token ho toh woh bhi seedha chalega.
 3. Install tab ka script `theme.liquid` mein `</body>` se pehle paste karo:
    ```html
    <script src="https://APP_URL/embed.js?store=SLUG" defer></script>

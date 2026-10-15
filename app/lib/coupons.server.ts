@@ -12,26 +12,27 @@ export function toRule(c: Coupon): CouponRule {
     maxDiscountRupees: c.maxDiscountRupees,
     stackable: c.stackable,
     paymentRestriction: (["prepaid", "cod"].includes(c.paymentRestriction) ? c.paymentRestriction : "any") as CouponRule["paymentRestriction"],
+    productIds: c.products?.length ? c.products.map((p) => p.id) : null,
   };
 }
 
 export function couponProblem(c: Coupon, now = new Date()): string | null {
-  if (!c.active) return "Ye coupon abhi active nahi hai";
-  if (c.startsAt && c.startsAt > now) return "Ye coupon abhi shuru nahi hua";
-  if (c.endsAt && c.endsAt < now) return "Ye coupon expire ho chuka hai";
-  if (c.usageLimit != null && c.usedCount >= c.usageLimit) return "Is coupon ki limit khatam ho gayi";
+  if (!c.active) return "This coupon is not active";
+  if (c.startsAt && c.startsAt > now) return "This coupon has not started yet";
+  if (c.endsAt && c.endsAt < now) return "This coupon has expired";
+  if (c.usageLimit != null && c.usedCount >= c.usageLimit) return "This coupon has reached its usage limit";
   return null;
 }
 
 export async function findCoupon(storeId: number, code: string) {
   const clean = code.trim().toUpperCase();
-  if (!clean) return { error: "Coupon code daalein" } as const;
+  if (!clean) return { error: "Enter a coupon code" } as const;
   const [c] = await db
     .select()
     .from(coupons)
     .where(and(eq(coupons.storeId, storeId), eq(coupons.code, clean)))
     .limit(1);
-  if (!c) return { error: "Invalid coupon code" } as const;
+  if (!c) return { error: "This coupon code doesn't exist" } as const;
   const problem = couponProblem(c);
   if (problem) return { error: problem } as const;
   return { coupon: toRule(c) } as const;

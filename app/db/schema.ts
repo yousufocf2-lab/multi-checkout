@@ -8,11 +8,28 @@ import {
   timestamp,
   uniqueIndex,
   index,
+  primaryKey,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+/** A product reference saved with rules / coupons / upsells (for display + matching). */
+export type ProductRef = { id: string; title: string; image: string | null };
+
+/** Store owners who log in to the dashboard. The super admin logs in via env vars. */
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(), // lowercase
+  name: text("name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** One row per connected Shopify store. */
 export const stores = pgTable("stores", {
   id: serial("id").primaryKey(),
+  ownerId: integer("owner_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com
@@ -31,6 +48,11 @@ export const stores = pgTable("stores", {
   prepaidDiscountPct: integer("prepaid_discount_pct").notNull().default(70),
   codDiscountPct: integer("cod_discount_pct").notNull().default(10),
   codEnabled: boolean("cod_enabled").notNull().default(true),
+  codCooldownHours: integer("cod_cooldown_hours").notNull().default(6), // 1 .. 8760
+  codBlockAfterPrepaid: boolean("cod_block_after_prepaid").notNull().default(true),
+  // Checkout upsell ("You may also like")
+  upsellEnabled: boolean("upsell_enabled").notNull().default(true),
+  upsellProducts: jsonb("upsell_products").$type<ProductRef[]>().notNull().default([]),
   // PayU
   payuKey: text("payu_key"),
   payuSalt: text("payu_salt"),
@@ -63,6 +85,7 @@ export const coupons = pgTable(
     stackable: boolean("stackable").notNull().default(true),
     paymentRestriction: text("payment_restriction").notNull().default("any"), // any | prepaid | cod
     showInList: boolean("show_in_list").notNull().default(true),
+    products: jsonb("products").$type<ProductRef[]>(), // null/empty = all products
     usageLimit: integer("usage_limit"),
     usedCount: integer("used_count").notNull().default(0),
     startsAt: timestamp("starts_at", { withTimezone: true }),
@@ -71,6 +94,34 @@ export const coupons = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("coupons_store_code_idx").on(t.storeId, t.code)],
+);
+
+/** Product-level payment discounts. Lines not matched by a rule use the store default. */
+export const discountRules = pgTable("discount_rules", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id")
+    .notNull()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  products: jsonb("products").$type<ProductRef[]>().notNull(),
+  prepaidPct: integer("prepaid_pct").notNull(),
+  codPct: integer("cod_pct").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Per-store memory of a customer (by phone) for COD rules. */
+export const customerFlags = pgTable(
+  "customer_flags",
+  {
+    storeId: integer("store_id")
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    phone: text("phone").notNull(), // 10 digits
+    prepaidAt: timestamp("prepaid_at", { withTimezone: true }),
+    lastCodAt: timestamp("last_cod_at", { withTimezone: true }),
+  },
+  (t) => [primaryKey({ columns: [t.storeId, t.phone] })],
 );
 
 /** Bank / card offers. Enforced by PayU's Offer Engine via payu_offer_key. */
@@ -124,6 +175,7 @@ export type OrderCustomer = {
 
 export type OrderLine = {
   variantId: string;
+  productId?: string;
   title: string;
   variantTitle: string | null;
   image: string | null;
@@ -162,10 +214,15 @@ export const orders = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("orders_store_created_idx").on(t.storeId, t.createdAt)],
+  (t) => [
+    index("orders_store_created_idx").on(t.storeId, t.createdAt),
+    index("orders_store_phone_idx").on(t.storeId, sql`(customer->>'phone')`),
+  ],
 );
 
 export type Store = typeof stores.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type DiscountRule = typeof discountRules.$inferSelect;
 export type Coupon = typeof coupons.$inferSelect;
 export type BankOffer = typeof bankOffers.$inferSelect;
 export type Order = typeof orders.$inferSelect;

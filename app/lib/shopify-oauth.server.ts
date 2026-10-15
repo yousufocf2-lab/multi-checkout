@@ -47,7 +47,7 @@ export function verifyShopifyHmac(url: URL, secret: string) {
 /** Redirects the browser to Shopify's permission screen (offline token). */
 export async function beginOAuth(store: Store) {
   if (!store.clientId || !store.clientSecret) {
-    throw new Response("Is store mein Client ID / Client secret save nahi hai", { status: 400 });
+    throw new Response("Save the Shopify Client ID and Client secret for this store first", { status: 400 });
   }
   const state = crypto.randomBytes(16).toString("hex");
   const params = new URLSearchParams({
@@ -69,12 +69,12 @@ export async function finishOAuth(request: Request) {
   if (!shop || !code) throw new Response("Invalid callback", { status: 400 });
 
   const store = await storeByShop(shop);
-  if (!store?.clientId || !store.clientSecret) throw new Response("Store admin mein connect nahi hai", { status: 404 });
-  if (!verifyShopifyHmac(url, store.clientSecret)) throw new Response("HMAC check fail", { status: 401 });
+  if (!store?.clientId || !store.clientSecret) throw new Response("This store is not added to the checkout dashboard", { status: 404 });
+  if (!verifyShopifyHmac(url, store.clientSecret)) throw new Response("Shopify signature check failed", { status: 401 });
 
   const saved = (await stateCookie().parse(request.headers.get("Cookie"))) as { state?: string; shop?: string } | null;
   if (!saved?.state || saved.state !== url.searchParams.get("state") || saved.shop !== shop) {
-    throw new Response("State mismatch — admin se dobara 'Connect with Shopify' dabao", { status: 401 });
+    throw new Response("Security check failed. Open the dashboard and click Connect with Shopify again.", { status: 401 });
   }
 
   const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
@@ -82,12 +82,12 @@ export async function finishOAuth(request: Request) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_id: store.clientId, client_secret: store.clientSecret, code }),
   });
-  if (!res.ok) throw new Response(`Token exchange fail: ${await res.text()}`, { status: 502 });
+  if (!res.ok) throw new Response(`Shopify token exchange failed: ${await res.text()}`, { status: 502 });
   const data = (await res.json()) as { access_token: string; scope?: string };
 
   await db.update(stores).set({ adminToken: data.access_token }).where(eq(stores.id, store.id));
   clearTokenCache(store.id);
-  return redirect(`/admin/stores/${store.id}?tab=install&connected=1`, {
+  return redirect(`/dashboard/stores/${store.id}/install?connected=1`, {
     headers: { "Set-Cookie": await stateCookie().serialize("", { maxAge: 0 }) },
   });
 }
