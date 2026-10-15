@@ -1,8 +1,10 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
+import { eq } from "drizzle-orm";
+import { db, orders } from "~/db.server";
 import { Link, useLoaderData, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
-import { getOrderWithStore } from "~/lib/orders.server";
+import { getOrderWithStore, syncOrderWithPayu } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
 import { ensureStoreHost } from "~/lib/urls.server";
 import { MetaPixel } from "~/components/MetaPixel";
@@ -13,8 +15,14 @@ export const meta: MetaFunction = () => [{ title: "Your order" }, { name: "robot
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const row = await getOrderWithStore(params.orderId!);
   if (!row) throw new Response("Order not found", { status: 404 });
-  const { order, store } = row;
+  let { order } = row;
+  const { store } = row;
   ensureStoreHost(request, store);
+  // If the PayU redirect never arrived (closed browser, network), ask PayU directly — at most every 20s.
+  if (order.status === "pending_payment" && Date.now() - order.createdAt.getTime() > 45_000 && Date.now() - order.updatedAt.getTime() > 20_000) {
+    try { order = await syncOrderWithPayu(store, order, "order-page"); } catch (e) { console.error("[order sync]", e instanceof Error ? e.message : e); }
+    if (order.status === "pending_payment") await db.update(orders).set({ updatedAt: new Date() }).where(eq(orders.id, order.id));
+  }
   let continueUrl = store.storefrontUrl;
   try {
     const u = new URL(store.storefrontUrl);

@@ -2,6 +2,8 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useSearchParams } from "@remix-run/react";
 import { CopyField, Notice, SubmitButton } from "~/components/ui";
+import { and, desc, eq } from "drizzle-orm";
+import { db, paymentEvents } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { env } from "~/lib/env.server";
 import { testMeta } from "~/lib/meta.server";
@@ -12,7 +14,10 @@ import { storeBaseUrl } from "~/lib/urls.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const s = await requireStore(await requireViewer(request), params.id);
+  const [lastHook] = await db.select({ at: paymentEvents.createdAt, kind: paymentEvents.kind, status: paymentEvents.status })
+    .from(paymentEvents).where(and(eq(paymentEvents.storeId, s.id), eq(paymentEvents.source, "webhook"))).orderBy(desc(paymentEvents.createdAt)).limit(1);
   return json({
+    lastHook: lastHook ? { at: lastHook.at.toISOString(), kind: lastHook.kind, status: lastHook.status } : null,
     store: {
       id: s.id, slug: s.slug, shopDomain: s.shopDomain, checkoutDomain: s.checkoutDomain,
       hasToken: Boolean(s.adminToken), hasClient: Boolean(s.clientId && s.clientSecret),
@@ -40,7 +45,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function Setup() {
-  const { store, appUrl, checkoutBase } = useLoaderData<typeof loader>();
+  const { store, appUrl, checkoutBase, lastHook } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const [params] = useSearchParams();
   const snippet = `<script src="${checkoutBase}/embed.js?store=${store.slug}" defer></script>`;
@@ -96,7 +101,24 @@ export default function Setup() {
           {result("testMeta")}
         </Step>
 
-        <Step n={4} title="Add the checkout to your theme">
+        <Step n={4} title="Connect PayU webhooks" done={Boolean(lastHook)}>
+          <p className="text-sm text-ink-soft">
+            Webhooks let PayU tell us about a payment even if the customer closes the browser before coming back, and about refunds.
+            We always re-check each event with PayU before changing an order.
+          </p>
+          <div className="mt-3"><CopyField label="Webhook URL" value={`${checkoutBase}/payu/webhook`} /></div>
+          <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-ink-soft">
+            <li>PayU dashboard → Developers (or Settings) → Webhooks.</li>
+            <li>Add this URL for <b className="text-ink">Payment success</b>, <b className="text-ink">Payment failure</b> and <b className="text-ink">Refund</b>.</li>
+            <li>Save, then place a test order. The status below updates when the first webhook arrives.</li>
+          </ol>
+          <p className="mt-3 text-xs text-ink-faint">If you can't find Webhooks in your dashboard, ask PayU support to set this URL for your merchant key.</p>
+          <p className="mt-2 text-sm">{lastHook
+            ? <>Last webhook received {new Date(lastHook.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} ({lastHook.kind}{lastHook.status ? `, ${lastHook.status}` : ""}).</>
+            : <span className="text-ink-faint">No webhook received yet.</span>}</p>
+        </Step>
+
+        <Step n={5} title="Add the checkout to your theme">
           <p className="text-sm text-ink-soft">Shopify admin → Online Store → Themes → <b>Duplicate</b> your theme → Edit code → <code>layout/theme.liquid</code>. Paste this just before <code>&lt;/body&gt;</code>, then preview the copy before publishing.</p>
           <div className="mt-3"><CopyField label="Theme script" value={snippet} /></div>
           <p className="mt-3 text-xs text-ink-faint">The cart's Checkout button and Buy it now open this checkout automatically. For a custom button, add the <code>data-cx-checkout</code> attribute or call <code>MultiCheckout.go()</code>.</p>

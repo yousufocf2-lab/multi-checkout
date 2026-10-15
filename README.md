@@ -59,6 +59,21 @@ Ek checkout, multiple Shopify stores. Remix + Postgres (Railway), mobile-first.
    Custom button: `data-cx-checkout` attribute, ya `MultiCheckout.go()` / `MultiCheckout.buyNow(variantId, qty)`.
 4. PayU key/salt daalo → Install tab → **Test PayU**. Mode **Test** rakh ke ek prepaid + ek COD test order karo.
 
+## Shipping
+Store → Shipping tab. Rates by order value, state or pincode prefix, and payment method. A state/pincode rate
+beats an all-India rate; among matches the cheapest wins; no match = free. Every Shopify order gets a shipping line.
+
+## PayU webhooks
+Webhook URL: `https://<checkout domain>/payu/webhook` — add it in PayU for payment success, failure and refund.
+Every webhook is re-checked with PayU's verify / refund APIs before an order changes, so a closed browser
+still ends in a confirmed order. Stuck "awaiting payment" orders are also re-checked when the order page
+reloads, and from Orders → Details → "Check payment with PayU".
+
+## Orders, abandoned checkouts, compare
+- Dashboard → Orders: every store's orders (Paid / COD tags, refunds) and an Abandoned checkouts tab
+  with WhatsApp / call / recovery link.
+- Dashboard → Compare stores: up to 4 stores side by side.
+
 ## Facebook / Meta (har store ka alag)
 
 1. Business Settings → **Users → System users** → system user banao (Admin).

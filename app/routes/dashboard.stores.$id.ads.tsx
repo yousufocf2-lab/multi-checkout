@@ -18,7 +18,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);
   const [ours] = await db
-    .select({ orders: sql<number>`count(*)::int`, revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total})), 0)` })
+    .select({ orders: sql<number>`count(*)::int`, revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)` })
     .from(orders)
     .where(and(eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), gte(orders.createdAt, from), lt(orders.createdAt, to)));
   const own = { orders: ours?.orders ?? 0, revenue: Number(ours?.revenue ?? 0) / 100 };

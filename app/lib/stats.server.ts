@@ -20,6 +20,9 @@ export type Overview = {
     aov: number;
     discounts: number;
     failedPayments: number;
+    abandoned: number;
+    abandonedValue: number; // rupees, selling price
+    refunded: number; // rupees
     sessions: number;
     conversion: number | null; // 0..1
     adSpend: number | null; // null = no ad account connected
@@ -68,13 +71,13 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
   const days = Math.round((to.getTime() - from.getTime()) / 86400_000);
   const prevFrom = new Date(from.getTime() - days * 86400_000);
 
-  const [rows, failed, sessions, prev, top, recent] = await Promise.all([
+  const [rows, failed, sessions, prev, top, recent, abandonedRows, refundRows] = await Promise.all([
     db
       .select({
         bucket: bucketExpr,
         method: orders.paymentMethod,
         count: sql<number>`count(*)::int`,
-        revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total})), 0)`,
+        revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
         discounts: sql<string>`coalesce(sum(${orders.paymentDiscount} + ${orders.couponDiscount} + ${orders.bankDiscount}), 0)`,
       })
       .from(orders)
@@ -93,7 +96,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       : db
           .select({
             n: sql<number>`count(*)::int`,
-            revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total})), 0)`,
+            revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
           })
           .from(orders)
           .where(and(idsFilter, inArray(orders.status, OK), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from))),
@@ -113,6 +116,17 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       .where(and(idsFilter, inRange(orders.createdAt)))
       .orderBy(desc(orders.createdAt))
       .limit(8),
+    db
+      .select({ n: sql<number>`count(*)::int`, value: sql<string>`coalesce(sum(${checkoutSessions.cartValue}), 0)` })
+      .from(checkoutSessions)
+      .where(and(
+        inArray(checkoutSessions.storeId, empty ? [-1] : ids),
+        gte(checkoutSessions.createdAt, from),
+        lt(checkoutSessions.createdAt, to),
+        sql`${checkoutSessions.updatedAt} < now() - interval '30 minutes'`,
+        sql`not exists (select 1 from ${orders} o where o.session_id = ${checkoutSessions.id} and o.status in ('paid','cod_placed'))`,
+      )),
+    db.select({ v: sql<string>`coalesce(sum(${orders.refunded}), 0)` }).from(orders).where(and(idsFilter, inRange(orders.createdAt))),
   ]);
 
   // Ad spend from every store with an ad account
@@ -157,6 +171,9 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       aov: totals.orders ? totals.revenue / totals.orders : 0,
       failedPayments: failed[0]?.n ?? 0,
       sessions: sessionCount,
+      abandoned: Number(abandonedRows[0]?.n ?? 0),
+      abandonedValue: Number(abandonedRows[0]?.value ?? 0) / 100,
+      refunded: Number(refundRows[0]?.v ?? 0) / 100,
       conversion: sessionCount ? Math.min(1, totals.orders / sessionCount) : null,
       adSpend,
       roas: adSpend ? totals.revenue / adSpend : null,

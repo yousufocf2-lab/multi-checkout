@@ -194,3 +194,70 @@ function SplitStat({ color, label, count, share, value }: { color: string; label
     </div>
   );
 }
+
+export const STORE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"];
+
+/** Revenue over time, one line per store (max 4). Shares one ₹ axis. */
+export function CompareChart({ labels, longLabels, series }: { labels: string[]; longLabels: string[]; series: { name: string; values: number[] }[] }) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const [table, setTable] = useState(false);
+  const H = 260, m = { t: 12, r: 12, b: 28, l: 52 };
+  const iw = width - m.l - m.r, ih = H - m.t - m.b;
+  const n = Math.max(1, labels.length);
+  const max = niceMax(Math.max(0, ...series.flatMap((s) => s.values)));
+  const x = (i: number) => m.l + (n === 1 ? iw / 2 : (iw * i) / (n - 1));
+  const y = (v: number) => m.t + ih - (v / max) * ih;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(iw / 64))));
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
+          {series.map((s, i) => <Legend key={s.name} color={STORE_COLORS[i]} label={s.name} line />)}
+        </ul>
+        <button type="button" className="btn-quiet text-xs" onClick={() => setTable((t) => !t)} aria-pressed={table}>{table ? "Show chart" : "Show table"}</button>
+      </div>
+      {table ? (
+        <div className="max-h-[300px] overflow-auto rounded-lg border border-rule">
+          <table className="table num">
+            <thead><tr><th>Period</th>{series.map((s) => <th key={s.name}>{s.name}</th>)}</tr></thead>
+            <tbody>{labels.map((_, i) => <tr key={i}><td>{longLabels[i]}</td>{series.map((s) => <td key={s.name}>{rupees(s.values[i] ?? 0)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      ) : (
+        <div ref={ref} className="relative w-full overflow-hidden" onMouseLeave={() => setHover(null)}>
+          <svg width={width} height={H} role="img" aria-label="Revenue by store over time" className="block">
+            {ticks.map((t) => (
+              <g key={t}>
+                <line x1={m.l} x2={width - m.r} y1={y(t)} y2={y(t)} stroke={C.grid} strokeWidth={1} />
+                <text x={m.l - 8} y={y(t)} dy="0.32em" textAnchor="end" fontSize={11} fill={C.axis}>{compactINR(t)}</text>
+              </g>
+            ))}
+            {hover != null && <line x1={x(hover)} x2={x(hover)} y1={m.t} y2={m.t + ih} stroke={C.axis} strokeOpacity={0.35} strokeWidth={1} />}
+            {series.map((s, si) => (
+              <g key={s.name}>
+                <polyline points={s.values.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke={STORE_COLORS[si]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                {hover != null && <circle cx={x(hover)} cy={y(s.values[hover] ?? 0)} r={4.5} fill={STORE_COLORS[si]} stroke={C.surface} strokeWidth={2} />}
+              </g>
+            ))}
+            <line x1={m.l} x2={width - m.r} y1={m.t + ih} y2={m.t + ih} stroke="#CDD2CB" strokeWidth={1} />
+            {labels.map((l, i) => (i % every === 0 ? <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize={11} fill={C.axis}>{l}</text> : null))}
+            {labels.map((_, i) => {
+              const w = iw / n;
+              return <rect key={i} x={x(i) - w / 2} y={m.t} width={w} height={ih} fill="transparent" onMouseEnter={() => setHover(i)} onTouchStart={() => setHover(i)} />;
+            })}
+          </svg>
+          {hover != null && (
+            <div className="pointer-events-none absolute top-2 z-10 w-52 rounded-lg border border-rule bg-white p-3 text-xs shadow-lift"
+              style={{ left: Math.min(Math.max(x(hover) - 104, 0), width - 208) }}>
+              <p className="mb-1.5 font-semibold text-ink">{longLabels[hover]}</p>
+              {series.map((s, si) => <TipRow key={s.name} color={STORE_COLORS[si]} label={s.name} value={rupees(s.values[hover] ?? 0)} />)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

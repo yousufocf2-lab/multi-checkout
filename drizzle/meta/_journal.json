@@ -29,6 +29,13 @@
       "when": 1792052667736,
       "tag": "0003_owners_rules_cod",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792064990019,
+      "tag": "0004_shipping_abandoned_webhooks",
+      "breakpoints": true
     }
   ]
 }

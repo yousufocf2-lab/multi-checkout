@@ -150,8 +150,47 @@ export const checkoutSessions = pgTable("checkout_sessions", {
     .references(() => stores.id, { onDelete: "cascade" }),
   items: jsonb("items").$type<{ variantId: string; quantity: number }[]>().notNull(),
   tracking: jsonb("tracking").$type<TrackingInfo>(),
+  // Captured while the customer fills the form (for abandoned checkout recovery)
+  customer: jsonb("customer").$type<Partial<OrderCustomer>>(),
+  cartSnapshot: jsonb("cart_snapshot").$type<{ title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number }[]>(),
+  cartValue: integer("cart_value"), // paise, selling price before discounts
+  paymentAttempted: boolean("payment_attempted").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Store shipping rules. The cheapest matching rule applies; no rules = free delivery. */
+export const shippingRates = pgTable("shipping_rates", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id")
+    .notNull()
+    .references(() => stores.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // shown to customer, e.g. "Standard delivery"
+  pricePaise: integer("price_paise").notNull().default(0),
+  minOrderRupees: integer("min_order_rupees").notNull().default(0),
+  maxOrderRupees: integer("max_order_rupees"), // null = no upper limit
+  states: jsonb("states").$type<string[]>().notNull().default([]), // province codes; empty = all India
+  pincodePrefixes: jsonb("pincode_prefixes").$type<string[]>().notNull().default([]),
+  paymentMethod: text("payment_method").notNull().default("any"), // any | prepaid | cod
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Raw payment notifications (PayU webhooks, callbacks, verifications) for audit/debugging. */
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }),
+    orderId: text("order_id"),
+    source: text("source").notNull(), // webhook | callback | verify
+    kind: text("kind").notNull(), // payment | refund | unknown
+    status: text("status"),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("payment_events_store_idx").on(t.storeId, t.createdAt)],
+);
 
 export type TrackingInfo = {
   fbp?: string;
@@ -202,7 +241,11 @@ export const orders = pgTable(
     couponCode: text("coupon_code"),
     couponDiscount: integer("coupon_discount").notNull().default(0),
     bankDiscount: integer("bank_discount").notNull().default(0),
-    total: integer("total").notNull(), // amount sent to PayU / collected on COD
+    shipping: integer("shipping").notNull().default(0), // paise, included in total
+    shippingTitle: text("shipping_title"),
+    total: integer("total").notNull(), // amount sent to PayU / collected on COD (items + shipping)
+    refunded: integer("refunded").notNull().default(0), // paise
+    refundStatus: text("refund_status"), // partial | full | pending
     amountPaid: integer("amount_paid"),
     payuMihpayid: text("payu_mihpayid"),
     payuRaw: jsonb("payu_raw").$type<Record<string, string>>(),
@@ -216,6 +259,7 @@ export const orders = pgTable(
   },
   (t) => [
     index("orders_store_created_idx").on(t.storeId, t.createdAt),
+    index("orders_session_idx").on(t.sessionId),
     index("orders_store_phone_idx").on(t.storeId, sql`(customer->>'phone')`),
   ],
 );
@@ -223,6 +267,7 @@ export const orders = pgTable(
 export type Store = typeof stores.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type DiscountRule = typeof discountRules.$inferSelect;
+export type ShippingRate = typeof shippingRates.$inferSelect;
 export type Coupon = typeof coupons.$inferSelect;
 export type BankOffer = typeof bankOffers.$inferSelect;
 export type Order = typeof orders.$inferSelect;

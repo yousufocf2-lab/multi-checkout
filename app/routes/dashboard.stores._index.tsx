@@ -15,7 +15,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       ? db.select({
           storeId: orders.storeId,
           count: sql<number>`count(*)::int`,
-          revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total})), 0)`,
+          revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
         }).from(orders).where(sql`${inArray(orders.storeId, ids)} and ${orders.status} in ('paid','cod_placed')`).groupBy(orders.storeId)
       : [],
     viewer.role === "admin" ? db.select({ id: users.id, name: users.name }).from(users) : [],

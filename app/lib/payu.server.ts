@@ -75,3 +75,76 @@ export async function testPayu(store: Store) {
   if (/transactions? fetched/i.test(msg)) return `PayU ${store.payuMode} credentials are valid`;
   throw new Error(`PayU: ${msg || `HTTP ${res.status}`}`);
 }
+
+// ---------------- server-to-server verification ----------------
+
+function infoHost(store: Store) {
+  return store.payuMode === "live" ? "https://info.payu.in" : "https://test.payu.in";
+}
+
+async function postService(store: Store, command: string, var1: string) {
+  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key and salt are not set");
+  const hash = sha512([store.payuKey, command, var1, store.payuSalt].join("|"));
+  const res = await fetch(`${infoHost(store)}/merchant/postservice.php?form=2`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ key: store.payuKey, command, var1, hash }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const text = await res.text();
+  try { return JSON.parse(text) as Record<string, unknown>; } catch { return { raw: text } as Record<string, unknown>; }
+}
+
+export type PayuVerification = {
+  status: "success" | "failure" | "pending" | "not_found";
+  amountPaise: number | null;
+  netDebitPaise: number | null;
+  mihpayid: string | null;
+  raw: Record<string, unknown>;
+};
+
+const toPaise = (v: unknown) => {
+  const n = parseFloat(String(v ?? ""));
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+};
+
+/** Asks PayU directly for the real status of a transaction. */
+export async function verifyPayment(store: Store, txnid: string): Promise<PayuVerification> {
+  const data = await postService(store, "verify_payment", txnid);
+  const td = (data.transaction_details as Record<string, Record<string, unknown>> | undefined)?.[txnid];
+  if (!td) return { status: "not_found", amountPaise: null, netDebitPaise: null, mihpayid: null, raw: data };
+  const s = String(td.status ?? "").toLowerCase();
+  const status: PayuVerification["status"] =
+    s === "success" ? "success" : s === "failure" || s === "failed" ? "failure" : s.includes("not found") ? "not_found" : "pending";
+  return {
+    status,
+    amountPaise: toPaise(td.amt ?? td.transaction_amount),
+    netDebitPaise: toPaise(td.net_amount_debit),
+    mihpayid: td.mihpayid ? String(td.mihpayid) : null,
+    raw: td,
+  };
+}
+
+/** Total successfully refunded for a transaction, as reported by PayU. */
+export async function fetchRefundedPaise(store: Store, txnid: string): Promise<{ refunded: number; pending: boolean; raw: Record<string, unknown> }> {
+  const data = await postService(store, "getAllRefundsFromTxnIds", txnid);
+  let refunded = 0;
+  let pending = false;
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    const amountKey = Object.keys(o).find((k) => /^(amount|amt|refund_amount|refundamount)$/i.test(k));
+    const statusKey = Object.keys(o).find((k) => /status/i.test(k));
+    if (amountKey && statusKey) {
+      const st = String(o[statusKey]).toLowerCase();
+      const amt = toPaise(o[amountKey]) ?? 0;
+      if (/success|complete|processed|refunded/.test(st)) refunded += amt;
+      else if (/queue|pending|progress|requested/.test(st)) pending = true;
+      return;
+    }
+    Object.values(o).forEach(walk);
+  };
+  walk(data);
+  return { refunded, pending, raw: data };
+}

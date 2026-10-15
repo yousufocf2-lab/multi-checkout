@@ -15,6 +15,7 @@ const TABS = [
   { to: "", label: "Overview", end: true },
   { to: "orders", label: "Orders" },
   { to: "discounts", label: "Discounts" },
+  { to: "shipping", label: "Shipping" },
   { to: "coupons", label: "Coupons" },
   { to: "offers", label: "Bank offers" },
   { to: "ads", label: "Ads" },

@@ -1,11 +1,13 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useFetcher, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, useActionData, useFetcher, useLoaderData, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { and, asc, desc, eq } from "drizzle-orm";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MetaPixel } from "~/components/MetaPixel";
 import { Spinner } from "~/components/ui";
-import { bankOffers, checkoutSessions, db, discountRules, orders, stores, type OrderCustomer } from "~/db.server";
+import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates, stores, type OrderCustomer } from "~/db.server";
+import { guessStateFromPincode } from "~/lib/pincode";
+import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
@@ -47,6 +49,21 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
   };
 }
 
+async function shippingRulesFor(storeId: number): Promise<ShipRule[]> {
+  const rows = await db.select().from(shippingRates).where(and(eq(shippingRates.storeId, storeId), eq(shippingRates.active, true)));
+  return rows.map((r) => ({
+    id: r.id, name: r.name, pricePaise: r.pricePaise, minOrderRupees: r.minOrderRupees, maxOrderRupees: r.maxOrderRupees,
+    states: r.states, pincodePrefixes: r.pincodePrefixes, paymentMethod: r.paymentMethod,
+  }));
+}
+
+/** Small background requests (draft save, COD check, coupon) don't need to reload the cart. */
+export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, defaultShouldRevalidate }) => {
+  const intent = formData?.get("intent");
+  if (intent === "draft" || intent === "eligibility" || intent === "coupon") return false;
+  return defaultShouldRevalidate;
+};
+
 export const meta: MetaFunction<typeof loader> = ({ data }) => [
   { title: data ? `Checkout | ${data.store.name}` : "Checkout" },
   { name: "robots", content: "noindex" },
@@ -61,6 +78,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     db.select().from(bankOffers).where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true))).orderBy(asc(bankOffers.sort)),
     storeRuleFor(store),
   ]);
+  const shipping = await shippingRulesFor(store.id);
+  // Snapshot for abandoned-checkout reports
+  await db.update(checkoutSessions).set({
+    cartSnapshot: lines.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity, pricePaise: l.pricePaise })),
+    cartValue: lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0),
+    updatedAt: new Date(),
+  }).where(eq(checkoutSessions.id, session.id));
 
   let upsell: { productId: string; title: string; image: string | null; variants: { id: string; title: string; pricePaise: number; comparePaise: number | null }[] }[] = [];
   if (store.upsellEnabled && store.adminToken) {
@@ -83,6 +107,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       pixelId: store.metaPixelId,
     },
     rule,
+    shipping,
+    draft: session.customer ?? null,
     lines,
     coupons,
     upsell,
@@ -101,6 +127,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = fd.get("intent");
 
   if (intent === "coupon") return json(await findCoupon(store.id, String(fd.get("code") ?? "")));
+
+  if (intent === "draft") {
+    const keep = (k: keyof OrderCustomer, max = 200) => String(fd.get(k) ?? "").trim().slice(0, max);
+    const draft: Partial<OrderCustomer> = {
+      phone: normalizePhone(keep("phone", 20)), firstName: keep("firstName"), lastName: keep("lastName"), email: keep("email"),
+      pincode: keep("pincode", 6), city: keep("city"), state: keep("state", 4), address1: keep("address1", 300), address2: keep("address2", 300),
+    };
+    await db.update(checkoutSessions).set({ customer: draft, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
+    return json({ saved: true });
+  }
 
   if (intent === "eligibility") {
     const cod = await codEligibility(store, String(fd.get("phone") ?? ""));
@@ -148,7 +184,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
   if (Object.keys(errors).length) return json({ errors }, { status: 400 });
 
-  const [lines, rule] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store)]);
+  const [lines, rule, shipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id)]);
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
 
   let coupon: CouponRule | null = null;
@@ -158,7 +194,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if ("error" in r) return json({ errors: { form: `Coupon ${code.toUpperCase()}: ${r.error}` } as FieldErrors }, { status: 400 });
     coupon = r.coupon;
   }
-  const p = computePricing(lines, rule, method, coupon);
+  const base = computePricing(lines, rule, method, coupon);
+  const p = withShipping(base, quoteShipping(shipRules, { state: customer.state, pincode: customer.pincode, method, value: base.total }));
 
   const [order] = await db
     .insert(orders)
@@ -166,7 +203,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       id: newOrderId(), storeId: store.id, sessionId: session.id,
       status: method === "cod" ? "cod_placing" : "pending_payment", paymentMethod: method,
       customer, items: lines, subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
-      couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, total: p.total,
+      couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount,
+      shipping: p.shipping, shippingTitle: p.shippingName, total: p.total,
       tracking: {
         ...(session.tracking ?? {}),
         ip: clientIp(request) ?? session.tracking?.ip,
@@ -175,6 +213,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     })
     .returning();
 
+  await db.update(checkoutSessions).set({ customer, paymentAttempted: true, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
   if (method === "cod") {
     await finalizeOrder(store, order, { status: "cod_placed" });
     return redirect(`/order/${order.id}`);
@@ -195,7 +234,7 @@ function hexToRgb(hex: string) {
 type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Checkout() {
-  const { store, rule, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
+  const { store, rule, shipping, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const couponFetcher = useFetcher<typeof action>();
@@ -208,7 +247,11 @@ export default function Checkout() {
   const [couponError, setCouponError] = useState<string | null>(null);
 
   useEffect(() => {
-    try { const saved = localStorage.getItem(LS_KEY); if (saved) setC({ ...EMPTY, ...JSON.parse(saved) }); } catch { /* storage unavailable */ }
+    try {
+      const saved = localStorage.getItem(LS_KEY);
+      if (saved) setC({ ...EMPTY, ...JSON.parse(saved) });
+      else if (draft) setC({ ...EMPTY, ...draft } as OrderCustomer);
+    } catch { if (draft) setC({ ...EMPTY, ...draft } as OrderCustomer); }
   }, []);
   useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(c)); } catch { /* storage unavailable */ } }, [c]);
 
@@ -231,24 +274,45 @@ export default function Checkout() {
   const codAvailable = store.codEnabled && !codBlocked;
   useEffect(() => { if (codBlocked && method === "cod" && store.payuReady) setMethod("prepaid"); }, [codBlocked, method, store.payuReady]);
 
-  // Pincode autofill
+  // Save what the customer has typed (for abandoned checkout recovery)
+  const draftFetcher = useFetcher();
   useEffect(() => {
-    if (!/^\d{6}$/.test(c.pincode)) return;
+    if (!phoneOk) return;
+    const t = setTimeout(() => draftFetcher.submit({ intent: "draft", ...c }, { method: "post" }), 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c, phoneOk]);
+
+  // Pincode: state appears instantly from the prefix, city follows from the lookup
+  const auto = useRef<{ city: string; state: string }>({ city: "", state: "" });
+  const [pinStatus, setPinStatus] = useState<"idle" | "loading" | "ok" | "unknown">("idle");
+  useEffect(() => {
+    if (!/^\d{6}$/.test(c.pincode)) { setPinStatus("idle"); return; }
+    const fill = (city: string | null, state: string | null) =>
+      setC((prev) => {
+        const next = { ...prev };
+        if (state && (!prev.state || prev.state === auto.current.state)) { next.state = state; auto.current.state = state; }
+        if (city && (!prev.city || prev.city === auto.current.city)) { next.city = city; auto.current.city = city; }
+        return next;
+      });
+    fill(null, guessStateFromPincode(c.pincode));
+    setPinStatus("loading");
     const ctrl = new AbortController();
-    fetch(`https://api.postalpincode.in/pincode/${c.pincode}`, { signal: ctrl.signal })
+    fetch(`/api/pincode/${c.pincode}`, { signal: ctrl.signal })
       .then((r) => r.json())
-      .then((d) => {
-        const po = d?.[0]?.PostOffice?.[0];
-        if (!po) return;
-        const code = stateCodeFromName(po.State ?? "");
-        setC((prev) => ({ ...prev, city: prev.city || po.District || "", state: prev.state || code || "" }));
-      })
-      .catch(() => {});
+      .then((d: { city: string | null; state: string | null }) => { fill(d.city, d.state); setPinStatus(d.city ? "ok" : "unknown"); })
+      .catch(() => setPinStatus("unknown"));
     return () => ctrl.abort();
   }, [c.pincode]);
 
-  const prepaid = useMemo(() => computePricing(lines, rule, "prepaid", coupon), [lines, rule, coupon]);
-  const cod = useMemo(() => computePricing(lines, rule, "cod", coupon), [lines, rule, coupon]);
+  const priced = (m: PaymentMethod) => {
+    const base = computePricing(lines, rule, m, coupon);
+    return withShipping(base, quoteShipping(shipping, { state: c.state, pincode: c.pincode, method: m, value: base.total }));
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prepaid = useMemo(() => priced("prepaid"), [lines, rule, coupon, shipping, c.state, c.pincode]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const cod = useMemo(() => priced("cod"), [lines, rule, coupon, shipping, c.state, c.pincode]);
   const p = method === "prepaid" ? prepaid : cod;
   const bestBank = useMemo(() => Math.max(0, ...offers.map((o) => bankOfferEstimate(o, prepaid.subtotal, prepaid.total))), [offers, prepaid]);
 
@@ -257,7 +321,7 @@ export default function Checkout() {
   const redirectingToPay = placing && nav.formData?.get("method") === "prepaid";
   const itemCount = lines.reduce((s, l) => s + l.quantity, 0);
   const set = (k: keyof OrderCustomer) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setC((prev) => ({ ...prev, [k]: k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : e.target.value }));
+    setC((prev) => ({ ...prev, [k]: k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : k === "pincode" ? e.target.value.replace(/\D/g, "").slice(0, 6) : e.target.value }));
   const applyCode = (code: string) => { setCouponError(null); couponFetcher.submit({ intent: "coupon", code }, { method: "post" }); };
   const discountLabel = (r: typeof prepaid) => (r.paymentDiscountPct ? `${r.paymentDiscountPct}% off` : r.paymentDiscount > 0 ? `Up to ${r.maxPaymentPct}% off` : null);
   const payLabel = method === "prepaid" ? `Pay ${formatINR(p.total)}` : `Place order, ${formatINR(p.total)}`;
@@ -312,7 +376,13 @@ export default function Checkout() {
               <Field label="First name" error={errors.firstName}><input name="firstName" autoComplete="given-name" required className="input" value={c.firstName} onChange={set("firstName")} /></Field>
               <Field label="Last name"><input name="lastName" autoComplete="family-name" className="input" value={c.lastName} onChange={set("lastName")} /></Field>
               <Field label="Email (optional, for order updates)" error={errors.email} className="col-span-2"><input name="email" type="email" autoComplete="email" className="input" value={c.email} onChange={set("email")} /></Field>
-              <Field label="Pincode" error={errors.pincode}><input name="pincode" inputMode="numeric" autoComplete="postal-code" maxLength={6} required className="input" value={c.pincode} onChange={set("pincode")} /></Field>
+              <Field label="Pincode" error={errors.pincode}>
+                <div className="relative">
+                  <input name="pincode" inputMode="numeric" autoComplete="postal-code" maxLength={6} required className="input pr-9" value={c.pincode} onChange={set("pincode")} />
+                  {pinStatus === "loading" && <span className="absolute right-3 top-3 text-ink-faint"><Spinner /></span>}
+                  {pinStatus === "ok" && <span className="absolute right-3 top-2.5 text-good" aria-label="Pincode found">✓</span>}
+                </div>
+              </Field>
               <Field label="City" error={errors.city}><input name="city" autoComplete="address-level2" required className="input" value={c.city} onChange={set("city")} /></Field>
               <Field label="House number, building, street" error={errors.address1} className="col-span-2"><input name="address1" autoComplete="address-line1" required className="input" value={c.address1} onChange={set("address1")} /></Field>
               <Field label="Area, landmark (optional)" className="col-span-2"><input name="address2" autoComplete="address-line2" className="input" value={c.address2} onChange={set("address2")} /></Field>
@@ -553,7 +623,7 @@ function UpsellCard({ item, rule }: { item: LoaderData["upsell"][number]; rule: 
   );
 }
 
-type P = ReturnType<typeof computePricing>;
+type P = ReturnType<typeof computePricing> & { itemsTotal: number; shipping: number; shippingName: string; freeAbove: number | null };
 
 function PriceDetails({ p, method, coupon, hasOffers }: { p: P; method: PaymentMethod; coupon: CouponRule | null; hasOffers: boolean }) {
   return (
@@ -562,7 +632,8 @@ function PriceDetails({ p, method, coupon, hasOffers }: { p: P; method: PaymentM
       {p.mrpTotal > p.subtotal && <Row label="You already save on MRP" value={formatINR(p.mrpTotal - p.subtotal)} muted />}
       {p.paymentDiscount > 0 && <Row label={`${method === "prepaid" ? "Online payment" : "COD"} discount${p.paymentDiscountPct ? ` (${p.paymentDiscountPct}%)` : ""}`} value={`−${formatINR(p.paymentDiscount)}`} green />}
       {p.couponApplied && coupon && <Row label={`Coupon ${coupon.code}`} value={`−${formatINR(p.couponDiscount)}`} green />}
-      <Row label="Delivery" value="Free" green />
+      <Row label={p.shipping > 0 ? p.shippingName : "Delivery"} value={p.shipping > 0 ? formatINR(p.shipping) : "Free"} green={p.shipping === 0} />
+      {p.shipping > 0 && p.freeAbove && <p className="text-xs font-medium text-good">Free delivery on orders above {formatINR(p.freeAbove)}</p>}
       <div className="flex items-baseline justify-between border-t border-rule pt-3">
         <dt className="font-semibold">To pay</dt>
         <dd className="text-right">

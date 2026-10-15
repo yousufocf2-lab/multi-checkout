@@ -32,7 +32,9 @@ export default function DashboardLayout() {
       </div>
       <div className="space-y-0.5 px-3">
         <Item to="/dashboard" end>Overview</Item>
+        <Item to="/dashboard/orders">Orders</Item>
         <Item to="/dashboard/stores" end>Stores</Item>
+        {stores.length > 1 && <Item to="/dashboard/compare">Compare stores</Item>}
         {viewer.role === "admin" && <Item to="/dashboard/owners">Store owners</Item>}
       </div>
       <p className="mt-7 px-5 pb-2 text-xs font-medium text-ink-faint">Your stores</p>

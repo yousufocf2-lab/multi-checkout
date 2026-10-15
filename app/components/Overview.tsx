@@ -111,6 +111,8 @@ export function OverviewView({ data, showStoreColumn, adsHref }: { data: Data; s
           <dl className="mt-5 space-y-2 border-t border-rule pt-4 text-sm">
             <div className="flex justify-between"><dt className="text-ink-soft">Discounts given</dt><dd className="num">{inr(t.discounts)}</dd></div>
             <div className="flex justify-between"><dt className="text-ink-soft">Failed payments</dt><dd className="num">{t.failedPayments}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-soft">Abandoned checkouts</dt><dd className="num">{t.abandoned} <span className="text-ink-faint">({inr(t.abandonedValue)})</span></dd></div>
+            {t.refunded > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Refunded</dt><dd className="num">{inr(t.refunded)}</dd></div>}
           </dl>
         </section>
       </div>

@@ -2,7 +2,7 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { redirect } from "@remix-run/node";
 import { eq } from "drizzle-orm";
 import { db, orders } from "~/db.server";
-import { finalizeOrder, getOrderWithStore } from "~/lib/orders.server";
+import { finalizeOrder, getOrderWithStore, logPaymentEvent } from "~/lib/orders.server";
 import { verifyPayuResponse } from "~/lib/payu.server";
 import { rupeesToPaise } from "~/lib/pricing";
 
@@ -17,6 +17,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const row = f.txnid ? await getOrderWithStore(f.txnid) : null;
   if (!row) return redirect("/");
   const { order, store } = row;
+  await logPaymentEvent({ storeId: store.id, orderId: order.id, source: "callback", kind: "payment", status: f.status ?? null, payload: f });
 
   // Already handled (PayU can post twice / user refresh)
   if (order.status !== "pending_payment") return redirect(`/order/${order.id}`);
