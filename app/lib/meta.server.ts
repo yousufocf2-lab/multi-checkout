@@ -7,6 +7,18 @@ type Json = Record<string, unknown>;
 
 export class MetaError extends Error {}
 
+/** Never let a token leak into an error message shown on the dashboard. */
+export const scrubToken = (msg: string) => msg.replace(/access_token=[^&\s"']+/g, "access_token=•••").replace(/EAA[A-Za-z0-9]{20,}/g, "EAA•••");
+
+async function safeFetch(url: string, init?: RequestInit) {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    const cause = (e as { cause?: { code?: string } })?.cause?.code;
+    throw new MetaError(`Couldn't reach Meta${cause ? ` (${cause})` : ""}. Check your internet connection and try again.`);
+  }
+}
+
 function graphBase(store: Store) {
   return `https://graph.facebook.com/${store.metaApiVersion || "v23.0"}`;
 }
@@ -20,9 +32,9 @@ export function actId(store: Store) {
 async function graphGet<T = Json>(store: Store, path: string, params: Record<string, string> = {}): Promise<T> {
   if (!store.metaAccessToken) throw new MetaError("Meta access token is not set");
   const qs = new URLSearchParams({ ...params, access_token: store.metaAccessToken });
-  const res = await fetch(`${graphBase(store)}/${path}?${qs}`);
+  const res = await safeFetch(`${graphBase(store)}/${path}?${qs}`);
   const body = (await res.json().catch(() => ({}))) as Json & { error?: { message?: string; code?: number } };
-  if (!res.ok || body.error) throw new MetaError(body.error?.message ?? `Meta API ${res.status}`);
+  if (!res.ok || body.error) throw new MetaError(scrubToken(body.error?.message ?? `Meta API ${res.status}`));
   return body as T;
 }
 
@@ -32,7 +44,7 @@ async function graphGetAll<T = Json>(store: Store, path: string, params: Record<
   let page = await graphGet<{ data: T[]; paging?: { next?: string } }>(store, path, params);
   out.push(...(page.data ?? []));
   for (let i = 1; i < maxPages && page.paging?.next; i++) {
-    const res = await fetch(page.paging.next);
+    const res = await safeFetch(page.paging.next);
     page = (await res.json()) as typeof page;
     out.push(...(page.data ?? []));
   }
@@ -64,7 +76,8 @@ export type MetaAccount = {
   status: string;
   isPrepaid: boolean;
   amountSpent: number; // rupees (lifetime)
-  balance: number; // rupees
+  balance: number; // rupees (Meta's "balance" field: amount due on postpaid accounts)
+  available: number | null; // rupees of prepaid funds left, when Meta reports it
   spendCap: number | null; // rupees
   fundingSource: string | null;
   disableReason: string | null;
@@ -91,10 +104,24 @@ export async function fetchAccount(store: Store): Promise<MetaAccount> {
     isPrepaid: Boolean(a.is_prepay_account),
     amountSpent: num(a.amount_spent) / 100,
     balance: num(a.balance) / 100,
+    available: availableFunds(fsd?.display_string, Boolean(a.is_prepay_account), num(a.balance) / 100),
     spendCap: cap > 0 ? cap / 100 : null,
     fundingSource: fsd?.display_string ?? null,
     disableReason: a.disable_reason ? String(a.disable_reason) : null,
   };
+}
+
+/**
+ * Prepaid accounts show funds as text, e.g. "Available balance (₹1,234.56 INR)".
+ * Falls back to the balance field for prepaid accounts when the text has no amount.
+ */
+function availableFunds(display: string | undefined, prepaid: boolean, balance: number): number | null {
+  const m = display?.match(/balance[^\d-]*(-?[\d,]+(?:\.\d+)?)/i);
+  if (m) {
+    const v = Number(m[1].replace(/,/g, ""));
+    if (Number.isFinite(v)) return v;
+  }
+  return prepaid ? balance : null;
 }
 
 // ---------------- insights ----------------
@@ -311,12 +338,12 @@ export async function sendCapiPurchase(store: Store, order: Order) {
     ],
   };
   const token = store.metaCapiToken || store.metaAccessToken!;
-  const res = await fetch(`${graphBase(store)}/${store.metaPixelId}/events?access_token=${encodeURIComponent(token)}`, {
+  const res = await safeFetch(`${graphBase(store)}/${store.metaPixelId}/events?access_token=${encodeURIComponent(token)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new MetaError(`CAPI ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new MetaError(scrubToken(`CAPI ${res.status}: ${await res.text()}`));
   return true;
 }
 
@@ -356,7 +383,7 @@ export async function fetchSpend(store: Store, range: DateRange, granularity: "h
     }
     value = { spend: num(t?.spend), purchases: pickAction(t?.actions as ActionRow[] | undefined), series, error: null };
   } catch (e) {
-    value = { spend: 0, purchases: 0, series: {}, error: e instanceof Error ? e.message : String(e) };
+    value = { spend: 0, purchases: 0, series: {}, error: scrubToken(e instanceof Error ? e.message : String(e)) };
   }
   spendCache.set(key, { at: Date.now(), value });
   return value;

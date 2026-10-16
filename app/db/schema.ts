@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   integer,
   jsonb,
@@ -12,6 +13,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { CheckoutTheme } from "~/lib/theme";
 
 /** A product reference saved with rules / coupons / upsells (for display + matching). */
 export type ProductRef = { id: string; title: string; image: string | null };
@@ -44,6 +46,7 @@ export const stores = pgTable("stores", {
   logoUrl: text("logo_url"),
   primaryColor: text("primary_color").notNull().default("#111827"),
   supportPhone: text("support_phone"),
+  theme: jsonb("theme").$type<Partial<CheckoutTheme>>().notNull().default({}), // checkout design, see lib/theme.ts
   // Discounts (whole percentages)
   prepaidDiscountPct: integer("prepaid_discount_pct").notNull().default(70),
   codDiscountPct: integer("cod_discount_pct").notNull().default(10),
@@ -264,7 +267,37 @@ export const orders = pgTable(
   ],
 );
 
+/** Meta ad account balance readings, used to detect prepaid recharges. Money is paise. */
+export const metaSnapshots = pgTable(
+  "meta_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    availablePaise: bigint("available_paise", { mode: "number" }).notNull(), // prepaid funds left
+    spentPaise: bigint("spent_paise", { mode: "number" }).notNull(), // lifetime amount_spent
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("meta_snapshots_store_idx").on(t.storeId, t.takenAt)],
+);
+
+/** Meta ad account recharges. amount = what was paid (incl. GST), credit = what reached the ad account. */
+export const metaRecharges = pgTable(
+  "meta_recharges",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    amountPaise: bigint("amount_paise", { mode: "number" }).notNull(),
+    creditPaise: bigint("credit_paise", { mode: "number" }).notNull(),
+    source: text("source").notNull(), // auto | manual
+    note: text("note"),
+    rechargedAt: timestamp("recharged_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("meta_recharges_store_idx").on(t.storeId, t.rechargedAt)],
+);
+
 export type Store = typeof stores.$inferSelect;
+export type MetaRecharge = typeof metaRecharges.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type DiscountRule = typeof discountRules.$inferSelect;
 export type ShippingRate = typeof shippingRates.$inferSelect;

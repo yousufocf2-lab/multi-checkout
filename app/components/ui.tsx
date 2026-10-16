@@ -159,3 +159,22 @@ export function CopyField({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+/** Cost per order / purchase quality: under ₹35 excellent, ₹35–59 good, ₹60–99 average, ₹100+ poor. */
+export function costQuality(v: number | null | undefined) {
+  if (v == null || !Number.isFinite(v) || v <= 0) return null;
+  if (v < 35) return { label: "Excellent", cls: "bg-emerald-100 text-emerald-800", arrow: "▲" };
+  if (v < 60) return { label: "Good", cls: "bg-emerald-50 text-good", arrow: "" };
+  if (v < 100) return { label: "Average", cls: "bg-amber-50 text-amber-700", arrow: "" };
+  return { label: "Poor", cls: "bg-red-50 text-bad", arrow: "▼" };
+}
+
+export function CostTag({ value, className = "" }: { value: number | null | undefined; className?: string }) {
+  const q = costQuality(value);
+  if (!q) return null;
+  return (
+    <span className={`inline-flex items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-px align-middle text-[10.5px] font-semibold leading-4 ${q.cls} ${className}`} title="Under ₹35 excellent · ₹35–59 good · ₹60–99 average · ₹100+ poor">
+      {q.arrow && <span aria-hidden className="text-[9px]">{q.arrow}</span>}{q.label}
+    </span>
+  );
+}

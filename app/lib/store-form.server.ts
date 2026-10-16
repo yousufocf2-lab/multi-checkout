@@ -9,7 +9,7 @@ export type StoreInput = Pick<
   | "payuKey" | "payuSalt" | "payuMode"
   | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
   | "metaAdAccountId" | "metaAccessToken" | "metaPixelId" | "metaCapiToken" | "metaApiVersion" | "metaFireCodPurchase"
-  | "logoUrl" | "primaryColor" | "supportPhone"
+  | "supportPhone"
 >;
 
 /** Parses + validates the store settings form. Blank secret fields keep the saved value. */
@@ -39,7 +39,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuSalt: secret("payuSalt", existing?.payuSalt),
     payuMode: s("payuMode") === "live" ? "live" : "test",
     codEnabled: on("codEnabled"),
-    codCooldownHours: Math.min(MAX_COOLDOWN_HOURS, Math.max(0, cooldownHours)),
+    codCooldownHours: cooldownHours >= 1 ? Math.min(MAX_COOLDOWN_HOURS, cooldownHours) : existing?.codCooldownHours ?? 6,
     codBlockAfterPrepaid: on("codBlockAfterPrepaid"),
     metaAdAccountId: s("metaAdAccountId").replace(/\D/g, "") || null,
     metaAccessToken: on("clearMetaToken") ? null : secret("metaAccessToken", existing?.metaAccessToken),
@@ -47,8 +47,6 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     metaCapiToken: secret("metaCapiToken", existing?.metaCapiToken),
     metaApiVersion: /^v\d+\.\d+$/.test(s("metaApiVersion")) ? s("metaApiVersion") : "v23.0",
     metaFireCodPurchase: on("metaFireCodPurchase"),
-    logoUrl: s("logoUrl") || null,
-    primaryColor: /^#[0-9a-f]{6}$/i.test(s("primaryColor")) ? s("primaryColor") : "#111827",
     supportPhone: s("supportPhone") || null,
   };
 

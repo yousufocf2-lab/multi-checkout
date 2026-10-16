@@ -4,6 +4,16 @@
 
 :root {
   --brand: 11 93 75;
+  --ink: 28 36 48;
+  --ink-soft: 71 84 103;
+  --ink-faint: 122 132 148;
+  --paper: 244 245 242;
+  --paper-sunk: 236 238 234;
+  --surface: 255 255 255;
+  --rule: 226 229 224;
+  --rule-strong: 205 210 203;
+  --r-card: 12px;
+  --r-field: 8px;
   color-scheme: light;
 }
 
@@ -16,7 +26,7 @@
 
 @layer components {
   .input {
-    @apply block w-full rounded-lg border border-rule-strong bg-white px-3 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-faint focus:border-brand focus:ring-4 focus:ring-brand/10 disabled:bg-paper-sunk disabled:text-ink-faint;
+    @apply block w-full rounded-lg border border-rule-strong bg-surface px-3 py-2.5 text-[15px] text-ink outline-none transition placeholder:text-ink-faint focus:border-brand focus:ring-4 focus:ring-brand/10 disabled:bg-paper-sunk disabled:text-ink-faint;
   }
   .label { @apply mb-1.5 block text-[13px] font-medium text-ink-soft; }
   .hint { @apply mt-1 block text-xs text-ink-faint; }
@@ -25,8 +35,8 @@
   .btn {
     @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-semibold transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60;
   }
-  .btn-primary { @apply btn bg-brand text-white hover:brightness-110; }
-  .btn-secondary { @apply btn border border-rule-strong bg-white text-ink hover:bg-paper; }
+  .btn-primary { @apply btn bg-btn text-btn-fg hover:brightness-110; }
+  .btn-secondary { @apply btn border border-rule-strong bg-surface text-ink hover:bg-paper; }
   .btn-quiet { @apply btn px-2.5 py-1.5 text-ink-soft hover:bg-paper-sunk hover:text-ink; }
   .btn-danger { @apply btn px-2.5 py-1.5 text-bad hover:bg-red-50; }
   .table { @apply w-full text-left text-sm; }
@@ -34,6 +44,14 @@
   .table td { @apply border-b border-rule px-4 py-3 align-top; }
   .table tr:last-child td { @apply border-b-0; }
 }
+
+/* Themed checkout: radius tokens from the store's design settings */
+.cx .rounded-xl { border-radius: var(--r-card); }
+.cx .rounded-lg, .cx .input, .cx .btn { border-radius: var(--r-field); }
+.cx .input { border-radius: min(var(--r-field), 12px); }
+
+/* Dashboard sidebar scrollbar */
+.scroll-thin { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.15) transparent; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

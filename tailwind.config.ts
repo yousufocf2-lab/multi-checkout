@@ -6,9 +6,13 @@ export default {
     extend: {
       colors: {
         brand: "rgb(var(--brand) / <alpha-value>)",
-        ink: { DEFAULT: "#1C2430", soft: "#475467", faint: "#7A8494" },
-        paper: { DEFAULT: "#F4F5F2", raised: "#FFFFFF", sunk: "#ECEEEA" },
-        rule: { DEFAULT: "#E2E5E0", strong: "#CDD2CB" },
+        // Colors are CSS variables so a store's checkout can re-theme them (see lib/theme.ts)
+        ink: { DEFAULT: "rgb(var(--ink) / <alpha-value>)", soft: "rgb(var(--ink-soft) / <alpha-value>)", faint: "rgb(var(--ink-faint) / <alpha-value>)" },
+        paper: { DEFAULT: "rgb(var(--paper) / <alpha-value>)", raised: "rgb(var(--surface) / <alpha-value>)", sunk: "rgb(var(--paper-sunk) / <alpha-value>)" },
+        surface: "rgb(var(--surface) / <alpha-value>)",
+        rule: { DEFAULT: "rgb(var(--rule) / <alpha-value>)", strong: "rgb(var(--rule-strong) / <alpha-value>)" },
+        btn: { DEFAULT: "rgb(var(--btn, var(--brand)) / <alpha-value>)", fg: "rgb(var(--btn-fg, 255 255 255) / <alpha-value>)" },
+        night: { DEFAULT: "#0E1714", soft: "#15211D", line: "#22312C", text: "#C9D3CF", faint: "#7F8F89" },
         pine: { DEFAULT: "#0B5D4B", dark: "#08473A", tint: "#E3F0EB" },
         series: { prepaid: "#2a78d6", cod: "#eb6834", ads: "#1baf7a" },
         good: "#1A7F37",

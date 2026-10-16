@@ -1,36 +1,94 @@
 import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { checkoutSessions, db, orders, stores, type Store } from "~/db.server";
-import { addDays, resolveRange } from "./dates";
+import { addDays, resolveRange, type Range } from "./dates";
 import { storeBaseUrl } from "./urls.server";
 
 export const PAGE = 50;
 
-export async function loadOrders(scope: Store[], params: URLSearchParams) {
+const OK = sql`('paid','cod_placed')`;
+const amountCol = sql`coalesce(${orders.amountPaid}, ${orders.total})`;
+
+export type OrderFilters = {
+  status: string; method: string; tag: string; product: string; state: string; q: string;
+  min: string; max: string; range: Range;
+};
+
+/** WHERE clause for the orders list, the summary and the CSV export. Every filter combines with AND. */
+export async function orderFilters(scope: Store[], params: URLSearchParams) {
   const ids = scope.map((s) => s.id);
-  const status = params.get("status") ?? "";
-  const q = (params.get("q") ?? "").trim();
-  const page = Math.max(1, Number(params.get("page")) || 1);
+  const p = new URLSearchParams(params);
+  if (!p.get("range")) p.set("range", "max");
+  const [first] = ids.length
+    ? await db.select({ d: sql<string | null>`to_char(min(${orders.createdAt}) at time zone 'Asia/Kolkata', 'YYYY-MM-DD')` }).from(orders).where(inArray(orders.storeId, ids))
+    : [{ d: null }];
+  const range = resolveRange(p, first?.d ?? undefined);
+  const f: OrderFilters = {
+    status: params.get("status") ?? "", method: params.get("method") ?? "", tag: params.get("tag") ?? "",
+    product: (params.get("product") ?? "").trim(), state: params.get("state") ?? "", q: (params.get("q") ?? "").trim(),
+    min: (params.get("min") ?? "").replace(/[^\d]/g, ""), max: (params.get("max") ?? "").replace(/[^\d]/g, ""), range,
+  };
 
   const where: SQL[] = [inArray(orders.storeId, ids.length ? ids : [-1])];
-  if (status === "paid" || status === "cod_placed" || status === "failed") where.push(eq(orders.status, status));
-  if (status === "pending") where.push(sql`${orders.status} in ('pending_payment','cod_placing')`);
-  if (status === "not_synced") where.push(sql`${orders.status} in ('paid','cod_placed') and ${orders.shopifyOrderId} is null`);
-  if (status === "refunded") where.push(sql`${orders.refunded} > 0 or ${orders.refundStatus} is not null`);
-  if (q) {
-    const like = `%${q}%`;
+  // Status: completed (paid online + COD placed) unless asked otherwise
+  if (f.status === "failed") where.push(eq(orders.status, "failed"));
+  else if (f.status === "pending") where.push(sql`${orders.status} in ('pending_payment','cod_placing')`);
+  else if (f.status !== "any") where.push(sql`${orders.status} in ${OK}`);
+
+  if (f.method === "prepaid" || f.method === "cod") where.push(eq(orders.paymentMethod, f.method));
+  if (range.preset !== "max") {
+    where.push(gte(orders.createdAt, new Date(`${range.since}T00:00:00+05:30`)));
+    where.push(lt(orders.createdAt, new Date(`${addDays(range.until, 1)}T00:00:00+05:30`)));
+  }
+  if (f.min) where.push(sql`${amountCol} >= ${Number(f.min) * 100}`);
+  if (f.max) where.push(sql`${amountCol} <= ${Number(f.max) * 100}`);
+  if (f.product) where.push(sql`exists (select 1 from jsonb_array_elements(${orders.items}) li where li->>'title' = ${f.product})`);
+  if (f.state) where.push(sql`${orders.customer}->>'state' = ${f.state}`);
+  if (f.tag === "refunded") where.push(sql`(${orders.refunded} > 0 or ${orders.refundStatus} is not null)`);
+  if (f.tag === "not_synced") where.push(sql`${orders.status} in ${OK} and ${orders.shopifyOrderId} is null`);
+  if (f.tag === "coupon") where.push(isNotNull(orders.couponCode));
+  if (f.tag === "bank") where.push(sql`${orders.bankDiscount} > 0`);
+  if (f.tag === "paid_shipping") where.push(sql`${orders.shipping} > 0`);
+  if (f.tag === "free_shipping") where.push(sql`${orders.shipping} = 0`);
+  if (f.q) {
+    const like = `%${f.q}%`;
     where.push(or(
       ilike(orders.id, like),
       ilike(orders.shopifyOrderName, like),
       sql`${orders.customer}->>'phone' ilike ${like}`,
       sql`(${orders.customer}->>'firstName') || ' ' || (${orders.customer}->>'lastName') ilike ${like}`,
+      sql`${orders.customer}->>'city' ilike ${like}`,
     )!);
   }
-  const rows = await db.select().from(orders).where(and(...where)).orderBy(desc(orders.createdAt)).limit(PAGE + 1).offset((page - 1) * PAGE);
+  return { where: and(...where)!, filters: f };
+}
+
+export async function loadOrders(scope: Store[], params: URLSearchParams) {
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const ids = scope.map((s) => s.id);
+  const { where, filters } = await orderFilters(scope, params);
+  const [rows, [sum], products] = await Promise.all([
+    db.select().from(orders).where(where).orderBy(desc(orders.createdAt)).limit(PAGE + 1).offset((page - 1) * PAGE),
+    db.select({
+      n: sql<number>`count(*)::int`,
+      value: sql<string>`coalesce(sum(${amountCol} - ${orders.refunded}), 0)`,
+      prepaid: sql<number>`count(*) filter (where ${orders.paymentMethod} <> 'cod')::int`,
+      cod: sql<number>`count(*) filter (where ${orders.paymentMethod} = 'cod')::int`,
+    }).from(orders).where(where),
+    db.execute<{ title: string }>(sql`
+      select li->>'title' as title from ${orders}, jsonb_array_elements(${orders.items}) li
+      where ${inArray(orders.storeId, ids.length ? ids : [-1])} and ${orders.status} in ${OK}
+      group by 1 order by count(*) desc limit 300`),
+  ]);
   const names = new Map(scope.map((s) => [s.id, s.name]));
+  const n = sum?.n ?? 0;
+  const value = Number(sum?.value ?? 0) / 100;
   return {
     orders: rows.slice(0, PAGE).map((o) => ({ ...o, storeName: names.get(o.storeId) ?? "" })),
     hasMore: rows.length > PAGE,
     page,
+    filters,
+    summary: { count: n, value, prepaid: sum?.prepaid ?? 0, cod: sum?.cod ?? 0, aov: n ? value / n : 0 },
+    products: (products as unknown as { title: string }[]).map((r) => r.title).filter(Boolean).sort((a, b) => a.localeCompare(b)),
   };
 }
 

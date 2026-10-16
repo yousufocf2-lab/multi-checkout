@@ -17,6 +17,7 @@ import {
 } from "~/lib/pricing";
 import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
+import { FONTS, FONT_SCALE, SECTION_ORDERS, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost } from "~/lib/urls.server";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -106,6 +107,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       supportPhone: store.supportPhone, codEnabled: store.codEnabled, payuReady: Boolean(store.payuKey && store.payuSalt),
       pixelId: store.metaPixelId,
     },
+    theme: resolveTheme(store.theme),
     rule,
     shipping,
     draft: session.customer ?? null,
@@ -226,15 +228,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
 const EMPTY: OrderCustomer = { firstName: "", lastName: "", phone: "", email: "", address1: "", address2: "", city: "", state: "", pincode: "" };
 const LS_KEY = "cx_customer_v1";
 
-function hexToRgb(hex: string) {
-  const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  return m ? `${parseInt(m[1], 16)} ${parseInt(m[2], 16)} ${parseInt(m[3], 16)}` : "17 24 39";
-}
-
 type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Checkout() {
-  const { store, rule, shipping, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
+  const { store, theme, rule, shipping, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const couponFetcher = useFetcher<typeof action>();
@@ -324,11 +321,14 @@ export default function Checkout() {
     setC((prev) => ({ ...prev, [k]: k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : k === "pincode" ? e.target.value.replace(/\D/g, "").slice(0, 6) : e.target.value }));
   const applyCode = (code: string) => { setCouponError(null); couponFetcher.submit({ intent: "coupon", code }, { method: "post" }); };
   const discountLabel = (r: typeof prepaid) => (r.paymentDiscountPct ? `${r.paymentDiscountPct}% off` : r.paymentDiscount > 0 ? `Up to ${r.maxPaymentPct}% off` : null);
-  const payLabel = method === "prepaid" ? `Pay ${formatINR(p.total)}` : `Place order, ${formatINR(p.total)}`;
+  const payLabel = buttonText(method === "prepaid" ? theme.prepaidButtonText : theme.codButtonText, formatINR(p.total));
+  const showUpsell = upsell.length > 0 && theme.upsellPlacement !== "hidden";
+  const upsellInCart = showUpsell && theme.upsellPlacement === "cart";
+  const upsellCard = showUpsell && !upsellInCart ? <Card title={theme.upsellTitle}><Upsell items={upsell} rule={rule} bare /></Card> : null;
 
   if (lines.length === 0) {
     return (
-      <Shell store={store}>
+      <Shell store={store} theme={theme}>
         <div className="mx-auto max-w-md px-4 py-20 text-center">
           <p className="text-xl font-semibold">Your cart is empty</p>
           <p className="mt-2 text-ink-soft">Add something you like and check out again.</p>
@@ -339,14 +339,14 @@ export default function Checkout() {
   }
 
   return (
-    <Shell store={store}>
+    <Shell store={store} theme={theme}>
       {store.pixelId && (
         <MetaPixel pixelId={store.pixelId} event="InitiateCheckout"
           data={{ currency: "INR", value: p.total / 100, num_items: itemCount, content_ids: lines.map((l) => l.variantId), content_type: "product" }}
           onceKey={`ic_${lines.map((l) => l.variantId + "x" + l.quantity).join("_")}`} />
       )}
 
-      {p.savings > 0 && (
+      {theme.showSavingsBar && p.savings > 0 && (
         <div className="bg-brand px-4 py-2 text-center text-sm font-medium text-white">
           You're saving {formatINR(p.savings)} on this order{method === "cod" && prepaid.total < cod.total ? `. Pay online to save ${formatINR(cod.total - prepaid.total)} more.` : ""}
         </div>
@@ -361,10 +361,11 @@ export default function Checkout() {
           {/* Mobile: order first so customers can edit it */}
           <Card title={`Your order (${itemCount})`} className="lg:hidden">
             <CartItems lines={lines} rule={rule} method={method} />
-            {upsell.length > 0 && <Upsell items={upsell} rule={rule} />}
+            {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
           </Card>
 
-          <Card title="Delivery details">
+          {SECTION_ORDERS.find((o) => o.id === theme.sectionOrder)!.order.map((key) => key === "address" ? (
+          <Card key={key} title="Delivery details">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Mobile number" error={errors.phone} className="col-span-2">
                 <div className="flex">
@@ -375,7 +376,7 @@ export default function Checkout() {
               </Field>
               <Field label="First name" error={errors.firstName}><input name="firstName" autoComplete="given-name" required className="input" value={c.firstName} onChange={set("firstName")} /></Field>
               <Field label="Last name"><input name="lastName" autoComplete="family-name" className="input" value={c.lastName} onChange={set("lastName")} /></Field>
-              <Field label="Email (optional, for order updates)" error={errors.email} className="col-span-2"><input name="email" type="email" autoComplete="email" className="input" value={c.email} onChange={set("email")} /></Field>
+              {theme.showEmail && <Field label="Email (optional, for order updates)" error={errors.email} className="col-span-2"><input name="email" type="email" autoComplete="email" className="input" value={c.email} onChange={set("email")} /></Field>}
               <Field label="Pincode" error={errors.pincode}>
                 <div className="relative">
                   <input name="pincode" inputMode="numeric" autoComplete="postal-code" maxLength={6} required className="input pr-9" value={c.pincode} onChange={set("pincode")} />
@@ -394,8 +395,8 @@ export default function Checkout() {
               </Field>
             </div>
           </Card>
-
-          <Card title="Offers">
+          ) : key === "offers" ? (
+          <Card key={key} title="Offers">
             {coupon ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3">
                 <div className="min-w-0">
@@ -448,7 +449,7 @@ export default function Checkout() {
                   const est = bankOfferEstimate(o, prepaid.subtotal, prepaid.total);
                   return (
                     <li key={o.id} className="flex items-start gap-3 rounded-lg bg-paper px-3.5 py-3">
-                      <span className="mt-0.5 rounded border border-rule bg-white px-1.5 py-0.5 text-[11px] font-semibold">{o.bankName}</span>
+                      <span className="mt-0.5 rounded border border-rule bg-surface px-1.5 py-0.5 text-[11px] font-semibold">{o.bankName}</span>
                       <div className="text-xs">
                         <p className="font-medium text-ink">{o.title}</p>
                         <p className="text-ink-soft">{est > 0 ? `Up to ${formatINR(est)} off this order. ` : ""}Applied automatically on the payment page.</p>
@@ -459,7 +460,9 @@ export default function Checkout() {
               </ul>
             )}
           </Card>
-
+          ) : (
+          <div key={key} className="space-y-4">
+          {theme.upsellPlacement === "before_payment" && upsellCard}
           <Card title="Payment">
             <div className="space-y-3" role="radiogroup" aria-label="Payment method">
               {store.payuReady && (
@@ -475,35 +478,38 @@ export default function Checkout() {
             </div>
             {errors.form && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{errors.form}</p>}
           </Card>
+          {theme.upsellPlacement === "after_payment" && upsellCard}
+          </div>
+          ))}
 
           <Card title="Price details" className="lg:hidden"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} /></Card>
-          <Trust phone={store.supportPhone} className="lg:hidden" />
+          <Trust phone={store.supportPhone} text={theme.showTrust ? theme.trustText : null} className="lg:hidden" />
         </div>
 
         <aside className="hidden lg:block">
           <div className="sticky top-20 space-y-4">
             <Card title={`Your order (${itemCount})`}>
               <CartItems lines={lines} rule={rule} method={method} />
-              {upsell.length > 0 && <Upsell items={upsell} rule={rule} />}
+              {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
               <div className="mt-4 border-t border-rule pt-4"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} /></div>
               <button type="submit" className="btn-primary mt-5 w-full py-3.5 text-base" disabled={placing}>
                 {placing ? <><Spinner /> {redirectingToPay ? "Opening secure payment" : "Placing your order"}</> : payLabel}
               </button>
-              <Trust phone={store.supportPhone} className="mt-4" />
+              <Trust phone={store.supportPhone} text={theme.showTrust ? theme.trustText : null} className="mt-4" />
             </Card>
           </div>
         </aside>
       </Form>
 
       {/* Mobile pay bar */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-rule bg-white px-4 pt-3 lg:hidden" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-rule bg-surface px-4 pt-3 lg:hidden" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
         <div className="flex items-center gap-3">
           <div className="min-w-0">
             <p className="num text-lg font-semibold leading-tight">{formatINR(p.total)}</p>
             {p.savings > 0 && <p className="text-xs font-medium text-good">{formatINR(p.savings)} saved</p>}
           </div>
           <button type="submit" form="checkout-form" className="btn-primary flex-1 py-3.5 text-base" disabled={placing}>
-            {placing ? <><Spinner /> {redirectingToPay ? "Opening payment" : "Placing order"}</> : method === "prepaid" ? "Pay now" : "Place order"}
+            {placing ? <><Spinner /> {redirectingToPay ? "Opening payment" : "Placing order"}</> : buttonText(method === "prepaid" ? theme.prepaidButtonText : theme.codButtonText, "").replace(/[\s,·-]+$/, "").trim() || (method === "prepaid" ? "Pay now" : "Place order")}
           </button>
         </div>
       </div>
@@ -515,15 +521,23 @@ export default function Checkout() {
 
 // ---------- pieces ----------
 
-function Shell({ store, children }: { store: LoaderData["store"]; children: React.ReactNode }) {
+function Shell({ store, theme, children }: { store: LoaderData["store"]; theme: CheckoutTheme; children: React.ReactNode }) {
+  const font = FONTS[theme.font];
   return (
-    <div style={{ ["--brand" as string]: hexToRgb(store.primaryColor) }} className="min-h-screen bg-paper pb-28 lg:pb-12">
-      <header className="sticky top-0 z-20 border-b border-rule bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+    <div style={themeVars(theme, store.primaryColor) as React.CSSProperties} className="cx min-h-screen bg-paper pb-28 text-ink lg:pb-12">
+      {font.google && <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`} />}
+      <style>{`html{font-size:${FONT_SCALE[theme.fontScale]}px;background:${theme.bgColor}}`}</style>
+      {theme.announcement && (
+        <div className="px-4 py-2 text-center text-[13px] font-medium" style={{ background: theme.announcementBg, color: theme.announcementText }}>{theme.announcement}</div>
+      )}
+      <header className="sticky top-0 z-20 border-b border-rule backdrop-blur" style={{ background: theme.headerBg, color: theme.headerText }}>
+        <div className={`mx-auto flex max-w-6xl items-center px-4 py-3 ${theme.logoAlign === "center" ? "relative justify-center" : "justify-between"}`}>
           <a href={store.storefrontUrl} className="flex min-w-0 items-center gap-2">
-            {store.logoUrl ? <img src={store.logoUrl} alt={store.name} className="h-8 w-auto max-w-[150px] object-contain" /> : <span className="truncate text-lg font-semibold">{store.name}</span>}
+            {store.logoUrl
+              ? <img src={store.logoUrl} alt={store.name} style={{ height: theme.logoHeight }} className="w-auto max-w-[200px] object-contain" />
+              : <span className="truncate font-semibold" style={{ fontSize: Math.max(16, theme.logoHeight * 0.55) }}>{store.name}</span>}
           </a>
-          <span className="flex items-center gap-1.5 text-xs font-medium text-ink-soft"><LockIcon /> Secure checkout</span>
+          <span className={`flex items-center gap-1.5 text-xs font-medium opacity-75 ${theme.logoAlign === "center" ? "absolute right-4 hidden sm:flex" : ""}`}><LockIcon /> Secure checkout</span>
         </div>
       </header>
       {children}
@@ -533,7 +547,7 @@ function Shell({ store, children }: { store: LoaderData["store"]; children: Reac
 
 function Card({ title, className = "", children }: { title: string; className?: string; children: React.ReactNode }) {
   return (
-    <section className={`rounded-xl border border-rule bg-white p-4 sm:p-5 ${className}`}>
+    <section className={`rounded-xl border border-rule bg-surface p-4 sm:p-5 ${className}`}>
       <h2 className="mb-4 text-[15px] font-semibold">{title}</h2>
       {children}
     </section>
@@ -580,10 +594,10 @@ function CartLine({ line, pct }: { line: PricedLine; pct: number }) {
   );
 }
 
-function Upsell({ items, rule }: { items: LoaderData["upsell"]; rule: StoreRule }) {
+function Upsell({ items, rule, title, bare }: { items: LoaderData["upsell"]; rule: StoreRule; title?: string; bare?: boolean }) {
   return (
-    <div className="mt-5 border-t border-rule pt-4">
-      <h3 className="mb-3 text-sm font-semibold">You may also like</h3>
+    <div className={bare ? "" : "mt-5 border-t border-rule pt-4"}>
+      {!bare && <h3 className="mb-3 text-sm font-semibold">{title}</h3>}
       <ul className="-mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:scroll-px-5 sm:px-5">
         {items.map((u) => <UpsellCard key={u.productId} item={u} rule={rule} />)}
       </ul>
@@ -687,10 +701,11 @@ function Field({ label, error, className = "", children }: { label: string; erro
   );
 }
 
-function Trust({ phone, className = "" }: { phone: string | null; className?: string }) {
+function Trust({ phone, text, className = "" }: { phone: string | null; text: string | null; className?: string }) {
+  if (!text && !phone) return null;
   return (
     <div className={`space-y-1 text-center text-xs text-ink-faint ${className}`}>
-      <p className="flex items-center justify-center gap-1.5"><LockIcon /> Payments are encrypted and processed by PayU</p>
+      {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
     </div>
   );
@@ -698,7 +713,7 @@ function Trust({ phone, className = "" }: { phone: string | null; className?: st
 
 function PaymentOverlay({ name, logo }: { name: string; logo: string | null }) {
   return (
-    <div className="fixed inset-0 z-50 flex animate-fadein flex-col items-center justify-center bg-white/95 px-6 text-center" role="status" aria-live="polite">
+    <div className="fixed inset-0 z-50 flex animate-fadein flex-col items-center justify-center bg-surface/95 px-6 text-center" role="status" aria-live="polite">
       {logo ? <img src={logo} alt={name} className="mb-6 h-9 w-auto max-w-[160px] object-contain" /> : <p className="mb-6 text-lg font-semibold">{name}</p>}
       <div className="h-1 w-48 overflow-hidden rounded-full bg-paper-sunk"><div className="h-full w-1/2 animate-bar rounded-full bg-brand" /></div>
       <p className="mt-5 font-medium">Opening secure payment</p>

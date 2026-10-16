@@ -199,3 +199,34 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     storesWithAds: adStores.length,
   };
 }
+
+/** Per-store revenue, orders and ad efficiency for the overview leaderboard. */
+export async function loadLeaderboard(storeList: Store[], range: Range) {
+  if (storeList.length < 2) return [];
+  const { from, to } = istBounds(range);
+  const rows = await db
+    .select({
+      storeId: orders.storeId,
+      n: sql<number>`count(*)::int`,
+      prepaid: sql<number>`count(*) filter (where ${orders.paymentMethod} <> 'cod')::int`,
+      revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
+    })
+    .from(orders)
+    .where(and(inArray(orders.storeId, storeList.map((s) => s.id)), inArray(orders.status, OK), gte(orders.createdAt, from), lt(orders.createdAt, to)))
+    .groupBy(orders.storeId);
+  const by = new Map(rows.map((r) => [r.storeId, r]));
+  const g = granularityFor(range);
+  const out = await Promise.all(storeList.map(async (s) => {
+    const r = by.get(s.id);
+    const revenue = Number(r?.revenue ?? 0) / 100;
+    const n = r?.n ?? 0;
+    const sp = s.metaAdAccountId && s.metaAccessToken ? await fetchSpend(s, { since: range.since, until: range.until }, g) : null;
+    const adSpend = sp && !sp.error ? sp.spend : null;
+    return {
+      id: s.id, name: s.name, revenue, orders: n,
+      prepaidShare: n ? Math.round(((r?.prepaid ?? 0) / n) * 100) : null,
+      adSpend, roas: adSpend ? revenue / adSpend : null, costPerOrder: adSpend != null && n ? adSpend / n : null,
+    };
+  }));
+  return out.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders);
+}

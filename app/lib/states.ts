@@ -47,3 +47,7 @@ export function stateCodeFromName(name: string): string | null {
   if (n.includes("daman") || n.includes("dadra")) return "DN";
   return null;
 }
+
+export function stateName(code: string) {
+  return INDIAN_STATES.find((s) => s.code === code)?.name ?? code;
+}

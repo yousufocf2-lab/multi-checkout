@@ -22,9 +22,9 @@ export function StoreFilter({ stores, selected, max, label = "Stores" }: { store
 
   return (
     <div className="relative" ref={ref}>
-      <button type="button" className="btn-secondary min-w-[180px] justify-between py-2" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
+      <button type="button" className="inline-flex h-9 min-w-[170px] items-center justify-between gap-2 rounded-lg border border-rule-strong bg-surface px-3 text-sm shadow-sm hover:border-ink/30" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
         <span className="truncate"><span className="text-ink-faint">{label}: </span>{summary}</span>
-        <span aria-hidden className="text-ink-faint">▾</span>
+        <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {open && (
         <Form method="get" preventScrollReset onSubmit={() => setOpen(false)}

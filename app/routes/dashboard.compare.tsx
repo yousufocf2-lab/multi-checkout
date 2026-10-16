@@ -4,7 +4,7 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { CompareChart, STORE_COLORS } from "~/components/charts";
 import { RangePicker } from "~/components/Overview";
 import { StoreFilter, selectedStoreIds } from "~/components/StoreFilter";
-import { EmptyState, PageHeader } from "~/components/ui";
+import { CostTag, EmptyState, PageHeader } from "~/components/ui";
 import { requireViewer, viewerStores } from "~/lib/auth.server";
 import { resolveRange } from "~/lib/dates";
 import { earliestDate, loadOverview } from "~/lib/stats.server";
@@ -71,8 +71,7 @@ export default function Compare() {
   return (
     <>
       <PageHeader title="Compare stores" description="See side by side which store is doing better. Pick up to 4."
-        actions={<StoreFilter stores={stores} selected={picked} max={MAX} label="Comparing" />} />
-      <div className="mb-5"><RangePicker current={range} /></div>
+        actions={<><RangePicker current={range} align="right" /><StoreFilter stores={stores} selected={picked} max={MAX} label="Comparing" /></>} />
 
       <section className="panel mb-5 p-5">
         <h2 className="mb-4 text-[15px] font-semibold">Revenue over time</h2>
@@ -110,6 +109,7 @@ export default function Compare() {
                       <td key={rows[i].id} className="num">
                         <span className={isBest ? "font-semibold text-ink" : ""}>{m.fmt(v)}</span>
                         {isBest && <span className="ml-1.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-good">Best</span>}
+                        {m.label === "Cost per order" && <CostTag value={v} className="ml-1.5" />}
                         {m.bar && top > 0 && v != null && (
                           <span className="mt-1.5 block h-1.5 w-full max-w-[160px] rounded-full bg-paper-sunk" aria-hidden>
                             <span className="block h-full rounded-full" style={{ width: `${(v / top) * 100}%`, background: STORE_COLORS[i] }} />

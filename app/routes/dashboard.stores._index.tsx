@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useLoaderData } from "@remix-run/react";
+import { Link, useLoaderData, useSearchParams } from "@remix-run/react";
+import { Icon } from "~/components/Icons";
 import { inArray, sql } from "drizzle-orm";
 import { EmptyState, PageHeader, StatusBadge } from "~/components/ui";
 import { db, orders, users } from "~/db.server";
@@ -33,43 +34,54 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 }
 
+const SECTIONS: Record<string, string> = {
+  discounts: "discounts", coupons: "coupons", offers: "bank offers", shipping: "shipping",
+  settings: "settings", design: "checkout design", install: "setup",
+};
+
 export default function StoresList() {
   const { stores, isAdmin } = useLoaderData<typeof loader>();
+  const [params] = useSearchParams();
+  const next = params.get("next") ?? "";
+  const picking = Boolean(SECTIONS[next]);
+  const open = (id: number) => (picking ? `/dashboard/stores/${id}/${next}` : `/dashboard/select?store=${id}&to=/dashboard`);
   return (
     <>
-      <PageHeader title="Stores" description="Every Shopify store connected to your checkout." actions={<Link to="/dashboard/stores/new" className="btn-primary">Connect a store</Link>} />
+      <PageHeader title={picking ? "Choose a store" : "All stores"}
+        description={picking ? `Pick the store whose ${SECTIONS[next]} you want to manage. You can switch any time from the store menu.` : "Every Shopify store connected to your checkout."}
+        actions={!picking && <Link to="/dashboard/stores/new" className="btn-primary"><Icon name="plus" className="h-4 w-4" />Connect a store</Link>} />
       {stores.length === 0 ? (
         <EmptyState title="No stores connected" action={<Link to="/dashboard/stores/new" className="btn-primary">Connect a store</Link>}>
           Add your first store to start taking orders.
         </EmptyState>
       ) : (
-        <div className="panel overflow-x-auto">
-          <table className="table min-w-[720px]">
-            <thead><tr><th>Store</th><th>Setup</th><th>Status</th>{isAdmin && <th>Owner</th>}<th className="text-right">Orders</th><th className="text-right">Revenue</th></tr></thead>
-            <tbody>
-              {stores.map((s) => (
-                <tr key={s.id} className="hover:bg-paper/60">
-                  <td>
-                    <Link to={`/dashboard/stores/${s.id}`} className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-rule bg-white text-sm font-semibold">
-                        {s.logoUrl ? <img src={s.logoUrl} alt="" className="h-full w-full object-contain p-1" /> : s.name.slice(0, 1)}
-                      </span>
-                      <span><span className="block font-medium">{s.name}</span><span className="block text-xs text-ink-faint">{s.domain}</span></span>
-                    </Link>
-                  </td>
-                  <td>
-                    <div className="flex flex-wrap gap-1.5 text-xs">
-                      <Check ok={s.shopifyReady} label="Shopify" /><Check ok={s.payuReady} label="PayU" /><Check ok={s.adsReady} label="Meta ads" />
-                    </div>
-                  </td>
-                  <td><StatusBadge status={s.active ? "live" : "off"} /></td>
-                  {isAdmin && <td className="text-ink-soft">{s.owner ?? "You"}</td>}
-                  <td className="num text-right">{s.orders.toLocaleString("en-IN")}</td>
-                  <td className="num text-right font-medium">₹{Math.round(s.revenue).toLocaleString("en-IN")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {stores.map((s) => (
+            <div key={s.id} className="panel flex flex-col p-4 transition hover:shadow-lift">
+              <Link to={open(s.id)} className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-rule bg-surface text-base font-semibold">
+                  {s.logoUrl ? <img src={s.logoUrl} alt="" className="h-full w-full object-contain p-1" /> : s.name.slice(0, 1)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{s.name}</span>
+                  <span className="block truncate text-xs text-ink-faint">{s.domain}</span>
+                </span>
+                <StatusBadge status={s.active ? "live" : "off"} />
+              </Link>
+              <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
+                <Check ok={s.shopifyReady} label="Shopify" /><Check ok={s.payuReady} label="PayU" /><Check ok={s.adsReady} label="Meta ads" />
+              </div>
+              <dl className="num mt-4 grid grid-cols-2 gap-3 border-t border-rule pt-3 text-sm">
+                <div><dt className="text-xs text-ink-faint">Orders</dt><dd className="font-semibold">{s.orders.toLocaleString("en-IN")}</dd></div>
+                <div><dt className="text-xs text-ink-faint">Revenue</dt><dd className="font-semibold">₹{Math.round(s.revenue).toLocaleString("en-IN")}</dd></div>
+              </dl>
+              {isAdmin && <p className="mt-2 text-xs text-ink-faint">Owner: {s.owner ?? "You"}</p>}
+              <div className="mt-4 flex gap-2">
+                <Link to={open(s.id)} className="btn-primary flex-1 py-2">{picking ? `Open ${SECTIONS[next]}` : "Open dashboard"}</Link>
+                {!picking && <Link to={`/dashboard/stores/${s.id}/settings`} className="btn-secondary py-2">Settings</Link>}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </>

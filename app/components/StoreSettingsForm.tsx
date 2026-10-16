@@ -26,7 +26,6 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
   const v = values;
   const cd = splitHours(v.codCooldownHours ?? 6);
   const [codOn, setCodOn] = useState(v.codEnabled ?? true);
-  const [color, setColor] = useState(v.primaryColor ?? "#0B5D4B");
 
   return (
     <Form method="post" className="space-y-5" noValidate>
@@ -37,7 +36,8 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
           <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="budverse" hint="Lowercase letters, numbers and dashes. Used in the theme script." required />
           <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="budverse.myshopify.com" hint="Settings → Domains in Shopify admin" required />
           <TextField label="Store website" name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in" required />
-          <TextField label="Checkout domain" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.budverse.in" wrap="sm:col-span-2"
+          <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" hint="Shown on the checkout for help." />
+          <TextField label="Checkout domain" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.budverse.in" 
             hint="Recommended. Customers and PayU see your own domain instead of the platform URL." />
         </div>
         {!isNew && <div className="mt-4 border-t border-rule pt-4"><Toggle name="active" label="Checkout is live" description="When off, the theme script stops opening this checkout." defaultChecked={v.active ?? true} /></div>}
@@ -108,21 +108,8 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         </div>
       </Section>
 
-      <Section title="Branding" description="Your checkout uses these so it looks like your store.">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <TextField label="Logo URL" name="logoUrl" defaultValue={v.logoUrl ?? ""} placeholder="https://cdn.shopify.com/…/logo.png" wrap="sm:col-span-3" hint="Shopify admin → Content → Files → copy link" />
-          <div>
-            <span className="label">Brand color</span>
-            <div className="flex items-center gap-2">
-              <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-11 w-12 cursor-pointer rounded-lg border border-rule-strong bg-white p-1" aria-label="Pick brand color" />
-              <input name="primaryColor" value={color} onChange={(e) => setColor(e.target.value)} className="input num" />
-            </div>
-          </div>
-          <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" />
-        </div>
-      </Section>
-
-      <div className="sticky bottom-0 -mx-4 flex justify-end border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-5">
+      {!isNew && <p className="text-sm text-ink-soft">Logo, brand color and the checkout's look are under <b>Settings → Checkout design</b>.</p>}
+      <div className="sticky bottom-16 -mx-4 flex justify-end border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-5 lg:bottom-0">
         <SubmitButton intent="saveStore" busyText="Saving">{submitLabel}</SubmitButton>
       </div>
     </Form>

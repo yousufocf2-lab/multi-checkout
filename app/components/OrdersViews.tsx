@@ -1,6 +1,10 @@
 import { Form, Link, useSearchParams, useSubmit } from "@remix-run/react";
 import { useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
+import { PRESETS } from "~/lib/dates";
+import { INDIAN_STATES } from "~/lib/states";
+import { Icon } from "./Icons";
+import { RangePicker } from "./Overview";
 import { EmptyState, StatusBadge, SubmitButton } from "./ui";
 
 import { formatINR as inr } from "~/lib/pricing";
@@ -13,10 +17,16 @@ export type OrderRow = {
   payuMihpayid: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
 };
 
-const FILTERS = [
-  { id: "", label: "All" }, { id: "paid", label: "Paid online" }, { id: "cod_placed", label: "COD" },
-  { id: "failed", label: "Failed payment" }, { id: "pending", label: "Awaiting payment" },
-  { id: "refunded", label: "Refunds" }, { id: "not_synced", label: "Not in Shopify" },
+const STATUS_TABS = [
+  { id: "", label: "Completed" },
+  { id: "failed", label: "Failed" },
+  { id: "pending", label: "Awaiting payment" },
+];
+const METHODS = [{ id: "", label: "All payments" }, { id: "prepaid", label: "Prepaid" }, { id: "cod", label: "COD" }];
+const TAGS = [
+  { id: "", label: "Any" }, { id: "coupon", label: "Coupon used" }, { id: "bank", label: "Bank offer used" },
+  { id: "refunded", label: "Refunded" }, { id: "not_synced", label: "Not in Shopify" },
+  { id: "paid_shipping", label: "Paid delivery" }, { id: "free_shipping", label: "Free delivery" },
 ];
 
 function useLink() {
@@ -24,6 +34,8 @@ function useLink() {
   return (patch: Record<string, string>) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
+    p.delete("page");
+    if (patch.page) p.set("page", patch.page);
     return `?${p}`;
   };
 }
@@ -36,35 +48,130 @@ export function PaymentTag({ method, status }: { method: string; status: string 
     : <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-[#1c5cab]">Paid</span>;
 }
 
-export function OrdersView({ orders, hasMore, page, showStore }: { orders: OrderRow[]; hasMore: boolean; page: number; showStore: boolean }) {
+export type OrdersFilterState = { status: string; method: string; tag: string; product: string; state: string; q: string; min: string; max: string; range: { preset: string; since: string; until: string } };
+export type OrdersSummary = { count: number; value: number; prepaid: number; cod: number; aov: number };
+
+const rupee = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
+
+export function OrdersView({ orders, hasMore, page, showStore, filters: f, summary, products, exportHref }: {
+  orders: OrderRow[]; hasMore: boolean; page: number; showStore: boolean;
+  filters: OrdersFilterState; summary: OrdersSummary; products: string[]; exportHref: string;
+}) {
   const [params] = useSearchParams();
   const submit = useSubmit();
   const link = useLink();
-  const status = params.get("status") ?? "";
+  const extra = [f.min || f.max, f.product, f.tag, f.state].filter(Boolean).length;
+  const [panel, setPanel] = useState(false);
+
+  const chips: { label: string; clear: Record<string, string> }[] = [];
+  if (f.method) chips.push({ label: f.method === "cod" ? "COD" : "Prepaid", clear: { method: "" } });
+  if (f.range.preset !== "max") chips.push({ label: f.range.preset === "custom" ? `${f.range.since} → ${f.range.until}` : PRESETS.find((p) => p.id === f.range.preset)?.label ?? "", clear: { range: "", from: "", to: "" } });
+  if (f.min || f.max) chips.push({ label: f.min && f.max ? `₹${f.min} – ₹${f.max}` : f.min ? `₹${f.min} and above` : `Up to ₹${f.max}`, clear: { min: "", max: "" } });
+  if (f.product) chips.push({ label: f.product, clear: { product: "" } });
+  if (f.tag) chips.push({ label: TAGS.find((t) => t.id === f.tag)?.label ?? f.tag, clear: { tag: "" } });
+  if (f.state) chips.push({ label: INDIAN_STATES.find((s) => s.code === f.state)?.name ?? f.state, clear: { state: "" } });
+  if (f.q) chips.push({ label: `“${f.q}”`, clear: { q: "" } });
+  const clearAll = link({ method: "", range: "", from: "", to: "", min: "", max: "", product: "", tag: "", state: "", q: "" });
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          {FILTERS.map((f) => (
-            <Link key={f.id} to={link({ status: f.id, page: "" })} preventScrollReset
-              className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-sm ${status === f.id ? "border-ink bg-ink text-white" : "border-rule-strong bg-white text-ink-soft hover:text-ink"}`}>{f.label}</Link>
+        <div className="inline-flex rounded-lg border border-rule-strong bg-surface p-0.5" role="tablist" aria-label="Order status">
+          {STATUS_TABS.map((t) => (
+            <Link key={t.id} to={link({ status: t.id })} preventScrollReset role="tab" aria-selected={f.status === t.id}
+              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${f.status === t.id ? "bg-ink font-medium text-white" : "text-ink-soft hover:text-ink"}`}>{t.label}</Link>
           ))}
         </div>
         <Form method="get" className="w-full sm:w-72" onChange={(e) => submit(e.currentTarget, { replace: true, preventScrollReset: true })}>
           {[...params.entries()].filter(([k]) => !["q", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
-          <input type="search" name="q" defaultValue={params.get("q") ?? ""} placeholder="Search name, phone or order" className="input py-2" aria-label="Search orders" />
+          <input type="search" name="q" defaultValue={f.q} placeholder="Search name, phone, city or order" className="input py-2" aria-label="Search orders" />
         </Form>
       </div>
 
-      {orders.length === 0 ? (
-        <EmptyState title="No orders found">{params.get("q") || status ? "Try a different filter or search." : "Orders placed on your checkout show up here."}</EmptyState>
-      ) : (
-        <div className="panel overflow-x-auto">
-          <table className="table min-w-[880px]">
-            <thead><tr><th>Order</th>{showStore && <th>Store</th>}<th>Customer</th><th>Payment</th><th className="text-right">Amount</th><th>Shopify</th><th /></tr></thead>
-            <tbody>{orders.map((o) => <OrderRowView key={o.id} o={o} showStore={showStore} />)}</tbody>
-          </table>
+      <div className="flex flex-wrap items-center gap-2">
+        <RangePicker current={f.range} />
+        <div className="inline-flex h-9 items-center rounded-lg border border-rule-strong bg-surface p-0.5">
+          {METHODS.map((m) => (
+            <Link key={m.id} to={link({ method: m.id })} preventScrollReset
+              className={`rounded-md px-2.5 py-1 text-sm ${f.method === m.id ? "bg-paper-sunk font-medium text-ink" : "text-ink-soft hover:text-ink"}`}>{m.label}</Link>
+          ))}
         </div>
+        <button type="button" onClick={() => setPanel((o) => !o)} aria-expanded={panel}
+          className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm ${panel || extra ? "border-ink bg-ink text-white" : "border-rule-strong bg-surface text-ink-soft hover:text-ink"}`}>
+          <Icon name="filter" className="h-4 w-4" />More filters{extra > 0 && <span className="num rounded bg-white/20 px-1.5 text-xs">{extra}</span>}
+        </button>
+        <a href={exportHref} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-surface px-3 text-sm text-ink-soft hover:text-ink sm:ml-auto">
+          <Icon name="download" className="h-4 w-4" />Export CSV
+        </a>
+      </div>
+
+      {panel && (
+        <Form method="get" preventScrollReset className="panel grid animate-fadein gap-4 p-4 sm:grid-cols-2 lg:grid-cols-5" onSubmit={() => setPanel(false)}>
+          {[...params.entries()].filter(([k]) => !["min", "max", "product", "tag", "state", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
+          <div className="sm:col-span-2 lg:col-span-1">
+            <span className="label">Order amount (₹)</span>
+            <div className="flex items-center gap-2">
+              <input name="min" inputMode="numeric" defaultValue={f.min} placeholder="From" className="input num" aria-label="Minimum amount" />
+              <span className="text-ink-faint">–</span>
+              <input name="max" inputMode="numeric" defaultValue={f.max} placeholder="To" className="input num" aria-label="Maximum amount" />
+            </div>
+          </div>
+          <label className="block lg:col-span-2">
+            <span className="label">Product</span>
+            <select name="product" defaultValue={f.product} className="input">
+              <option value="">Any product</option>
+              {products.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="label">Tag</span>
+            <select name="tag" defaultValue={f.tag} className="input">{TAGS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}</select>
+          </label>
+          <label className="block">
+            <span className="label">State</span>
+            <select name="state" defaultValue={f.state} className="input">
+              <option value="">All states</option>
+              {INDIAN_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+            </select>
+          </label>
+          <div className="flex items-center justify-end gap-2 sm:col-span-2 lg:col-span-5">
+            <Link to={link({ min: "", max: "", product: "", tag: "", state: "" })} preventScrollReset className="btn-quiet" onClick={() => setPanel(false)}>Reset</Link>
+            <button className="btn-primary">Apply filters</button>
+          </div>
+        </Form>
+      )}
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chips.map((c) => (
+            <Link key={c.label} to={link(c.clear)} preventScrollReset className="inline-flex max-w-[260px] items-center gap-1 rounded-full border border-rule-strong bg-surface py-0.5 pl-2.5 pr-1.5 text-xs text-ink hover:border-ink/40">
+              <span className="truncate">{c.label}</span><Icon name="close" className="h-3.5 w-3.5 text-ink-faint" /><span className="sr-only">Remove filter</span>
+            </Link>
+          ))}
+          <Link to={clearAll} preventScrollReset className="px-1.5 text-xs font-medium text-pine hover:underline">Clear all</Link>
+        </div>
+      )}
+
+      <div className="num flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-soft">
+        <span><b className="text-ink">{summary.count.toLocaleString("en-IN")}</b> orders</span>
+        <span><b className="text-ink">{rupee(summary.value)}</b> total</span>
+        <span>Prepaid <b className="text-ink">{summary.prepaid.toLocaleString("en-IN")}</b></span>
+        <span>COD <b className="text-ink">{summary.cod.toLocaleString("en-IN")}</b></span>
+        {summary.count > 0 && <span>Avg. <b className="text-ink">{rupee(summary.aov)}</b></span>}
+      </div>
+
+      {orders.length === 0 ? (
+        <EmptyState title="No orders found">{chips.length || f.status ? "Try removing a filter." : "Orders placed on your checkout show up here."}</EmptyState>
+      ) : (
+        <>
+          <ul className="space-y-2.5 sm:hidden">{orders.map((o) => <OrderCard key={o.id} o={o} showStore={showStore} />)}</ul>
+          <div className="panel hidden overflow-x-auto sm:block">
+            <table className="table min-w-[880px]">
+              <thead><tr><th>Order</th>{showStore && <th>Store</th>}<th>Customer</th><th>Payment</th><th className="text-right">Amount</th><th>Shopify</th><th /></tr></thead>
+              <tbody>{orders.map((o) => <OrderRowView key={o.id} o={o} showStore={showStore} />)}</tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {(page > 1 || hasMore) && (
@@ -74,6 +181,34 @@ export function OrdersView({ orders, hasMore, page, showStore }: { orders: Order
         </div>
       )}
     </div>
+  );
+}
+
+const itemsLabel = (o: OrderRow) => { const n = o.items.reduce((a, l) => a + l.quantity, 0); return `${n} item${n === 1 ? "" : "s"}`; };
+
+function RefundTag({ o }: { o: OrderRow }) {
+  if (!o.refundStatus) return null;
+  return <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-bad">{o.refundStatus === "full" ? "Refunded" : o.refundStatus === "partial" ? "Part refunded" : "Refund pending"}</span>;
+}
+
+function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
+  const [open, setOpen] = useState(false);
+  const paid = o.amountPaid ?? o.total;
+  return (
+    <li className="panel overflow-hidden">
+      <button type="button" className="flex w-full items-start gap-3 p-3.5 text-left" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-1.5"><span className="num text-sm font-semibold">{o.shopifyOrderName ?? o.id}</span><PaymentTag method={o.paymentMethod} status={o.status} /><RefundTag o={o} /></p>
+          <p className="mt-1 truncate text-sm">{o.customer.firstName} {o.customer.lastName}<span className="text-ink-faint">, {o.customer.city}</span></p>
+          <p className="truncate text-xs text-ink-faint">{showStore && `${o.storeName} · `}{when(o.createdAt)}</p>
+        </div>
+        <div className="text-right">
+          <p className="num font-semibold">{inr(paid - o.refunded)}</p>
+          <p className="text-xs text-ink-faint">{itemsLabel(o)}</p>
+        </div>
+      </button>
+      {open && <div className="border-t border-rule bg-paper/60 px-3.5 py-3"><OrderDetails o={o} /></div>}
+    </li>
   );
 }
 
@@ -93,15 +228,10 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
           <p>{o.customer.firstName} {o.customer.lastName}</p>
           <p className="num text-xs text-ink-faint">{o.customer.phone}, {o.customer.city}</p>
         </td>
-        <td>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <PaymentTag method={o.paymentMethod} status={o.status} />
-            {o.refundStatus && <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-bad">{o.refundStatus === "full" ? "Refunded" : o.refundStatus === "partial" ? "Part refunded" : "Refund pending"}</span>}
-          </div>
-        </td>
+        <td><div className="flex flex-wrap items-center gap-1.5"><PaymentTag method={o.paymentMethod} status={o.status} /><RefundTag o={o} /></div></td>
         <td className="num text-right">
           <p className="font-medium">{inr(paid - o.refunded)}</p>
-          <p className="text-xs text-ink-faint">{(() => { const n = o.items.reduce((a, l) => a + l.quantity, 0); return `${n} item${n === 1 ? "" : "s"}`; })()}</p>
+          <p className="text-xs text-ink-faint">{itemsLabel(o)}</p>
         </td>
         <td className="text-xs">
           {o.shopifyOrderName ? <span className="text-good">✓ {o.shopifyOrderName}</span>
@@ -111,45 +241,52 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
       </tr>
       {open && (
         <tr className="bg-paper/60">
-          <td colSpan={showStore ? 7 : 6}>
-            <div className="grid gap-5 py-2 sm:grid-cols-3">
-              <div>
-                <p className="mb-2 text-xs font-medium text-ink-soft">Items</p>
-                <ul className="space-y-1.5 text-sm">
-                  {o.items.map((l, i) => <li key={i} className="flex justify-between gap-3"><span className="min-w-0 truncate">{l.title}{l.variantTitle ? `, ${l.variantTitle}` : ""} ×{l.quantity}</span><span className="num">{inr(l.pricePaise * l.quantity)}</span></li>)}
-                </ul>
-              </div>
-              <dl className="num space-y-1 text-sm">
-                <p className="mb-2 text-xs font-medium text-ink-soft">Payment</p>
-                <div className="flex justify-between"><dt className="text-ink-soft">Items</dt><dd>{inr(o.subtotal)}</dd></div>
-                {o.paymentDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "cod" ? "COD" : "Online"} discount</dt><dd>−{inr(o.paymentDiscount)}</dd></div>}
-                {o.couponCode && <div className="flex justify-between"><dt className="text-ink-soft">{o.couponCode}</dt><dd>−{inr(o.couponDiscount)}</dd></div>}
-                {o.bankDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Bank offer</dt><dd>−{inr(o.bankDiscount)}</dd></div>}
-                <div className="flex justify-between"><dt className="text-ink-soft">{o.shippingTitle ?? "Delivery"}</dt><dd>{o.shipping ? inr(o.shipping) : "Free"}</dd></div>
-                <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>{o.paymentMethod === "cod" ? "To collect" : "Paid"}</dt><dd>{inr(paid)}</dd></div>
-                {o.refunded > 0 && <div className="flex justify-between text-bad"><dt>Refunded</dt><dd>−{inr(o.refunded)}</dd></div>}
-              </dl>
-              <div className="space-y-2 text-sm">
-                <p className="text-xs font-medium text-ink-soft">Delivery address</p>
-                <p className="text-ink-soft">{o.customer.address1}{o.customer.address2 ? `, ${o.customer.address2}` : ""}, {o.customer.city}, {o.customer.state} {o.customer.pincode}</p>
-                {o.payuMihpayid && <p className="text-xs text-ink-faint">PayU ID {o.payuMihpayid}, checkout ID {o.id}</p>}
-                {o.error && <p className="break-words text-xs text-bad">{o.error}</p>}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {okStatus && !o.shopifyOrderId && (
-                    <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
-                      <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to Shopify</SubmitButton></Form>
-                  )}
-                  {o.paymentMethod === "prepaid" && (
-                    <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
-                      <SubmitButton intent="verify" className="btn-secondary px-3 py-1.5 text-xs" busyText="Checking">Check payment with PayU</SubmitButton></Form>
-                  )}
-                </div>
-              </div>
-            </div>
-          </td>
+          <td colSpan={showStore ? 7 : 6}><div className="py-2"><OrderDetails o={o} /></div></td>
         </tr>
       )}
     </>
+  );
+}
+
+function OrderDetails({ o }: { o: OrderRow }) {
+  const paid = o.amountPaid ?? o.total;
+  const okStatus = o.status === "paid" || o.status === "cod_placed";
+  return (
+    <div className="grid gap-5 sm:grid-cols-3">
+      <div>
+        <p className="mb-2 text-xs font-medium text-ink-soft">Items</p>
+        <ul className="space-y-1.5 text-sm">
+          {o.items.map((l, i) => <li key={i} className="flex justify-between gap-3"><span className="min-w-0 truncate">{l.title}{l.variantTitle ? `, ${l.variantTitle}` : ""} ×{l.quantity}</span><span className="num">{inr(l.pricePaise * l.quantity)}</span></li>)}
+        </ul>
+      </div>
+      <dl className="num space-y-1 text-sm">
+        <p className="mb-2 text-xs font-medium text-ink-soft">Payment</p>
+        <div className="flex justify-between"><dt className="text-ink-soft">Items</dt><dd>{inr(o.subtotal)}</dd></div>
+        {o.paymentDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "cod" ? "COD" : "Online"} discount</dt><dd>−{inr(o.paymentDiscount)}</dd></div>}
+        {o.couponCode && <div className="flex justify-between"><dt className="text-ink-soft">{o.couponCode}</dt><dd>−{inr(o.couponDiscount)}</dd></div>}
+        {o.bankDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Bank offer</dt><dd>−{inr(o.bankDiscount)}</dd></div>}
+        <div className="flex justify-between"><dt className="text-ink-soft">{o.shippingTitle ?? "Delivery"}</dt><dd>{o.shipping ? inr(o.shipping) : "Free"}</dd></div>
+        <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>{o.paymentMethod === "cod" ? "To collect" : "Paid"}</dt><dd>{inr(paid)}</dd></div>
+        {o.refunded > 0 && <div className="flex justify-between text-bad"><dt>Refunded</dt><dd>−{inr(o.refunded)}</dd></div>}
+      </dl>
+      <div className="space-y-2 text-sm">
+        <p className="text-xs font-medium text-ink-soft">Delivery address</p>
+        <p className="text-ink-soft">{o.customer.firstName} {o.customer.lastName}, <a className="num underline" href={`tel:+91${o.customer.phone}`}>{o.customer.phone}</a></p>
+        <p className="text-ink-soft">{o.customer.address1}{o.customer.address2 ? `, ${o.customer.address2}` : ""}, {o.customer.city}, {o.customer.state} {o.customer.pincode}</p>
+        {o.payuMihpayid && <p className="text-xs text-ink-faint">PayU ID {o.payuMihpayid}, checkout ID {o.id}</p>}
+        {o.error && <p className="break-words text-xs text-bad">{o.error}</p>}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {okStatus && !o.shopifyOrderId && (
+            <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
+              <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to Shopify</SubmitButton></Form>
+          )}
+          {o.paymentMethod === "prepaid" && (
+            <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
+              <SubmitButton intent="verify" className="btn-secondary px-3 py-1.5 text-xs" busyText="Checking">Check payment with PayU</SubmitButton></Form>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

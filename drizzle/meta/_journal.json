@@ -36,6 +36,13 @@
       "when": 1792064990019,
       "tag": "0004_shipping_abandoned_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792158543301,
+      "tag": "0005_recharges_theme",
+      "breakpoints": true
     }
   ]
 }

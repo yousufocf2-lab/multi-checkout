@@ -1,23 +1,15 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import { OverviewView, RangePicker } from "~/components/Overview";
+import { redirect } from "@remix-run/node";
 import { requireStore, requireViewer } from "~/lib/auth.server";
-import { resolveRange } from "~/lib/dates";
-import { earliestDate, loadOverview } from "~/lib/stats.server";
+import { selectCookie } from "~/lib/selection.server";
 
+/** A store's overview is the main Overview focused on that store. */
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
-  const range = resolveRange(new URL(request.url).searchParams, await earliestDate([store]));
-  return json({ overview: await loadOverview([store], range), storeId: store.id });
+  const search = new URL(request.url).search;
+  return redirect(`/dashboard${search}`, { headers: { "Set-Cookie": await selectCookie(store.id) } });
 }
 
-export default function StoreOverview() {
-  const { overview, storeId } = useLoaderData<typeof loader>();
-  return (
-    <>
-      <div className="mb-5"><RangePicker current={overview.range} /></div>
-      <OverviewView data={overview} showStoreColumn={false} adsHref={`/dashboard/stores/${storeId}/settings#meta`} />
-    </>
-  );
+export default function StoreIndex() {
+  return null;
 }
