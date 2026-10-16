@@ -12,7 +12,7 @@ import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } fro
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
 import {
-  bankOfferEstimate, computePricing, formatINR, linePct,
+  bankOfferEstimate, computePricing, formatINR, lineOff,
   type BankOfferRule, type CouponRule, type PaymentMethod, type PricedLine, type StoreRule,
 } from "~/lib/pricing";
 import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
@@ -46,7 +46,7 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
   return {
     prepaidDiscountPct: store.prepaidDiscountPct,
     codDiscountPct: store.codDiscountPct,
-    rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), prepaidPct: r.prepaidPct, codPct: r.codPct })),
+    rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct })),
   };
 }
 
@@ -320,7 +320,7 @@ export default function Checkout() {
   const set = (k: keyof OrderCustomer) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setC((prev) => ({ ...prev, [k]: k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : k === "pincode" ? e.target.value.replace(/\D/g, "").slice(0, 6) : e.target.value }));
   const applyCode = (code: string) => { setCouponError(null); couponFetcher.submit({ intent: "coupon", code }, { method: "post" }); };
-  const discountLabel = (r: typeof prepaid) => (r.paymentDiscountPct ? `${r.paymentDiscountPct}% off` : r.paymentDiscount > 0 ? `Up to ${r.maxPaymentPct}% off` : null);
+  const discountLabel = (r: typeof prepaid) => (r.paymentDiscountPct ? `${r.paymentDiscountPct}% off` : r.paymentDiscount > 0 ? `Save ${formatINR(r.paymentDiscount)}` : null);
   const payLabel = buttonText(method === "prepaid" ? theme.prepaidButtonText : theme.codButtonText, formatINR(p.total));
   const showUpsell = upsell.length > 0 && theme.upsellPlacement !== "hidden";
   const upsellInCart = showUpsell && theme.upsellPlacement === "cart";
@@ -557,12 +557,12 @@ function Card({ title, className = "", children }: { title: string; className?: 
 function CartItems({ lines, rule, method }: { lines: PricedLine[]; rule: StoreRule; method: PaymentMethod }) {
   return (
     <ul className="space-y-4">
-      {lines.map((l) => <CartLine key={l.variantId} line={l} pct={linePct(l, rule, method)} />)}
+      {lines.map((l) => <CartLine key={l.variantId} line={l} off={lineOff(l, rule, method).label} />)}
     </ul>
   );
 }
 
-function CartLine({ line, pct }: { line: PricedLine; pct: number }) {
+function CartLine({ line, off }: { line: PricedLine; off: string | null }) {
   const f = useFetcher();
   const busy = f.state !== "idle";
   const pending = f.formData?.get("quantity");
@@ -588,7 +588,7 @@ function CartLine({ line, pct }: { line: PricedLine; pct: number }) {
       <div className="text-right">
         <p className="num text-sm font-semibold">{formatINR(line.pricePaise * line.quantity)}</p>
         {line.comparePaise && <s className="num text-xs text-ink-faint">{formatINR(line.comparePaise * line.quantity)}</s>}
-        {pct > 0 && <p className="text-[11px] font-medium text-good">{pct}% off</p>}
+        {off && <p className="text-[11px] font-medium text-good">{off}</p>}
       </div>
     </li>
   );
@@ -610,8 +610,8 @@ function UpsellCard({ item, rule }: { item: LoaderData["upsell"][number]; rule: 
   const [variantId, setVariantId] = useState(item.variants[0]?.id ?? "");
   const v = item.variants.find((x) => x.id === variantId) ?? item.variants[0];
   if (!v) return null;
-  const pct = linePct({ variantId: v.id, productId: item.productId, title: "", variantTitle: null, image: null, quantity: 1, pricePaise: v.pricePaise, comparePaise: null }, rule, "prepaid");
-  const online = Math.round(v.pricePaise * (1 - pct / 100));
+  const pct = lineOff({ productId: item.productId, pricePaise: v.pricePaise }, rule, "prepaid").unit;
+  const online = v.pricePaise - pct;
   const busy = f.state !== "idle";
   return (
     <li className="w-[150px] shrink-0 snap-start">

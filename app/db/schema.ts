@@ -107,7 +107,8 @@ export const discountRules = pgTable("discount_rules", {
     .references(() => stores.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   products: jsonb("products").$type<ProductRef[]>().notNull(),
-  prepaidPct: integer("prepaid_pct").notNull(),
+  type: text("type").notNull().default("percent"), // percent | flat (₹ off each item)
+  prepaidPct: integer("prepaid_pct").notNull(), // % off, or rupees off per item when type = flat
   codPct: integer("cod_pct").notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

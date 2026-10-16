@@ -1,0 +1,1 @@
+ALTER TABLE "discount_rules" ADD COLUMN "type" text DEFAULT 'percent' NOT NULL;

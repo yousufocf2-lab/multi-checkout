@@ -15,7 +15,8 @@ export interface PricedLine {
 
 export interface ProductRule {
   productIds: string[];
-  prepaidPct: number;
+  type?: "percent" | "flat"; // flat = rupees off each item
+  prepaidPct: number; // % off, or ₹ per item when flat
   codPct: number;
 }
 
@@ -66,11 +67,25 @@ const MIN_TOTAL = 100; // ₹1
 const clampPct = (p: number) => Math.max(0, Math.min(100, p));
 const lineTotal = (l: PricedLine) => l.pricePaise * l.quantity;
 
-/** Payment discount % for one line: first matching product rule, else store default. */
-export function linePct(line: PricedLine, store: StoreRule, method: PaymentMethod) {
+/**
+ * Payment discount for one line: first matching product rule, else the store-wide %.
+ * Returns paise off per item, the effective % and a label like "70% off" or "₹100 off".
+ */
+export function lineOff(line: Pick<PricedLine, "productId" | "pricePaise">, store: StoreRule, method: PaymentMethod) {
   const rule = store.rules?.find((r) => r.productIds.includes(line.productId));
-  const pct = rule ? (method === "prepaid" ? rule.prepaidPct : rule.codPct) : method === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
-  return clampPct(pct);
+  const value = rule ? (method === "prepaid" ? rule.prepaidPct : rule.codPct) : method === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
+  if (rule?.type === "flat") {
+    const unit = Math.max(0, Math.min(line.pricePaise, Math.round(value * 100)));
+    const pct = line.pricePaise ? Math.round((unit / line.pricePaise) * 100) : 0;
+    return { unit, pct, flat: true, label: unit > 0 ? `${formatINR(unit)} off` : null };
+  }
+  const pct = clampPct(value);
+  return { unit: Math.round((line.pricePaise * pct) / 100), pct, flat: false, label: pct > 0 ? `${pct}% off` : null };
+}
+
+/** Effective payment discount % for one line (kept for older callers). */
+export function linePct(line: PricedLine, store: StoreRule, method: PaymentMethod) {
+  return lineOff(line, store, method).pct;
 }
 
 export function computePricing(
@@ -83,13 +98,15 @@ export function computePricing(
   const mrpTotal = lines.reduce((s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity, 0);
 
   const perLine = lines.map((l) => {
-    const pct = linePct(l, store, method);
-    return { line: l, pct, discount: Math.round((lineTotal(l) * pct) / 100) };
+    const off = lineOff(l, store, method);
+    const discount = off.flat ? off.unit * l.quantity : Math.round((lineTotal(l) * off.pct) / 100);
+    return { line: l, pct: off.pct, flat: off.flat, discount };
   });
   let paymentDiscount = perLine.reduce((s, x) => s + x.discount, 0);
   const pcts = [...new Set(perLine.map((x) => x.pct))];
   const maxPaymentPct = Math.max(0, ...pcts);
-  let paymentDiscountPct: number | null = pcts.length === 1 ? pcts[0] : null;
+  // A single "70% off" label only when every line has the same percentage discount
+  let paymentDiscountPct: number | null = pcts.length === 1 && !perLine.some((x) => x.flat) ? pcts[0] : null;
 
   let couponDiscount = 0;
   let couponApplied = false;

@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData } from "@remix-run/react";
+import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import { and, desc, eq } from "drizzle-orm";
 import { ProductPicker, parsePicked } from "~/components/ProductPicker";
 import { Notice, RowAction, Section, StatusBadge, SubmitButton, TextField, Toggle } from "~/components/ui";
@@ -17,6 +18,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 const pct = (v: FormDataEntryValue | null) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+const rupees = (v: FormDataEntryValue | null) => Math.max(0, Math.min(1_000_000, Math.round(Number(v) || 0)));
+
+/** Reads name, type, online/COD values and products from an add or edit form. */
+function readRule(fd: FormData) {
+  const products = parsePicked(fd.get("products"));
+  const type = fd.get("type") === "flat" ? "flat" : "percent";
+  const val = type === "flat" ? rupees : pct;
+  const name = String(fd.get("name") ?? "").trim() || `${products.length} product${products.length === 1 ? "" : "s"}`;
+  return { products, type, name, prepaidPct: val(fd.get("prepaid")), codPct: val(fd.get("cod")) };
+}
 
 export async function action({ request, params }: ActionFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
@@ -29,11 +40,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       await db.update(stores).set({ prepaidDiscountPct: pct(fd.get("prepaid")), codDiscountPct: pct(fd.get("cod")) }).where(eq(stores.id, store.id));
       return json({ ok: "Store-wide discount saved", errors: null });
     case "addRule": {
-      const products = parsePicked(fd.get("products"));
-      const name = String(fd.get("name") ?? "").trim() || `${products.length} product${products.length === 1 ? "" : "s"}`;
-      if (!products.length) return json({ ok: null, errors: { rule: "Pick at least one product" } }, { status: 400 });
-      await db.insert(discountRules).values({ storeId: store.id, name, products, prepaidPct: pct(fd.get("prepaid")), codPct: pct(fd.get("cod")) });
+      const r = readRule(fd);
+      if (!r.products.length) return json({ ok: null, errors: { rule: "Pick at least one product" } }, { status: 400 });
+      await db.insert(discountRules).values({ storeId: store.id, ...r });
       return json({ ok: "Product discount added", errors: null });
+    }
+    case "updateRule": {
+      const r = readRule(fd);
+      if (!r.products.length) return json({ ok: null, errors: { [`edit${id}`]: "Pick at least one product" } }, { status: 400 });
+      await db.update(discountRules).set(r).where(own);
+      return json({ ok: `“${r.name}” updated`, errors: null });
     }
     case "toggleRule": {
       const [r] = await db.select().from(discountRules).where(own);
@@ -67,18 +83,10 @@ export default function Discounts() {
         </Form>
       </Section>
 
-      <Section title="Product discounts" description="Give selected products their own online and COD discount. If a product is in more than one, the newest one wins.">
+      <Section title="Product discounts" description="Give selected products their own online and COD discount, as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins.">
         <Form method="post" className="space-y-4 rounded-lg border border-dashed border-rule-strong p-4" key={rules.length}>
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_120px_120px]">
-            <TextField label="Name (for you)" name="name" placeholder="Festive smartwatch offer" />
-            <TextField label="Pay online" name="prepaid" type="number" min={0} max={100} defaultValue={store.prepaid} hint="% off" />
-            <TextField label="COD" name="cod" type="number" min={0} max={100} defaultValue={store.cod} hint="% off" />
-          </div>
-          <div>
-            <span className="label">Products</span>
-            <ProductPicker storeId={store.id} name="products" />
-            {errors.rule && <span className="error-text">{errors.rule}</span>}
-          </div>
+          <RuleFields storeId={store.id} defaults={{ type: "percent", prepaid: store.prepaid, cod: store.cod }} />
+          {errors.rule && <span className="error-text">{errors.rule}</span>}
           <SubmitButton intent="addRule" busyText="Adding">Add product discount</SubmitButton>
         </Form>
 
@@ -87,19 +95,7 @@ export default function Discounts() {
             <p className="text-sm text-ink-faint">No product discounts yet. Every product uses the store-wide discount.</p>
           ) : (
             <ul className="divide-y divide-rule rounded-lg border border-rule">
-              {rules.map((r) => (
-                <li key={r.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 text-sm font-medium">{r.name} <StatusBadge status={r.active ? "live" : "off"} /></p>
-                    <p className="mt-0.5 truncate text-xs text-ink-faint">{r.products.map((p) => p.title).join(", ")}</p>
-                  </div>
-                  <p className="num text-sm"><b>{r.prepaidPct}%</b> online <span className="text-ink-faint">/</span> <b>{r.codPct}%</b> COD</p>
-                  <div className="flex">
-                    <RowAction intent="toggleRule" id={r.id} label={r.active ? "Pause" : "Resume"} />
-                    <RowAction intent="deleteRule" id={r.id} label="Delete" danger confirm={`Delete "${r.name}"?`} />
-                  </div>
-                </li>
-              ))}
+              {rules.map((r) => <RuleRow key={r.id} r={r} storeId={store.id} error={errors[`edit${r.id}`]} />)}
             </ul>
           )}
         </div>
@@ -117,5 +113,79 @@ export default function Discounts() {
         </Form>
       </Section>
     </div>
+  );
+}
+
+type Rule = ReturnType<typeof useLoaderData<typeof loader>>["rules"][number];
+
+const fmtValue = (type: string, v: number) => (type === "flat" ? `₹${v.toLocaleString("en-IN")}` : `${v}%`);
+
+function RuleRow({ r, storeId, error }: { r: Rule; storeId: number; error?: string }) {
+  const [editing, setEditing] = useState(false);
+  const nav = useNavigation();
+  const saving = nav.state !== "idle" && nav.formData?.get("intent") === "updateRule" && nav.formData?.get("id") === String(r.id);
+  // Close the editor once the save finishes without an error
+  useEffect(() => { if (!saving && !error) setEditing(false); }, [saving]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (error) setEditing(true); }, [error]);
+
+  return (
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            {r.name} <StatusBadge status={r.active ? "live" : "off"} />
+            <span className="rounded bg-paper-sunk px-1.5 py-px text-[11px] font-medium text-ink-soft">{r.type === "flat" ? "Flat ₹ off" : "% off"}</span>
+          </p>
+          <p className="mt-0.5 truncate text-xs text-ink-faint">{r.products.map((p) => p.title).join(", ")}</p>
+        </div>
+        <p className="num text-sm"><b>{fmtValue(r.type, r.prepaidPct)}</b> online <span className="text-ink-faint">/</span> <b>{fmtValue(r.type, r.codPct)}</b> COD{r.type === "flat" && <span className="text-ink-faint"> per item</span>}</p>
+        <div className="flex">
+          <button type="button" className="btn-quiet" onClick={() => setEditing((e) => !e)} aria-expanded={editing}>{editing ? "Cancel" : "Edit"}</button>
+          <RowAction intent="toggleRule" id={r.id} label={r.active ? "Pause" : "Resume"} />
+          <RowAction intent="deleteRule" id={r.id} label="Delete" danger confirm={`Delete "${r.name}"?`} />
+        </div>
+      </div>
+      {editing && (
+        <Form method="post" className="mt-3 space-y-4 rounded-lg border border-rule bg-paper/60 p-4">
+          <input type="hidden" name="id" value={r.id} />
+          <RuleFields storeId={storeId} defaults={{ name: r.name, type: r.type, prepaid: r.prepaidPct, cod: r.codPct, products: r.products }} />
+          {error && <span className="error-text">{error}</span>}
+          <div className="flex gap-2">
+            <SubmitButton intent="updateRule" busyText="Saving">Save changes</SubmitButton>
+            <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </Form>
+      )}
+    </li>
+  );
+}
+
+function RuleFields({ storeId, defaults }: { storeId: number; defaults: { name?: string; type: string; prepaid: number; cod: number; products?: Rule["products"] } }) {
+  const [type, setType] = useState(defaults.type === "flat" ? "flat" : "percent");
+  const flat = type === "flat";
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px_120px_120px]">
+        <TextField label="Name (for you)" name="name" defaultValue={defaults.name} placeholder="Festive smartwatch offer" />
+        <div>
+          <span className="label">Discount type</span>
+          <input type="hidden" name="type" value={type} />
+          <div className="flex rounded-lg border border-rule-strong bg-surface p-0.5" role="radiogroup" aria-label="Discount type">
+            {[["percent", "% off"], ["flat", "Flat ₹ off"]].map(([v, l]) => (
+              <button key={v} type="button" role="radio" aria-checked={type === v} onClick={() => setType(v)}
+                className={`flex-1 rounded-md px-2 py-1.5 text-sm ${type === v ? "bg-ink font-medium text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <TextField key={`p${type}`} label="Pay online" name="prepaid" type="number" min={0} max={flat ? undefined : 100}
+          defaultValue={flat === (defaults.type === "flat") ? defaults.prepaid : flat ? 100 : defaults.prepaid} hint={flat ? "₹ off each item" : "% off"} />
+        <TextField key={`c${type}`} label="COD" name="cod" type="number" min={0} max={flat ? undefined : 100}
+          defaultValue={flat === (defaults.type === "flat") ? defaults.cod : flat ? 0 : defaults.cod} hint={flat ? "₹ off each item" : "% off"} />
+      </div>
+      <div>
+        <span className="label">Products</span>
+        <ProductPicker storeId={storeId} name="products" initial={defaults.products ?? []} />
+      </div>
+    </>
   );
 }

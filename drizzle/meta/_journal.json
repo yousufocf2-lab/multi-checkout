@@ -43,6 +43,13 @@
       "when": 1792158543301,
       "tag": "0005_recharges_theme",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792177264743,
+      "tag": "0006_discount_flat",
+      "breakpoints": true
     }
   ]
 }
