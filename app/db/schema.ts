@@ -99,6 +99,26 @@ export const coupons = pgTable(
   (t) => [uniqueIndex("coupons_store_code_idx").on(t.storeId, t.code)],
 );
 
+/**
+ * Free gift offers: "Buy 1 get 1", "Buy 2 get 1"…
+ * When the cart has at least minQty of the qualifying products (or of anything, buyMode "any"),
+ * each free product is added at ₹0 (freeQty each). With repeat on, buy 4 of a "buy 2 get 1" gets 2.
+ */
+export const freeOffers = pgTable("free_offers", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  buyMode: text("buy_mode").notNull().default("products"), // products | any
+  buyProducts: jsonb("buy_products").$type<ProductRef[]>().notNull().default([]),
+  minQty: integer("min_qty").notNull().default(1),
+  freeProducts: jsonb("free_products").$type<ProductRef[]>().notNull(),
+  freeQty: integer("free_qty").notNull().default(1),
+  repeat: boolean("repeat").notNull().default(false),
+  paymentRestriction: text("payment_restriction").notNull().default("any"), // any | prepaid | cod
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Product-level payment discounts. Lines not matched by a rule use the store default. */
 export const discountRules = pgTable("discount_rules", {
   id: serial("id").primaryKey(),
@@ -225,6 +245,8 @@ export type OrderLine = {
   quantity: number;
   pricePaise: number;
   comparePaise: number | null;
+  free?: boolean; // free gift from an offer (price 0)
+  offer?: string; // offer name, for free gifts
 };
 
 /** Orders placed through this checkout. Money fields are paise. */
@@ -299,6 +321,7 @@ export const metaRecharges = pgTable(
 
 export type Store = typeof stores.$inferSelect;
 export type MetaRecharge = typeof metaRecharges.$inferSelect;
+export type FreeOffer = typeof freeOffers.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type DiscountRule = typeof discountRules.$inferSelect;
 export type ShippingRate = typeof shippingRates.$inferSelect;

@@ -226,13 +226,15 @@ export async function createShopifyOrder(store: Store, order: Order) {
     lineItems: order.items.map((l) => ({
       variantId: `gid://shopify/ProductVariant/${l.variantId}`,
       quantity: l.quantity,
+      // Free gifts from offers go in at ₹0
+      ...(l.free ? { priceSet: money(0), properties: [{ name: "Free gift", value: l.offer ?? "Offer" }] } : {}),
     })),
     email: c.email || null,
     phone: `+91${c.phone}`,
     shippingAddress: address,
     billingAddress: address,
     financialStatus: isCod ? "PENDING" : "PAID",
-    tags: ["MultiCheckout", isCod ? "COD" : "Prepaid", order.couponCode].filter(Boolean),
+    tags: ["MultiCheckout", isCod ? "COD" : "Prepaid", order.couponCode, order.items.some((l) => l.free) ? "FreeGift" : null].filter(Boolean),
     note: `Checkout order ${order.id}${order.payuMihpayid ? `, PayU ${order.payuMihpayid}` : ""}`,
     // Without a shipping line Shopify shows "Shipping not required" and fulfilment apps skip the order
     shippingLines: [

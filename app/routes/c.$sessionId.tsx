@@ -10,6 +10,7 @@ import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
+import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
 import {
   bankOfferEstimate, computePricing, formatINR, lineOff,
@@ -79,7 +80,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     db.select().from(bankOffers).where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true))).orderBy(asc(bankOffers.sort)),
     storeRuleFor(store),
   ]);
-  const shipping = await shippingRulesFor(store.id);
+  const [shipping, gifts] = await Promise.all([shippingRulesFor(store.id), freeGiftsFor(store, lines)]);
   // Snapshot for abandoned-checkout reports
   await db.update(checkoutSessions).set({
     cartSnapshot: lines.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity, pricePaise: l.pricePaise })),
@@ -110,6 +111,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     theme: resolveTheme(store.theme),
     rule,
     shipping,
+    gifts,
     draft: session.customer ?? null,
     lines,
     coupons,
@@ -188,6 +190,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   const [lines, rule, shipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id)]);
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
+  const freeLines = (await freeGiftsFor(store, lines))[method];
 
   let coupon: CouponRule | null = null;
   const code = str("couponCode");
@@ -204,7 +207,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     .values({
       id: newOrderId(), storeId: store.id, sessionId: session.id,
       status: method === "cod" ? "cod_placing" : "pending_payment", paymentMethod: method,
-      customer, items: lines, subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
+      customer, items: [...lines, ...freeLines], subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
       couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount,
       shipping: p.shipping, shippingTitle: p.shippingName, total: p.total,
       tracking: {
@@ -231,7 +234,7 @@ const LS_KEY = "cx_customer_v1";
 type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Checkout() {
-  const { store, theme, rule, shipping, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
+  const { store, theme, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const couponFetcher = useFetcher<typeof action>();
@@ -317,6 +320,11 @@ export default function Checkout() {
   const placing = nav.state !== "idle" && nav.formData?.get("intent") === "place";
   const redirectingToPay = placing && nav.formData?.get("method") === "prepaid";
   const itemCount = lines.reduce((s, l) => s + l.quantity, 0);
+  const freeLines = (method === "prepaid" ? gifts.prepaid : gifts.cod) as FreeLine[];
+  const giftWorth = freeLines.reduce((n, l) => n + (l.comparePaise ?? 0) * l.quantity, 0);
+  const freeCount = freeLines.reduce((n, l) => n + l.quantity, 0);
+  const otherFree = (method === "prepaid" ? gifts.cod : gifts.prepaid) as FreeLine[];
+  const giftTitle = `Your order (${itemCount}${freeCount ? ` + ${freeCount} free` : ""})`;
   const set = (k: keyof OrderCustomer) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setC((prev) => ({ ...prev, [k]: k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : k === "pincode" ? e.target.value.replace(/\D/g, "").slice(0, 6) : e.target.value }));
   const applyCode = (code: string) => { setCouponError(null); couponFetcher.submit({ intent: "coupon", code }, { method: "post" }); };
@@ -359,8 +367,9 @@ export default function Checkout() {
 
         <div className="space-y-4">
           {/* Mobile: order first so customers can edit it */}
-          <Card title={`Your order (${itemCount})`} className="lg:hidden">
+          <Card title={giftTitle} className="lg:hidden">
             <CartItems lines={lines} rule={rule} method={method} />
+            <FreeGifts lines={freeLines} hints={gifts.hints} otherMethod={method === "prepaid" ? null : otherFree.length > freeLines.length ? "online" : null} />
             {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
           </Card>
 
@@ -482,16 +491,17 @@ export default function Checkout() {
           </div>
           ))}
 
-          <Card title="Price details" className="lg:hidden"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} /></Card>
+          <Card title="Price details" className="lg:hidden"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} giftWorth={giftWorth} /></Card>
           <Trust phone={store.supportPhone} text={theme.showTrust ? theme.trustText : null} className="lg:hidden" />
         </div>
 
         <aside className="hidden lg:block">
           <div className="sticky top-20 space-y-4">
-            <Card title={`Your order (${itemCount})`}>
+            <Card title={giftTitle}>
               <CartItems lines={lines} rule={rule} method={method} />
+              <FreeGifts lines={freeLines} hints={gifts.hints} otherMethod={method === "prepaid" ? null : otherFree.length > freeLines.length ? "online" : null} />
               {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
-              <div className="mt-4 border-t border-rule pt-4"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} /></div>
+              <div className="mt-4 border-t border-rule pt-4"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} giftWorth={giftWorth} /></div>
               <button type="submit" className="btn-primary mt-5 w-full py-3.5 text-base" disabled={placing}>
                 {placing ? <><Spinner /> {redirectingToPay ? "Opening secure payment" : "Placing your order"}</> : payLabel}
               </button>
@@ -551,6 +561,40 @@ function Card({ title, className = "", children }: { title: string; className?: 
       <h2 className="mb-4 text-[15px] font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function FreeGifts({ lines, hints, otherMethod }: { lines: FreeLine[]; hints: OfferHint[]; otherMethod: string | null }) {
+  if (!lines.length && !hints.length && !otherMethod) return null;
+  return (
+    <div className="mt-4 space-y-3">
+      {lines.length > 0 && (
+        <ul className="space-y-3 rounded-xl border border-dashed border-good/50 bg-good/10 p-3">
+          {lines.map((l) => (
+            <li key={`free-${l.variantId}`} className="flex items-center gap-3">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-good/30 bg-surface">
+                {l.image && <img src={l.image} alt="" className="h-full w-full object-cover" loading="lazy" />}
+                <span className="absolute -left-1 -top-1 rounded-md bg-emerald-600 px-1 text-[10px] font-bold text-white" aria-hidden>🎁</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-2 text-sm font-medium text-ink">{l.title}</p>
+                <p className="text-xs font-medium text-good">{l.variantTitle ? `${l.variantTitle} · ` : ""}{l.offer}{l.quantity > 1 ? ` · ×${l.quantity}` : ""}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-bold text-good">FREE</p>
+                {l.comparePaise ? <s className="num text-xs text-ink-faint">{formatINR(l.comparePaise * l.quantity)}</s> : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {otherMethod && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">🎁 Pay {otherMethod} to get free gifts with this order.</p>}
+      {hints.map((h) => (
+        <p key={h.offer} className="rounded-lg bg-paper px-3 py-2 text-xs text-ink-soft">
+          🎁 Add <b className="text-ink">{h.need} more</b> item{h.need === 1 ? "" : "s"} to get <b className="text-ink">{h.gifts}</b> free
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -639,10 +683,11 @@ function UpsellCard({ item, rule }: { item: LoaderData["upsell"][number]; rule: 
 
 type P = ReturnType<typeof computePricing> & { itemsTotal: number; shipping: number; shippingName: string; freeAbove: number | null };
 
-function PriceDetails({ p, method, coupon, hasOffers }: { p: P; method: PaymentMethod; coupon: CouponRule | null; hasOffers: boolean }) {
+function PriceDetails({ p, method, coupon, hasOffers, giftWorth = 0 }: { p: P; method: PaymentMethod; coupon: CouponRule | null; hasOffers: boolean; giftWorth?: number }) {
   return (
     <dl className="space-y-2 text-sm">
       <Row label="Item total" value={formatINR(p.subtotal)} />
+      {giftWorth > 0 && <Row label={`Free gifts (worth ${formatINR(giftWorth)})`} value="FREE" green />}
       {p.mrpTotal > p.subtotal && <Row label="You already save on MRP" value={formatINR(p.mrpTotal - p.subtotal)} muted />}
       {p.paymentDiscount > 0 && <Row label={`${method === "prepaid" ? "Online payment" : "COD"} discount${p.paymentDiscountPct ? ` (${p.paymentDiscountPct}%)` : ""}`} value={`−${formatINR(p.paymentDiscount)}`} green />}
       {p.couponApplied && coupon && <Row label={`Coupon ${coupon.code}`} value={`−${formatINR(p.couponDiscount)}`} green />}

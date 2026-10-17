@@ -39,7 +39,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     savings: order.subtotal - (order.amountPaid ?? order.total),
     sessionId: order.sessionId,
     store: { name: store.name, logoUrl: store.logoUrl, supportPhone: store.supportPhone, color: store.primaryColor },
-    items: order.items.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity })),
+    items: order.items.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity, free: Boolean(l.free) })),
     address: `${order.customer.address1}${order.customer.address2 ? ", " + order.customer.address2 : ""}, ${order.customer.city} ${order.customer.pincode}`,
     continueUrl,
     pixel: shouldTrackPurchase(store, order)
@@ -93,6 +93,7 @@ export default function OrderStatus() {
                   <li key={i} className="flex items-center gap-3">
                     <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-rule bg-paper">{l.image && <img src={l.image} alt="" className="h-full w-full object-cover" />}</div>
                     <p className="min-w-0 flex-1 text-sm"><span className="line-clamp-1 font-medium">{l.title}</span>{l.variantTitle && <span className="text-xs text-ink-faint">{l.variantTitle}</span>}</p>
+                    {l.free && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-good">FREE</span>}
                     <span className="num text-sm text-ink-soft">×{l.quantity}</span>
                   </li>
                 ))}

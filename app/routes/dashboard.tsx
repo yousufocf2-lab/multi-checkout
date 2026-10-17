@@ -88,6 +88,7 @@ export default function DashboardLayout() {
           <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/}>Discounts</Item>
           <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/}>Coupons</Item>
           <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/}>Bank offers</Item>
+          <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/}>Free gifts</Item>
           <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>
         </Group>
         <div>

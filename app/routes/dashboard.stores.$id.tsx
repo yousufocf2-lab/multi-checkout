@@ -16,6 +16,7 @@ const TITLES: Record<string, { title: string; description: string }> = {
   discounts: { title: "Discounts", description: "Online and COD discounts, for the whole store or chosen products." },
   coupons: { title: "Coupons", description: "Codes customers can apply at checkout." },
   offers: { title: "Bank offers", description: "Card and bank offers applied on the PayU page." },
+  gifts: { title: "Free gifts", description: "Buy 1 get 1, Buy 2 get 1 and other free gift offers." },
   shipping: { title: "Shipping", description: "Delivery charges by location, order value and payment method." },
   settings: { title: "Store settings", description: "Shopify, PayU, COD rules and Meta ads for this store." },
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout." },
