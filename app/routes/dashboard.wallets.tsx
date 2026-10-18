@@ -74,7 +74,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const gstin = s("gstin").toUpperCase();
     if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) return json({ ok: null, error: "GSTIN doesn't look right" }, { status: 400 });
     await db.update(platformSettings).set({
-      billing: { name: s("name"), gstin, address: s("address"), state: s("state"), email: s("email"), phone: s("phone"), sac: s("sac") || "998314", invoicePrefix: s("invoicePrefix").replace(/[^A-Za-z0-9-]/g, "").slice(0, 10) || "MC" },
+      billing: { name: s("name"), gstin, address: s("address"), state: s("state"), email: s("email"), phone: s("phone"), sac: s("sac") || "998314", invoicePrefix: s("invoicePrefix").replace(/[^A-Za-z0-9-]/g, "").slice(0, 10) || "GP" },
       updatedAt: new Date(),
     }).where(eq(platformSettings.id, 1));
     return json({ ok: "Invoice details saved", error: null });
@@ -228,7 +228,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
           <Field label="SAC code" name="sac" value={b.sac ?? "998314"} hint="998314 = IT infrastructure / hosting services. Confirm with your CA." />
           <Field label="Email" name="email" value={b.email ?? ""} />
           <Field label="Phone" name="phone" value={b.phone ?? ""} />
-          <Field label="Invoice prefix" name="invoicePrefix" value={b.invoicePrefix ?? "MC"} hint="Invoices look like MC/26-27/00001" />
+          <Field label="Invoice prefix" name="invoicePrefix" value={b.invoicePrefix ?? "GP"} hint="Invoices look like GP/26-27/00001" />
           <div className="flex items-end sm:col-span-2"><SubmitButton intent="billing" busyText="Saving">Save invoice details</SubmitButton></div>
         </Form>
       )}

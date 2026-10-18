@@ -15,7 +15,7 @@ import {
 export async function getPlatform(): Promise<PlatformSettings> {
   const [row] = await db.select().from(platformSettings).where(eq(platformSettings.id, 1)).limit(1);
   if (row) return row;
-  const [created] = await db.insert(platformSettings).values({ id: 1, rates: DEFAULT_RATES, billing: { invoicePrefix: "MC", sac: "998314" } })
+  const [created] = await db.insert(platformSettings).values({ id: 1, rates: DEFAULT_RATES, billing: { invoicePrefix: "GP", sac: "998314" } })
     .onConflictDoNothing().returning();
   return created ?? (await db.select().from(platformSettings).where(eq(platformSettings.id, 1)))[0];
 }
@@ -228,7 +228,7 @@ export async function confirmRecharge(txnid: string) {
     const [w] = await tx.select().from(wallets).where(eq(wallets.id, locked.walletId));
     const sameState = Boolean(ours.state && w.billing?.state && ours.state.trim().toLowerCase() === w.billing.state.trim().toLowerCase());
     const [seq] = (await tx.execute(sql`select nextval('wallet_invoice_seq')::text as n`)) as unknown as { n: string }[];
-    const invoiceNo = `${ours.invoicePrefix || "MC"}/${financialYear(new Date())}/${String(seq.n).padStart(5, "0")}`;
+    const invoiceNo = `${ours.invoicePrefix || "GP"}/${financialYear(new Date())}/${String(seq.n).padStart(5, "0")}`;
     const [u] = await tx.update(walletRecharges).set({
       status: "paid", mihpayid: v.mihpayid, paidAt: new Date(), invoiceNo,
       billing: { ...(w.billing ?? {}), taxType: sameState ? "cgst_sgst" : "igst" },

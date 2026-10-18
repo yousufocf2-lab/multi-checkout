@@ -56,3 +56,10 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Public website: policy pages */
+.legal h2 { @apply mb-3 mt-9 text-lg font-semibold text-ink first:mt-0; }
+.legal p { @apply mb-4; }
+.legal ul { @apply mb-4 list-disc space-y-1.5 pl-5; }
+.legal a { @apply font-medium text-pine underline underline-offset-2; }
+.legal strong { @apply font-semibold text-ink; }
