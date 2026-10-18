@@ -20,10 +20,42 @@ export interface ProductRule {
   codPct: number;
 }
 
+/** Mix & Match: any `buyQty` items in the cart → `freeQty` of them free (cheapest or priciest). */
+export interface MixDeal {
+  buyQty: number;
+  freeQty: number;
+  which: "low" | "high";
+  title: string;
+}
+
 export interface StoreRule {
   prepaidDiscountPct: number;
   codDiscountPct: number;
   rules?: ProductRule[];
+  mix?: MixDeal | null;
+}
+
+export const mixTitle = (m: Pick<MixDeal, "buyQty" | "freeQty">) => `Buy ${m.buyQty}, Get ${m.freeQty} Free`;
+
+/**
+ * Which units are free under a Mix & Match deal. Returns free units per line (same order as `lines`).
+ * Only `freeQty` units are ever free, however many items are in the cart (no repeats).
+ */
+export function mixFreeUnits(lines: Pick<PricedLine, "pricePaise" | "quantity">[], mix: MixDeal | null | undefined) {
+  const free = lines.map(() => 0);
+  const qty = lines.reduce((n, l) => n + l.quantity, 0);
+  if (!mix || mix.buyQty < 2 || mix.freeQty < 1 || qty < mix.buyQty) return { free, discount: 0, qty };
+  const order = lines.map((l, i) => ({ i, price: l.pricePaise })).sort((a, b) => (mix.which === "high" ? b.price - a.price : a.price - b.price) || a.i - b.i);
+  let left = Math.min(mix.freeQty, mix.buyQty - 1);
+  let discount = 0;
+  for (const o of order) {
+    if (left <= 0) break;
+    const take = Math.min(left, lines[o.i].quantity);
+    free[o.i] = take;
+    discount += take * o.price;
+    left -= take;
+  }
+  return { free, discount, qty };
 }
 
 export interface CouponRule {
@@ -60,6 +92,8 @@ export interface PricingResult {
   couponMessage: string | null;
   total: number;
   savings: number; // vs subtotal (real selling price)
+  mixDiscount: number; // Mix & Match free items
+  mixFree: number[]; // free units per line
 }
 
 const MIN_TOTAL = 100; // ₹1
@@ -97,10 +131,14 @@ export function computePricing(
   const subtotal = lines.reduce((s, l) => s + lineTotal(l), 0);
   const mrpTotal = lines.reduce((s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity, 0);
 
-  const perLine = lines.map((l) => {
+  // Mix & Match first: free units are taken out before payment discounts and coupons
+  const mix = mixFreeUnits(lines, store.mix);
+  const perLine = lines.map((l, i) => {
     const off = lineOff(l, store, method);
-    const discount = off.flat ? off.unit * l.quantity : Math.round((lineTotal(l) * off.pct) / 100);
-    return { line: l, pct: off.pct, flat: off.flat, discount };
+    const paidQty = l.quantity - mix.free[i];
+    const net = l.pricePaise * paidQty;
+    const discount = off.flat ? off.unit * paidQty : Math.round((net * off.pct) / 100);
+    return { line: l, pct: off.pct, flat: off.flat, discount, net };
   });
   let paymentDiscount = perLine.reduce((s, x) => s + x.discount, 0);
   const pcts = [...new Set(perLine.map((x) => x.pct))];
@@ -115,8 +153,8 @@ export function computePricing(
   if (coupon) {
     const restricted = Boolean(coupon.productIds?.length);
     const eligible = restricted ? perLine.filter((x) => coupon.productIds!.includes(x.line.productId)) : perLine;
-    const eligibleSubtotal = eligible.reduce((s, x) => s + lineTotal(x.line), 0);
-    const eligibleAfterPayment = eligible.reduce((s, x) => s + lineTotal(x.line) - x.discount, 0);
+    const eligibleSubtotal = eligible.reduce((s, x) => s + x.net, 0);
+    const eligibleAfterPayment = eligible.reduce((s, x) => s + x.net - x.discount, 0);
     const eligiblePayment = eligibleSubtotal - eligibleAfterPayment;
 
     if (coupon.paymentRestriction !== "any" && coupon.paymentRestriction !== method) {
@@ -148,7 +186,7 @@ export function computePricing(
     }
   }
 
-  const total = Math.max(MIN_TOTAL, subtotal - paymentDiscount - couponDiscount);
+  const total = Math.max(MIN_TOTAL, subtotal - mix.discount - paymentDiscount - couponDiscount);
   return {
     subtotal,
     mrpTotal,
@@ -160,6 +198,8 @@ export function computePricing(
     couponMessage,
     total,
     savings: subtotal - total,
+    mixDiscount: mix.discount,
+    mixFree: mix.free,
   };
 }
 

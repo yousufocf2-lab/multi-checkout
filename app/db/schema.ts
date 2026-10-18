@@ -56,6 +56,12 @@ export const stores = pgTable("stores", {
   // Checkout upsell ("You may also like")
   upsellEnabled: boolean("upsell_enabled").notNull().default(true),
   upsellProducts: jsonb("upsell_products").$type<ProductRef[]>().notNull().default([]),
+  // Mix & Match deal: any `mixBuyQty` items in the cart → `mixFreeQty` of them free (cheapest or priciest)
+  mixEnabled: boolean("mix_enabled").notNull().default(false),
+  mixBuyQty: integer("mix_buy_qty").notNull().default(3), // min 2
+  mixFreeQty: integer("mix_free_qty").notNull().default(1), // 1 .. mixBuyQty-1
+  mixFreeWhich: text("mix_free_which").notNull().default("low"), // low | high
+  mixTitle: text("mix_title"), // shown at checkout; default "Buy 3, Get 2 Free"
   // PayU
   payuKey: text("payu_key"),
   payuSalt: text("payu_salt"),
@@ -267,6 +273,7 @@ export const orders = pgTable(
     couponCode: text("coupon_code"),
     couponDiscount: integer("coupon_discount").notNull().default(0),
     bankDiscount: integer("bank_discount").notNull().default(0),
+    offerDiscount: integer("offer_discount").notNull().default(0), // Mix & Match free items
     shipping: integer("shipping").notNull().default(0), // paise, included in total
     shippingTitle: text("shipping_title"),
     total: integer("total").notNull(), // amount sent to PayU / collected on COD (items + shipping)

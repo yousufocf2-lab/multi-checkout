@@ -5,13 +5,17 @@ import { and, desc, eq } from "drizzle-orm";
 import { useEffect, useState } from "react";
 import { ProductPicker, parsePicked, type PickedProduct } from "~/components/ProductPicker";
 import { EmptyState, Notice, RowAction, Section, StatusBadge, SubmitButton, TextField } from "~/components/ui";
-import { db, freeOffers } from "~/db.server";
+import { db, freeOffers, stores } from "~/db.server";
+import { mixTitle } from "~/lib/pricing";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const offers = await db.select().from(freeOffers).where(eq(freeOffers.storeId, store.id)).orderBy(desc(freeOffers.createdAt));
-  return json({ storeId: store.id, offers });
+  return json({
+    storeId: store.id, offers,
+    mix: { enabled: store.mixEnabled, buyQty: store.mixBuyQty, freeQty: store.mixFreeQty, which: store.mixFreeWhich, title: store.mixTitle ?? "" },
+  });
 }
 
 const int = (v: FormDataEntryValue | null, min: number, max: number, d: number) => {
@@ -45,6 +49,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const own = and(eq(freeOffers.id, id), eq(freeOffers.storeId, store.id));
 
   switch (fd.get("intent")) {
+    case "mix": {
+      const enabled = fd.get("mixEnabled") === "on";
+      const buyQty = int(fd.get("mixBuyQty"), 2, 50, 3);
+      const freeQty = int(fd.get("mixFreeQty"), 1, 49, 1);
+      if (enabled && freeQty >= buyQty) return json({ ok: null, errors: { mix: "Free items must be fewer than cart items (e.g. 3 items → up to 2 free)." } as Record<string, string> }, { status: 400 });
+      await db.update(stores).set({
+        mixEnabled: enabled, mixBuyQty: buyQty, mixFreeQty: Math.min(freeQty, buyQty - 1),
+        mixFreeWhich: fd.get("mixFreeWhich") === "high" ? "high" : "low",
+        mixTitle: String(fd.get("mixTitle") ?? "").trim().slice(0, 60) || null,
+      }).where(eq(stores.id, store.id));
+      return json({ ok: enabled ? "Mix & Match deal is live on your checkout" : "Mix & Match deal turned off", errors: null });
+    }
     case "add": {
       const r = readOffer(fd);
       if (r.error) return json({ ok: null, errors: { add: r.error } as Record<string, string> }, { status: 400 });
@@ -72,13 +88,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
 type Offer = ReturnType<typeof useLoaderData<typeof loader>>["offers"][number];
 
 export default function Gifts() {
-  const { storeId, offers } = useLoaderData<typeof loader>();
+  const { storeId, offers, mix } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const errors = (res?.errors ?? {}) as Record<string, string>;
 
   return (
     <div className="max-w-4xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
+      <MixDeal mix={mix} error={errors.mix} />
+
       <Notice>
         Free gifts are added to the checkout automatically at ₹0 when the cart qualifies, and go into the Shopify order at ₹0 with a “Free gift” note.
         Examples: <b>Buy 1 get 1</b> (buy A, free B), <b>Buy 2 get 1</b> (any 2 of A and B, free C), <b>Buy any 3 get 1</b> (any product).
@@ -218,5 +236,112 @@ function OfferFields({ storeId, o }: { storeId: number; o?: Offer }) {
         </label>
       </div>
     </>
+  );
+}
+
+type Mix = ReturnType<typeof useLoaderData<typeof loader>>["mix"];
+
+const RS = (p: number) => "₹" + p.toLocaleString("en-IN");
+
+/** Store-wide "buy N, get M of them free" deal with a live example. */
+function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
+  const [on, setOn] = useState(mix.enabled);
+  const [buy, setBuy] = useState(Math.max(2, mix.buyQty));
+  const [free, setFree] = useState(Math.min(Math.max(1, mix.freeQty), Math.max(2, mix.buyQty) - 1));
+  const [which, setWhich] = useState(mix.which === "high" ? "high" : "low");
+  useEffect(() => { if (free >= buy) setFree(buy - 1); }, [buy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Example cart: ₹300, ₹750, ₹425 (+ more if the deal needs more items)
+  const sample = [300, 750, 425, 550, 999, 650, 375, 820].slice(0, Math.max(3, buy));
+  const order = sample.map((p, i) => ({ p, i })).sort((a, b) => (which === "high" ? b.p - a.p : a.p - b.p));
+  const freeIdx = new Set(order.slice(0, free).map((x) => x.i));
+  const pay = sample.reduce((n, p, i) => n + (freeIdx.has(i) ? 0 : p), 0);
+  const title = mixTitle({ buyQty: buy, freeQty: free });
+
+  return (
+    <section className={`panel overflow-hidden ${on ? "ring-2 ring-pine/30" : ""}`}>
+      <Form method="post">
+        <div className="flex flex-wrap items-center gap-4 bg-[linear-gradient(135deg,#0E1714,#0B5D4B)] px-5 py-4 text-white">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-2xl" aria-hidden>🛍️</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold">Mix & Match deal</p>
+            <p className="text-sm text-white/75">Customer adds any {buy} items, {free} of them become free. Works on the whole store.</p>
+          </div>
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium">
+            {on ? "On" : "Off"}
+            <input type="checkbox" name="mixEnabled" checked={on} onChange={(e) => setOn(e.target.checked)} className="peer sr-only" />
+            <span aria-hidden className={`relative h-6 w-11 rounded-full transition peer-focus-visible:ring-2 peer-focus-visible:ring-white ${on ? "bg-emerald-400" : "bg-white/25"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+            </span>
+          </label>
+        </div>
+
+        {!on && <input type="hidden" name="mixBuyQty" value={buy} />}
+        {!on && <input type="hidden" name="mixFreeQty" value={free} />}
+        {!on && <input type="hidden" name="mixFreeWhich" value={which} />}
+        {!on && <input type="hidden" name="mixTitle" value={mix.title} />}
+
+        {on && (
+          <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="label">Items in cart</span>
+                  <input type="number" name="mixBuyQty" min={2} max={50} value={buy} onChange={(e) => setBuy(Math.max(2, Number(e.target.value) || 2))} className="input num" />
+                  <span className="hint">Minimum 2. Any products count.</span>
+                </label>
+                <label className="block">
+                  <span className="label">Free items</span>
+                  <input type="number" name="mixFreeQty" min={1} max={buy - 1} value={free} onChange={(e) => setFree(Math.min(buy - 1, Math.max(1, Number(e.target.value) || 1)))} className="input num" />
+                  <span className="hint">Up to {buy - 1}.</span>
+                </label>
+              </div>
+              <div>
+                <span className="label">Which items are free</span>
+                <input type="hidden" name="mixFreeWhich" value={which} />
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Which items are free">
+                  {[["low", "Lowest price", "Customer pays for the costlier items"], ["high", "Highest price", "Customer pays for the cheaper items"]].map(([v, l, d]) => (
+                    <button key={v} type="button" role="radio" aria-checked={which === v} onClick={() => setWhich(v)}
+                      className={`rounded-lg border-2 px-3 py-2.5 text-left ${which === v ? "border-pine bg-pine-tint/50" : "border-rule hover:border-rule-strong"}`}>
+                      <span className="block text-sm font-semibold">{l}</span>
+                      <span className="block text-xs text-ink-faint">{d}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="block">
+                <span className="label">Title on checkout</span>
+                <input name="mixTitle" defaultValue={mix.title} placeholder={title} maxLength={60} className="input" />
+              </label>
+              <p className="text-xs text-ink-faint">
+                More items than {buy} still get only {free} free. Online and COD discounts apply to the items the customer pays for.
+                Shopify orders show it as a discount (MIXMATCH).
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-rule bg-paper p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Example cart</p>
+              <ul className="mt-3 space-y-2">
+                {sample.map((p, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-surface text-xs font-semibold ring-1 ring-rule">{String.fromCharCode(65 + i)}</span>Product {String.fromCharCode(65 + i)}</span>
+                    {freeIdx.has(i)
+                      ? <span className="flex items-center gap-1.5"><s className="num text-xs text-ink-faint">{RS(p)}</s><b className="rounded bg-good px-1.5 py-px text-[10px] text-white">FREE</b></span>
+                      : <span className="num font-medium">{RS(p)}</span>}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex justify-between border-t border-rule pt-3 text-sm font-semibold"><span>Customer pays</span><span className="num">{RS(pay)}</span></div>
+              <p className="mt-1 text-xs text-ink-faint">With only {buy - 1} item{buy - 1 === 1 ? "" : "s"}, checkout shows: “Add 1 more item and get {free} item{free === 1 ? "" : "s"} FREE”.</p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3 border-t border-rule px-5 py-3">
+          {error ? <p className="error-text mt-0">{error}</p> : <span className="text-xs text-ink-faint">{on ? `Customers see “${title}” on checkout.` : "Turn on to set it up."}</span>}
+          <SubmitButton intent="mix" busyText="Saving">Save deal</SubmitButton>
+        </div>
+      </Form>
+    </section>
   );
 }

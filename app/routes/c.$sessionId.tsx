@@ -13,7 +13,7 @@ import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
 import {
-  bankOfferEstimate, computePricing, formatINR, lineOff,
+  bankOfferEstimate, computePricing, formatINR, lineOff, mixTitle,
   type BankOfferRule, type CouponRule, type PaymentMethod, type PricedLine, type StoreRule,
 } from "~/lib/pricing";
 import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
@@ -44,9 +44,13 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
     .from(discountRules)
     .where(and(eq(discountRules.storeId, store.id), eq(discountRules.active, true)))
     .orderBy(desc(discountRules.createdAt));
+  const buyQty = Math.max(2, store.mixBuyQty);
   return {
     prepaidDiscountPct: store.prepaidDiscountPct,
     codDiscountPct: store.codDiscountPct,
+    mix: store.mixEnabled
+      ? { buyQty, freeQty: Math.min(buyQty - 1, Math.max(1, store.mixFreeQty)), which: store.mixFreeWhich === "high" ? "high" as const : "low" as const, title: store.mixTitle?.trim() || mixTitle({ buyQty, freeQty: Math.min(buyQty - 1, Math.max(1, store.mixFreeQty)) }) }
+      : null,
     rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct })),
   };
 }
@@ -208,7 +212,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       id: newOrderId(), storeId: store.id, sessionId: session.id,
       status: method === "cod" ? "cod_placing" : "pending_payment", paymentMethod: method,
       customer, items: [...lines, ...freeLines], subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
-      couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount,
+      couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, offerDiscount: p.mixDiscount,
       shipping: p.shipping, shippingTitle: p.shippingName, total: p.total,
       tracking: {
         ...(session.tracking ?? {}),
@@ -368,7 +372,8 @@ export default function Checkout() {
         <div className="space-y-4">
           {/* Mobile: order first so customers can edit it */}
           <Card title={giftTitle} className="lg:hidden">
-            <CartItems lines={lines} rule={rule} method={method} />
+            <MixBanner rule={rule} itemCount={itemCount} saved={p.mixDiscount} />
+            <CartItems lines={lines} rule={rule} method={method} free={p.mixFree} />
             <FreeGifts lines={freeLines} hints={gifts.hints} otherMethod={method === "prepaid" ? null : otherFree.length > freeLines.length ? "online" : null} />
             {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
           </Card>
@@ -498,7 +503,8 @@ export default function Checkout() {
         <aside className="hidden lg:block">
           <div className="sticky top-20 space-y-4">
             <Card title={giftTitle}>
-              <CartItems lines={lines} rule={rule} method={method} />
+              <MixBanner rule={rule} itemCount={itemCount} saved={p.mixDiscount} />
+              <CartItems lines={lines} rule={rule} method={method} free={p.mixFree} />
               <FreeGifts lines={freeLines} hints={gifts.hints} otherMethod={method === "prepaid" ? null : otherFree.length > freeLines.length ? "online" : null} />
               {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
               <div className="mt-4 border-t border-rule pt-4"><PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} giftWorth={giftWorth} /></div>
@@ -598,15 +604,46 @@ function FreeGifts({ lines, hints, otherMethod }: { lines: FreeLine[]; hints: Of
   );
 }
 
-function CartItems({ lines, rule, method }: { lines: PricedLine[]; rule: StoreRule; method: PaymentMethod }) {
+function CartItems({ lines, rule, method, free = [] }: { lines: PricedLine[]; rule: StoreRule; method: PaymentMethod; free?: number[] }) {
   return (
     <ul className="space-y-4">
-      {lines.map((l) => <CartLine key={l.variantId} line={l} off={lineOff(l, rule, method).label} />)}
+      {lines.map((l, i) => <CartLine key={l.variantId} line={l} off={lineOff(l, rule, method).label} freeUnits={free[i] ?? 0} />)}
     </ul>
   );
 }
 
-function CartLine({ line, off }: { line: PricedLine; off: string | null }) {
+/** Mix & Match progress: "Add 1 more item to get 2 FREE" → "2 items are FREE". */
+function MixBanner({ rule, itemCount, saved }: { rule: StoreRule; itemCount: number; saved: number }) {
+  const m = rule.mix;
+  if (!m) return null;
+  const need = Math.max(0, m.buyQty - itemCount);
+  const pct = Math.min(100, Math.round((itemCount / m.buyQty) * 100));
+  const which = m.which === "low" ? "lowest-priced" : "highest-priced";
+  return (
+    <div className={`mb-4 overflow-hidden rounded-xl border ${need ? "border-brand/30 bg-brand/[0.06]" : "border-good/40 bg-good/10"}`}>
+      <div className="flex items-start gap-3 px-3.5 pt-3">
+        <span className="mt-0.5 text-lg leading-none" aria-hidden>{need ? "🛍️" : "🎉"}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-brand">{m.title}</p>
+          {need ? (
+            <p className="text-sm font-medium text-ink">Add <b>{need} more item{need === 1 ? "" : "s"}</b> and get <b>{m.freeQty} item{m.freeQty === 1 ? "" : "s"} FREE</b></p>
+          ) : (
+            <p className="text-sm font-medium text-ink">Unlocked! Your {m.freeQty} {which} item{m.freeQty === 1 ? " is" : "s are"} <b className="text-good">FREE</b>{saved > 0 && <> · you save <b className="num text-good">{formatINR(saved)}</b></>}</p>
+          )}
+          <p className="mt-0.5 text-xs text-ink-faint">Mix any {m.buyQty} items. The {m.freeQty} {which} {m.freeQty === 1 ? "one is" : "ones are"} free.</p>
+        </div>
+      </div>
+      <div className="mx-3.5 mb-3 mt-2.5 flex items-center gap-2">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-rule" role="progressbar" aria-valuemin={0} aria-valuemax={m.buyQty} aria-valuenow={Math.min(itemCount, m.buyQty)} aria-label="Items towards the deal">
+          <div className={`h-full rounded-full transition-all ${need ? "bg-brand" : "bg-good"}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="num text-xs font-semibold text-ink-soft">{Math.min(itemCount, m.buyQty)}/{m.buyQty}</span>
+      </div>
+    </div>
+  );
+}
+
+function CartLine({ line, off, freeUnits = 0 }: { line: PricedLine; off: string | null; freeUnits?: number }) {
   const f = useFetcher();
   const busy = f.state !== "idle";
   const pending = f.formData?.get("quantity");
@@ -632,7 +669,9 @@ function CartLine({ line, off }: { line: PricedLine; off: string | null }) {
       <div className="text-right">
         <p className="num text-sm font-semibold">{formatINR(line.pricePaise * line.quantity)}</p>
         {line.comparePaise && <s className="num text-xs text-ink-faint">{formatINR(line.comparePaise * line.quantity)}</s>}
-        {off && <p className="text-[11px] font-medium text-good">{off}</p>}
+        {freeUnits > 0
+          ? <p className="ml-auto mt-0.5 block w-fit rounded bg-good px-1.5 py-px text-[10px] font-bold text-white">{freeUnits === line.quantity ? "FREE" : `${freeUnits} FREE`}</p>
+          : off && <p className="text-[11px] font-medium text-good">{off}</p>}
       </div>
     </li>
   );
@@ -687,6 +726,7 @@ function PriceDetails({ p, method, coupon, hasOffers, giftWorth = 0 }: { p: P; m
   return (
     <dl className="space-y-2 text-sm">
       <Row label="Item total" value={formatINR(p.subtotal)} />
+      {p.mixDiscount > 0 && <Row label="Mix & Match free items" value={`−${formatINR(p.mixDiscount)}`} green />}
       {giftWorth > 0 && <Row label={`Free gifts (worth ${formatINR(giftWorth)})`} value="FREE" green />}
       {p.mrpTotal > p.subtotal && <Row label="You already save on MRP" value={formatINR(p.mrpTotal - p.subtotal)} muted />}
       {p.paymentDiscount > 0 && <Row label={`${method === "prepaid" ? "Online payment" : "COD"} discount${p.paymentDiscountPct ? ` (${p.paymentDiscountPct}%)` : ""}`} value={`−${formatINR(p.paymentDiscount)}`} green />}

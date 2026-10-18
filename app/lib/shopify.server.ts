@@ -197,13 +197,14 @@ export async function fetchUpsellProducts(store: Store, chosenIds: string[]) {
 
 export async function createShopifyOrder(store: Store, order: Order) {
   const c = order.customer;
-  const totalDiscount = order.paymentDiscount + order.couponDiscount + order.bankDiscount;
+  const totalDiscount = order.paymentDiscount + order.couponDiscount + order.bankDiscount + order.offerDiscount;
   const isCod = order.paymentMethod === "cod";
 
   const codeParts = [
     isCod ? `COD${store.codDiscountPct}` : `PREPAID${store.prepaidDiscountPct}`,
     order.couponCode,
     order.bankDiscount > 0 ? "BANKOFFER" : null,
+    order.offerDiscount > 0 ? "MIXMATCH" : null,
   ].filter(Boolean);
 
   const address = {

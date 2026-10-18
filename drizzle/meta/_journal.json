@@ -57,6 +57,13 @@
       "when": 1792264028738,
       "tag": "0007_free_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792300744734,
+      "tag": "0008_mix_match",
+      "breakpoints": true
     }
   ]
 }

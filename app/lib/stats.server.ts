@@ -78,7 +78,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
         method: orders.paymentMethod,
         count: sql<number>`count(*)::int`,
         revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
-        discounts: sql<string>`coalesce(sum(${orders.paymentDiscount} + ${orders.couponDiscount} + ${orders.bankDiscount}), 0)`,
+        discounts: sql<string>`coalesce(sum(${orders.paymentDiscount} + ${orders.couponDiscount} + ${orders.bankDiscount} + ${orders.offerDiscount}), 0)`,
       })
       .from(orders)
       .where(and(idsFilter, inArray(orders.status, OK), inRange(orders.createdAt)))
