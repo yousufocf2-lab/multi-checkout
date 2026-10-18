@@ -8,6 +8,8 @@ import { requireViewer, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
+import { rupees } from "~/lib/wallet";
+import { stateOf, walletsFor } from "~/lib/wallet.server";
 
 export const meta: MetaFunction = () => [{ title: "Dashboard | Multi Checkout" }, { name: "robots", content: "noindex" }];
 
@@ -24,8 +26,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     selected = inUrl;
     headers.append("Set-Cookie", await selectCookie(inUrl));
   }
+  const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
   return json({
     viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
+    wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
     stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.checkoutDomain ?? s.shopDomain })),
     selected,
   }, { headers });
@@ -43,7 +47,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -55,6 +59,11 @@ export default function DashboardLayout() {
   const storeHref = (section: string) => (focus ? `/dashboard/stores/${focus.id}/${section}` : `/dashboard/stores?next=${section}`);
   const adsHref = focus ? `/dashboard/stores/${focus.id}/ads` : "/dashboard/ads";
   const here = location.pathname + location.search;
+  const RANK = { ok: 0, low: 1, negative: 2, locked: 3 } as const;
+  const focusWallet = focus ? wallets.find((w) => w.storeId === focus.id) ?? null : null;
+  const worst = [...wallets].sort((a, b) => RANK[b.state] - RANK[a.state])[0] ?? null;
+  const alertWallet = focus ? focusWallet : worst;
+  const alertStore = alertWallet ? stores.find((s) => s.id === alertWallet.storeId) ?? null : null;
 
   const settingsPaths = ["/settings", "/design", "/install", "/dashboard/stores/new", "/dashboard/owners"];
   const inSettings = settingsPaths.some((p) => location.pathname.endsWith(p)) || location.pathname === "/dashboard/stores";
@@ -90,6 +99,14 @@ export default function DashboardLayout() {
           <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/}>Bank offers</Item>
           <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/}>Free gifts</Item>
           <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>
+        </Group>
+        <Group label="Billing">
+          <Item to={storeHref("wallet")} icon="wallet" match={/\/wallet$|next=wallet/}>
+            <span className="flex flex-1 items-center justify-between gap-2">Wallet
+              {focusWallet && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${focusWallet.state === "ok" ? "bg-white/10 text-night-text" : focusWallet.state === "low" ? "bg-amber-400/20 text-amber-200" : "bg-red-400/20 text-red-200"}`}>{rupees(focusWallet.balance, 0)}</span>}
+            </span>
+          </Item>
+          {viewer.role === "admin" && <Item to="/dashboard/wallets" icon="rupee">All wallets</Item>}
         </Group>
         <div>
           <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen}
@@ -152,6 +169,9 @@ export default function DashboardLayout() {
 
       <main className="min-w-0 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">
         <div className="mx-auto max-w-[1180px]">
+          {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
+            <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
+          )}
           <Outlet />
         </div>
       </main>
@@ -163,6 +183,22 @@ export default function DashboardLayout() {
         <Tab to={adsHref} icon="ads" label="Ads" />
         <button type="button" onClick={() => setOpen(true)} className="flex flex-col items-center gap-0.5 py-2 text-[11px] text-ink-soft"><Icon name="menu" className="h-5 w-5" />More</button>
       </nav>
+    </div>
+  );
+}
+
+function WalletBanner({ state, balance, store, showStore, to }: { state: "low" | "negative" | "locked"; balance: number; store: string; showStore: boolean; to: string }) {
+  const who = showStore ? `${store} wallet` : "Wallet";
+  const copy = {
+    low: { tone: "border-amber-200 bg-amber-50 text-amber-900", text: `${who} balance is low (${rupees(balance)}). Recharge soon to keep everything running.` },
+    negative: { tone: "border-orange-200 bg-orange-50 text-orange-900", text: `${who} is below ₹0 (${rupees(balance)}). Checkout keeps working, but recharge before you reach the limit.` },
+    locked: { tone: "border-red-200 bg-red-50 text-red-900", text: `${who} has crossed its limit (${rupees(balance)}). Promo and tracking messages are paused and some features are locked. Checkout, OTP and order confirmations still work.` },
+  }[state];
+  return (
+    <div className={`mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm ${copy.tone}`} role="status">
+      <Icon name="wallet" className="h-5 w-5 shrink-0" />
+      <p className="min-w-0 flex-1">{copy.text}</p>
+      <Link to={to} className="btn-primary px-3 py-1.5 text-xs">Recharge</Link>
     </div>
   );
 }

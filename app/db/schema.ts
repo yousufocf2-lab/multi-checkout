@@ -333,7 +333,89 @@ export const metaRecharges = pgTable(
   (t) => [index("meta_recharges_store_idx").on(t.storeId, t.rechargedAt)],
 );
 
+// ---------------- Wallet (platform billing) ----------------
+
+/** Charges in paise; saleFeeBps is basis points of the order total (100 = 1%). */
+export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; waTracking: number; waPromo: number };
+export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
+
+/** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */
+export const platformSettings = pgTable("platform_settings", {
+  id: integer("id").primaryKey(),
+  rates: jsonb("rates").$type<WalletRates>().notNull(),
+  minRechargePaise: integer("min_recharge_paise").notNull().default(200000),
+  defaultNegativeLimitPaise: integer("default_negative_limit_paise").notNull().default(50000),
+  defaultLowAlertPaise: integer("default_low_alert_paise").notNull().default(50000),
+  billing: jsonb("billing").$type<BillingDetails & { sac?: string; invoicePrefix?: string }>().notNull().default({}),
+  payuKey: text("payu_key"),
+  payuSalt: text("payu_salt"),
+  payuMode: text("payu_mode").notNull().default("test"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Prepaid wallet per store. balancePaise is a cache of the ledger; it can go negative (checkout never stops). */
+export const wallets = pgTable("wallets", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().unique().references(() => stores.id, { onDelete: "cascade" }),
+  balancePaise: bigint("balance_paise", { mode: "number" }).notNull().default(0),
+  negativeLimitPaise: integer("negative_limit_paise").notNull().default(50000), // e.g. 50000 = can go to −₹500
+  lowAlertPaise: integer("low_alert_paise").notNull().default(50000),
+  rates: jsonb("rates").$type<Partial<WalletRates>>(), // per-store override, null = platform default
+  reverseFeeOnRefund: boolean("reverse_fee_on_refund").notNull().default(false),
+  billing: jsonb("billing").$type<BillingDetails>().notNull().default({}),
+  status: text("status").notNull().default("active"), // active | suspended
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Append-only ledger. Never updated or deleted. (type, ref_type, ref_id) is unique so retries never double charge. */
+export const walletTransactions = pgTable(
+  "wallet_transactions",
+  {
+    id: serial("id").primaryKey(),
+    walletId: integer("wallet_id").notNull().references(() => wallets.id, { onDelete: "cascade" }),
+    // recharge | sale_fee | otp | wa_confirm | wa_tracking | wa_promo | refund_reversal | manual_credit | manual_debit
+    type: text("type").notNull(),
+    amountPaise: bigint("amount_paise", { mode: "number" }).notNull(), // + credit, − debit
+    balanceAfterPaise: bigint("balance_after_paise", { mode: "number" }).notNull(),
+    refType: text("ref_type").notNull(), // order | recharge | message | manual
+    refId: text("ref_id").notNull(),
+    note: text("note"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("wallet_tx_ref_idx").on(t.type, t.refType, t.refId),
+    index("wallet_tx_wallet_idx").on(t.walletId, t.createdAt),
+  ],
+);
+
+/** Wallet top-ups paid to us through PayU. GST is on top: pay ₹2,360 → ₹2,000 credit. */
+export const walletRecharges = pgTable(
+  "wallet_recharges",
+  {
+    id: serial("id").primaryKey(),
+    walletId: integer("wallet_id").notNull().references(() => wallets.id, { onDelete: "cascade" }),
+    txnid: text("txnid").notNull().unique(),
+    creditPaise: bigint("credit_paise", { mode: "number" }).notNull(), // added to the wallet
+    gstPaise: bigint("gst_paise", { mode: "number" }).notNull(),
+    totalPaise: bigint("total_paise", { mode: "number" }).notNull(), // charged on PayU
+    status: text("status").notNull().default("pending"), // pending | paid | failed
+    mihpayid: text("mihpayid"),
+    invoiceNo: text("invoice_no").unique(),
+    billing: jsonb("billing").$type<BillingDetails & { taxType?: "igst" | "cgst_sgst" }>(),
+    createdBy: text("created_by"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("wallet_recharges_wallet_idx").on(t.walletId, t.createdAt)],
+);
+
 export type Store = typeof stores.$inferSelect;
+export type Wallet = typeof wallets.$inferSelect;
+export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type WalletRecharge = typeof walletRecharges.$inferSelect;
+export type PlatformSettings = typeof platformSettings.$inferSelect;
 export type MetaRecharge = typeof metaRecharges.$inferSelect;
 export type FreeOffer = typeof freeOffers.$inferSelect;
 export type User = typeof users.$inferSelect;

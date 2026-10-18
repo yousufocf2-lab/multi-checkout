@@ -6,6 +6,7 @@ import { recordOrderForCod } from "./cod.server";
 import { incrementCouponUse } from "./coupons.server";
 import { sendCapiPurchase } from "./meta.server";
 import { createShopifyOrder } from "./shopify.server";
+import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
 
 export function newOrderId() {
   // Short, unique, PayU-safe txnid
@@ -54,6 +55,8 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
     .returning();
   await incrementCouponUse(store.id, updated.couponCode);
   await recordOrderForCod(store.id, updated.customer.phone, updated.paymentMethod === "cod" ? "cod" : "prepaid");
+  // Platform sale fee from the store's wallet (idempotent per order; never blocks the customer)
+  await chargeSaleFee(store, updated);
   void trackPurchase(store, updated);
   return pushToShopify(store, updated);
 }
@@ -122,6 +125,7 @@ export async function syncRefunds(store: Store, order: Order, source: string) {
   const paid = order.amountPaid ?? order.total;
   if (r.refunded > 0) {
     const [u] = await db.update(orders).set({ refunded: Math.min(paid, r.refunded), refundStatus: r.refunded >= paid ? "full" : "partial", updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
+    if (u.refundStatus === "full") await reverseSaleFee(store, u);
     return u;
   }
   if (r.pending && !order.refundStatus) {

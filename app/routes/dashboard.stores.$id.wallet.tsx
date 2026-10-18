@@ -1,0 +1,486 @@
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
+import { and, desc, eq, gte, lt, type SQL } from "drizzle-orm";
+import { useEffect, useState } from "react";
+import { Icon } from "~/components/Icons";
+import { RangePicker } from "~/components/Overview";
+import { Notice, SubmitButton } from "~/components/ui";
+import { db, walletTransactions, wallets } from "~/db.server";
+import { requireStore, requireViewer } from "~/lib/auth.server";
+import { addDays, istToday, resolveRange } from "~/lib/dates";
+import { INDIAN_STATES } from "~/lib/states";
+import { DEFAULT_RATES, TX_LABELS, mergeRates, rechargeBreakup, rupees, type TxType } from "~/lib/wallet";
+import {
+  confirmRecharge, createRecharge, getPlatform, getWallet, manualAdjust, platformPayu, ratesFor, recentRecharges, stateOf, usageSummary,
+} from "~/lib/wallet.server";
+
+const PAGE = 50;
+
+export async function loader({ request, params }: LoaderFunctionArgs) {
+  const viewer = await requireViewer(request);
+  const store = await requireStore(viewer, params.id);
+  const [w, p] = await Promise.all([getWallet(store.id), getPlatform()]);
+  const url = new URL(request.url);
+  const sp = new URLSearchParams(url.searchParams);
+  if (!sp.get("range")) sp.set("range", "30d");
+  const range = resolveRange(sp);
+  const from = new Date(`${range.since}T00:00:00+05:30`);
+  const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);
+  const type = url.searchParams.get("type") ?? "";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+
+  const where: SQL[] = [eq(walletTransactions.walletId, w.id), gte(walletTransactions.createdAt, from), lt(walletTransactions.createdAt, to)];
+  if (type && type in TX_LABELS) where.push(eq(walletTransactions.type, type));
+
+  const monthStart = new Date(`${istToday().slice(0, 7)}-01T00:00:00+05:30`);
+  const [rows, usage, recharges, rates] = await Promise.all([
+    db.select().from(walletTransactions).where(and(...where)).orderBy(desc(walletTransactions.createdAt), desc(walletTransactions.id)).limit(PAGE + 1).offset((page - 1) * PAGE),
+    usageSummary([w.id], monthStart, new Date(Date.now() + 60_000)),
+    recentRecharges(w.id, 30),
+    ratesFor(w),
+  ]);
+  const creds = platformPayu(p);
+
+  return json({
+    storeId: store.id,
+    storeName: store.name,
+    isAdmin: viewer.role === "admin",
+    wallet: {
+      balance: w.balancePaise, state: stateOf(w), negativeLimit: w.negativeLimitPaise, lowAlert: w.lowAlertPaise,
+      status: w.status, billing: w.billing ?? {}, reverseFeeOnRefund: w.reverseFeeOnRefund, rateOverride: w.rates ?? {},
+    },
+    rates,
+    defaultRates: mergeRates(p.rates),
+    minRecharge: p.minRechargePaise,
+    payuReady: Boolean(creds.payuKey && creds.payuSalt),
+    payuMode: creds.payuMode,
+    range, type, page,
+    hasMore: rows.length > PAGE,
+    ledger: rows.slice(0, PAGE).map((t) => ({ id: t.id, type: t.type, amount: t.amountPaise, after: t.balanceAfterPaise, refType: t.refType, refId: t.refId, note: t.note, by: t.createdBy, at: t.createdAt.toISOString() })),
+    usage,
+    recharges: recharges.map((r) => ({ id: r.id, txnid: r.txnid, credit: r.creditPaise, gst: r.gstPaise, total: r.totalPaise, status: r.status, invoiceNo: r.invoiceNo, at: (r.paidAt ?? r.createdAt).toISOString() })),
+  });
+}
+
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const paise = (v: FormDataEntryValue | null) => Math.round(Number(String(v ?? "").replace(/[^\d.-]/g, "")) * 100);
+
+export async function action({ request, params }: ActionFunctionArgs) {
+  const viewer = await requireViewer(request);
+  const store = await requireStore(viewer, params.id);
+  const w = await getWallet(store.id);
+  const fd = await request.formData();
+  const intent = String(fd.get("intent") ?? "");
+  const s = (k: string) => String(fd.get(k) ?? "").trim();
+  const fail = (error: string, field = intent) => json({ ok: null, error, field }, { status: 400 });
+
+  try {
+    switch (intent) {
+      case "recharge": {
+        const credit = paise(fd.get("amount"));
+        if (!Number.isFinite(credit) || credit <= 0) return fail("Enter the amount to add");
+        const r = await createRecharge(w, credit, viewer.email);
+        return redirect(`/wallet/pay/${r.txnid}`);
+      }
+      case "billing": {
+        const gstin = s("gstin").toUpperCase();
+        if (gstin && !GSTIN.test(gstin)) return fail("GSTIN doesn't look right. It has 15 characters, e.g. 09ABCDE1234F1Z5");
+        if (s("state") && !INDIAN_STATES.some((x) => x.name === s("state"))) return fail("Pick your state");
+        await db.update(wallets).set({
+          billing: { name: s("name").slice(0, 120), gstin, address: s("address").slice(0, 300), state: s("state"), email: s("email").slice(0, 120), phone: s("phone").slice(0, 20) },
+          updatedAt: new Date(),
+        }).where(eq(wallets.id, w.id));
+        return json({ ok: "Billing details saved. New invoices will use them.", error: null, field: intent });
+      }
+      case "recheck": {
+        const r = await confirmRecharge(s("txnid"));
+        const msg = r.status === "paid" ? "Payment confirmed. The amount is in your wallet." : r.status === "failed" ? "PayU says this payment failed." : "PayU hasn't confirmed this payment yet. Try again in a minute.";
+        return json({ ok: msg, error: null, field: intent });
+      }
+    }
+
+    // ----- super admin only -----
+    if (viewer.role !== "admin") return fail("Not allowed");
+    switch (intent) {
+      case "adjust": {
+        const amount = paise(fd.get("amount"));
+        if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount");
+        await manualAdjust(w.id, s("direction") === "debit" ? -amount : amount, s("reason"), viewer.email);
+        return json({ ok: `${s("direction") === "debit" ? "Debited" : "Credited"} ${rupees(amount)}`, error: null, field: intent });
+      }
+      case "limits": {
+        await db.update(wallets).set({
+          negativeLimitPaise: Math.max(0, paise(fd.get("negativeLimit")) || 0),
+          lowAlertPaise: Math.max(0, paise(fd.get("lowAlert")) || 0),
+          reverseFeeOnRefund: fd.get("reverseFeeOnRefund") === "on",
+          status: s("status") === "suspended" ? "suspended" : "active",
+          updatedAt: new Date(),
+        }).where(eq(wallets.id, w.id));
+        return json({ ok: "Wallet limits saved", error: null, field: intent });
+      }
+      case "rates": {
+        const o: Record<string, number> = {};
+        const num = (k: string) => (s(k) === "" ? null : Number(s(k)));
+        const pct = num("saleFeePct");
+        if (pct != null) o.saleFeeBps = Math.round(pct * 100);
+        for (const k of ["otp", "waConfirm", "waTracking", "waPromo"]) { const v = num(k); if (v != null) o[k] = Math.round(v * 100); }
+        if (Object.values(o).some((v) => !Number.isFinite(v) || v < 0)) return fail("Rates must be 0 or more");
+        await db.update(wallets).set({ rates: Object.keys(o).length ? o : null, updatedAt: new Date() }).where(eq(wallets.id, w.id));
+        return json({ ok: Object.keys(o).length ? "Special rates saved for this store" : "This store now uses the default rate card", error: null, field: intent });
+      }
+    }
+  } catch (e) {
+    if (e instanceof Response) throw e;
+    return fail(e instanceof Error ? e.message : "Something went wrong");
+  }
+  return fail("Unknown action");
+}
+
+type D = ReturnType<typeof useLoaderData<typeof loader>>;
+
+const STATE_UI = {
+  ok: { label: "Healthy", cls: "bg-emerald-400/20 text-emerald-100" },
+  low: { label: "Low balance", cls: "bg-amber-400/25 text-amber-100" },
+  negative: { label: "Below ₹0", cls: "bg-orange-400/25 text-orange-100" },
+  locked: { label: "Limit crossed", cls: "bg-red-400/30 text-red-100" },
+} as const;
+
+const when = (d: string) => new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+
+export default function WalletPage() {
+  const d = useLoaderData<typeof loader>();
+  const res = useActionData<typeof action>();
+  const [params] = useSearchParams();
+  const rc = params.get("recharge");
+  const st = STATE_UI[d.wallet.state];
+  const spentMonth = d.usage.filter((u) => u.type !== "recharge" && u.type !== "manual_credit" && u.type !== "manual_debit").reduce((n, u) => n - u.amount, 0);
+
+  return (
+    <div className="space-y-5">
+      {rc === "success" && <Notice tone="success">Recharge successful. The amount has been added to your wallet.</Notice>}
+      {rc === "failed" && <Notice tone="error">The payment didn't go through. No money was added. You can try again.</Notice>}
+      {rc === "pending" && <Notice tone="warning">We're waiting for PayU to confirm your payment. It usually takes a minute. Use “Check status” below.</Notice>}
+      {res?.ok && <Notice tone="success">{res.ok}</Notice>}
+      {res?.error && <Notice tone="error">{res.error}</Notice>}
+      {d.wallet.status === "suspended" && <Notice tone="error">This wallet is suspended by the admin. Only OTP and order confirmation messages go out.</Notice>}
+      {d.wallet.state === "locked" && (
+        <Notice tone="error">
+          Your balance is below the allowed limit of {rupees(-d.wallet.negativeLimit, 0)}. Checkout keeps working, but promotional and tracking messages are paused
+          and some dashboard features are locked. Recharge to unlock everything.
+        </Notice>
+      )}
+
+      {/* Hero */}
+      <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl" />
+        <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm text-white/70">Wallet balance</p>
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
+            </div>
+            <p className={`num mt-2 text-[44px] font-semibold leading-none tracking-tight sm:text-[56px] ${d.wallet.balance < 0 ? "text-red-200" : ""}`}>{rupees(d.wallet.balance)}</p>
+            <p className="mt-3 text-sm text-white/75">
+              Checkout never stops. The balance may go down to {rupees(-d.wallet.negativeLimit, 0)} before promotional and tracking messages pause.
+            </p>
+          </div>
+          <dl className="grid grid-cols-2 gap-2 sm:gap-3">
+            <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Spent this month</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(spentMonth)}</dd></div>
+            <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Low balance alert</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(d.wallet.lowAlert, 0)}</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <RechargeCard d={d} />
+        <section className="panel">
+          <h2 className="border-b border-rule px-5 py-4 text-[15px] font-semibold">Your rates</h2>
+          <ul className="divide-y divide-rule text-sm">
+            {[
+              ["Sale fee", `${(d.rates.saleFeeBps / 100).toFixed(2).replace(/\.00$/, "")}% of each order`, "Charged when an order is paid online or placed on COD"],
+              ["OTP", `${rupees(d.rates.otp)} per OTP`, "Only when the OTP is sent"],
+              ["WhatsApp order confirmation", `${rupees(d.rates.waConfirm)} per message`, null],
+              ["WhatsApp courier tracking", `${rupees(d.rates.waTracking)} per message`, null],
+              ["WhatsApp promotional", `${rupees(d.rates.waPromo)} per message`, null],
+            ].map(([k, v, h]) => (
+              <li key={k} className="flex items-start justify-between gap-3 px-5 py-3">
+                <div><p className="font-medium">{k}</p>{h && <p className="text-xs text-ink-faint">{h}</p>}</div>
+                <p className="num shrink-0 font-semibold">{v}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="border-t border-rule px-5 py-2.5 text-xs text-ink-faint">Messages are charged only when they're delivered to WhatsApp / the SMS provider. Failed sends are free.</p>
+        </section>
+      </div>
+
+      <UsageCard usage={d.usage} />
+      <Ledger d={d} />
+      <Recharges d={d} />
+      <Billing d={d} field={res?.field} />
+      {d.isAdmin && <AdminPanel d={d} />}
+    </div>
+  );
+}
+
+function RechargeCard({ d }: { d: D }) {
+  const min = d.minRecharge / 100;
+  const [amount, setAmount] = useState(String(min));
+  const credit = Math.round((Number(amount) || 0) * 100);
+  const b = rechargeBreakup(credit);
+  const tooLow = credit < d.minRecharge;
+  const nav = useNavigation();
+  const busy = nav.state !== "idle" && nav.formData?.get("intent") === "recharge";
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex items-center justify-between border-b border-rule px-5 py-4">
+        <h2 className="text-[15px] font-semibold">Add money</h2>
+        <span className="flex items-center gap-1 text-xs text-ink-faint"><Icon name="wallet" className="h-3.5 w-3.5" />Secured by PayU</span>
+      </div>
+      <Form method="post" className="space-y-4 p-5">
+        <div className="flex flex-wrap gap-2">
+          {[min, 5000, 10000, 25000].filter((v, i, a) => a.indexOf(v) === i && v >= min).map((v) => (
+            <button key={v} type="button" onClick={() => setAmount(String(v))}
+              className={`rounded-lg border px-3.5 py-2 text-sm font-semibold ${Number(amount) === v ? "border-pine bg-pine-tint text-pine" : "border-rule-strong bg-surface text-ink-soft hover:text-ink"}`}>
+              {rupees(v * 100, 0)}
+            </button>
+          ))}
+        </div>
+        <label className="block">
+          <span className="label">Amount to add to wallet (₹)</span>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint">₹</span>
+            <input name="amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} className="input num pl-7 text-lg font-semibold" aria-describedby="min-note" />
+          </div>
+          <span id="min-note" className={`hint ${tooLow ? "text-bad" : ""}`}>Minimum {rupees(d.minRecharge, 0)}. GST is added on top.</span>
+        </label>
+        <dl className="num space-y-1.5 rounded-xl bg-paper p-4 text-sm">
+          <div className="flex justify-between"><dt className="text-ink-soft">Wallet credit</dt><dd className="font-medium">{rupees(b.credit)}</dd></div>
+          <div className="flex justify-between"><dt className="text-ink-soft">GST (18%)</dt><dd>{rupees(b.gst)}</dd></div>
+          <div className="flex justify-between border-t border-rule pt-2 text-base font-semibold"><dt>You pay</dt><dd>{rupees(b.total)}</dd></div>
+        </dl>
+        {!d.payuReady ? (
+          <Notice tone="warning">Online recharge isn't set up yet. {d.isAdmin ? "Add the platform PayU key and salt in All wallets → Settings." : "Please contact support to add money."}</Notice>
+        ) : (
+          <button name="intent" value="recharge" className="btn-primary w-full py-3 text-base" disabled={tooLow || busy}>
+            {busy ? "Opening PayU…" : `Pay ${rupees(b.total)} securely`}
+          </button>
+        )}
+        <p className="text-xs text-ink-faint">
+          You'll get a GST invoice for every recharge. Wallet balance is non-refundable and non-transferable, and can only be used for Multi Checkout services.
+          {d.payuMode === "test" && d.payuReady && <b className="text-warn"> PayU is in test mode.</b>}
+        </p>
+      </Form>
+    </section>
+  );
+}
+
+function UsageCard({ usage }: { usage: D["usage"] }) {
+  const pick = (t: string) => usage.find((u) => u.type === t) ?? { count: 0, amount: 0 };
+  const items: [TxType, string][] = [["sale_fee", "orders"], ["otp", "OTPs"], ["wa_confirm", "messages"], ["wa_tracking", "messages"], ["wa_promo", "messages"]];
+  const reversed = pick("refund_reversal");
+  return (
+    <section className="panel">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-rule px-5 py-4">
+        <h2 className="text-[15px] font-semibold">Usage this month</h2>
+        {reversed.count > 0 && <span className="text-xs text-good">{reversed.count} fee{reversed.count === 1 ? "" : "s"} reversed · +{rupees(reversed.amount)}</span>}
+      </div>
+      <dl className="grid grid-cols-2 gap-px bg-rule sm:grid-cols-5">
+        {items.map(([t, unit]) => {
+          const u = pick(t);
+          return (
+            <div key={t} className="bg-surface px-5 py-4">
+              <dt className="text-xs text-ink-soft">{TX_LABELS[t]}</dt>
+              <dd className="num mt-1 text-lg font-semibold">{rupees(-u.amount)}</dd>
+              <dd className="num text-xs text-ink-faint">{u.count.toLocaleString("en-IN")} {unit}</dd>
+            </div>
+          );
+        })}
+      </dl>
+    </section>
+  );
+}
+
+function Ledger({ d }: { d: D }) {
+  const [params] = useSearchParams();
+  const link = (patch: Record<string, string>) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) v ? p.set(k, v) : p.delete(k);
+    if (!("page" in patch)) p.delete("page");
+    return `?${p}`;
+  };
+  const exportHref = `/dashboard/stores/${d.storeId}/wallet/export.csv?${new URLSearchParams([...params.entries()].filter(([k]) => ["range", "from", "to", "type"].includes(k)))}`;
+  return (
+    <section className="panel">
+      <div className="flex flex-wrap items-center gap-2 border-b border-rule px-5 py-3.5">
+        <h2 className="mr-auto text-[15px] font-semibold">Transactions</h2>
+        <RangePicker current={d.range} align="right" />
+        <Form method="get" preventScrollReset onChange={(e) => e.currentTarget.requestSubmit()}>
+          {[...params.entries()].filter(([k]) => !["type", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
+          <select name="type" defaultValue={d.type} className="input h-9 py-0 text-sm" aria-label="Transaction type">
+            <option value="">All types</option>
+            {Object.entries(TX_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </Form>
+        <a href={exportHref} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-surface px-3 text-sm text-ink-soft hover:text-ink"><Icon name="download" className="h-4 w-4" />CSV</a>
+      </div>
+      {d.ledger.length === 0 ? (
+        <p className="px-5 py-10 text-center text-sm text-ink-faint">No transactions in this period.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table min-w-[720px]">
+            <thead><tr><th>Date</th><th>Type</th><th>Details</th><th className="text-right">Amount</th><th className="text-right">Balance</th></tr></thead>
+            <tbody>
+              {d.ledger.map((t) => (
+                <tr key={t.id}>
+                  <td className="whitespace-nowrap text-sm">{when(t.at)}</td>
+                  <td><span className={`whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium ${t.amount >= 0 ? "bg-emerald-50 text-good" : "bg-paper-sunk text-ink-soft"}`}>{TX_LABELS[t.type as TxType] ?? t.type}</span></td>
+                  <td className="max-w-[320px] text-xs text-ink-soft">
+                    <p className="truncate" title={t.note ?? ""}>{t.note ?? "—"}</p>
+                    <p className="num truncate text-ink-faint">{t.refType === "order" ? `Order ${t.refId}` : t.refType === "recharge" ? `Txn ${t.refId}` : t.refType === "message" ? `Msg ${t.refId}` : t.by ? `By ${t.by}` : ""}</p>
+                  </td>
+                  <td className={`num text-right font-semibold ${t.amount >= 0 ? "text-good" : ""}`}>{t.amount >= 0 ? "+" : ""}{rupees(t.amount)}</td>
+                  <td className={`num text-right ${t.after < 0 ? "text-bad" : "text-ink-soft"}`}>{rupees(t.after)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {(d.page > 1 || d.hasMore) && (
+        <div className="flex justify-between border-t border-rule px-5 py-3">
+          {d.page > 1 ? <Link to={link({ page: String(d.page - 1) })} className="btn-secondary py-1.5">Newer</Link> : <span />}
+          {d.hasMore && <Link to={link({ page: String(d.page + 1) })} className="btn-secondary py-1.5">Older</Link>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Recharges({ d }: { d: D }) {
+  return (
+    <section className="panel">
+      <h2 className="border-b border-rule px-5 py-4 text-[15px] font-semibold">Recharges and invoices</h2>
+      {d.recharges.length === 0 ? (
+        <p className="px-5 py-8 text-center text-sm text-ink-faint">No recharges yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table min-w-[680px]">
+            <thead><tr><th>Date</th><th className="text-right">Credit</th><th className="text-right">GST</th><th className="text-right">Paid</th><th>Status</th><th>Invoice</th></tr></thead>
+            <tbody>
+              {d.recharges.map((r) => (
+                <tr key={r.id}>
+                  <td className="whitespace-nowrap text-sm">{when(r.at)}<p className="num text-xs text-ink-faint">{r.txnid}</p></td>
+                  <td className="num text-right font-medium">{rupees(r.credit)}</td>
+                  <td className="num text-right text-ink-soft">{rupees(r.gst)}</td>
+                  <td className="num text-right font-semibold">{rupees(r.total)}</td>
+                  <td>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.status === "paid" ? "bg-emerald-50 text-good" : r.status === "failed" ? "bg-red-50 text-bad" : "bg-amber-50 text-amber-800"}`}>
+                      {r.status === "paid" ? "Paid" : r.status === "failed" ? "Failed" : "Pending"}
+                    </span>
+                  </td>
+                  <td>
+                    {r.invoiceNo ? (
+                      <a href={`/dashboard/wallet/invoice/${r.id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline"><Icon name="download" className="h-3.5 w-3.5" />{r.invoiceNo}</a>
+                    ) : r.status === "pending" ? (
+                      <Form method="post"><input type="hidden" name="txnid" value={r.txnid} /><SubmitButton intent="recheck" className="btn-secondary px-2.5 py-1 text-xs" busyText="Checking">Check status</SubmitButton></Form>
+                    ) : <span className="text-xs text-ink-faint">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Billing({ d, field }: { d: D; field?: string }) {
+  const b = d.wallet.billing;
+  const [open, setOpen] = useState(!b.name || field === "billing");
+  return (
+    <section className="panel">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center justify-between px-5 py-4 text-left">
+        <span>
+          <span className="block text-[15px] font-semibold">Billing details for GST invoices</span>
+          <span className="block text-sm text-ink-soft">{b.name ? `${b.name}${b.gstin ? ` · ${b.gstin}` : ""}${b.state ? ` · ${b.state}` : ""}` : "Add your business name and GSTIN to claim input tax credit."}</span>
+        </span>
+        <Icon name="chevron" className={`h-4 w-4 text-ink-faint transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <Form method="post" className="grid gap-4 border-t border-rule p-5 sm:grid-cols-2">
+          <label className="block"><span className="label">Business / legal name</span><input name="name" defaultValue={b.name ?? ""} className="input" /></label>
+          <label className="block"><span className="label">GSTIN (optional)</span><input name="gstin" defaultValue={b.gstin ?? ""} maxLength={15} className="input uppercase" placeholder="09ABCDE1234F1Z5" /></label>
+          <label className="block sm:col-span-2"><span className="label">Address</span><input name="address" defaultValue={b.address ?? ""} className="input" /></label>
+          <label className="block"><span className="label">State</span>
+            <select name="state" defaultValue={b.state ?? ""} className="input"><option value="">Select state</option>{INDIAN_STATES.map((s) => <option key={s.code} value={s.name}>{s.name}</option>)}</select>
+            <span className="hint">Decides CGST + SGST or IGST on the invoice.</span></label>
+          <label className="block"><span className="label">Billing email</span><input name="email" type="email" defaultValue={b.email ?? ""} className="input" /></label>
+          <label className="block"><span className="label">Phone</span><input name="phone" defaultValue={b.phone ?? ""} className="input" /></label>
+          <div className="flex items-end sm:col-span-2"><SubmitButton intent="billing" busyText="Saving">Save billing details</SubmitButton></div>
+        </Form>
+      )}
+    </section>
+  );
+}
+
+function AdminPanel({ d }: { d: D }) {
+  const o = d.wallet.rateOverride as Partial<typeof DEFAULT_RATES>;
+  const def = d.defaultRates;
+  const [dir, setDir] = useState("credit");
+  const nav = useNavigation();
+  const [key, setKey] = useState(0);
+  useEffect(() => { if (nav.state === "idle") setKey((k) => k + 1); }, [nav.state]);
+  return (
+    <section className="panel border-2 border-dashed border-violet-300">
+      <div className="flex items-center gap-2 border-b border-rule px-5 py-4">
+        <Icon name="sparkle" className="h-4 w-4 text-violet-600" />
+        <h2 className="text-[15px] font-semibold">Super admin controls</h2>
+        <span className="text-xs text-ink-faint">Only you see this</span>
+      </div>
+      <div className="grid gap-6 p-5 lg:grid-cols-3">
+        <Form method="post" className="space-y-3" key={`adj${key}`}>
+          <p className="text-sm font-semibold">Manual credit / debit</p>
+          <input type="hidden" name="direction" value={dir} />
+          <div className="flex rounded-lg border border-rule-strong bg-surface p-0.5">
+            {[["credit", "Credit"], ["debit", "Debit"]].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setDir(v)} className={`flex-1 rounded-md px-2 py-1.5 text-sm ${dir === v ? (v === "credit" ? "bg-good text-white" : "bg-bad text-white") : "text-ink-soft"}`}>{l}</button>
+            ))}
+          </div>
+          <input name="amount" inputMode="decimal" placeholder="Amount ₹" className="input num" required />
+          <input name="reason" placeholder="Reason (required, shown in the ledger)" className="input" required maxLength={300} />
+          <SubmitButton intent="adjust" busyText="Saving" className={dir === "credit" ? "btn-primary w-full" : "btn w-full bg-bad text-white"}>{dir === "credit" ? "Add credit" : "Debit wallet"}</SubmitButton>
+        </Form>
+
+        <Form method="post" className="space-y-3">
+          <p className="text-sm font-semibold">Limits</p>
+          <label className="block"><span className="label">Can go negative down to (₹)</span><input name="negativeLimit" defaultValue={d.wallet.negativeLimit / 100} inputMode="numeric" className="input num" /></label>
+          <label className="block"><span className="label">Low balance alert below (₹)</span><input name="lowAlert" defaultValue={d.wallet.lowAlert / 100} inputMode="numeric" className="input num" /></label>
+          <label className="block"><span className="label">Status</span>
+            <select name="status" defaultValue={d.wallet.status} className="input"><option value="active">Active</option><option value="suspended">Suspended (only OTP + confirmations)</option></select></label>
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="reverseFeeOnRefund" defaultChecked={d.wallet.reverseFeeOnRefund} className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]" />Give the sale fee back when a prepaid order is fully refunded</label>
+          <SubmitButton intent="limits" className="btn-secondary w-full" busyText="Saving">Save limits</SubmitButton>
+        </Form>
+
+        <Form method="post" className="space-y-3">
+          <p className="text-sm font-semibold">Special rates for {d.storeName}</p>
+          <p className="text-xs text-ink-faint">Leave a box empty to use the default rate.</p>
+          {[
+            ["saleFeePct", "Sale fee (%)", o.saleFeeBps != null ? o.saleFeeBps / 100 : "", def.saleFeeBps / 100],
+            ["otp", "OTP (₹)", o.otp != null ? o.otp / 100 : "", def.otp / 100],
+            ["waConfirm", "WA confirmation (₹)", o.waConfirm != null ? o.waConfirm / 100 : "", def.waConfirm / 100],
+            ["waTracking", "WA tracking (₹)", o.waTracking != null ? o.waTracking / 100 : "", def.waTracking / 100],
+            ["waPromo", "WA promotional (₹)", o.waPromo != null ? o.waPromo / 100 : "", def.waPromo / 100],
+          ].map(([name, label, val, ph]) => (
+            <label key={name as string} className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-ink-soft">{label}</span>
+              <input name={name as string} defaultValue={val as string} placeholder={`Default ${ph}`} inputMode="decimal" className="input num w-32 py-1.5 text-right" />
+            </label>
+          ))}
+          <SubmitButton intent="rates" className="btn-secondary w-full" busyText="Saving">Save rates</SubmitButton>
+        </Form>
+      </div>
+    </section>
+  );
+}

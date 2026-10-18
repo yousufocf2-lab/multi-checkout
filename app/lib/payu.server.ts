@@ -3,7 +3,11 @@ import type { Order, Store } from "~/db/schema";
 
 const sha512 = (s: string) => crypto.createHash("sha512").update(s).digest("hex");
 
-export function payuEndpoint(store: Store) {
+/** Just the PayU credentials (a store's, or the platform's for wallet recharges). */
+export type PayuCreds = Pick<Store, "payuKey" | "payuSalt" | "payuMode">;
+export { sha512 };
+
+export function payuEndpoint(store: PayuCreds) {
   return store.payuMode === "live" ? "https://secure.payu.in/_payment" : "https://test.payu.in/_payment";
 }
 
@@ -41,7 +45,7 @@ export function buildPayuParams(
 }
 
 /** Verifies the reverse hash PayU posts back to surl/furl. */
-export function verifyPayuResponse(store: Store, f: Record<string, string>) {
+export function verifyPayuResponse(store: PayuCreds, f: Record<string, string>) {
   if (!store.payuSalt) return false;
   // SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
   let s = [
@@ -56,7 +60,7 @@ export function verifyPayuResponse(store: Store, f: Record<string, string>) {
 }
 
 /** Checks key + salt by calling PayU's verify_payment API with a dummy txnid. */
-export async function testPayu(store: Store) {
+export async function testPayu(store: PayuCreds) {
   if (!store.payuKey || !store.payuSalt) throw new Error("PayU key and salt are not set");
   const host = store.payuMode === "live" ? "https://info.payu.in" : "https://test.payu.in";
   const command = "verify_payment";
@@ -78,11 +82,11 @@ export async function testPayu(store: Store) {
 
 // ---------------- server-to-server verification ----------------
 
-function infoHost(store: Store) {
+function infoHost(store: PayuCreds) {
   return store.payuMode === "live" ? "https://info.payu.in" : "https://test.payu.in";
 }
 
-async function postService(store: Store, command: string, var1: string) {
+async function postService(store: PayuCreds, command: string, var1: string) {
   if (!store.payuKey || !store.payuSalt) throw new Error("PayU key and salt are not set");
   const hash = sha512([store.payuKey, command, var1, store.payuSalt].join("|"));
   const res = await fetch(`${infoHost(store)}/merchant/postservice.php?form=2`, {
@@ -109,7 +113,7 @@ const toPaise = (v: unknown) => {
 };
 
 /** Asks PayU directly for the real status of a transaction. */
-export async function verifyPayment(store: Store, txnid: string): Promise<PayuVerification> {
+export async function verifyPayment(store: PayuCreds, txnid: string): Promise<PayuVerification> {
   const data = await postService(store, "verify_payment", txnid);
   const td = (data.transaction_details as Record<string, Record<string, unknown>> | undefined)?.[txnid];
   if (!td) return { status: "not_found", amountPaise: null, netDebitPaise: null, mihpayid: null, raw: data };

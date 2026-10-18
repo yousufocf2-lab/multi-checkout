@@ -78,6 +78,13 @@
       "when": 1792303379005,
       "tag": "0010_mix_per_method",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792313784147,
+      "tag": "0011_wallet",
+      "breakpoints": true
     }
   ]
 }
