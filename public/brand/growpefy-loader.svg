@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="252 71.5 876 876" role="img" aria-label="Loading"><title>Loading</title><style>
-.b{transform-box:fill-box;transform-origin:50% 100%;animation:grow 2.4s cubic-bezier(.3,.7,.2,1) infinite}
+.b{transform-box:fill-box;transform-origin:50% 100%;animation:grow 1.5s cubic-bezier(.3,.7,.2,1) infinite}
 .b2{animation-name:grow2}.b3{animation-name:grow3}
-.w{transform-box:fill-box;transform-origin:0 50%;animation:wipe 2.4s cubic-bezier(.5,0,.2,1) infinite}
-.all{animation:fade 2.4s ease infinite}
+.w{transform-box:fill-box;transform-origin:0 50%;animation:wipe 1.5s cubic-bezier(.5,0,.2,1) infinite}
+.all{animation:fade 1.5s ease infinite}
 @keyframes grow{0%{transform:scaleY(0)}14%,100%{transform:scaleY(1)}}
 @keyframes grow2{0%,8%{transform:scaleY(0)}22%,100%{transform:scaleY(1)}}
 @keyframes grow3{0%,16%{transform:scaleY(0)}30%,100%{transform:scaleY(1)}}

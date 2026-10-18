@@ -13,6 +13,17 @@ export function ProductPicker({ storeId, name, initial = [], placeholder = "Sear
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const box = useRef<HTMLDivElement>(null);
+
+  // Close the list on a click/tap outside, or when focus leaves the picker
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("touchstart", close, { passive: true });
+    document.addEventListener("focusin", close);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("touchstart", close); document.removeEventListener("focusin", close); };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -28,7 +39,7 @@ export function ProductPicker({ storeId, name, initial = [], placeholder = "Sear
   const results = fetcher.data?.products ?? [];
 
   return (
-    <div>
+    <div ref={box}>
       <input type="hidden" name={name} value={JSON.stringify(picked)} />
       {picked.length > 0 && (
         <ul className="mb-2 flex flex-wrap gap-1.5">
@@ -43,7 +54,7 @@ export function ProductPicker({ storeId, name, initial = [], placeholder = "Sear
       )}
       <div className="relative">
         <input className="input" placeholder={placeholder} value={q}
-          onChange={(e) => setQ(e.target.value)} onFocus={() => setOpen(true)}
+          onChange={(e) => setQ(e.target.value)} onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
           onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); if (e.key === "Escape") setOpen(false); }} />
         {fetcher.state !== "idle" && <span className="absolute right-3 top-3 text-ink-faint"><Spinner /></span>}
       </div>

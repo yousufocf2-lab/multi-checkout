@@ -7,7 +7,11 @@ import { env } from "./env.server";
 
 const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
-type SessionData = { admin?: boolean; uid?: number };
+type SessionData = { admin?: boolean; uid?: number; seen?: number };
+
+/** Logged out after this long without activity (dashboard pings while the user is active). */
+export const IDLE_MS = (Number(process.env.SESSION_IDLE_MINUTES) > 0 ? Number(process.env.SESSION_IDLE_MINUTES) : 10) * 60 * 1000;
+const isIdle = (seen: number | undefined) => !seen || Date.now() - seen > IDLE_MS;
 
 let storage: ReturnType<typeof createCookieSessionStorage<SessionData>> | null = null;
 function getStorage() {
@@ -18,7 +22,7 @@ function getStorage() {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 24 * 14,
+      maxAge: 60 * 60 * 24, // rolling; idle limit is enforced by `seen`
       secrets: [env.sessionSecret],
     },
   });
@@ -63,6 +67,7 @@ export function signupOpen() {
 
 export async function getViewer(request: Request): Promise<Viewer | null> {
   const s = await getStorage().getSession(request.headers.get("Cookie"));
+  if (isIdle(s.get("seen"))) return null;
   if (s.get("admin")) return { role: "admin", name: "Super admin", email: adminEmail() };
   const uid = s.get("uid");
   if (!uid) return null;
@@ -75,7 +80,9 @@ export async function requireViewer(request: Request) {
   const v = await getViewer(request);
   if (!v) {
     const to = new URL(request.url);
-    throw redirect(`/login?next=${encodeURIComponent(to.pathname + to.search)}`);
+    const s = await getStorage().getSession(request.headers.get("Cookie"));
+    const expired = (s.get("admin") || s.get("uid")) ? "expired=1&" : "";
+    throw redirect(`/login?${expired}next=${encodeURIComponent(to.pathname + to.search)}`);
   }
   return v;
 }
@@ -127,12 +134,22 @@ export async function startSession(request: Request, who: { admin: true } | { us
   s.unset("uid");
   if ("admin" in who) s.set("admin", true);
   else s.set("uid", who.user.id);
+  s.set("seen", Date.now());
   const safeNext = next.startsWith("/dashboard") ? next : "/dashboard";
   return redirect(safeNext, { headers: { "Set-Cookie": await st.commitSession(s) } });
 }
 
-export async function endSession(request: Request) {
+export async function endSession(request: Request, reason?: string) {
   const st = getStorage();
   const s = await st.getSession(request.headers.get("Cookie"));
-  return redirect("/login", { headers: { "Set-Cookie": await st.destroySession(s) } });
+  return redirect(reason === "idle" ? "/login?expired=1" : "/login", { headers: { "Set-Cookie": await st.destroySession(s) } });
+}
+
+/** Marks the session as active now. Returns a Set-Cookie value, or null if the session is gone or idle. */
+export async function touchSession(request: Request) {
+  const st = getStorage();
+  const s = await st.getSession(request.headers.get("Cookie"));
+  if (!(s.get("admin") || s.get("uid")) || isIdle(s.get("seen"))) return null;
+  s.set("seen", Date.now());
+  return st.commitSession(s);
 }

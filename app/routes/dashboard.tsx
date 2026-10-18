@@ -1,10 +1,10 @@
 import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, type ShouldRevalidateFunction } from "@remix-run/react";
+import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
-import { BrandIcon, BrandLockup } from "~/components/Brand";
+import { BrandIcon, BrandLockup, BusyOverlay } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
-import { requireViewer, viewerStores } from "~/lib/auth.server";
+import { IDLE_MS, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
@@ -26,9 +26,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
     selected = inUrl;
     headers.append("Set-Cookie", await selectCookie(inUrl));
   }
+  const touched = await touchSession(request);
+  if (touched) headers.append("Set-Cookie", touched);
   const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
   return json({
     viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
+    idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
     stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.checkoutDomain ?? s.shopDomain })),
     selected,
@@ -37,7 +40,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export const headers: HeadersFunction = ({ loaderHeaders, actionHeaders }) => {
   const h = new Headers();
-  for (const src of [loaderHeaders, actionHeaders]) { const c = src?.get("Set-Cookie"); if (c) h.append("Set-Cookie", c); }
+  for (const src of [loaderHeaders, actionHeaders]) for (const c of src?.getSetCookie?.() ?? []) h.append("Set-Cookie", c);
   return h;
 };
 
@@ -47,7 +50,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -167,6 +170,8 @@ export default function DashboardLayout() {
       )}
 
       <main className="min-w-0 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">
+        <ActionLoader stores={stores} />
+        <IdleLogout idleMs={idleMs} />
         <div className="mx-auto max-w-[1180px]">
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
@@ -182,6 +187,78 @@ export default function DashboardLayout() {
         <Tab to={adsHref} icon="ads" label="Ads" />
         <button type="button" onClick={() => setOpen(true)} className="flex flex-col items-center gap-0.5 py-2 text-[11px] text-ink-soft"><Icon name="menu" className="h-5 w-5" />More</button>
       </nav>
+    </div>
+  );
+}
+
+/** Growpefy loader only for actions that take a moment: connecting APIs, Meta balance, switching store. */
+const BUSY_INTENTS: Record<string, string> = {
+  saveStore: "Saving and connecting your store",
+  testShopify: "Connecting to Shopify",
+  testPayu: "Checking PayU",
+  testMeta: "Connecting to Meta ads",
+  checkBalance: "Fetching your Meta balance",
+};
+
+function ActionLoader({ stores }: { stores: StoreItem[] }) {
+  const nav = useNavigation();
+  if (nav.state === "idle") return null;
+  const intent = nav.formData?.get("intent");
+  if (typeof intent === "string" && BUSY_INTENTS[intent] && nav.state === "submitting") {
+    return <BusyOverlay title={BUSY_INTENTS[intent]} note="This can take a few seconds. Please keep this page open." />;
+  }
+  if (nav.location?.pathname === "/dashboard/select") {
+    const id = new URLSearchParams(nav.location.search).get("store");
+    const name = stores.find((s) => String(s.id) === id)?.name;
+    return <BusyOverlay title={name ? `Switching to ${name}` : "Showing all stores"} />;
+  }
+  return null;
+}
+
+const WARN_MS = 60 * 1000;
+const ACTIVE_KEY = "gp:lastActive";
+
+/** Logs out after 10 minutes without activity, across all open tabs. Server enforces the same limit. */
+function IdleLogout({ idleMs: IDLE_MS }: { idleMs: number }) {
+  const [left, setLeft] = useState<number | null>(null);
+  useEffect(() => {
+    let lastPing = Date.now();
+    const read = () => { try { return Number(localStorage.getItem(ACTIVE_KEY)) || Date.now(); } catch { return Date.now(); } };
+    const mark = () => {
+      const now = Date.now();
+      try { localStorage.setItem(ACTIVE_KEY, String(now)); } catch { /* private mode */ }
+      if (now - lastPing > 60_000) { lastPing = now; fetch("/session/ping", { method: "POST", credentials: "same-origin" }).catch(() => {}); }
+    };
+    let throttle = 0;
+    const onActivity = () => { const n = Date.now(); if (n - throttle > 5000) { throttle = n; mark(); setLeft(null); } };
+    const check = () => {
+      const idle = Date.now() - read();
+      if (idle >= IDLE_MS) {
+        fetch("/logout", { method: "POST", body: new URLSearchParams({ reason: "idle" }), credentials: "same-origin" })
+          .finally(() => { window.location.href = "/login?expired=1"; });
+      } else if (idle >= IDLE_MS - WARN_MS) setLeft(Math.ceil((IDLE_MS - idle) / 1000));
+      else setLeft(null);
+    };
+    mark();
+    const events = ["mousedown", "keydown", "scroll", "touchstart", "mousemove"] as const;
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    const t = setInterval(check, 1000);
+    return () => { events.forEach((e) => window.removeEventListener(e, onActivity)); document.removeEventListener("visibilitychange", onVis); clearInterval(t); };
+  }, [IDLE_MS]);
+  if (left === null) return null;
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 px-4" role="alertdialog" aria-modal="true" aria-labelledby="idle-title">
+      <div className="w-full max-w-sm animate-fadein rounded-2xl bg-surface p-6 text-center shadow-lift">
+        <BrandIcon className="mx-auto h-10 w-10" />
+        <h2 id="idle-title" className="mt-3 text-lg font-semibold">Still there?</h2>
+        <p className="mt-1 text-sm text-ink-soft">For your security, you'll be logged out in <b className="num text-ink">{left}s</b> because there's been no activity.</p>
+        <div className="mt-5 flex gap-2">
+          <Form method="post" action="/logout" className="flex-1"><input type="hidden" name="reason" value="idle" /><button className="btn-secondary w-full">Log out</button></Form>
+          <button type="button" className="btn-primary flex-1" onClick={() => { try { localStorage.setItem(ACTIVE_KEY, String(Date.now())); } catch { /* */ } fetch("/session/ping", { method: "POST" }).catch(() => {}); setLeft(null); }}>Stay logged in</button>
+        </div>
+      </div>
     </div>
   );
 }

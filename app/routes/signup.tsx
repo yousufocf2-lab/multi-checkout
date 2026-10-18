@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData } from "@remix-run/react";
+import { Form, Link, useActionData, useNavigation } from "@remix-run/react";
+import { BusyOverlay } from "~/components/Brand";
 import { eq } from "drizzle-orm";
 import { AuthShell } from "~/components/AuthShell";
 import { Notice, SubmitButton, TextField } from "~/components/ui";
@@ -40,7 +41,11 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function Signup() {
   const data = useActionData<typeof action>();
   const e = data?.errors ?? {};
+  const nav = useNavigation();
+  const busy = nav.state !== "idle" && (nav.formAction?.startsWith("/signup") || nav.location?.pathname.startsWith("/dashboard"));
   return (
+    <>
+    {busy && <BusyOverlay title="Creating your account" note="Getting your dashboard ready." />}
     <AuthShell title="Create your account" subtitle="Connect your Shopify store and start taking orders on your own checkout."
       footer={<>Already have an account? <Link to="/login" className="font-medium text-ink underline underline-offset-2">Log in</Link></>}>
       <Form method="post" className="space-y-4" noValidate>
@@ -51,5 +56,6 @@ export default function Signup() {
         <SubmitButton className="btn-primary w-full py-3" busyText="Creating account">Create account</SubmitButton>
       </Form>
     </AuthShell>
+    </>
   );
 }

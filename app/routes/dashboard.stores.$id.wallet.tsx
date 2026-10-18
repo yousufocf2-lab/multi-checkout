@@ -1,3 +1,4 @@
+import { DownloadLink } from "~/components/DownloadLink";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
@@ -322,7 +323,7 @@ function Ledger({ d }: { d: D }) {
             {Object.entries(TX_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </Form>
-        <a href={exportHref} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-surface px-3 text-sm text-ink-soft hover:text-ink"><Icon name="download" className="h-4 w-4" />CSV</a>
+        <DownloadLink href={exportHref} title="Preparing your CSV" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-surface px-3 text-sm text-ink-soft hover:text-ink"><Icon name="download" className="h-4 w-4" />CSV</DownloadLink>
       </div>
       {d.ledger.length === 0 ? (
         <p className="px-5 py-10 text-center text-sm text-ink-faint">No transactions in this period.</p>

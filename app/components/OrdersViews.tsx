@@ -1,3 +1,4 @@
+import { DownloadLink } from "./DownloadLink";
 import { Form, Link, useSearchParams, useSubmit } from "@remix-run/react";
 import { useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
@@ -100,9 +101,9 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
           className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm ${panel || extra ? "border-ink bg-ink text-white" : "border-rule-strong bg-surface text-ink-soft hover:text-ink"}`}>
           <Icon name="filter" className="h-4 w-4" />More filters{extra > 0 && <span className="num rounded bg-white/20 px-1.5 text-xs">{extra}</span>}
         </button>
-        <a href={exportHref} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-surface px-3 text-sm text-ink-soft hover:text-ink sm:ml-auto">
+        <DownloadLink href={exportHref} title="Preparing your CSV" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-surface px-3 text-sm text-ink-soft hover:text-ink sm:ml-auto">
           <Icon name="download" className="h-4 w-4" />Export CSV
-        </a>
+        </DownloadLink>
       </div>
 
       {panel && (

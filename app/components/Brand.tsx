@@ -33,3 +33,16 @@ export function PoweredBy({ className = "" }: { className?: string }) {
     </a>
   );
 }
+
+/** Full-screen Growpefy loader for actions that take a moment (login, connecting APIs, switching store, exports). */
+export function BusyOverlay({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className="fixed inset-0 z-[90] flex animate-fadein items-center justify-center bg-white/85 px-6 text-center backdrop-blur-[3px]" role="status" aria-live="polite">
+      <div className="flex flex-col items-center">
+        <BrandLoader className="h-20 w-20" label={title} />
+        <p className="mt-4 text-[15px] font-semibold text-ink">{title}</p>
+        {note && <p className="mt-1 max-w-xs text-sm text-ink-soft">{note}</p>}
+      </div>
+    </div>
+  );
+}
