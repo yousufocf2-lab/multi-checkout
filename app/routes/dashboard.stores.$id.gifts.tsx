@@ -279,9 +279,8 @@ function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
     { key: "cod", label: "Cash on Delivery", icon: "💵", s: cod, set: setCod, pct: mix.cod.pct, names: ["mixCodOn", "mixCodFreeQty", "mixCodFreeWhich", "mixKeepCod"] },
   ];
 
-  const summary = !pre.on && !cod.on ? "Turn on for at least one payment method."
-    : `Online: ${pre.on ? `Buy ${buy}, Get ${pre.free} Free (${pre.which === "low" ? "lowest" : "highest"} price)` : "off"} · COD: ${cod.on ? `Buy ${buy}, Get ${cod.free} Free (${cod.which === "low" ? "lowest" : "highest"} price)` : "off"}`;
-
+    const summary = !pre.on && !cod.on ? "Turn on for at least one payment method."
+    : `Online: ${pre.on ? `Buy ${buy - pre.free}, Get ${pre.free} Free (${pre.which === "low" ? "lowest" : "highest"} price)` : "off"} · COD: ${cod.on ? `Buy ${buy - cod.free}, Get ${cod.free} Free (${cod.which === "low" ? "lowest" : "highest"} price)` : "off"}`;
   return (
     <section className={`panel overflow-hidden ${on ? "ring-2 ring-pine/30" : ""}`}>
       <Form method="post">
@@ -316,7 +315,7 @@ function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
           </>
         )}
 
-        {on && (
+                {on && (
           <div className="space-y-5 p-5">
             <div className="grid gap-4 sm:grid-cols-[200px_minmax(0,1fr)]">
               <label className="block">
@@ -326,7 +325,7 @@ function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
               </label>
               <label className="block">
                 <span className="label">Title on checkout (optional)</span>
-                <input name="mixTitle" defaultValue={mix.title} placeholder={`Buy ${buy}, Get ${pre.on ? pre.free : cod.free} Free`} maxLength={60} className="input" />
+                <input name="mixTitle" defaultValue={mix.title} placeholder={`Buy ${buy - (pre.on ? pre.free : cod.free)}, Get ${pre.on ? pre.free : cod.free} Free`} maxLength={60} className="input" />
                 <span className="hint">Leave empty to show the right title for each payment method automatically.</span>
               </label>
             </div>

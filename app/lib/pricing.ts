@@ -42,7 +42,7 @@ export interface StoreRule {
   mix?: MixDeals | null;
 }
 
-export const mixTitle = (m: Pick<MixDeal, "buyQty" | "freeQty">) => `Buy ${m.buyQty}, Get ${m.freeQty} Free`;
+export const mixTitle = (m: Pick<MixDeal, "buyQty" | "freeQty">) => `Buy ${m.buyQty - m.freeQty}, Get ${m.freeQty} Free`;
 
 /**
  * Which units are free under a Mix & Match deal. Returns free units per line (same order as `lines`).
