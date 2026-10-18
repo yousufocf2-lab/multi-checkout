@@ -235,14 +235,14 @@ export async function createShopifyOrder(store: Store, order: Order) {
     shippingAddress: address,
     billingAddress: address,
     financialStatus: isCod ? "PENDING" : "PAID",
-    tags: ["MultiCheckout", isCod ? "COD" : "Prepaid", order.couponCode, order.items.some((l) => l.free) ? "FreeGift" : null].filter(Boolean),
+    tags: ["Growpefy", isCod ? "COD" : "Prepaid", order.couponCode, order.items.some((l) => l.free) ? "FreeGift" : null].filter(Boolean),
     note: `Checkout order ${order.id}${order.payuMihpayid ? `, PayU ${order.payuMihpayid}` : ""}`,
     // Without a shipping line Shopify shows "Shipping not required" and fulfilment apps skip the order
     shippingLines: [
       {
         title: order.shippingTitle || (order.shipping > 0 ? "Standard delivery" : "Free delivery"),
         code: order.shipping > 0 ? "STANDARD" : "FREE",
-        source: "MultiCheckout",
+        source: "Growpefy",
         priceSet: money(order.shipping),
       },
     ],

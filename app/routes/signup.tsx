@@ -8,7 +8,7 @@ import { db, users } from "~/db.server";
 import { adminEmail, createUser, getViewer, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 
-export const meta: MetaFunction = () => [{ title: "Create account · Multi Checkout" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Create account · Growpefy" }, { name: "robots", content: "noindex" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);

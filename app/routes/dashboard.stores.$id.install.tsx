@@ -121,7 +121,7 @@ export default function Setup() {
         <Step n={5} title="Add the checkout to your theme">
           <p className="text-sm text-ink-soft">Shopify admin → Online Store → Themes → <b>Duplicate</b> your theme → Edit code → <code>layout/theme.liquid</code>. Paste this just before <code>&lt;/body&gt;</code>, then preview the copy before publishing.</p>
           <div className="mt-3"><CopyField label="Theme script" value={snippet} /></div>
-          <p className="mt-3 text-xs text-ink-faint">The cart's Checkout button and Buy it now open this checkout automatically. For a custom button, add the <code>data-cx-checkout</code> attribute or call <code>MultiCheckout.go()</code>.</p>
+          <p className="mt-3 text-xs text-ink-faint">The cart's Checkout button and Buy it now open this checkout automatically. For a custom button, add the <code>data-cx-checkout</code> attribute or call <code>Growpefy.go()</code>.</p>
         </Step>
       </ol>
     </div>

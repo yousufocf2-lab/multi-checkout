@@ -267,7 +267,7 @@ function RechargeCard({ d }: { d: D }) {
           </button>
         )}
         <p className="text-xs text-ink-faint">
-          You'll get a GST invoice for every recharge. Wallet balance is non-refundable and non-transferable, and can only be used for Multi Checkout services.
+          You'll get a GST invoice for every recharge. Wallet balance is non-refundable and non-transferable, and can only be used for Growpefy services.
           {d.payuMode === "test" && d.payuReady && <b className="text-warn"> PayU is in test mode.</b>}
         </p>
       </Form>

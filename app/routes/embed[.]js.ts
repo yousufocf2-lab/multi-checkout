@@ -76,7 +76,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
   },true);
 
-  window.MultiCheckout={go:go,buyNow:buyNow};
+  window.Growpefy=window.MultiCheckout={go:go,buyNow:buyNow};
 })();`;
   return new Response(js, {
     headers: {

@@ -8,6 +8,7 @@ import { getOrderWithStore, syncOrderWithPayu } from "~/lib/orders.server";
 import { formatINR } from "~/lib/pricing";
 import { ensureStoreHost } from "~/lib/urls.server";
 import { MetaPixel } from "~/components/MetaPixel";
+import { BrandLoader, PoweredBy } from "~/components/Brand";
 import { purchaseValue, shouldTrackPurchase } from "~/lib/meta.server";
 
 export const meta: MetaFunction = () => [{ title: "Your order" }, { name: "robots", content: "noindex" }];
@@ -114,13 +115,14 @@ export default function OrderStatus() {
 
           {pending && (
             <div className="py-6 text-center" role="status" aria-live="polite">
-              <div className="mx-auto h-1 w-40 overflow-hidden rounded-full bg-paper-sunk"><div className="h-full w-1/2 animate-bar rounded-full bg-brand" /></div>
-              <h1 className="mt-6 text-lg font-semibold">Confirming your payment</h1>
+              <BrandLoader className="mx-auto h-16 w-16" label="Confirming payment" />
+              <h1 className="mt-4 text-lg font-semibold">Confirming your payment</h1>
               <p className="mt-1 text-sm text-ink-soft">This usually takes a few seconds. Please keep this page open.</p>
             </div>
           )}
         </div>
         {d.store.supportPhone && <p className="mt-5 text-center text-xs text-ink-faint">Questions about your order? Call <a className="underline" href={`tel:${d.store.supportPhone}`}>{d.store.supportPhone}</a></p>}
+        <div className="mt-4 flex justify-center"><PoweredBy /></div>
       </div>
     </main>
   );

@@ -8,6 +8,7 @@ import { ensureStoreHost, storeBaseUrl } from "~/lib/urls.server";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { buildPayuParams, payuEndpoint } from "~/lib/payu.server";
 import { formatINR } from "~/lib/pricing";
+import { BrandLoader } from "~/components/Brand";
 
 export const meta: MetaFunction = () => [{ title: "Opening secure payment" }, { name: "robots", content: "noindex" }];
 
@@ -41,9 +42,9 @@ export default function Pay() {
   useEffect(() => { ref.current?.submit(); }, []);
   return (
     <main style={{ ["--brand" as string]: rgb(store.color) }} className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center" role="status" aria-live="polite">
-      {store.logoUrl ? <img src={store.logoUrl} alt={store.name} className="mb-8 h-9 w-auto max-w-[160px] object-contain" /> : <p className="mb-8 text-lg font-semibold">{store.name}</p>}
-      <div className="h-1 w-48 overflow-hidden rounded-full bg-paper-sunk"><div className="h-full w-1/2 animate-bar rounded-full bg-brand" /></div>
-      <p className="mt-6 font-medium">Opening secure payment for {formatINR(amount)}</p>
+      {store.logoUrl ? <img src={store.logoUrl} alt={store.name} className="mb-6 h-9 w-auto max-w-[160px] object-contain" /> : <p className="mb-6 text-lg font-semibold">{store.name}</p>}
+      <BrandLoader className="h-16 w-16" label="Opening payment" />
+      <p className="mt-4 font-medium">Opening secure payment for {formatINR(amount)}</p>
       <p className="mt-1 text-sm text-ink-soft">Don't close this page or press back.</p>
       <form ref={ref} method="post" action={action} className="mt-8">
         {Object.entries(fields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}

@@ -6,7 +6,7 @@ import { Notice, SubmitButton, TextField } from "~/components/ui";
 import { getViewer, login, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 
-export const meta: MetaFunction = () => [{ title: "Log in · Multi Checkout" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Log in · Growpefy" }, { name: "robots", content: "noindex" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);

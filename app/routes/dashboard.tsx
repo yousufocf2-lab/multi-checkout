@@ -2,7 +2,7 @@ import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-r
 import { json } from "@remix-run/node";
 import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
-import { Mark } from "~/components/AuthShell";
+import { BrandIcon, BrandLockup } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
 import { requireViewer, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
@@ -11,7 +11,7 @@ import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
 
-export const meta: MetaFunction = () => [{ title: "Dashboard | Multi Checkout" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { name: "robots", content: "noindex" }];
 
 export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);
@@ -72,12 +72,11 @@ export default function DashboardLayout() {
 
   const nav = (
     <nav className="flex h-full flex-col bg-night text-night-text">
-      <div className="flex items-center gap-2.5 px-5 pb-4 pt-5">
-        <Mark className="h-8 w-8" />
-        <div className="min-w-0">
-          <p className="text-[15px] font-semibold leading-tight tracking-tight text-white">Multi Checkout</p>
+      <div className="px-5 pb-4 pt-5">
+        <Link to="/dashboard" aria-label="Growpefy home" className="inline-block"><BrandLockup tone="light" className="h-[30px]" /></Link>
+        <div className="mt-2">
           {viewer.role === "admin"
-            ? <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-400/20 to-sky-400/20 px-2 py-px text-[11px] font-medium text-emerald-200"><Icon name="sparkle" className="h-3 w-3" />Super admin</p>
+            ? <p className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-400/20 to-sky-400/20 px-2 py-px text-[11px] font-medium text-emerald-200"><Icon name="sparkle" className="h-3 w-3" />Super admin</p>
             : <p className="text-[11px] text-night-faint">Store dashboard</p>}
         </div>
       </div>
@@ -147,7 +146,7 @@ export default function DashboardLayout() {
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-rule bg-paper/95 px-4 py-2.5 backdrop-blur lg:hidden">
-        <Mark className="h-7 w-7 shrink-0" />
+        <BrandIcon className="h-8 w-8" />
         <button type="button" onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
           <span className="min-w-0">
             <span className="block text-[11px] leading-tight text-ink-faint">Showing</span>

@@ -62,7 +62,8 @@ export default function Invoice() {
       <article className="mx-auto max-w-3xl rounded-xl border border-rule bg-white p-8 text-[13px] leading-relaxed text-[#1C2430] shadow-lift print:rounded-none print:border-0 print:shadow-none sm:p-10">
         <header className="flex flex-wrap items-start justify-between gap-6 border-b border-[#E2E5E0] pb-6">
           <div>
-            <p className="text-lg font-semibold">{seller.name || "Multi Checkout"}</p>
+            <img src="/brand/growpefy-lockup.svg" alt="Growpefy" className="mb-3 h-8 w-auto" />
+            <p className="text-lg font-semibold">{seller.name || "Growpefy"}</p>
             {seller.address && <p className="max-w-xs text-[#475467]">{seller.address}</p>}
             {seller.state && <p className="text-[#475467]">State: {seller.state}</p>}
             {seller.gstin && <p className="font-medium">GSTIN: {seller.gstin}</p>}
@@ -104,7 +105,7 @@ export default function Invoice() {
           <tbody>
             <tr className="border-b border-[#E2E5E0]">
               <td className="px-3 py-3">
-                <p className="font-medium">Prepaid wallet credit for Multi Checkout services</p>
+                <p className="font-medium">Prepaid wallet credit for Growpefy services</p>
                 <p className="text-[#7A8494]">Checkout platform fees, OTP and WhatsApp messaging</p>
               </td>
               <td className="px-3 py-3">{seller.sac || "998314"}</td>
@@ -130,8 +131,8 @@ export default function Invoice() {
         <p className="mt-3 text-right text-[#475467]"><span className="text-[#7A8494]">In words:</span> {inWords(inv.total)}</p>
 
         <footer className="mt-10 space-y-1 border-t border-[#E2E5E0] pt-4 text-[11.5px] text-[#7A8494]">
-          <p>Paid online via PayU. Wallet credit of {rupees(inv.credit)} has been added to the store's Multi Checkout wallet.</p>
-          <p>Wallet balance is non-refundable and non-transferable and can be used only for Multi Checkout services.</p>
+          <p>Paid online via PayU. Wallet credit of {rupees(inv.credit)} has been added to the store's Growpefy wallet.</p>
+          <p>Wallet balance is non-refundable and non-transferable and can be used only for Growpefy services.</p>
           <p>This is a computer-generated invoice and does not need a signature.</p>
         </footer>
       </article>

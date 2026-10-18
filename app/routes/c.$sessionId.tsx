@@ -5,6 +5,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MetaPixel } from "~/components/MetaPixel";
 import { Spinner } from "~/components/ui";
+import { BrandLoader, PoweredBy } from "~/components/Brand";
 import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates, stores, type OrderCustomer } from "~/db.server";
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
@@ -815,6 +816,7 @@ function Trust({ phone, text, className = "" }: { phone: string | null; text: st
     <div className={`space-y-1 text-center text-xs text-ink-faint ${className}`}>
       {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
+      <p className="pt-1"><PoweredBy /></p>
     </div>
   );
 }
@@ -823,9 +825,10 @@ function PaymentOverlay({ name, logo }: { name: string; logo: string | null }) {
   return (
     <div className="fixed inset-0 z-50 flex animate-fadein flex-col items-center justify-center bg-surface/95 px-6 text-center" role="status" aria-live="polite">
       {logo ? <img src={logo} alt={name} className="mb-6 h-9 w-auto max-w-[160px] object-contain" /> : <p className="mb-6 text-lg font-semibold">{name}</p>}
-      <div className="h-1 w-48 overflow-hidden rounded-full bg-paper-sunk"><div className="h-full w-1/2 animate-bar rounded-full bg-brand" /></div>
-      <p className="mt-5 font-medium">Opening secure payment</p>
+      <BrandLoader className="h-16 w-16" label="Opening payment" />
+      <p className="mt-4 font-medium">Opening secure payment</p>
       <p className="mt-1 text-sm text-ink-soft">Don't close this page or press back.</p>
+      <PoweredBy className="absolute bottom-6" />
     </div>
   );
 }

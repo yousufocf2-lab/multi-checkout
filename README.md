@@ -1,4 +1,4 @@
-# Multi Checkout
+# Growpefy
 
 One checkout for many Shopify stores. Remix + Postgres on Railway, mobile-first, in English.
 
@@ -56,7 +56,7 @@ Ek checkout, multiple Shopify stores. Remix + Postgres (Railway), mobile-first.
    <script src="https://APP_URL/embed.js?store=SLUG" defer></script>
    ```
    Cart "Checkout" aur "Buy it now" button apne aap yahan aayenge.
-   Custom button: `data-cx-checkout` attribute, ya `MultiCheckout.go()` / `MultiCheckout.buyNow(variantId, qty)`.
+   Custom button: `data-cx-checkout` attribute, ya `Growpefy.go()` / `Growpefy.buyNow(variantId, qty)` (purana `MultiCheckout.*` bhi chalta hai).
 4. PayU key/salt daalo → Install tab → **Test PayU**. Mode **Test** rakh ke ek prepaid + ek COD test order karo.
 
 ## Shipping
