@@ -201,7 +201,7 @@ export async function createShopifyOrder(store: Store, order: Order) {
   const isCod = order.paymentMethod === "cod";
 
   const codeParts = [
-    isCod ? `COD${store.codDiscountPct}` : `PREPAID${store.prepaidDiscountPct}`,
+    order.paymentDiscount > 0 ? (isCod ? `COD${store.codDiscountPct}` : `PREPAID${store.prepaidDiscountPct}`) : null,
     order.couponCode,
     order.bankDiscount > 0 ? "BANKOFFER" : null,
     order.offerDiscount > 0 ? "MIXMATCH" : null,
