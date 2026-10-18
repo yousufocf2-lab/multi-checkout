@@ -62,6 +62,13 @@ export const stores = pgTable("stores", {
   mixFreeQty: integer("mix_free_qty").notNull().default(1), // 1 .. mixBuyQty-1
   mixFreeWhich: text("mix_free_which").notNull().default("low"), // low | high
   mixTitle: text("mix_title"), // shown at checkout; default "Buy 3, Get 2 Free"
+  mixKeepPrepaid: boolean("mix_keep_prepaid").notNull().default(true), // keep online payment discount when the deal applies
+  mixKeepCod: boolean("mix_keep_cod").notNull().default(true), // keep COD discount when the deal applies
+  // Per payment method: mixFreeQty / mixFreeWhich are for online payment, these for COD
+  mixPrepaidOn: boolean("mix_prepaid_on").notNull().default(true),
+  mixCodOn: boolean("mix_cod_on").notNull().default(true),
+  mixCodFreeQty: integer("mix_cod_free_qty").notNull().default(1),
+  mixCodFreeWhich: text("mix_cod_free_which").notNull().default("low"), // low | high
   // PayU
   payuKey: text("payu_key"),
   payuSalt: text("payu_salt"),

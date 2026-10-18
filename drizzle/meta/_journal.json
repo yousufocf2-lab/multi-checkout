@@ -64,6 +64,20 @@
       "when": 1792300744734,
       "tag": "0008_mix_match",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792302594096,
+      "tag": "0009_mix_keep_discounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792303379005,
+      "tag": "0010_mix_per_method",
+      "breakpoints": true
     }
   ]
 }

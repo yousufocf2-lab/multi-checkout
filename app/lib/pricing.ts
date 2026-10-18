@@ -26,13 +26,20 @@ export interface MixDeal {
   freeQty: number;
   which: "low" | "high";
   title: string;
+  keep?: boolean; // this payment method's discount still applies when the deal is unlocked (default yes)
 }
+
+/** The deal can differ by payment method (or be off for one of them). */
+export type MixDeals = { prepaid: MixDeal | null; cod: MixDeal | null };
+
+/** True when the unlocked deal switches off the payment discount. */
+export const mixBlocksPayment = (mix: MixDeal | null | undefined) => Boolean(mix) && mix!.keep === false;
 
 export interface StoreRule {
   prepaidDiscountPct: number;
   codDiscountPct: number;
   rules?: ProductRule[];
-  mix?: MixDeal | null;
+  mix?: MixDeals | null;
 }
 
 export const mixTitle = (m: Pick<MixDeal, "buyQty" | "freeQty">) => `Buy ${m.buyQty}, Get ${m.freeQty} Free`;
@@ -132,9 +139,11 @@ export function computePricing(
   const mrpTotal = lines.reduce((s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity, 0);
 
   // Mix & Match first: free units are taken out before payment discounts and coupons
-  const mix = mixFreeUnits(lines, store.mix);
+  const deal = store.mix?.[method] ?? null;
+  const mix = mixFreeUnits(lines, deal);
+  const noPaymentDiscount = mix.discount > 0 && mixBlocksPayment(deal);
   const perLine = lines.map((l, i) => {
-    const off = lineOff(l, store, method);
+    const off = noPaymentDiscount ? { unit: 0, pct: 0, flat: false, label: null } : lineOff(l, store, method);
     const paidQty = l.quantity - mix.free[i];
     const net = l.pricePaise * paidQty;
     const discount = off.flat ? off.unit * paidQty : Math.round((net * off.pct) / 100);

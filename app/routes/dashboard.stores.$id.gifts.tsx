@@ -14,7 +14,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const offers = await db.select().from(freeOffers).where(eq(freeOffers.storeId, store.id)).orderBy(desc(freeOffers.createdAt));
   return json({
     storeId: store.id, offers,
-    mix: { enabled: store.mixEnabled, buyQty: store.mixBuyQty, freeQty: store.mixFreeQty, which: store.mixFreeWhich, title: store.mixTitle ?? "" },
+    mix: {
+      enabled: store.mixEnabled, buyQty: store.mixBuyQty, title: store.mixTitle ?? "",
+      prepaid: { on: store.mixPrepaidOn, free: store.mixFreeQty, which: store.mixFreeWhich, keep: store.mixKeepPrepaid, pct: store.prepaidDiscountPct },
+      cod: { on: store.mixCodOn, free: store.mixCodFreeQty, which: store.mixCodFreeWhich, keep: store.mixKeepCod, pct: store.codDiscountPct, codEnabled: store.codEnabled },
+    },
   });
 }
 
@@ -52,11 +56,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     case "mix": {
       const enabled = fd.get("mixEnabled") === "on";
       const buyQty = int(fd.get("mixBuyQty"), 2, 50, 3);
-      const freeQty = int(fd.get("mixFreeQty"), 1, 49, 1);
-      if (enabled && freeQty >= buyQty) return json({ ok: null, errors: { mix: "Free items must be fewer than cart items (e.g. 3 items → up to 2 free)." } as Record<string, string> }, { status: 400 });
+      const prepaidOn = fd.get("mixPrepaidOn") === "on";
+      const codOn = fd.get("mixCodOn") === "on";
+      if (enabled && !prepaidOn && !codOn) return json({ ok: null, errors: { mix: "Turn the deal on for online payment, COD, or both." } as Record<string, string> }, { status: 400 });
+      const free = (k: string) => Math.min(buyQty - 1, int(fd.get(k), 1, 49, 1));
+      const which = (k: string) => (fd.get(k) === "high" ? "high" : "low");
       await db.update(stores).set({
-        mixEnabled: enabled, mixBuyQty: buyQty, mixFreeQty: Math.min(freeQty, buyQty - 1),
-        mixFreeWhich: fd.get("mixFreeWhich") === "high" ? "high" : "low",
+        mixEnabled: enabled, mixBuyQty: buyQty,
+        mixPrepaidOn: prepaidOn, mixFreeQty: free("mixFreeQty"), mixFreeWhich: which("mixFreeWhich"), mixKeepPrepaid: fd.get("mixKeepPrepaid") === "on",
+        mixCodOn: codOn, mixCodFreeQty: free("mixCodFreeQty"), mixCodFreeWhich: which("mixCodFreeWhich"), mixKeepCod: fd.get("mixKeepCod") === "on",
         mixTitle: String(fd.get("mixTitle") ?? "").trim().slice(0, 60) || null,
       }).where(eq(stores.id, store.id));
       return json({ ok: enabled ? "Mix & Match deal is live on your checkout" : "Mix & Match deal turned off", errors: null });
@@ -240,23 +248,39 @@ function OfferFields({ storeId, o }: { storeId: number; o?: Offer }) {
 }
 
 type Mix = ReturnType<typeof useLoaderData<typeof loader>>["mix"];
+type Side = { on: boolean; free: number; which: "low" | "high"; keep: boolean };
 
 const RS = (p: number) => "₹" + p.toLocaleString("en-IN");
+const SAMPLE = [300, 750, 425, 550, 999, 650, 375, 820];
 
-/** Store-wide "buy N, get M of them free" deal with a live example. */
+/** Which sample items are free and what the customer pays. */
+function example(buy: number, side: Side) {
+  const items = SAMPLE.slice(0, Math.max(3, buy));
+  if (!side.on) return { items, free: new Set<number>(), pay: items.reduce((n, p) => n + p, 0) };
+  const order = items.map((p, i) => ({ p, i })).sort((a, b) => (side.which === "high" ? b.p - a.p : a.p - b.p));
+  const free = new Set(order.slice(0, side.free).map((x) => x.i));
+  return { items, free, pay: items.reduce((n, p, i) => n + (free.has(i) ? 0 : p), 0) };
+}
+
+/** Store-wide "buy N, get M of them free" deal, set separately for online payment and COD. */
 function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
   const [on, setOn] = useState(mix.enabled);
   const [buy, setBuy] = useState(Math.max(2, mix.buyQty));
-  const [free, setFree] = useState(Math.min(Math.max(1, mix.freeQty), Math.max(2, mix.buyQty) - 1));
-  const [which, setWhich] = useState(mix.which === "high" ? "high" : "low");
-  useEffect(() => { if (free >= buy) setFree(buy - 1); }, [buy]); // eslint-disable-line react-hooks/exhaustive-deps
+  const init = (x: { on: boolean; free: number; which: string; keep: boolean }): Side => ({ on: x.on, free: Math.max(1, x.free), which: x.which === "high" ? "high" : "low", keep: x.keep });
+  const [pre, setPre] = useState<Side>(init(mix.prepaid));
+  const [cod, setCod] = useState<Side>(init(mix.cod));
+  useEffect(() => {
+    setPre((s) => ({ ...s, free: Math.min(s.free, buy - 1) }));
+    setCod((s) => ({ ...s, free: Math.min(s.free, buy - 1) }));
+  }, [buy]);
 
-  // Example cart: ₹300, ₹750, ₹425 (+ more if the deal needs more items)
-  const sample = [300, 750, 425, 550, 999, 650, 375, 820].slice(0, Math.max(3, buy));
-  const order = sample.map((p, i) => ({ p, i })).sort((a, b) => (which === "high" ? b.p - a.p : a.p - b.p));
-  const freeIdx = new Set(order.slice(0, free).map((x) => x.i));
-  const pay = sample.reduce((n, p, i) => n + (freeIdx.has(i) ? 0 : p), 0);
-  const title = mixTitle({ buyQty: buy, freeQty: free });
+  const sides: { key: "prepaid" | "cod"; label: string; icon: string; s: Side; set: (f: (s: Side) => Side) => void; pct: number; names: [string, string, string, string] }[] = [
+    { key: "prepaid", label: "Online payment", icon: "💳", s: pre, set: setPre, pct: mix.prepaid.pct, names: ["mixPrepaidOn", "mixFreeQty", "mixFreeWhich", "mixKeepPrepaid"] },
+    { key: "cod", label: "Cash on Delivery", icon: "💵", s: cod, set: setCod, pct: mix.cod.pct, names: ["mixCodOn", "mixCodFreeQty", "mixCodFreeWhich", "mixKeepCod"] },
+  ];
+
+  const summary = !pre.on && !cod.on ? "Turn on for at least one payment method."
+    : `Online: ${pre.on ? `Buy ${buy}, Get ${pre.free} Free (${pre.which === "low" ? "lowest" : "highest"} price)` : "off"} · COD: ${cod.on ? `Buy ${buy}, Get ${cod.free} Free (${cod.which === "low" ? "lowest" : "highest"} price)` : "off"}`;
 
   return (
     <section className={`panel overflow-hidden ${on ? "ring-2 ring-pine/30" : ""}`}>
@@ -265,7 +289,7 @@ function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-2xl" aria-hidden>🛍️</span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold">Mix & Match deal</p>
-            <p className="text-sm text-white/75">Customer adds any {buy} items, {free} of them become free. Works on the whole store.</p>
+            <p className="text-sm text-white/75">Customer adds any {buy} items and some of them become free. Set it separately for online payment and COD.</p>
           </div>
           <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium">
             {on ? "On" : "Off"}
@@ -276,69 +300,116 @@ function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
           </label>
         </div>
 
-        {!on && <input type="hidden" name="mixBuyQty" value={buy} />}
-        {!on && <input type="hidden" name="mixFreeQty" value={free} />}
-        {!on && <input type="hidden" name="mixFreeWhich" value={which} />}
-        {!on && <input type="hidden" name="mixTitle" value={mix.title} />}
+        {/* Keep saved values when the whole deal is off */}
+        {!on && (
+          <>
+            <input type="hidden" name="mixBuyQty" value={buy} />
+            <input type="hidden" name="mixTitle" value={mix.title} />
+            {sides.map((x) => (
+              <span key={x.key}>
+                {x.s.on && <input type="hidden" name={x.names[0]} value="on" />}
+                <input type="hidden" name={x.names[1]} value={x.s.free} />
+                <input type="hidden" name={x.names[2]} value={x.s.which} />
+                {x.s.keep && <input type="hidden" name={x.names[3]} value="on" />}
+              </span>
+            ))}
+          </>
+        )}
 
         {on && (
-          <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="label">Items in cart</span>
-                  <input type="number" name="mixBuyQty" min={2} max={50} value={buy} onChange={(e) => setBuy(Math.max(2, Number(e.target.value) || 2))} className="input num" />
-                  <span className="hint">Minimum 2. Any products count.</span>
-                </label>
-                <label className="block">
-                  <span className="label">Free items</span>
-                  <input type="number" name="mixFreeQty" min={1} max={buy - 1} value={free} onChange={(e) => setFree(Math.min(buy - 1, Math.max(1, Number(e.target.value) || 1)))} className="input num" />
-                  <span className="hint">Up to {buy - 1}.</span>
-                </label>
-              </div>
-              <div>
-                <span className="label">Which items are free</span>
-                <input type="hidden" name="mixFreeWhich" value={which} />
-                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Which items are free">
-                  {[["low", "Lowest price", "Customer pays for the costlier items"], ["high", "Highest price", "Customer pays for the cheaper items"]].map(([v, l, d]) => (
-                    <button key={v} type="button" role="radio" aria-checked={which === v} onClick={() => setWhich(v)}
-                      className={`rounded-lg border-2 px-3 py-2.5 text-left ${which === v ? "border-pine bg-pine-tint/50" : "border-rule hover:border-rule-strong"}`}>
-                      <span className="block text-sm font-semibold">{l}</span>
-                      <span className="block text-xs text-ink-faint">{d}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+          <div className="space-y-5 p-5">
+            <div className="grid gap-4 sm:grid-cols-[200px_minmax(0,1fr)]">
               <label className="block">
-                <span className="label">Title on checkout</span>
-                <input name="mixTitle" defaultValue={mix.title} placeholder={title} maxLength={60} className="input" />
+                <span className="label">Items in cart</span>
+                <input type="number" name="mixBuyQty" min={2} max={50} value={buy} onChange={(e) => setBuy(Math.max(2, Number(e.target.value) || 2))} className="input num" />
+                <span className="hint">Minimum 2. Any products count.</span>
               </label>
-              <p className="text-xs text-ink-faint">
-                More items than {buy} still get only {free} free. Online and COD discounts apply to the items the customer pays for.
-                Shopify orders show it as a discount (MIXMATCH).
-              </p>
+              <label className="block">
+                <span className="label">Title on checkout (optional)</span>
+                <input name="mixTitle" defaultValue={mix.title} placeholder={`Buy ${buy}, Get ${pre.on ? pre.free : cod.free} Free`} maxLength={60} className="input" />
+                <span className="hint">Leave empty to show the right title for each payment method automatically.</span>
+              </label>
             </div>
 
-            <div className="rounded-xl border border-rule bg-paper p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Example cart</p>
-              <ul className="mt-3 space-y-2">
-                {sample.map((p, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-surface text-xs font-semibold ring-1 ring-rule">{String.fromCharCode(65 + i)}</span>Product {String.fromCharCode(65 + i)}</span>
-                    {freeIdx.has(i)
-                      ? <span className="flex items-center gap-1.5"><s className="num text-xs text-ink-faint">{RS(p)}</s><b className="rounded bg-good px-1.5 py-px text-[10px] text-white">FREE</b></span>
-                      : <span className="num font-medium">{RS(p)}</span>}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-3 flex justify-between border-t border-rule pt-3 text-sm font-semibold"><span>Customer pays</span><span className="num">{RS(pay)}</span></div>
-              <p className="mt-1 text-xs text-ink-faint">With only {buy - 1} item{buy - 1 === 1 ? "" : "s"}, checkout shows: “Add 1 more item and get {free} item{free === 1 ? "" : "s"} FREE”.</p>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {sides.map((x) => {
+                const ex = example(buy, x.s);
+                return (
+                  <fieldset key={x.key} className={`rounded-xl border-2 p-4 transition ${x.s.on ? "border-pine/40 bg-pine-tint/20" : "border-rule bg-paper/60"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <legend className="flex items-center gap-2 text-sm font-semibold"><span aria-hidden>{x.icon}</span>{x.label}</legend>
+                      <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-ink-soft">
+                        {x.s.on ? "Deal on" : "Deal off"}
+                        <input type="checkbox" name={x.names[0]} checked={x.s.on} onChange={(e) => x.set((s) => ({ ...s, on: e.target.checked }))} className="peer sr-only" />
+                        <span aria-hidden className={`relative h-5 w-9 rounded-full transition peer-focus-visible:ring-2 peer-focus-visible:ring-brand ${x.s.on ? "bg-pine" : "bg-rule-strong"}`}>
+                          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${x.s.on ? "left-[18px]" : "left-0.5"}`} />
+                        </span>
+                      </label>
+                    </div>
+                    {x.key === "cod" && !mix.cod.codEnabled && <p className="mt-2 text-xs text-warn">COD is turned off for this store in Settings.</p>}
+
+                    {x.s.on ? (
+                      <div className="mt-4 space-y-3.5">
+                        <label className="block">
+                          <span className="label">Free items</span>
+                          <input type="number" name={x.names[1]} min={1} max={buy - 1} value={x.s.free}
+                            onChange={(e) => x.set((s) => ({ ...s, free: Math.min(buy - 1, Math.max(1, Number(e.target.value) || 1)) }))} className="input num" />
+                          <span className="hint">Up to {buy - 1}.</span>
+                        </label>
+                        <div>
+                          <span className="label">Which items are free</span>
+                          <input type="hidden" name={x.names[2]} value={x.s.which} />
+                          <div className="flex rounded-lg border border-rule-strong bg-surface p-0.5" role="radiogroup" aria-label={`Which items are free on ${x.label}`}>
+                            {[["low", "Lowest price"], ["high", "Highest price"]].map(([v, l]) => (
+                              <button key={v} type="button" role="radio" aria-checked={x.s.which === v} onClick={() => x.set((s) => ({ ...s, which: v as Side["which"] }))}
+                                className={`flex-1 rounded-md px-2 py-1.5 text-sm ${x.s.which === v ? "bg-ink font-medium text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+                          <input type="checkbox" name={x.names[3]} checked={x.s.keep} onChange={(e) => x.set((s) => ({ ...s, keep: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-[rgb(var(--brand))]" />
+                          <span>Keep the {x.key === "prepaid" ? "online" : "COD"} discount ({x.pct}% + product discounts) with the deal
+                            <span className="block text-xs text-ink-faint">{x.s.keep ? "Discount still applies to the items the customer pays for." : "Discount turns off once the deal applies."}</span></span>
+                        </label>
+                      </div>
+                    ) : (
+                      <>
+                        <input type="hidden" name={x.names[1]} value={x.s.free} />
+                        <input type="hidden" name={x.names[2]} value={x.s.which} />
+                        {x.s.keep && <input type="hidden" name={x.names[3]} value="on" />}
+                        <p className="mt-3 text-sm text-ink-soft">No Mix & Match on {x.label.toLowerCase()}. Normal discounts apply.</p>
+                      </>
+                    )}
+
+                    <div className="mt-4 rounded-lg border border-rule bg-surface p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Example cart</p>
+                      <ul className="mt-2 space-y-1.5">
+                        {ex.items.map((p, i) => (
+                          <li key={i} className="flex items-center justify-between text-xs">
+                            <span>Product {String.fromCharCode(65 + i)}</span>
+                            {ex.free.has(i)
+                              ? <span className="flex items-center gap-1.5"><s className="num text-ink-faint">{RS(p)}</s><b className="rounded bg-good px-1 py-px text-[10px] text-white">FREE</b></span>
+                              : <span className="num font-medium">{RS(p)}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-2 flex justify-between border-t border-rule pt-2 text-xs font-semibold"><span>Customer pays (before discounts)</span><span className="num">{RS(ex.pay)}</span></div>
+                    </div>
+                  </fieldset>
+                );
+              })}
             </div>
+
+            <p className="text-xs text-ink-faint">
+              More items than {buy} still get only the set number free. Coupons and bank offers always keep working.
+              If one payment method gives more free items, checkout tells the customer (e.g. “Pay online and get 2 items FREE instead”).
+              Shopify orders show it as a discount (MIXMATCH).
+            </p>
           </div>
         )}
 
         <div className="flex items-center justify-between gap-3 border-t border-rule px-5 py-3">
-          {error ? <p className="error-text mt-0">{error}</p> : <span className="text-xs text-ink-faint">{on ? `Customers see “${title}” on checkout.` : "Turn on to set it up."}</span>}
+          {error ? <p className="error-text mt-0">{error}</p> : <span className="text-xs text-ink-faint">{on ? summary : "Turn on to set it up."}</span>}
           <SubmitButton intent="mix" busyText="Saving">Save deal</SubmitButton>
         </div>
       </Form>

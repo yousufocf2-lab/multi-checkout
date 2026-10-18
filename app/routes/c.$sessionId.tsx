@@ -13,7 +13,7 @@ import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
 import {
-  bankOfferEstimate, computePricing, formatINR, lineOff, mixTitle,
+  bankOfferEstimate, computePricing, formatINR, lineOff, mixBlocksPayment, mixTitle,
   type BankOfferRule, type CouponRule, type PaymentMethod, type PricedLine, type StoreRule,
 } from "~/lib/pricing";
 import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
@@ -45,12 +45,17 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
     .where(and(eq(discountRules.storeId, store.id), eq(discountRules.active, true)))
     .orderBy(desc(discountRules.createdAt));
   const buyQty = Math.max(2, store.mixBuyQty);
+  const deal = (on: boolean, qty: number, which: string, keep: boolean) => {
+    if (!store.mixEnabled || !on) return null;
+    const freeQty = Math.min(buyQty - 1, Math.max(1, qty));
+    return { buyQty, freeQty, which: which === "high" ? "high" as const : "low" as const, keep, title: store.mixTitle?.trim() || mixTitle({ buyQty, freeQty }) };
+  };
+  const prepaidDeal = deal(store.mixPrepaidOn, store.mixFreeQty, store.mixFreeWhich, store.mixKeepPrepaid);
+  const codDeal = deal(store.mixCodOn, store.mixCodFreeQty, store.mixCodFreeWhich, store.mixKeepCod);
   return {
     prepaidDiscountPct: store.prepaidDiscountPct,
     codDiscountPct: store.codDiscountPct,
-    mix: store.mixEnabled
-      ? { buyQty, freeQty: Math.min(buyQty - 1, Math.max(1, store.mixFreeQty)), which: store.mixFreeWhich === "high" ? "high" as const : "low" as const, title: store.mixTitle?.trim() || mixTitle({ buyQty, freeQty: Math.min(buyQty - 1, Math.max(1, store.mixFreeQty)) }) }
-      : null,
+    mix: prepaidDeal || codDeal ? { prepaid: prepaidDeal, cod: codDeal } : null,
     rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct })),
   };
 }
@@ -372,7 +377,7 @@ export default function Checkout() {
         <div className="space-y-4">
           {/* Mobile: order first so customers can edit it */}
           <Card title={giftTitle} className="lg:hidden">
-            <MixBanner rule={rule} itemCount={itemCount} saved={p.mixDiscount} />
+            <MixBanner rule={rule} itemCount={itemCount} saved={p.mixDiscount} method={method} />
             <CartItems lines={lines} rule={rule} method={method} free={p.mixFree} />
             <FreeGifts lines={freeLines} hints={gifts.hints} otherMethod={method === "prepaid" ? null : otherFree.length > freeLines.length ? "online" : null} />
             {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
@@ -503,7 +508,7 @@ export default function Checkout() {
         <aside className="hidden lg:block">
           <div className="sticky top-20 space-y-4">
             <Card title={giftTitle}>
-              <MixBanner rule={rule} itemCount={itemCount} saved={p.mixDiscount} />
+              <MixBanner rule={rule} itemCount={itemCount} saved={p.mixDiscount} method={method} />
               <CartItems lines={lines} rule={rule} method={method} free={p.mixFree} />
               <FreeGifts lines={freeLines} hints={gifts.hints} otherMethod={method === "prepaid" ? null : otherFree.length > freeLines.length ? "online" : null} />
               {upsellInCart && <Upsell items={upsell} rule={rule} title={theme.upsellTitle} />}
@@ -612,13 +617,28 @@ function CartItems({ lines, rule, method, free = [] }: { lines: PricedLine[]; ru
   );
 }
 
-/** Mix & Match progress: "Add 1 more item to get 2 FREE" → "2 items are FREE". */
-function MixBanner({ rule, itemCount, saved }: { rule: StoreRule; itemCount: number; saved: number }) {
-  const m = rule.mix;
+/** Mix & Match progress: "Add 1 more item to get 2 FREE" → "2 items are FREE". Deals can differ by payment method. */
+function MixBanner({ rule, itemCount, saved, method }: { rule: StoreRule; itemCount: number; saved: number; method: PaymentMethod }) {
+  const here = rule.mix?.[method] ?? null;
+  const other = rule.mix?.[method === "prepaid" ? "cod" : "prepaid"] ?? null;
+  const otherName = method === "prepaid" ? "Cash on Delivery" : "online";
+  const m = here ?? other;
   if (!m) return null;
+
+  // Deal only on the other payment method
+  if (!here) {
+    return (
+      <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300/60 bg-amber-50 px-3.5 py-3 text-amber-900">
+        <span className="text-lg leading-none" aria-hidden>🛍️</span>
+        <p className="text-sm"><b>{m.title}</b> is available when you pay {otherName === "online" ? "online" : "with Cash on Delivery"}. Add any {m.buyQty} items and get {m.freeQty} FREE.</p>
+      </div>
+    );
+  }
+
   const need = Math.max(0, m.buyQty - itemCount);
   const pct = Math.min(100, Math.round((itemCount / m.buyQty) * 100));
   const which = m.which === "low" ? "lowest-priced" : "highest-priced";
+  const better = other && other.freeQty > here.freeQty ? other : null;
   return (
     <div className={`mb-4 overflow-hidden rounded-xl border ${need ? "border-brand/30 bg-brand/[0.06]" : "border-good/40 bg-good/10"}`}>
       <div className="flex items-start gap-3 px-3.5 pt-3">
@@ -631,6 +651,9 @@ function MixBanner({ rule, itemCount, saved }: { rule: StoreRule; itemCount: num
             <p className="text-sm font-medium text-ink">Unlocked! Your {m.freeQty} {which} item{m.freeQty === 1 ? " is" : "s are"} <b className="text-good">FREE</b>{saved > 0 && <> · you save <b className="num text-good">{formatINR(saved)}</b></>}</p>
           )}
           <p className="mt-0.5 text-xs text-ink-faint">Mix any {m.buyQty} items. The {m.freeQty} {which} {m.freeQty === 1 ? "one is" : "ones are"} free.</p>
+          {better && <p className="mt-1 text-xs font-semibold text-brand">Pay {otherName === "online" ? "online" : "with Cash on Delivery"} and get {better.freeQty} items FREE instead.</p>}
+          {!need && mixBlocksPayment(m) && <p className="mt-1 text-xs font-medium text-amber-700">The {method === "prepaid" ? "online payment" : "COD"} discount doesn't apply with this deal.</p>}
+          {need > 0 && here.keep === false && <p className="mt-1 text-xs text-ink-faint">The {method === "prepaid" ? "online payment" : "COD"} discount is replaced by this deal once it applies.</p>}
         </div>
       </div>
       <div className="mx-3.5 mb-3 mt-2.5 flex items-center gap-2">
