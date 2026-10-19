@@ -227,6 +227,8 @@ export async function createShopifyOrder(store: Store, order: Order) {
     lineItems: order.items.map((l) => ({
       variantId: `gid://shopify/ProductVariant/${l.variantId}`,
       quantity: l.quantity,
+      // Without this Shopify marks the item "Shipping not required" and the Delivery method shows nothing
+      requiresShipping: true,
       // Free gifts from offers go in at ₹0
       ...(l.free ? { priceSet: money(0), properties: [{ name: "Free gift", value: l.offer ?? "Offer" }] } : {}),
     })),
@@ -240,7 +242,7 @@ export async function createShopifyOrder(store: Store, order: Order) {
     // Without a shipping line Shopify shows "Shipping not required" and fulfilment apps skip the order
     shippingLines: [
       {
-        title: order.shippingTitle || (order.shipping > 0 ? "Standard delivery" : "Free delivery"),
+        title: order.shippingTitle || "Standard",
         code: order.shipping > 0 ? "STANDARD" : "FREE",
         source: "Growpefy",
         priceSet: money(order.shipping),

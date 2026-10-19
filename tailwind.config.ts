@@ -31,10 +31,12 @@ export default {
       keyframes: {
         bar: { "0%": { transform: "translateX(-100%)" }, "100%": { transform: "translateX(250%)" } },
         fadein: { from: { opacity: "0" }, to: { opacity: "1" } },
+        marquee: { from: { transform: "translateX(0)" }, to: { transform: "translateX(-50%)" } },
       },
       animation: {
         bar: "bar 1.1s cubic-bezier(.4,0,.2,1) infinite",
         fadein: "fadein .2s ease-out",
+        marquee: "marquee 40s linear infinite",
       },
     },
   },

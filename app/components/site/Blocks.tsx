@@ -62,12 +62,16 @@ export function Gateways({ compact = false }: { compact?: boolean }) {
     <section className={compact ? "" : "border-y border-rule bg-white"}>
       <div className={`mx-auto max-w-6xl px-4 sm:px-6 ${compact ? "" : "py-16"}`}>
         {!compact && <SectionHead eyebrow="Your gateway, your money" title="Bring the payment gateway you already use" text="Customers pay through your own gateway account, so money settles straight to your bank. Switch or add gateways any time." />}
-        <div className={`${compact ? "" : "mt-10"} grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-9`}>
-          {LOGOS.map(([f, name]) => (
-            <div key={f} className="flex h-16 items-center justify-center rounded-xl border border-rule bg-white px-3 transition hover:border-rule-strong hover:shadow-sm">
-              <img src={`/brand/gateways/${f}.webp`} alt={name} loading="lazy" className="max-h-7 w-auto max-w-full object-contain" />
-            </div>
-          ))}
+        <div className={`${compact ? "" : "mt-10"} group relative overflow-hidden [mask-image:linear-gradient(90deg,transparent,#000_8%,#000_92%,transparent)]`}>
+          {/* Two copies side by side; sliding by half loops seamlessly. Pauses on hover, static for reduced motion. */}
+          <div className="flex w-max animate-marquee gap-4 py-1 group-hover:[animation-play-state:paused] motion-reduce:animate-none motion-reduce:flex-wrap motion-reduce:justify-center">
+            {[0, 1].map((copy) => LOGOS.map(([f, name]) => (
+              <div key={`${copy}-${f}`} aria-hidden={copy === 1 || undefined}
+                className={`flex h-16 w-40 shrink-0 items-center justify-center rounded-xl border border-rule bg-white px-4 transition hover:border-rule-strong hover:shadow-sm ${copy === 1 ? "motion-reduce:hidden" : ""}`}>
+                <img src={`/brand/gateways/${f}.webp`} alt={copy === 1 ? "" : name} loading="lazy" className="max-h-7 w-auto max-w-full object-contain" />
+              </div>
+            )))}
+          </div>
         </div>
         {!compact && (
           <div className="mt-8 grid gap-4 md:grid-cols-2">
