@@ -102,6 +102,9 @@ export default function DashboardLayout() {
           <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/}>Free gifts</Item>
           <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>
         </Group>
+        <Group label="Protect">
+          <Item to={storeHref("rto")} icon="shield" match={/\/rto$|next=rto/}>RTO Suite</Item>
+        </Group>
         <Group label="Billing">
           <Item to={storeHref("wallet")} icon="wallet" match={/\/wallet$|next=wallet/}>
             <span className="flex flex-1 items-center justify-between gap-2">Wallet

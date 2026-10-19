@@ -13,11 +13,12 @@ export const meta: MetaFunction = () => siteMeta("Pricing · Growpefy", "No mont
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
 
 const INCLUDED = [
-  "Unlimited Shopify stores on one login",
+  "Unlimited stores on one login (Shopify now, WooCommerce and custom sites soon)",
   "Fast one-page checkout with your branding",
-  "Prepaid discounts, coupons and PayU bank offers",
-  "COD rules, COD fee and repeat-COD blocking",
-  "Free gifts, Buy X Get Y and Mix & Match deals",
+  "Prepaid discounts, coupons and bank offers",
+  "Bring your own payment gateway",
+  "RTO Suite: OTP, COD wait time, block lists, WhatsApp confirmation",
+    "Free gifts, Buy X Get Y and Mix & Match deals",
   "Upsells at checkout",
   "Meta ads ROAS and cost per order",
   "Orders, abandoned checkouts and CSV exports",

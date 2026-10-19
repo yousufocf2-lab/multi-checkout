@@ -10,6 +10,7 @@ import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates,
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
+import { BLOCK_MESSAGE, blockFor, otpRequired, otpVerified, sendOtp, verifyOtp } from "~/lib/rto.server";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
@@ -72,7 +73,7 @@ async function shippingRulesFor(storeId: number): Promise<ShipRule[]> {
 /** Small background requests (draft save, COD check, coupon) don't need to reload the cart. */
 export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, defaultShouldRevalidate }) => {
   const intent = formData?.get("intent");
-  if (intent === "draft" || intent === "eligibility" || intent === "coupon") return false;
+  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify") return false;
   return defaultShouldRevalidate;
 };
 
@@ -90,7 +91,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     db.select().from(bankOffers).where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true))).orderBy(asc(bankOffers.sort)),
     storeRuleFor(store),
   ]);
-  const [shipping, gifts] = await Promise.all([shippingRulesFor(store.id), freeGiftsFor(store, lines)]);
+  const [shipping, gifts, otpPrepaid, otpCod] = await Promise.all([shippingRulesFor(store.id), freeGiftsFor(store, lines), otpRequired(store, "prepaid"), otpRequired(store, "cod")]);
   // Snapshot for abandoned-checkout reports
   await db.update(checkoutSessions).set({
     cartSnapshot: lines.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity, pricePaise: l.pricePaise })),
@@ -119,6 +120,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       pixelId: store.metaPixelId,
     },
     theme: resolveTheme(store.theme),
+    otp: { prepaid: otpPrepaid, cod: otpCod },
     rule,
     shipping,
     gifts,
@@ -153,8 +155,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "eligibility") {
-    const cod = await codEligibility(store, String(fd.get("phone") ?? ""));
-    return json({ cod, message: cod.allowed ? null : codBlockedMessage(cod) });
+    const g = (k: string) => String(fd.get(k) ?? "");
+    const [cod, block] = await Promise.all([
+      codEligibility(store, g("phone")),
+      blockFor(store, { phone: g("phone"), email: g("email"), pincode: g("pincode"), city: g("city"), state: g("state"), country: "IN" }),
+    ]);
+    const codOk = cod.allowed && !block;
+    return json({
+      cod: { ...cod, allowed: codOk }, block: block?.scope ?? null,
+      message: block ? BLOCK_MESSAGE[block.scope] : cod.allowed ? null : codBlockedMessage(cod),
+    });
+  }
+
+  if (intent === "otp_send") {
+    const r = await sendOtp(store, session.id, normalizePhone(String(fd.get("phone") ?? "")));
+    return json({ otp: "sent" as const, ...r });
+  }
+  if (intent === "otp_verify") {
+    const r = await verifyOtp(session.id, normalizePhone(String(fd.get("phone") ?? "")), String(fd.get("code") ?? ""));
+    return json({ otp: "verify" as const, ...r });
   }
 
   if (intent === "cart") {
@@ -196,7 +215,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const cod = await codEligibility(store, customer.phone);
     if (!cod.allowed) errors.form = codBlockedMessage(cod);
   }
+  if (!Object.keys(errors).length) {
+    const block = await blockFor(store, { phone: customer.phone, email: customer.email, pincode: customer.pincode, city: customer.city, state: customer.state, country: "IN" });
+    if (block && (block.scope === "all" || method === "cod")) errors.form = BLOCK_MESSAGE[block.scope];
+  }
   if (Object.keys(errors).length) return json({ errors }, { status: 400 });
+  if ((await otpRequired(store, method)) && !(await otpVerified(session.id, customer.phone))) {
+    return json({ errors: { form: "Verify your mobile number with the OTP to continue." } as FieldErrors, needOtp: true }, { status: 400 });
+  }
 
   const [lines, rule, shipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id)]);
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
@@ -244,11 +270,11 @@ const LS_KEY = "cx_customer_v1";
 type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Checkout() {
-  const { store, theme, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
+  const { store, theme, otp, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const couponFetcher = useFetcher<typeof action>();
-  const codFetcher = useFetcher<{ cod: CodStatus; message: string | null }>();
+  const codFetcher = useFetcher<{ cod: CodStatus; block: "cod" | "all" | null; message: string | null }>();
 
   const [c, setC] = useState<OrderCustomer>(EMPTY);
   const [method, setMethod] = useState<PaymentMethod>(store.payuReady ? "prepaid" : "cod");
@@ -275,12 +301,14 @@ export default function Checkout() {
   // COD rules for this phone number
   const phoneOk = /^[6-9]\d{9}$/.test(c.phone);
   useEffect(() => {
-    if (!phoneOk || !store.codEnabled) return;
-    codFetcher.submit({ intent: "eligibility", phone: c.phone }, { method: "post" });
+    if (!phoneOk) return;
+    const t = setTimeout(() => codFetcher.submit({ intent: "eligibility", phone: c.phone, email: c.email, pincode: c.pincode, city: c.city, state: c.state }, { method: "post" }), 400);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [c.phone, phoneOk]);
+  }, [c.phone, phoneOk, c.pincode, c.city, c.state, c.email]);
   const codStatus = phoneOk ? codFetcher.data : undefined;
   const codBlocked = Boolean(codStatus && !codStatus.cod.allowed);
+  const orderBlocked = codStatus?.block === "all";
   const codAvailable = store.codEnabled && !codBlocked;
   useEffect(() => { if (codBlocked && method === "cod" && store.payuReady) setMethod("prepaid"); }, [codBlocked, method, store.payuReady]);
 
@@ -327,6 +355,17 @@ export default function Checkout() {
   const bestBank = useMemo(() => Math.max(0, ...offers.map((o) => bankOfferEstimate(o, prepaid.subtotal, prepaid.total))), [offers, prepaid]);
 
   const errors = (actionData && "errors" in actionData ? actionData.errors : {}) as FieldErrors;
+
+  // OTP before the order (RTO Suite)
+  const formRef = useRef<HTMLFormElement>(null);
+  const verifiedPhone = useRef<string | null>(null);
+  const [otpOpen, setOtpOpen] = useState(false);
+  const needsOtp = (method === "prepaid" ? otp.prepaid : otp.cod) && verifiedPhone.current !== c.phone;
+  useEffect(() => { if (actionData && "needOtp" in actionData && actionData.needOtp) setOtpOpen(true); }, [actionData]);
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    if (orderBlocked) { e.preventDefault(); return; }
+    if (needsOtp && /^[6-9]\d{9}$/.test(c.phone) && formRef.current?.checkValidity()) { e.preventDefault(); setOtpOpen(true); }
+  };
   const placing = nav.state !== "idle" && nav.formData?.get("intent") === "place";
   const redirectingToPay = placing && nav.formData?.get("method") === "prepaid";
   const itemCount = lines.reduce((s, l) => s + l.quantity, 0);
@@ -370,7 +409,7 @@ export default function Checkout() {
         </div>
       )}
 
-      <Form method="post" id="checkout-form" className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-8 lg:py-8">
+      <Form method="post" id="checkout-form" ref={formRef} onSubmit={onSubmit} className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-8 lg:py-8">
         <input type="hidden" name="intent" value="place" />
         <input type="hidden" name="method" value={method} />
         <input type="hidden" name="couponCode" value={coupon?.code ?? ""} />
@@ -496,7 +535,9 @@ export default function Checkout() {
                   badge={codAvailable ? discountLabel(cod) : null} amount={cod.total} />
               )}
             </div>
+            {orderBlocked && codStatus?.message && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{codStatus.message}</p>}
             {errors.form && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{errors.form}</p>}
+            {(method === "prepaid" ? otp.prepaid : otp.cod) && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />We'll send a one-time code to your mobile to confirm the order.</p>}
           </Card>
           {theme.upsellPlacement === "after_payment" && upsellCard}
           </div>
@@ -537,6 +578,10 @@ export default function Checkout() {
       </div>
 
       {redirectingToPay && <PaymentOverlay name={store.name} logo={store.logoUrl} />}
+      {otpOpen && (
+        <OtpDialog phone={c.phone} onClose={() => setOtpOpen(false)}
+          onVerified={() => { verifiedPhone.current = c.phone; setOtpOpen(false); setTimeout(() => formRef.current?.requestSubmit(), 0); }} />
+      )}
     </Shell>
   );
 }
@@ -817,6 +862,48 @@ function Trust({ phone, text, className = "" }: { phone: string | null; text: st
       {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
       <p className="pt-1"><PoweredBy /></p>
+    </div>
+  );
+}
+
+function OtpDialog({ phone, onClose, onVerified }: { phone: string; onClose: () => void; onVerified: () => void }) {
+  const send = useFetcher<{ ok: boolean; error?: string; resendIn?: number }>();
+  const verify = useFetcher<{ ok: boolean; error?: string }>();
+  const [code, setCode] = useState("");
+  const [wait, setWait] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  const sendOtp = () => send.submit({ intent: "otp_send", phone }, { method: "post" });
+  useEffect(() => { sendOtp(); input.current?.focus(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { if (send.data?.resendIn) setWait(send.data.resendIn); }, [send.data]);
+  useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((w) => w - 1), 1000); return () => clearTimeout(t); }, [wait]);
+  useEffect(() => { if (verify.data?.ok) onVerified(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [verify.data]);
+  const submit = (v = code) => { if (v.length === 6) verify.submit({ intent: "otp_verify", phone, code: v }, { method: "post" }); };
+  const error = verify.data && !verify.data.ok ? verify.data.error : send.data && !send.data.ok && !send.data.resendIn ? send.data.error : null;
+  const sending = send.state !== "idle";
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="otp-title">
+      <div className="w-full max-w-sm animate-fadein rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 id="otp-title" className="text-lg font-semibold">Verify your mobile number</h2>
+            <p className="mt-1 text-sm text-ink-soft">{sending ? "Sending a 6-digit code to" : "Enter the 6-digit code sent to"} <b className="num text-ink">+91 {phone}</b></p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-ink-faint hover:text-ink" aria-label="Close">✕</button>
+        </div>
+        <input ref={input} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} aria-label="OTP"
+          onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setCode(v); if (v.length === 6) submit(v); }}
+          className="input num mt-5 text-center text-2xl font-semibold tracking-[0.5em]" placeholder="••••••" />
+        {error && <p className="mt-2 text-sm font-medium text-bad" role="alert">{error}</p>}
+        <button type="button" onClick={() => submit()} disabled={code.length !== 6 || verify.state !== "idle"} className="btn-primary mt-4 w-full py-3">
+          {verify.state !== "idle" ? <><Spinner /> Verifying</> : "Verify and continue"}
+        </button>
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <button type="button" onClick={onClose} className="text-ink-soft hover:text-ink">Change number</button>
+          <button type="button" disabled={wait > 0 || sending} onClick={() => { setCode(""); sendOtp(); }} className="font-medium text-brand disabled:text-ink-faint">
+            {wait > 0 ? `Resend in ${wait}s` : "Resend OTP"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

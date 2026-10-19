@@ -3,7 +3,7 @@ import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { eq } from "drizzle-orm";
 import { Icon, type IconName } from "~/components/Icons";
-import { CtaBand, RateCard, SectionHead } from "~/components/site/Blocks";
+import { CtaBand, Gateways, Platforms, RateCard, SectionHead } from "~/components/site/Blocks";
 import { SiteLayout, siteMeta } from "~/components/site/SiteLayout";
 import { db, stores } from "~/db.server";
 import { siteData } from "~/lib/site.server";
@@ -11,8 +11,8 @@ import { isAppHost, requestHost } from "~/lib/urls.server";
 import { rupees } from "~/lib/wallet";
 
 export const meta: MetaFunction = () =>
-  siteMeta("Growpefy · Fast Shopify checkout with COD control, offers and ad analytics",
-    "One checkout for all your Shopify stores. Cut RTO with COD rules, lift prepaid orders with offers and free gifts, and see ROAS and cost per order in one dashboard. No monthly fee.");
+  siteMeta("Growpefy · Fast checkout with RTO protection, offers and ad analytics",
+    "One checkout for all your online stores, on Shopify, WooCommerce or your own website, with your own payment gateway. Cut RTO with OTP, COD rules and block lists, lift prepaid orders with offers, and see ROAS in one dashboard. No monthly fee.");
 
 /** Platform domain → website. A store's checkout domain → that store's storefront. */
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -25,18 +25,19 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 const FEATURES: { icon: IconName; title: string; text: string; tint: string }[] = [
   { icon: "cart", title: "One-page fast checkout", text: "Address, payment and order in one clean page that opens straight from Buy Now and the cart. Your logo, colors and fonts.", tint: "bg-emerald-50 text-emerald-700" },
-  { icon: "shipping", title: "COD control & RTO rules", text: "Turn COD on or off by pincode, order value and customer history. Block repeat COD after failed prepaid, add COD fees.", tint: "bg-orange-50 text-orange-700" },
-  { icon: "discounts", title: "Prepaid offers that convert", text: "Extra discount for online payment, coupons and bank offers on PayU. Show customers exactly how much they save.", tint: "bg-sky-50 text-sky-700" },
+  { icon: "shield", title: "RTO Suite", text: "OTP verification, COD wait time, block lists by number, pincode, city or state, and WhatsApp order confirmation.", tint: "bg-orange-50 text-orange-700" },
+  { icon: "discounts", title: "Prepaid offers that convert", text: "Extra discount for online payment, coupons and bank offers on your gateway. Show customers exactly how much they save.", tint: "bg-sky-50 text-sky-700" },
   { icon: "gift", title: "Free gifts & Mix and Match", text: "Buy X get Y, free gifts and Buy 2 Get 1 deals, applied automatically at checkout with upsells to grow order value.", tint: "bg-rose-50 text-rose-700" },
   { icon: "ads", title: "Meta ads analytics", text: "ROAS and cost per order for every store, with ad recharges tracked including GST. Know which store is really making money.", tint: "bg-violet-50 text-violet-700" },
   { icon: "stores", title: "All stores, one dashboard", text: "Switch between stores in a click. Orders, abandoned checkouts, CSV exports, wallet and GST invoices in one place.", tint: "bg-amber-50 text-amber-700" },
 ];
 
 const FAQ: [string, string][] = [
-  ["Do I need to change my Shopify theme?", "Only one line. You paste our script in your theme and the cart's Checkout and Buy Now buttons open Growpefy checkout. Your theme, products and Shopify admin stay the same, and every order is created in Shopify."],
-  ["Which payment gateway do you support?", "Customers pay through your own PayU account, so money settles directly to your bank. Cash on Delivery is built in with rules you control."],
+  ["Which platforms does Growpefy work with?", "Shopify today: one script in your theme and the Checkout and Buy Now buttons open Growpefy, with every order created back in Shopify. WooCommerce and custom websites (built in VS Code, React, PHP and so on) are coming next."],
+  ["Which payment gateway do you support?", "You connect your own gateway account, so money settles directly to your bank. PayU is live; Razorpay, Cashfree and other Indian and international gateways are rolling out. Cash on Delivery is built in with rules you control."],
+  ["How does Growpefy reduce RTO?", "With the RTO Suite: OTP verification before prepaid or COD orders, a wait time between COD orders, blocking customers by number, email, pincode, city, state or country (upload a CSV of past RTO orders), and WhatsApp order confirmation."],
   ["Is there a monthly fee?", "No. You recharge a prepaid wallet and pay only a small fee on each order placed through the checkout. See the pricing page for the full rate card."],
-  ["Can I run more than one store?", "Yes. Connect as many Shopify stores as you like and manage them from one login. Each store can have its own checkout domain, design and offers."],
+  ["Can I run more than one store?", "Yes. Connect as many stores as you like and manage them from one login. Each store can have its own checkout domain, design and offers."],
   ["What happens if my wallet balance runs out?", "Your checkout never stops taking orders. The wallet can go slightly below zero; past that limit promotional messages pause and some dashboard tools lock until you recharge."],
   ["Will I get a GST invoice?", "Yes. Every wallet recharge comes with a GST tax invoice you can download from the dashboard."],
 ];
@@ -52,13 +53,13 @@ export default function Home() {
         <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-4 pb-16 pt-12 sm:px-6 sm:pt-20 lg:grid-cols-[1.1fr_1fr] lg:pb-24">
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Built for Shopify D2C brands in India
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Built for D2C brands, in India and beyond
             </p>
             <h1 className="mt-5 text-[40px] font-semibold leading-[1.05] tracking-tight text-ink sm:text-6xl">
               Checkout that <span className="bg-gradient-to-r from-pine to-emerald-500 bg-clip-text text-transparent">grows</span> your store.
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">
-              One fast checkout for all your Shopify stores, with COD control, prepaid offers, free gifts and Meta ad analytics built in. Pay only when you sell.
+              One fast checkout for all your stores, on Shopify, WooCommerce or your own website, with your own payment gateway. RTO protection, prepaid offers, free gifts and Meta ad analytics built in. Pay only when you sell.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to={d.loggedIn ? "/dashboard" : "/signup"} className="btn-primary px-6 py-3.5 text-[15px]">{d.loggedIn ? "Go to dashboard" : "Start free"}<Icon name="chevron" className="h-4 w-4 -rotate-90" /></Link>
@@ -113,9 +114,9 @@ export default function Home() {
           <SectionHead eyebrow="Live in an afternoon" title="Three steps to your new checkout" />
           <ol className="mt-12 grid gap-4 md:grid-cols-3">
             {[
-              ["Connect Shopify", "Sign up, add your store and connect it with a Shopify app. Products, prices and stock stay in Shopify."],
-              ["Add PayU and set rules", "Add your PayU keys, choose prepaid discounts, COD rules, offers and your checkout design."],
-              ["Paste one script", "Add one line to your theme. Checkout and Buy Now open Growpefy, and orders land in Shopify."],
+              ["Connect your store", "Sign up and connect your store. Products, prices and stock stay where they are."],
+              ["Add your gateway and rules", "Add your payment gateway keys, then set prepaid discounts, RTO rules, offers and your checkout design."],
+              ["Go live", "Add one line to your site. Checkout and Buy Now open Growpefy, and every order lands back in your store."],
             ].map(([t, x], i) => (
               <li key={t} className="relative rounded-2xl border border-rule bg-white p-6">
                 <span className="num flex h-9 w-9 items-center justify-center rounded-full bg-pine text-sm font-semibold text-white">{i + 1}</span>
@@ -126,6 +127,16 @@ export default function Home() {
           </ol>
         </div>
       </section>
+
+      {/* Platforms */}
+      <section className="border-t border-rule bg-paper/50">
+        <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+          <SectionHead eyebrow="Works where you sell" title="One checkout for every kind of store" text="Run Shopify, WooCommerce and custom-built stores side by side from one Growpefy login." />
+          <div className="mt-12"><Platforms /></div>
+        </div>
+      </section>
+
+      <Gateways />
 
       {/* Pricing teaser */}
       <section className="border-y border-rule bg-paper/50">

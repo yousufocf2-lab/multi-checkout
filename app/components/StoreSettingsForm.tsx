@@ -12,11 +12,6 @@ export type StoreFormValues = {
   logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null;
 };
 
-function splitHours(h: number) {
-  if (h >= 730 && h % 730 === 0) return { value: h / 730, unit: "months" };
-  if (h >= 24 && h % 24 === 0) return { value: h / 24, unit: "days" };
-  return { value: h, unit: "hours" };
-}
 
 const saved = (yes?: boolean) => (yes ? "Saved. Leave blank to keep it." : undefined);
 
@@ -24,7 +19,6 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
   values?: StoreFormValues; errors?: Record<string, string>; submitLabel: string; isNew?: boolean;
 }) {
   const v = values;
-  const cd = splitHours(v.codCooldownHours ?? 6);
   const [codOn, setCodOn] = useState(v.codEnabled ?? true);
 
   return (
@@ -75,22 +69,9 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
               <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${codOn ? "left-[18px]" : "left-0.5"}`} />
             </span>
           </label>
-          <fieldset disabled={!codOn} className="space-y-4 border-t border-rule pt-4 disabled:opacity-50">
-            <div>
-              <span className="label">Wait time between COD orders</span>
-              <div className="flex max-w-sm gap-2">
-                <input type="number" name="codCooldownValue" min={1} defaultValue={cd.value} className="input w-28" aria-label="Wait time" />
-                <select name="codCooldownUnit" defaultValue={cd.unit} className="input" aria-label="Unit">
-                  <option value="hours">hours</option>
-                  <option value="days">days</option>
-                  <option value="months">months</option>
-                </select>
-              </div>
-              {errors.codCooldown ? <span className="error-text">{errors.codCooldown}</span>
-                : <span className="hint">After a COD order, the same phone number can't order on COD again for this long. Default 6 hours, up to 1 year (12 months).</span>}
-            </div>
-            <Toggle name="codBlockAfterPrepaid" label="Turn off COD for customers who have paid online" description="Once a phone number completes a prepaid order, it can only pay online from then on." defaultChecked={v.codBlockAfterPrepaid ?? true} />
-          </fieldset>
+          <p className="border-t border-rule pt-4 text-sm text-ink-soft">
+            COD wait time, repeat-COD rules, OTP and blocking customers are in <b className="text-ink">RTO Suite</b> in the menu.
+          </p>
         </div>
       </Section>
 

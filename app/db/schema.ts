@@ -53,6 +53,18 @@ export const stores = pgTable("stores", {
   codEnabled: boolean("cod_enabled").notNull().default(true),
   codCooldownHours: integer("cod_cooldown_hours").notNull().default(6), // 1 .. 8760
   codBlockAfterPrepaid: boolean("cod_block_after_prepaid").notNull().default(true),
+  // RTO Suite
+  codCooldownEnabled: boolean("cod_cooldown_enabled").notNull().default(true),
+  otpEnabled: boolean("otp_enabled").notNull().default(false),
+  otpPrepaid: boolean("otp_prepaid").notNull().default(false),
+  otpCod: boolean("otp_cod").notNull().default(true),
+  blockEnabled: boolean("block_enabled").notNull().default(false),
+  blockCodOnly: boolean("block_cod_only").notNull().default(true), // true: blocked customers lose COD only; false: can't order at all
+  confirmEnabled: boolean("confirm_enabled").notNull().default(false),
+  confirmWhatsapp: boolean("confirm_whatsapp").notNull().default(true),
+  confirmWaPrepaid: boolean("confirm_wa_prepaid").notNull().default(true),
+  confirmWaCod: boolean("confirm_wa_cod").notNull().default(true),
+  confirmCall: boolean("confirm_call").notNull().default(false), // unlocks after 100 orders
   // Checkout upsell ("You may also like")
   upsellEnabled: boolean("upsell_enabled").notNull().default(true),
   upsellProducts: jsonb("upsell_products").$type<ProductRef[]>().notNull().default([]),
@@ -83,6 +95,41 @@ export const stores = pgTable("stores", {
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** RTO Suite block list: one row per blocked phone / email / pincode / city / state / country (values normalised). */
+export const blockedCustomers = pgTable(
+  "blocked_customers",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // phone | email | pincode | city | state | country
+    value: text("value").notNull(),
+    source: text("source").notNull().default("manual"), // manual | csv
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("blocked_customers_uniq").on(t.storeId, t.kind, t.value),
+  }),
+);
+
+/** Checkout OTPs (hashed). A verified row lets that session place an order with that phone. */
+export const checkoutOtps = pgTable(
+  "checkout_otps",
+  {
+    id: text("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull(),
+    phone: text("phone").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bySession: index("checkout_otps_session_idx").on(t.sessionId, t.phone),
+  }),
+);
 
 /** Coupon codes, per store. Money fields are whole rupees. */
 export const coupons = pgTable(
@@ -337,6 +384,10 @@ export const metaRecharges = pgTable(
 
 /** Charges in paise; saleFeeBps is basis points of the order total (100 = 1%). */
 export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; waTracking: number; waPromo: number };
+export type MessagingSettings = {
+  msg91AuthKey?: string; msg91TemplateId?: string;
+  waPhoneNumberId?: string; waToken?: string; waTemplate?: string; waLang?: string;
+};
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 
 /** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */
@@ -350,6 +401,7 @@ export const platformSettings = pgTable("platform_settings", {
   payuKey: text("payu_key"),
   payuSalt: text("payu_salt"),
   payuMode: text("payu_mode").notNull().default("test"),
+  messaging: jsonb("messaging").$type<MessagingSettings>().notNull().default({}),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -412,6 +464,7 @@ export const walletRecharges = pgTable(
 );
 
 export type Store = typeof stores.$inferSelect;
+export type BlockedCustomer = typeof blockedCustomers.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;
 export type WalletRecharge = typeof walletRecharges.$inferSelect;

@@ -80,7 +80,7 @@ export function SiteLayout({ loggedIn, company, children }: { loggedIn: boolean;
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
             <BrandLockup tone="light" className="h-8" />
-            <p className="mt-4 max-w-xs text-sm leading-relaxed text-night-faint">Fast checkout, COD control, offers and ad analytics for Shopify D2C brands in India.</p>
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-night-faint">Fast checkout, COD control, offers and ad analytics for D2C brands on Shopify, WooCommerce and custom websites.</p>
           </div>
           <FooterCol title="Product" links={[["Features", "/#features"], ["Pricing", "/pricing"], ["How it works", "/#how"], ["Sign up", "/signup"], ["Log in", "/login"]]} />
           <FooterCol title="Company" links={[["Contact us", "/contact"], ["Terms & Conditions", "/terms"], ["Privacy Policy", "/privacy"]]} />

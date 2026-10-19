@@ -1,5 +1,4 @@
 import type { Store } from "~/db/schema";
-import { MAX_COOLDOWN_HOURS } from "./cod.server";
 import { appHost, cleanDomain } from "./urls.server";
 
 export type StoreInput = Pick<
@@ -19,10 +18,6 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   const on = (k: string) => fd.get(k) === "on";
   const errors: Record<string, string> = {};
 
-  const cooldownValue = Math.max(0, Number(s("codCooldownValue")) || 0);
-  const cooldownUnit = s("codCooldownUnit");
-  const unitHours = cooldownUnit === "days" ? 24 : cooldownUnit === "months" ? 730 : 1;
-  const cooldownHours = Math.round(cooldownValue * unitHours);
 
   const data: StoreInput = {
     name: s("name"),
@@ -39,8 +34,9 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuSalt: secret("payuSalt", existing?.payuSalt),
     payuMode: s("payuMode") === "live" ? "live" : "test",
     codEnabled: on("codEnabled"),
-    codCooldownHours: cooldownHours >= 1 ? Math.min(MAX_COOLDOWN_HOURS, cooldownHours) : existing?.codCooldownHours ?? 6,
-    codBlockAfterPrepaid: on("codBlockAfterPrepaid"),
+    // COD wait time and repeat-COD rules now live in the RTO Suite page
+    codCooldownHours: existing?.codCooldownHours ?? 6,
+    codBlockAfterPrepaid: existing?.codBlockAfterPrepaid ?? true,
     metaAdAccountId: s("metaAdAccountId").replace(/\D/g, "") || null,
     metaAccessToken: on("clearMetaToken") ? null : secret("metaAccessToken", existing?.metaAccessToken),
     metaPixelId: s("metaPixelId").replace(/\D/g, "") || null,
@@ -57,7 +53,6 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Enter only the domain, e.g. checkout.budverse.in";
   if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Use your store's own subdomain, not the platform domain";
   if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
-  if (data.codEnabled && (cooldownHours < 1 || cooldownHours > MAX_COOLDOWN_HOURS)) errors.codCooldown = "Choose between 1 hour and 1 year";
 
   return { data, errors };
 }

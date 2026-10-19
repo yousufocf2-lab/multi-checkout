@@ -85,6 +85,13 @@
       "when": 1792313784147,
       "tag": "0011_wallet",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792404592328,
+      "tag": "0012_rto_suite",
+      "breakpoints": true
     }
   ]
 }

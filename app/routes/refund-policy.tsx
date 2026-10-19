@@ -30,7 +30,7 @@ export default function Page() {
         <h2>3. Cancellation</h2>
         <p>There is no lock-in or monthly plan. You can stop using Growpefy at any time by removing our script from your store theme and writing to us to close your account. Unused wallet balance is not refunded on cancellation, except as stated above. Fees already deducted for orders and messages are final.</p>
         <h2>4. Orders placed by your customers</h2>
-        <p>Refunds, returns and cancellations of orders placed by shoppers on your store are handled by you, the merchant, through your Shopify store and payment gateway. Growpefy does not issue refunds to shoppers. Where enabled, the order fee may be reversed to your wallet when an order is fully refunded.</p>
+        <p>Refunds, returns and cancellations of orders placed by shoppers on your store are handled by you, the merchant, through your store and payment gateway. Growpefy does not issue refunds to shoppers. Where enabled, the order fee may be reversed to your wallet when an order is fully refunded.</p>
         <h2>5. How to raise a request</h2>
         <p>Email <a href={`mailto:${c.email}`}>{c.email}</a> with your registered email, store name, transaction ID and payment date within 30 days of the payment. We respond within 2 working days.</p>
       </LegalPage>

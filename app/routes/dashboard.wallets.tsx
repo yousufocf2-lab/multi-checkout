@@ -42,6 +42,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     settings: {
       rates: mergeRates(p.rates), minRecharge: p.minRechargePaise, negativeLimit: p.defaultNegativeLimitPaise, lowAlert: p.defaultLowAlertPaise,
       billing: p.billing ?? {}, payuKey: p.payuKey ?? "", hasSalt: Boolean(p.payuSalt), payuMode: p.payuMode,
+      msg: {
+        msg91TemplateId: p.messaging?.msg91TemplateId ?? "", hasMsg91Key: Boolean(p.messaging?.msg91AuthKey),
+        waPhoneNumberId: p.messaging?.waPhoneNumberId ?? "", hasWaToken: Boolean(p.messaging?.waToken),
+        waTemplate: p.messaging?.waTemplate ?? "", waLang: p.messaging?.waLang ?? "en",
+      },
       payuFromEnv: !p.payuKey && Boolean(process.env.PLATFORM_PAYU_KEY), payuReady: Boolean(creds.payuKey && creds.payuSalt),
     },
     appUrl: (process.env.APP_URL ?? "").replace(/\/+$/, ""),
@@ -84,6 +89,17 @@ export async function action({ request }: ActionFunctionArgs) {
       payuKey: s("payuKey") || null, payuSalt: s("payuSalt") || p.payuSalt, payuMode: s("payuMode") === "live" ? "live" : "test", updatedAt: new Date(),
     }).where(eq(platformSettings.id, 1));
     return json({ ok: "PayU account saved", error: null });
+  }
+  if (intent === "messaging") {
+    const m = p.messaging ?? {};
+    await db.update(platformSettings).set({
+      messaging: {
+        msg91AuthKey: s("msg91AuthKey") || m.msg91AuthKey, msg91TemplateId: s("msg91TemplateId"),
+        waPhoneNumberId: s("waPhoneNumberId").replace(/\D/g, ""), waToken: s("waToken") || m.waToken, waTemplate: s("waTemplate"), waLang: s("waLang") || "en",
+      },
+      updatedAt: new Date(),
+    }).where(eq(platformSettings.id, 1));
+    return json({ ok: "Messaging settings saved", error: null });
   }
   if (intent === "testPayu") {
     try { return json({ ok: await testPayu(platformPayu(await getPlatform())), error: null }); }
@@ -182,7 +198,7 @@ function Kpi({ icon, tint, label, value, sub }: { icon: IconName; tint: string; 
 }
 
 function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> }) {
-  const [tab, setTab] = useState<"rates" | "billing" | "payu">("rates");
+  const [tab, setTab] = useState<"rates" | "billing" | "payu" | "messaging">("rates");
   const s = d.settings;
   const b = s.billing;
   return (
@@ -190,7 +206,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
       <div className="flex flex-wrap items-center gap-2 border-b border-rule px-5 py-3">
         <h2 className="mr-auto text-[15px] font-semibold">Settings</h2>
         <div className="inline-flex rounded-lg border border-rule-strong bg-surface p-0.5" role="tablist">
-          {[["rates", "Rate card"], ["billing", "Invoice details"], ["payu", "PayU account"]].map(([k, l]) => (
+          {[["rates", "Rate card"], ["billing", "Invoice details"], ["payu", "PayU account"], ["messaging", "Messaging"]].map(([k, l]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k as typeof tab)}
               className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? "bg-ink font-medium text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
           ))}
@@ -255,6 +271,30 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
             </ul>
           </div>
         </div>
+      )}
+
+      {tab === "messaging" && (
+        <Form method="post" className="space-y-6 p-5">
+          <p className="text-sm text-ink-soft">Your own accounts for OTP and WhatsApp. Stores turn the services on in RTO Suite and pay per message from their wallet.</p>
+          <div>
+            <h3 className="font-semibold">OTP (MSG91)</h3>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <label className="block"><span className="label">Auth key</span><input name="msg91AuthKey" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasMsg91Key ? "Saved. Leave blank to keep it." : "From MSG91 → API"} />
+                <span className="hint">Type <code>test</code> to try the flow without sending SMS (code is always 123456).</span></label>
+              <Field label="OTP template ID (DLT approved)" name="msg91TemplateId" value={s.msg.msg91TemplateId} />
+            </div>
+          </div>
+          <div>
+            <h3 className="font-semibold">WhatsApp (Meta Cloud API)</h3>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Phone number ID" name="waPhoneNumberId" value={s.msg.waPhoneNumberId} />
+              <label className="block"><span className="label">Permanent access token</span><input name="waToken" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasWaToken ? "Saved. Leave blank to keep it." : "System user token with whatsapp_business_messaging"} /></label>
+              <Field label="Order confirmation template name" name="waTemplate" value={s.msg.waTemplate} hint="Approved utility template with 5 body variables: name, store, order no., amount, payment" />
+              <Field label="Template language code" name="waLang" value={s.msg.waLang} hint="e.g. en, en_US, hi" />
+            </div>
+          </div>
+          <SubmitButton intent="messaging" busyText="Saving">Save messaging settings</SubmitButton>
+        </Form>
       )}
     </section>
   );

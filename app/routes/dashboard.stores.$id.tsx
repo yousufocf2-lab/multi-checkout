@@ -25,6 +25,7 @@ const TITLES: Record<string, { title: string; description: string }> = {
   shipping: { title: "Shipping", description: "Delivery charges by location, order value and payment method." },
   settings: { title: "Store settings", description: "Shopify, PayU, COD rules and Meta ads for this store." },
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout." },
+  rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation." },
   wallet: { title: "Wallet", description: "Prepaid balance for sale fees, OTP and WhatsApp messages." },
   install: { title: "Setup", description: "Connect Shopify, payments, webhooks and your theme." },
 };

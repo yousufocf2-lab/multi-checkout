@@ -46,7 +46,7 @@ export default function Signup() {
   return (
     <>
     {busy && <BusyOverlay title="Creating your account" note="Getting your dashboard ready." />}
-    <AuthShell title="Create your account" subtitle="Connect your Shopify store and start taking orders on your own checkout."
+    <AuthShell title="Create your account" subtitle="Connect your store and start taking orders on your own checkout."
       footer={<>Already have an account? <Link to="/login" className="font-medium text-ink underline underline-offset-2">Log in</Link></>}>
       <Form method="post" className="space-y-4" noValidate>
         {Object.keys(e).length > 0 && <Notice tone="error">Fix the highlighted fields to continue.</Notice>}

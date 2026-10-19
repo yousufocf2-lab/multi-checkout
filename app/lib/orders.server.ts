@@ -6,6 +6,7 @@ import { recordOrderForCod } from "./cod.server";
 import { incrementCouponUse } from "./coupons.server";
 import { sendCapiPurchase } from "./meta.server";
 import { createShopifyOrder } from "./shopify.server";
+import { sendOrderConfirmation } from "./rto.server";
 import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
 
 export function newOrderId() {
@@ -58,7 +59,10 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
   // Platform sale fee from the store's wallet (idempotent per order; never blocks the customer)
   await chargeSaleFee(store, updated);
   void trackPurchase(store, updated);
-  return pushToShopify(store, updated);
+  const pushed = await pushToShopify(store, updated);
+  // WhatsApp order confirmation (RTO Suite), after Shopify so it can quote the order number
+  void sendOrderConfirmation(store, pushed ?? updated);
+  return pushed;
 }
 
 /** Fires the Meta CAPI Purchase once per order (never blocks the customer). */

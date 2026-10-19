@@ -23,20 +23,20 @@ export default function Page() {
         <h2>2. Data we collect</h2>
         <ul>
           <li><strong>Merchant account data</strong>: name, email, password (stored only as a secure hash), business and billing details such as GSTIN and address, and wallet and invoice records.</li>
-          <li><strong>Store connections</strong>: Shopify, payment gateway and Meta ad account credentials you provide, stored to run the Service.</li>
+          <li><strong>Store connections</strong>: store platform, payment gateway and Meta ad account credentials you provide, stored to run the Service.</li>
           <li><strong>Shopper order data</strong>: name, phone number, email, delivery address, items ordered, order value, payment method and status. We do not collect or store full card numbers, UPI PINs or bank passwords; payments are handled by the merchant's payment gateway.</li>
           <li><strong>Technical data</strong>: IP address, device and browser information, pages visited, and cookies needed for login sessions and checkout. Merchants may enable advertising pixels (such as Meta Pixel) on their checkout.</li>
         </ul>
         <h2>3. How we use data</h2>
         <ul>
-          <li>To provide checkout, create orders in the merchant's Shopify store, apply offers and COD rules, and show analytics.</li>
+          <li>To provide checkout, create orders in the merchant's store, apply offers, COD and RTO rules (including the merchant's block list), and show analytics.</li>
           <li>To verify phone numbers and send order messages (OTP, WhatsApp) when the merchant enables them.</li>
           <li>To bill merchants, issue GST invoices and maintain the wallet ledger.</li>
           <li>To secure the Service, prevent fraud and abuse, and meet legal obligations.</li>
           <li>To contact merchants about their account and important changes. We do not sell personal data.</li>
         </ul>
         <h2>4. Sharing</h2>
-        <p>We share data only as needed to run the Service: with the merchant whose checkout was used; with Shopify, payment gateways, messaging providers and Meta as configured by the merchant; with our hosting and infrastructure providers; and with authorities where required by law.</p>
+        <p>We share data only as needed to run the Service: with the merchant whose checkout was used; with the store platform, payment gateways, messaging providers (SMS and WhatsApp) and Meta as configured by the merchant; with our hosting and infrastructure providers; and with authorities where required by law.</p>
         <h2>5. Storage and security</h2>
         <p>Data is stored with reputable cloud providers using encryption in transit, hashed passwords, access controls and automatic session timeouts. No system is perfectly secure, but we work to protect your data and will notify affected parties of a breach as required by law.</p>
         <h2>6. Retention</h2>

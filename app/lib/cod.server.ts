@@ -24,7 +24,7 @@ export async function codEligibility(store: Store, phoneRaw: string): Promise<Co
 
   if (store.codBlockAfterPrepaid && f.prepaidAt) return { allowed: false, reason: "paid_online_before", until: null };
 
-  if (f.lastCodAt) {
+  if (store.codCooldownEnabled && f.lastCodAt) {
     const hours = Math.max(0, Math.min(MAX_COOLDOWN_HOURS, store.codCooldownHours));
     const until = new Date(f.lastCodAt.getTime() + hours * 3600_000);
     if (until > new Date()) return { allowed: false, reason: "cooldown", until: until.toISOString() };
