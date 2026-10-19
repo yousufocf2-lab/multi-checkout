@@ -92,6 +92,13 @@
       "when": 1792404592328,
       "tag": "0012_rto_suite",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792436999276,
+      "tag": "0013_onboarding_logistics_shield",
+      "breakpoints": true
     }
   ]
 }

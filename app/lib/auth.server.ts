@@ -55,7 +55,10 @@ function safeEqual(a: string, b: string) {
 
 export type Viewer =
   | { role: "admin"; name: string; email: string }
-  | { role: "owner"; name: string; email: string; userId: number };
+  | { role: "owner"; name: string; email: string; userId: number; kycStatus: string };
+
+/** What we show for an owner: email, or the mobile number for mobile signups. */
+export const ownerContact = (u: Pick<User, "email" | "phone">) => u.email ?? (u.phone ? `+91 ${u.phone}` : "");
 
 export function adminEmail() {
   return (process.env.ADMIN_EMAIL || "admin").trim().toLowerCase();
@@ -73,7 +76,7 @@ export async function getViewer(request: Request): Promise<Viewer | null> {
   if (!uid) return null;
   const [u] = await db.select().from(users).where(eq(users.id, uid)).limit(1);
   if (!u || !u.active) return null;
-  return { role: "owner", name: u.name, email: u.email, userId: u.id };
+  return { role: "owner", name: u.name, email: ownerContact(u), userId: u.id, kycStatus: u.kycStatus };
 }
 
 export async function requireViewer(request: Request) {
@@ -115,8 +118,39 @@ export async function login(email: string, password: string): Promise<{ admin: t
   const e = email.trim().toLowerCase();
   if (e === adminEmail() && safeEqual(password, env.adminPassword)) return { admin: true };
   const [u] = await db.select().from(users).where(eq(users.email, e)).limit(1);
-  if (u && u.active && (await verifyPassword(password, u.passwordHash))) return { user: u };
+  if (u && u.active && u.passwordHash && (await verifyPassword(password, u.passwordHash))) return { user: u };
   return null;
+}
+
+/** Finds an owner by the mobile number or email they log in with. */
+export async function findOwner(channel: "phone" | "email", target: string) {
+  const [u] = await db.select().from(users).where(channel === "phone" ? eq(users.phone, target) : eq(users.email, target)).limit(1);
+  return u ?? null;
+}
+
+/** OTP signup: brand name + mobile or email. Password is optional (null). KYC comes next. */
+export async function createOwner(input: { brandName: string; channel: "phone" | "email"; target: string }) {
+  const [u] = await db
+    .insert(users)
+    .values({
+      name: input.brandName.trim().slice(0, 120),
+      email: input.channel === "email" ? input.target : null,
+      phone: input.channel === "phone" ? input.target : null,
+      signupWith: input.channel,
+      passwordHash: null,
+      kyc: {
+        brandName: input.brandName.trim().slice(0, 120),
+        ...(input.channel === "email" ? { email: input.target } : { phone: input.target, whatsapp: input.target }),
+      },
+      kycStatus: "pending",
+    })
+    .returning();
+  return u;
+}
+
+/** Owners must finish KYC before using the dashboard. */
+export function needsKyc(v: Viewer) {
+  return v.role === "owner" && v.kycStatus !== "approved";
 }
 
 export async function createUser(input: { name: string; email: string; password: string }) {
@@ -135,7 +169,8 @@ export async function startSession(request: Request, who: { admin: true } | { us
   if ("admin" in who) s.set("admin", true);
   else s.set("uid", who.user.id);
   s.set("seen", Date.now());
-  const safeNext = next.startsWith("/dashboard") ? next : "/dashboard";
+  const pending = "user" in who && who.user.kycStatus !== "approved";
+  const safeNext = pending ? "/onboarding" : next.startsWith("/dashboard") ? next : "/dashboard";
   return redirect(safeNext, { headers: { "Set-Cookie": await st.commitSession(s) } });
 }
 

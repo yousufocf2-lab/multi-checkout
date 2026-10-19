@@ -14,6 +14,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { CheckoutTheme } from "~/lib/theme";
+import type { KycData, KycStatus } from "~/lib/kyc";
+import type { RtoShieldSettings, ShipStatus } from "~/lib/rto-shield";
 
 /** A product reference saved with rules / coupons / upsells (for display + matching). */
 export type ProductRef = { id: string; title: string; image: string | null };
@@ -21,12 +23,35 @@ export type ProductRef = { id: string; title: string; image: string | null };
 /** Store owners who log in to the dashboard. The super admin logs in via env vars. */
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  email: text("email").notNull().unique(), // lowercase
-  name: text("name").notNull(),
-  passwordHash: text("password_hash").notNull(),
+  email: text("email").unique(), // lowercase; null when the owner signed up with a mobile number
+  phone: text("phone").unique(), // 10 digits; null when the owner signed up with email
+  signupWith: text("signup_with").notNull().default("email"), // email | phone (that field can't be edited)
+  name: text("name").notNull(), // brand name at signup
+  passwordHash: text("password_hash"), // null for OTP-only accounts
+  kyc: jsonb("kyc").$type<KycData>().notNull().default({}),
+  kycStatus: text("kyc_status").$type<KycStatus>().notNull().default("pending"),
+  kycSubmittedAt: timestamp("kyc_submitted_at", { withTimezone: true }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** OTPs for store owner signup / login (hashed). */
+export const ownerOtps = pgTable(
+  "owner_otps",
+  {
+    id: text("id").primaryKey(),
+    channel: text("channel").notNull(), // phone | email
+    target: text("target").notNull(), // 10-digit phone or lowercase email
+    purpose: text("purpose").notNull(), // signup | login
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    ip: text("ip"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("owner_otps_target_idx").on(t.target, t.createdAt)],
+);
 
 /** One row per connected Shopify store. */
 export const stores = pgTable("stores", {
@@ -65,6 +90,8 @@ export const stores = pgTable("stores", {
   confirmWaPrepaid: boolean("confirm_wa_prepaid").notNull().default(true),
   confirmWaCod: boolean("confirm_wa_cod").notNull().default(true),
   confirmCall: boolean("confirm_call").notNull().default(false), // unlocks after 100 orders
+  // RTO Shield: COD / order blocks from shipment history (unlocks when a courier is connected)
+  rtoShield: jsonb("rto_shield").$type<Partial<RtoShieldSettings>>().notNull().default({}),
   // Checkout upsell ("You may also like")
   upsellEnabled: boolean("upsell_enabled").notNull().default(true),
   upsellProducts: jsonb("upsell_products").$type<ProductRef[]>().notNull().default([]),
@@ -110,6 +137,59 @@ export const blockedCustomers = pgTable(
   (t) => ({
     uniq: uniqueIndex("blocked_customers_uniq").on(t.storeId, t.kind, t.value),
   }),
+);
+
+/** Courier accounts connected by a store (API token from the courier's own panel). */
+export type CourierCreds = { token: string; clientName?: string };
+export const courierAccounts = pgTable(
+  "courier_accounts",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    courier: text("courier").notNull(), // delhivery
+    creds: jsonb("creds").$type<CourierCreds>().notNull(),
+    status: text("status").notNull().default("connected"), // connected | error
+    lastError: text("last_error"),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("courier_accounts_store_courier").on(t.storeId, t.courier)],
+);
+
+/** Phones the store has let through RTO Shield (manual unblock). */
+export const rtoShieldExempt = pgTable(
+  "rto_shield_exempt",
+  {
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    phone: text("phone").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.storeId, t.phone] })],
+);
+
+/**
+ * Customer addresses saved at checkout, shared across every store on Growpefy (keyed by phone).
+ * Shown masked until the customer verifies the phone with an OTP.
+ */
+export const customerAddresses = pgTable(
+  "customer_addresses",
+  {
+    id: serial("id").primaryKey(),
+    phone: text("phone").notNull(),
+    addrKey: text("addr_key").notNull(), // normalised address1 + pincode, to avoid duplicates
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name").notNull().default(""),
+    email: text("email").notNull().default(""),
+    address1: text("address1").notNull(),
+    address2: text("address2").notNull().default(""),
+    city: text("city").notNull(),
+    state: text("state").notNull(), // province code
+    pincode: text("pincode").notNull(),
+    sourceStoreId: integer("source_store_id").references(() => stores.id, { onDelete: "set null" }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("customer_addresses_phone_key").on(t.phone, t.addrKey), index("customer_addresses_phone_idx").on(t.phone, t.lastUsedAt)],
 );
 
 /** Checkout OTPs (hashed). A verified row lets that session place an order with that phone. */
@@ -239,6 +319,7 @@ export const checkoutSessions = pgTable("checkout_sessions", {
   cartSnapshot: jsonb("cart_snapshot").$type<{ title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number }[]>(),
   cartValue: integer("cart_value"), // paise, selling price before discounts
   paymentAttempted: boolean("payment_attempted").notNull().default(false),
+  addrLookups: integer("addr_lookups").notNull().default(0), // saved-address lookups (rate limit)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -341,11 +422,20 @@ export const orders = pgTable(
     error: text("error"),
     tracking: jsonb("tracking").$type<TrackingInfo>(),
     capiSentAt: timestamp("capi_sent_at", { withTimezone: true }),
+    saveAddress: boolean("save_address").notNull().default(false), // customer agreed to save the address for next time
+    // Shipment (from the connected courier)
+    awb: text("awb"),
+    courier: text("courier"),
+    shipStatus: text("ship_status").$type<ShipStatus>(),
+    shipStatusRaw: text("ship_status_raw"),
+    shipStatusAt: timestamp("ship_status_at", { withTimezone: true }),
+    shipCheckedAt: timestamp("ship_checked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("orders_store_created_idx").on(t.storeId, t.createdAt),
+    index("orders_store_ship_idx").on(t.storeId, t.shipStatus),
     index("orders_session_idx").on(t.sessionId),
     index("orders_store_phone_idx").on(t.storeId, sql`(customer->>'phone')`),
   ],
@@ -464,6 +554,8 @@ export const walletRecharges = pgTable(
 );
 
 export type Store = typeof stores.$inferSelect;
+export type CourierAccount = typeof courierAccounts.$inferSelect;
+export type CustomerAddress = typeof customerAddresses.$inferSelect;
 export type BlockedCustomer = typeof blockedCustomers.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;

@@ -1,13 +1,15 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useNavigation } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import { BusyOverlay } from "~/components/Brand";
-import { eq } from "drizzle-orm";
 import { AuthShell } from "~/components/AuthShell";
+import { ContactInput, OtpStep } from "~/components/OtpAuth";
 import { Notice, SubmitButton, TextField } from "~/components/ui";
-import { db, users } from "~/db.server";
-import { adminEmail, createUser, getViewer, signupOpen, startSession } from "~/lib/auth.server";
+import { adminEmail, createOwner, findOwner, getViewer, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
+import { clientIp } from "~/lib/orders.server";
+import { parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
 
 export const meta: MetaFunction = () => [{ title: "Create account · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -18,44 +20,82 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return null;
 }
 
+type Data = {
+  stage: "start" | "otp";
+  contact: string;
+  brand: string;
+  shown?: string;
+  resendIn?: number;
+  errors?: { contact?: string; brand?: string; code?: string; form?: string };
+  sent?: boolean;
+};
+
 export async function action({ request }: ActionFunctionArgs) {
   requireAppHost(request);
   if (!signupOpen()) throw redirect("/login");
   const fd = await request.formData();
-  const name = String(fd.get("name") ?? "").trim();
-  const email = String(fd.get("email") ?? "").trim().toLowerCase();
-  const password = String(fd.get("password") ?? "");
-  const errors: Record<string, string> = {};
-  if (!name) errors.name = "Enter your name";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email === adminEmail()) errors.email = "Enter a valid email address";
-  if (password.length < 8) errors.password = "Use at least 8 characters";
-  if (!errors.email) {
-    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-    if (u) errors.email = "An account with this email already exists. Log in instead.";
+  const intent = String(fd.get("intent") ?? "send");
+  const rawContact = String(fd.get("contact") ?? "").trim();
+  const brand = String(fd.get("brand") ?? "").trim().slice(0, 120);
+  const c = parseContact(rawContact);
+  const base: Data = { stage: "start", contact: rawContact, brand };
+
+  const errors: Data["errors"] = {};
+  if (brand.length < 2) errors.brand = "Enter your brand name";
+  if (!c) errors.contact = rawContact.includes("@") ? "Enter a valid email address" : "Enter a valid 10-digit mobile number";
+  else if (c.channel === "email" && c.target === adminEmail()) errors.contact = "Use a different email";
+  else if (await findOwner(c.channel, c.target)) errors.contact = `An account with this ${c.channel === "phone" ? "number" : "email"} already exists. Log in instead.`;
+  if (Object.keys(errors).length || !c) return json<Data>({ ...base, errors }, { status: 400 });
+
+  if (intent === "send") {
+    const r = await sendOwnerOtp(c, "signup", clientIp(request));
+    if (!r.ok && !r.resendIn) return json<Data>({ ...base, errors: { contact: r.error } }, { status: 400 });
+    return json<Data>({ ...base, stage: "otp", shown: showContact(c), resendIn: r.resendIn, sent: r.ok, errors: r.ok ? {} : { code: r.error } });
   }
-  if (Object.keys(errors).length) return json({ errors, name, email }, { status: 400 });
-  const user = await createUser({ name, email, password });
-  return startSession(request, { user }, "/dashboard/stores/new");
+
+  // verify
+  const v = await verifyOwnerOtp(c, "signup", String(fd.get("code") ?? ""));
+  if (!v.ok) return json<Data>({ ...base, stage: "otp", shown: showContact(c), errors: { code: v.error } }, { status: 400 });
+  const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target });
+  return startSession(request, { user }, "/onboarding");
 }
 
 export default function Signup() {
   const data = useActionData<typeof action>();
-  const e = data?.errors ?? {};
   const nav = useNavigation();
-  const busy = nav.state !== "idle" && (nav.formAction?.startsWith("/signup") || nav.location?.pathname.startsWith("/dashboard"));
+  const e = data?.errors ?? {};
+  const [mode, setMode] = useState<"phone" | "email">(data?.contact?.includes("@") ? "email" : "phone");
+  const [stage, setStage] = useState<"start" | "otp">(data?.stage ?? "start");
+  useEffect(() => { if (data?.stage) setStage(data.stage); }, [data]);
+  const verifying = nav.state !== "idle" && nav.formData?.get("intent") === "verify";
+
   return (
     <>
-    {busy && <BusyOverlay title="Creating your account" note="Getting your dashboard ready." />}
-    <AuthShell title="Create your account" subtitle="Connect your store and start taking orders on your own checkout."
-      footer={<>Already have an account? <Link to="/login" className="font-medium text-ink underline underline-offset-2">Log in</Link></>}>
-      <Form method="post" className="space-y-4" noValidate>
-        {Object.keys(e).length > 0 && <Notice tone="error">Fix the highlighted fields to continue.</Notice>}
-        <TextField label="Your name" name="name" autoComplete="name" defaultValue={data?.name} error={e.name} required autoFocus />
-        <TextField label="Work email" name="email" type="email" autoComplete="email" defaultValue={data?.email} error={e.email} required />
-        <TextField label="Password" name="password" type="password" autoComplete="new-password" hint="At least 8 characters" error={e.password} required />
-        <SubmitButton className="btn-primary w-full py-3" busyText="Creating account">Create account</SubmitButton>
-      </Form>
-    </AuthShell>
+      {verifying && !e.code && <BusyOverlay title="Creating your account" note="Next, a few business details." />}
+      <AuthShell
+        title={stage === "otp" ? "Verify it's you" : "Start selling with Growpefy"}
+        subtitle={stage === "otp" ? `We sent a 6-digit code to ${data?.shown ?? "you"}.` : "Your own checkout, RTO protection and ads in one place. Takes a minute."}
+        footer={<>Already have an account? <Link to="/login" className="font-medium text-ink underline underline-offset-2">Log in</Link></>}
+      >
+        {stage === "start" ? (
+          <Form method="post" className="space-y-4" noValidate>
+            <input type="hidden" name="intent" value="send" />
+            {e.form && <Notice tone="error">{e.form}</Notice>}
+            <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
+            <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} error={e.contact} />
+            <SubmitButton className="btn-primary w-full py-3" busyText="Sending code">Get OTP</SubmitButton>
+            <p className="text-center text-xs text-ink-faint">By continuing you agree to our <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy" className="underline">Privacy policy</Link>.</p>
+          </Form>
+        ) : (
+          <OtpStep
+            hidden={{ contact: data?.contact ?? "", brand: data?.brand ?? "" }}
+            error={e.code}
+            resendIn={data?.resendIn}
+            onChange={() => setStage("start")}
+            submitLabel="Verify and create account"
+          />
+        )}
+      </AuthShell>
     </>
   );
 }

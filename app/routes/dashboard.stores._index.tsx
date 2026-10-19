@@ -37,6 +37,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 const SECTIONS: Record<string, string> = {
   discounts: "discounts", coupons: "coupons", offers: "bank offers", gifts: "free gifts", shipping: "shipping",
   settings: "settings", design: "checkout design", install: "setup", wallet: "wallet", rto: "RTO Suite",
+  logistics: "logistics", "rto-shield": "RTO Shield",
 };
 
 export default function StoresList() {

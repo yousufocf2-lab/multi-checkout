@@ -1,12 +1,13 @@
 import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { BrandIcon, BrandLockup, BusyOverlay } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
-import { IDLE_MS, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
+import { IDLE_MS, needsKyc, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
+import { startShipmentWatcher } from "~/lib/logistics.server";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
@@ -16,7 +17,10 @@ export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { n
 export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);
   startRechargeWatcher();
+  startShipmentWatcher();
   const viewer = await requireViewer(request);
+  // New owners finish the 3-step KYC before anything else
+  if (needsKyc(viewer)) throw redirect("/onboarding");
   const list = await viewerStores(viewer);
   // Opening a store page focuses the dashboard on that store
   let selected = await selectedStore(request);
@@ -103,6 +107,8 @@ export default function DashboardLayout() {
           <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>
         </Group>
         <Group label="Protect">
+          <Item to={storeHref("logistics")} icon="shipping" match={/\/logistics$|next=logistics/}>Logistics</Item>
+          <Item to={storeHref("rto-shield")} icon="shield" match={/\/rto-shield$|next=rto-shield/}>RTO Shield</Item>
           <Item to={storeHref("rto")} icon="shield" match={/\/rto$|next=rto/}>RTO Suite</Item>
         </Group>
         <Group label="Billing">

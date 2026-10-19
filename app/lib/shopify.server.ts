@@ -318,3 +318,22 @@ export async function createShopifyOrder(store: Store, order: Order) {
   }
   return r.order;
 }
+// ---------- fulfillment tracking (for courier sync) ----------
+
+export type OrderTracking = { orderId: string; tracking: { number: string; company: string | null }[] };
+
+/** AWB numbers and courier names from the fulfillments of up to 50 orders (Order GIDs). */
+export async function fetchFulfillmentTracking(store: Store, orderGids: string[]): Promise<OrderTracking[]> {
+  if (!orderGids.length) return [];
+  const data = await adminGraphql<{ nodes: ({ id: string; fulfillments: { trackingInfo: { number: string | null; company: string | null }[] }[] } | null)[] }>(
+    store,
+    `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Order { id fulfillments(first: 5) { trackingInfo(first: 3) { number company } } } } }`,
+    { ids: orderGids.slice(0, 50) },
+  );
+  return data.nodes
+    .filter((n): n is NonNullable<typeof n> => Boolean(n?.id))
+    .map((n) => ({
+      orderId: n.id,
+      tracking: (n.fulfillments ?? []).flatMap((f) => f.trackingInfo ?? []).filter((t) => t.number).map((t) => ({ number: String(t.number).trim(), company: t.company })),
+    }));
+}

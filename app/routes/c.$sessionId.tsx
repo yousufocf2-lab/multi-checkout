@@ -1,7 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useFetcher, useLoaderData, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MetaPixel } from "~/components/MetaPixel";
 import { Spinner } from "~/components/ui";
@@ -10,7 +10,11 @@ import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates,
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
-import { BLOCK_MESSAGE, blockFor, otpRequired, otpVerified, sendOtp, verifyOtp } from "~/lib/rto.server";
+import { BLOCK_MESSAGE, blockFor, messaging, otpReady, otpRequired, otpVerified, sendOtp, verifyOtp } from "~/lib/rto.server";
+import { shieldFor } from "~/lib/rto-shield.server";
+import { SHIELD_MESSAGE } from "~/lib/rto-shield";
+import { lookupAddresses, revealAddress } from "~/lib/addresses.server";
+import type { MaskedAddress } from "~/lib/addresses";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
@@ -73,7 +77,7 @@ async function shippingRulesFor(storeId: number): Promise<ShipRule[]> {
 /** Small background requests (draft save, COD check, coupon) don't need to reload the cart. */
 export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, defaultShouldRevalidate }) => {
   const intent = formData?.get("intent");
-  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify") return false;
+  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify" || intent === "addr_lookup" || intent === "addr_reveal") return false;
   return defaultShouldRevalidate;
 };
 
@@ -156,15 +160,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (intent === "eligibility") {
     const g = (k: string) => String(fd.get(k) ?? "");
-    const [cod, block] = await Promise.all([
+    const [cod, block, shield] = await Promise.all([
       codEligibility(store, g("phone")),
       blockFor(store, { phone: g("phone"), email: g("email"), pincode: g("pincode"), city: g("city"), state: g("state"), country: "IN" }),
+      shieldFor(store, normalizePhone(g("phone"))),
     ]);
-    const codOk = cod.allowed && !block;
+    const scope = block?.scope === "all" || shield?.scope === "all" ? "all" : block || shield ? "cod" : null;
+    const codOk = cod.allowed && !scope;
     return json({
-      cod: { ...cod, allowed: codOk }, block: block?.scope ?? null,
-      message: block ? BLOCK_MESSAGE[block.scope] : cod.allowed ? null : codBlockedMessage(cod),
+      cod: { ...cod, allowed: codOk }, block: scope,
+      message: block ? BLOCK_MESSAGE[block.scope] : shield ? SHIELD_MESSAGE[shield.scope] : cod.allowed ? null : codBlockedMessage(cod),
     });
+  }
+
+  // Saved addresses (shared across stores): masked until the phone is verified with an OTP
+  if (intent === "addr_lookup") {
+    const phone = normalizePhone(String(fd.get("phone") ?? ""));
+    if (!/^[6-9]\d{9}$/.test(phone) || session.addrLookups >= 12 || !otpReady(await messaging())) return json({ addresses: [] as MaskedAddress[] });
+    await db.update(checkoutSessions).set({ addrLookups: sql`${checkoutSessions.addrLookups} + 1` }).where(eq(checkoutSessions.id, session.id));
+    return json({ addresses: await lookupAddresses(phone) });
+  }
+  if (intent === "addr_reveal") {
+    const phone = normalizePhone(String(fd.get("phone") ?? ""));
+    if (!(await otpVerified(session.id, phone))) return json({ address: null, error: "Verify your mobile number first" });
+    const a = await revealAddress(Number(fd.get("id")), phone);
+    return json({ address: a ? { firstName: a.firstName, lastName: a.lastName, email: a.email, address1: a.address1, address2: a.address2, city: a.city, state: a.state, pincode: a.pincode } : null, error: a ? null : "Address not found" });
   }
 
   if (intent === "otp_send") {
@@ -202,6 +222,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
   };
   const method: PaymentMethod = str("method") === "cod" ? "cod" : "prepaid";
 
+  // A saved address is used only after the customer verifies the phone (OTP at the end)
+  const savedId = Number(str("savedAddressId")) || 0;
+  if (savedId) {
+    if (!(await otpVerified(session.id, customer.phone))) {
+      return json({ errors: { form: "Verify your mobile number with the OTP to use your saved address." } as FieldErrors, needOtp: true }, { status: 400 });
+    }
+    const a = await revealAddress(savedId, customer.phone);
+    if (!a) return json({ errors: { form: "That saved address isn't available. Enter your address." } as FieldErrors }, { status: 400 });
+    Object.assign(customer, { firstName: a.firstName, lastName: a.lastName, email: customer.email || a.email, address1: a.address1, address2: a.address2, city: a.city, state: a.state, pincode: a.pincode });
+  }
+
   const errors: FieldErrors = {};
   if (!customer.firstName) errors.firstName = "Enter your first name";
   if (!/^[6-9]\d{9}$/.test(customer.phone)) errors.phone = "Enter a valid 10-digit mobile number";
@@ -218,6 +249,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!Object.keys(errors).length) {
     const block = await blockFor(store, { phone: customer.phone, email: customer.email, pincode: customer.pincode, city: customer.city, state: customer.state, country: "IN" });
     if (block && (block.scope === "all" || method === "cod")) errors.form = BLOCK_MESSAGE[block.scope];
+  }
+  if (!Object.keys(errors).length) {
+    const shield = await shieldFor(store, customer.phone);
+    if (shield && (shield.scope === "all" || method === "cod")) errors.form = SHIELD_MESSAGE[shield.scope];
   }
   if (Object.keys(errors).length) return json({ errors }, { status: 400 });
   if ((await otpRequired(store, method)) && !(await otpVerified(session.id, customer.phone))) {
@@ -246,6 +281,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       customer, items: [...lines, ...freeLines], subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
       couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, offerDiscount: p.mixDiscount,
       shipping: p.shipping, shippingTitle: p.shippingName, total: p.total,
+      saveAddress: savedId > 0 || fd.get("saveAddress") === "on",
       tracking: {
         ...(session.tracking ?? {}),
         ip: clientIp(request) ?? session.tracking?.ip,
@@ -312,6 +348,47 @@ export default function Checkout() {
   const codAvailable = store.codEnabled && !codBlocked;
   useEffect(() => { if (codBlocked && method === "cod" && store.payuReady) setMethod("prepaid"); }, [codBlocked, method, store.payuReady]);
 
+  // Saved addresses from any Growpefy store, shown masked; full address only after OTP
+  const addrFetcher = useFetcher<{ addresses: MaskedAddress[] }>();
+  const revealFetcher = useFetcher<{ address: Partial<OrderCustomer> | null; error: string | null }>();
+  const [saved, setSaved] = useState<MaskedAddress[]>([]);
+  const [addrMode, setAddrMode] = useState<"manual" | "saved">("manual");
+  const [savedId, setSavedId] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const choseManual = useRef(false);
+  const lookedUp = useRef<string | null>(null);
+  useEffect(() => {
+    if (!phoneOk) { setSaved([]); setAddrMode("manual"); setSavedId(null); lookedUp.current = null; choseManual.current = false; return; }
+    if (lookedUp.current === c.phone) return;
+    if (lookedUp.current) { setSaved([]); setAddrMode("manual"); setSavedId(null); choseManual.current = false; }
+    const t = setTimeout(() => { lookedUp.current = c.phone; addrFetcher.submit({ intent: "addr_lookup", phone: c.phone }, { method: "post" }); }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.phone, phoneOk]);
+  const pickSaved = (a: MaskedAddress) => {
+    setSavedId(a.id); setAddrMode("saved"); setShowAll(false);
+    setC((prev) => ({ ...prev, city: a.city, state: a.state, pincode: a.pincode }));
+  };
+  useEffect(() => {
+    const list = addrFetcher.data?.addresses ?? [];
+    setSaved(list);
+    if (!list.length) { setAddrMode("manual"); setSavedId(null); return; }
+    if (!choseManual.current && !c.address1.trim()) pickSaved(list[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addrFetcher.data]);
+  useEffect(() => {
+    const a = revealFetcher.data?.address;
+    if (!a) return;
+    choseManual.current = true;
+    setC((prev) => ({ ...prev, ...a, email: prev.email || a.email || "" } as OrderCustomer));
+    setAddrMode("manual"); setSavedId(null);
+  }, [revealFetcher.data]);
+  const addNew = () => {
+    choseManual.current = true; setAddrMode("manual"); setSavedId(null);
+    setC((prev) => ({ ...EMPTY, phone: prev.phone, email: prev.email }));
+  };
+  const [saveAddr, setSaveAddr] = useState(true);
+
   // Save what the customer has typed (for abandoned checkout recovery)
   const draftFetcher = useFetcher();
   useEffect(() => {
@@ -360,11 +437,17 @@ export default function Checkout() {
   const formRef = useRef<HTMLFormElement>(null);
   const verifiedPhone = useRef<string | null>(null);
   const [otpOpen, setOtpOpen] = useState(false);
-  const needsOtp = (method === "prepaid" ? otp.prepaid : otp.cod) && verifiedPhone.current !== c.phone;
-  useEffect(() => { if (actionData && "needOtp" in actionData && actionData.needOtp) setOtpOpen(true); }, [actionData]);
+  const otpFor = useRef<"order" | { reveal: number }>("order");
+  const usingSaved = addrMode === "saved" && savedId != null && saved.some((a) => a.id === savedId);
+  const needsOtp = ((method === "prepaid" ? otp.prepaid : otp.cod) || usingSaved) && verifiedPhone.current !== c.phone;
+  useEffect(() => { if (actionData && "needOtp" in actionData && actionData.needOtp) { otpFor.current = "order"; setOtpOpen(true); } }, [actionData]);
+  const editSaved = (id: number) => {
+    if (verifiedPhone.current === c.phone) { revealFetcher.submit({ intent: "addr_reveal", id: String(id), phone: c.phone }, { method: "post" }); return; }
+    otpFor.current = { reveal: id }; setOtpOpen(true);
+  };
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     if (orderBlocked) { e.preventDefault(); return; }
-    if (needsOtp && /^[6-9]\d{9}$/.test(c.phone) && formRef.current?.checkValidity()) { e.preventDefault(); setOtpOpen(true); }
+    if (needsOtp && /^[6-9]\d{9}$/.test(c.phone) && formRef.current?.checkValidity()) { e.preventDefault(); otpFor.current = "order"; setOtpOpen(true); }
   };
   const placing = nav.state !== "idle" && nav.formData?.get("intent") === "place";
   const redirectingToPay = placing && nav.formData?.get("method") === "prepaid";
@@ -413,6 +496,7 @@ export default function Checkout() {
         <input type="hidden" name="intent" value="place" />
         <input type="hidden" name="method" value={method} />
         <input type="hidden" name="couponCode" value={coupon?.code ?? ""} />
+        {usingSaved && <input type="hidden" name="savedAddressId" value={savedId!} />}
 
         <div className="space-y-4">
           {/* Mobile: order first so customers can edit it */}
@@ -433,6 +517,14 @@ export default function Checkout() {
                     placeholder="10-digit mobile number" value={c.phone} onChange={set("phone")} aria-invalid={Boolean(errors.phone) || undefined} />
                 </div>
               </Field>
+              {usingSaved ? (
+                <>
+                  {theme.showEmail && <Field label="Email (optional, for order updates)" error={errors.email} className="col-span-2"><input name="email" type="email" autoComplete="email" className="input" value={c.email} onChange={set("email")} /></Field>}
+                  <SavedAddresses className="col-span-2" list={saved} selected={savedId!} showAll={showAll} setShowAll={setShowAll}
+                    onPick={pickSaved} onEdit={editSaved} onAddNew={addNew} revealing={revealFetcher.state !== "idle"} />
+                </>
+              ) : (
+                <>
               <Field label="First name" error={errors.firstName}><input name="firstName" autoComplete="given-name" required className="input" value={c.firstName} onChange={set("firstName")} /></Field>
               <Field label="Last name"><input name="lastName" autoComplete="family-name" className="input" value={c.lastName} onChange={set("lastName")} /></Field>
               {theme.showEmail && <Field label="Email (optional, for order updates)" error={errors.email} className="col-span-2"><input name="email" type="email" autoComplete="email" className="input" value={c.email} onChange={set("email")} /></Field>}
@@ -452,6 +544,15 @@ export default function Checkout() {
                   {INDIAN_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
                 </select>
               </Field>
+              {saved.length > 0 && (
+                <button type="button" className="col-span-2 -mt-1 text-left text-sm font-medium text-brand" onClick={() => pickSaved(saved[0])}>← Use a saved address ({saved.length})</button>
+              )}
+              <label className="col-span-2 flex cursor-pointer items-start gap-2.5 text-xs text-ink-soft">
+                <input type="checkbox" name="saveAddress" checked={saveAddr} onChange={(e) => setSaveAddr(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--brand)]" />
+                <span>Save this address for faster checkout next time. You'll see it masked and confirm with an OTP on stores that use this checkout.</span>
+              </label>
+                </>
+              )}
             </div>
           </Card>
           ) : key === "offers" ? (
@@ -537,7 +638,7 @@ export default function Checkout() {
             </div>
             {orderBlocked && codStatus?.message && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{codStatus.message}</p>}
             {errors.form && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{errors.form}</p>}
-            {(method === "prepaid" ? otp.prepaid : otp.cod) && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />We'll send a one-time code to your mobile to confirm the order.</p>}
+            {((method === "prepaid" ? otp.prepaid : otp.cod) || usingSaved) && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />We'll send a one-time code to your mobile to confirm the order.</p>}
           </Card>
           {theme.upsellPlacement === "after_payment" && upsellCard}
           </div>
@@ -580,7 +681,12 @@ export default function Checkout() {
       {redirectingToPay && <PaymentOverlay name={store.name} logo={store.logoUrl} />}
       {otpOpen && (
         <OtpDialog phone={c.phone} onClose={() => setOtpOpen(false)}
-          onVerified={() => { verifiedPhone.current = c.phone; setOtpOpen(false); setTimeout(() => formRef.current?.requestSubmit(), 0); }} />
+          onVerified={() => {
+            verifiedPhone.current = c.phone; setOtpOpen(false);
+            const f = otpFor.current;
+            if (f !== "order") revealFetcher.submit({ intent: "addr_reveal", id: String(f.reveal), phone: c.phone }, { method: "post" });
+            else setTimeout(() => formRef.current?.requestSubmit(), 0);
+          }} />
       )}
     </Shell>
   );
@@ -904,6 +1010,49 @@ function OtpDialog({ phone, onClose, onVerified }: { phone: string; onClose: () 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SavedAddresses({ list, selected, showAll, setShowAll, onPick, onEdit, onAddNew, revealing, className = "" }: {
+  list: MaskedAddress[]; selected: number; showAll: boolean; setShowAll: (v: boolean) => void;
+  onPick: (a: MaskedAddress) => void; onEdit: (id: number) => void; onAddNew: () => void; revealing: boolean; className?: string;
+}) {
+  const current = list.find((a) => a.id === selected) ?? list[0];
+  const stateName = (code: string) => INDIAN_STATES.find((s) => s.code === code)?.name ?? code;
+  const Box = ({ a, active, onClick }: { a: MaskedAddress; active: boolean; onClick?: () => void }) => (
+    <div onClick={onClick} role={onClick ? "radio" : undefined} aria-checked={onClick ? active : undefined} tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
+      className={`rounded-xl border px-4 py-3 text-sm transition ${active ? "border-brand bg-brand/5 ring-1 ring-brand" : "border-rule-strong"} ${onClick ? "cursor-pointer hover:border-brand/60" : ""}`}>
+      <div className="flex items-start gap-3">
+        <span aria-hidden className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${active ? "border-brand" : "border-rule-strong"}`}>{active && <span className="h-2 w-2 rounded-full bg-brand" />}</span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">{a.name}</p>
+          <p className="mt-0.5 break-words text-ink-soft">{a.line}</p>
+          <p className="text-ink-soft">{a.city}, {stateName(a.state)} – <span className="num">{a.pincode}</span></p>
+        </div>
+      </div>
+    </div>
+  );
+  return (
+    <div className={className}>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium">Deliver to your saved address</span>
+        <span className="flex items-center gap-1 text-[11px] text-ink-faint"><LockIcon /> Partly hidden for privacy</span>
+      </div>
+      {showAll ? (
+        <div className="space-y-2" role="radiogroup" aria-label="Saved addresses">
+          {list.map((a) => <Box key={a.id} a={a} active={a.id === current.id} onClick={() => onPick(a)} />)}
+        </div>
+      ) : (
+        <Box a={current} active />
+      )}
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium">
+        {list.length > 1 && <button type="button" className="text-brand" onClick={() => setShowAll(!showAll)}>{showAll ? "Done" : `Change (${list.length})`}</button>}
+        <button type="button" className="text-brand disabled:text-ink-faint" disabled={revealing} onClick={() => onEdit(current.id)}>{revealing ? "Opening…" : "Edit"}</button>
+        <button type="button" className="text-brand" onClick={onAddNew}>+ Add new address</button>
+      </div>
+      <p className="mt-2 text-xs text-ink-faint">We'll confirm it's you with an OTP before placing the order.</p>
     </div>
   );
 }

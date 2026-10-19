@@ -8,6 +8,7 @@ import { sendCapiPurchase } from "./meta.server";
 import { createShopifyOrder } from "./shopify.server";
 import { sendOrderConfirmation } from "./rto.server";
 import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
+import { saveOrderAddress } from "./addresses.server";
 
 export function newOrderId() {
   // Short, unique, PayU-safe txnid
@@ -58,6 +59,8 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
   await recordOrderForCod(store.id, updated.customer.phone, updated.paymentMethod === "cod" ? "cod" : "prepaid");
   // Platform sale fee from the store's wallet (idempotent per order; never blocks the customer)
   await chargeSaleFee(store, updated);
+  // Address for faster checkout next time, on any store (only if the customer agreed)
+  void saveOrderAddress(updated);
   void trackPurchase(store, updated);
   const pushed = await pushToShopify(store, updated);
   // WhatsApp order confirmation (RTO Suite), after Shopify so it can quote the order number
