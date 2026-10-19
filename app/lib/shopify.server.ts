@@ -234,6 +234,16 @@ export async function createShopifyOrder(store: Store, order: Order) {
     })),
     email: c.email || null,
     phone: `+91${c.phone}`,
+    // Create / match the Shopify customer by phone (and email when given). Without this, orders without
+    // an email show "No customer" in Shopify.
+    customer: {
+      toUpsert: {
+        firstName: c.firstName,
+        lastName: c.lastName || null,
+        phone: `+91${c.phone}`,
+        ...(c.email ? { email: c.email } : {}),
+      },
+    },
     shippingAddress: address,
     billingAddress: address,
     financialStatus: isCod ? "PENDING" : "PAID",
@@ -267,7 +277,7 @@ export async function createShopifyOrder(store: Store, order: Order) {
     ];
   }
 
-  const data = await adminGraphql<{
+  const create = (orderInput: Record<string, unknown>) => adminGraphql<{
     orderCreate: {
       order: { id: string; name: string } | null;
       userErrors: { field: string[] | null; message: string }[];
@@ -281,10 +291,26 @@ export async function createShopifyOrder(store: Store, order: Order) {
       }
     }`,
     {
-      order: input,
+      order: orderInput,
       options: { inventoryBehaviour: "DECREMENT_OBEYING_POLICY", sendReceipt: Boolean(c.email) },
     },
   );
+
+  const { customer: _skip, ...withoutCustomer } = input;
+  let data;
+  try {
+    data = await create(input);
+  } catch (e) {
+    // Older API versions (before 2025-01) don't know the customer field: create the order without it
+    if (!(e instanceof Error && /customer/i.test(e.message))) throw e;
+    console.warn(`[shopify] order ${order.id}: customer field not supported (${e.message}), retrying without it`);
+    data = await create(withoutCustomer);
+  }
+  // If Shopify rejects only the customer details, still create the order
+  if (!data.orderCreate.order && data.orderCreate.userErrors.some((e) => e.field?.includes("customer"))) {
+    console.warn(`[shopify] order ${order.id}: customer rejected (${data.orderCreate.userErrors.map((e) => e.message).join("; ")}), retrying without it`);
+    data = await create(withoutCustomer);
+  }
 
   const r = data.orderCreate;
   if (r.userErrors.length || !r.order) {
