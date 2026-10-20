@@ -33,15 +33,20 @@ export async function storeByShop(shop: string) {
 
 /** Verifies the `hmac` Shopify adds to install/callback URLs. */
 export function verifyShopifyHmac(url: URL, secret: string) {
-  const hmac = url.searchParams.get("hmac");
-  if (!hmac) return false;
-  const msg = [...url.searchParams.entries()]
+  const hmac = (url.searchParams.get("hmac") ?? "").toLowerCase();
+  if (!hmac || !secret) return false;
+  const entries = [...url.searchParams.entries()]
     .filter(([k]) => k !== "hmac" && k !== "signature")
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
-    .join("&");
-  const expected = crypto.createHmac("sha256", secret).update(msg).digest("hex");
-  return hmac.length === expected.length && crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected));
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  // Shopify signs the URL-encoded query (e.g. "host=...%3D"). Older stores without such characters
+  // match either way, so check the encoded form and the plain form.
+  const encoded = new URLSearchParams(entries).toString();
+  const plain = entries.map(([k, v]) => `${k}=${v}`).join("&");
+  const key = secret.trim();
+  return [encoded, plain].some((msg) => {
+    const expected = crypto.createHmac("sha256", key).update(msg).digest("hex");
+    return hmac.length === expected.length && crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(expected));
+  });
 }
 
 /** Redirects the browser to Shopify's permission screen (offline token). */
