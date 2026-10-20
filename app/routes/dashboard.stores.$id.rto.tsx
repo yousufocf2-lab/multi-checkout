@@ -10,6 +10,8 @@ import { blockedCustomers, db, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { BLOCK_KINDS, BLOCK_LABELS, CALL_UNLOCK_ORDERS, CSV_SOURCES, CSV_SOURCE_LABELS, extractFromCsv, normValue, showValue, type BlockKind, type CsvSource } from "~/lib/blocklist";
 import { MAX_COOLDOWN_HOURS } from "~/lib/cod.server";
+import { hasCourier } from "~/lib/logistics.server";
+import { resolveShield } from "~/lib/rto-shield";
 import { addBlocks, completedOrders, messaging, otpReady, waReady } from "~/lib/rto.server";
 import { rupees } from "~/lib/wallet";
 import { getWallet, ratesFor } from "~/lib/wallet.server";
@@ -25,19 +27,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const q = (url.searchParams.get("q") ?? "").trim().toLowerCase().slice(0, 80);
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const where = and(eq(blockedCustomers.storeId, store.id), kind ? eq(blockedCustomers.kind, kind) : undefined, q ? ilike(blockedCustomers.value, `%${q.replace(/[%_]/g, "")}%`) : undefined);
-  const [list, [{ total }], byKind, orderCount, m, w] = await Promise.all([
+  const [list, [{ total }], byKind, orderCount, m, w, courier] = await Promise.all([
     db.select().from(blockedCustomers).where(where).orderBy(desc(blockedCustomers.createdAt)).limit(PAGE).offset((page - 1) * PAGE),
     db.select({ total: count() }).from(blockedCustomers).where(where),
     db.select({ kind: blockedCustomers.kind, n: count() }).from(blockedCustomers).where(eq(blockedCustomers.storeId, store.id)).groupBy(blockedCustomers.kind),
     completedOrders(store.id),
     messaging(),
     getWallet(store.id),
+    hasCourier(store.id),
   ]);
   const rates = await ratesFor(w);
   const h = store.codCooldownHours;
   const cooldown = h % 730 === 0 ? { value: h / 730, unit: "months" } : h % 24 === 0 ? { value: h / 24, unit: "days" } : { value: h, unit: "hours" };
   return json({
     storeId: store.id, isAdmin: viewer.role === "admin", codEnabled: store.codEnabled,
+    shield: { unlocked: courier, on: courier && resolveShield(store.rtoShield).enabled },
     cod: { cooldownOn: store.codCooldownEnabled, cooldown, blockAfterPrepaid: store.codBlockAfterPrepaid },
     otp: { on: store.otpEnabled, prepaid: store.otpPrepaid, cod: store.otpCod, ready: otpReady(m), price: rates.otp },
     block: { on: store.blockEnabled, codOnly: store.blockCodOnly },
@@ -122,177 +126,199 @@ export async function action({ request, params }: ActionFunctionArgs) {
   return res(null, "Unknown action");
 }
 
+type D = ReturnType<typeof useLoaderData<typeof loader>>;
+type Msg = (form: string) => React.ReactNode;
+
 export default function RtoSuite() {
   const d = useLoaderData<typeof loader>();
   const r = useActionData<typeof action>();
   const nav = useNavigation();
   const uploading = nav.state === "submitting" && nav.formData?.get("intent") === "blockCsv";
-  const msg = (form: string) => r?.form === form ? <div className="mb-4">{r.ok ? <Notice tone="success">{r.ok}</Notice> : r.error ? <Notice tone="error">{r.error}</Notice> : null}</div> : null;
+  const msg: Msg = (form) => (r?.form === form ? (r.ok ? <Notice tone="success">{r.ok}</Notice> : r.error ? <Notice tone="error">{r.error}</Notice> : null) : null);
+  const blocked = Object.values(d.counts).reduce((a, b) => a + (b ?? 0), 0);
 
   return (
     <div className="space-y-5">
       {uploading && <BusyOverlay title="Reading your file" note="Adding customers to the block list." />}
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Stat icon="shipping" label="COD wait time" value={d.cod.cooldownOn ? `${d.cod.cooldown.value} ${d.cod.cooldown.unit}` : "Off"} />
-        <Stat icon="check" label="OTP verification" value={d.otp.on ? [d.otp.prepaid && "Prepaid", d.otp.cod && "COD"].filter(Boolean).join(" + ") : "Off"} />
-        <Stat icon="users" label="Blocked entries" value={String(Object.values(d.counts).reduce((a, b) => a + (b ?? 0), 0))} />
-        <Stat icon="sparkle" label="Order confirmation" value={d.confirm.on ? "WhatsApp" : "Off"} />
-      </div>
-
-      {/* COD rules */}
-      <Card id="cod" title="COD rules" text="Stop the same customer from piling up Cash on Delivery orders.">
-        {msg("cod")}
-        {!d.codEnabled && <div className="mb-4"><Notice tone="warning">Cash on Delivery is off for this store, so these rules don't apply right now. Turn it on in <Link className="underline" to={`/dashboard/stores/${d.storeId}/settings`}>Store settings</Link>.</Notice></div>}
-        <CodForm d={d} />
-      </Card>
-
-      {/* OTP */}
-      <Card id="otp" title="OTP verification" text="Customers confirm their mobile number with a one-time code before the order goes through. Cuts fake numbers and prank orders." price={`${rupees(d.otp.price)} per OTP`}>
-        {msg("otp")}
-        <OtpForm d={d} />
-      </Card>
-
-      {/* Block */}
-      <Card id="block" title="Block customers" text="Stop customers with a bad history by mobile number, email, pincode, city, state or country.">
-        {msg("blockSettings")}
-        <BlockSettings d={d} />
-        <div className="mt-6 grid gap-5 border-t border-rule pt-6 lg:grid-cols-2">
-          <div>
-            <h3 className="font-semibold">Add manually</h3>
-            {msg("blockAdd")}
-            <Form method="post" className="mt-3 space-y-3" key={r?.form === "blockAdd" && r.ok ? r.ok + Date.now() : "add"}>
-              <select name="kind" className="input" defaultValue="phone" aria-label="What to block">
-                {BLOCK_KINDS.map((k) => <option key={k} value={k}>{BLOCK_LABELS[k]}</option>)}
-              </select>
-              <textarea name="values" rows={3} className="input" placeholder="One per line, or separated by commas. E.g. 9876543210" />
-              <SubmitButton intent="blockAdd" busyText="Adding">Add to block list</SubmitButton>
-            </Form>
-          </div>
-          <CsvUpload storeId={d.storeId} msg={msg("blockCsv")} />
-        </div>
-        <BlockList d={d} msg={msg("blockDelete") ?? msg("blockClear")} />
-      </Card>
-
-      {/* Order confirmation */}
-      <Card id="confirm" title="Order confirmation" text="Confirm every order with the customer right after checkout, so fewer orders get refused at the door.">
-        {msg("confirm")}
-        <ConfirmForm d={d} />
-      </Card>
+      <Hero d={d} blocked={blocked} />
+      {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`/dashboard/stores/${d.storeId}/settings`}>Store settings</Link>.</Notice>}
+      <CodForm d={d} msg={msg} />
+      <OtpForm d={d} msg={msg} />
+      <BlockCard d={d} msg={msg} blocked={blocked} />
+      <ConfirmForm d={d} msg={msg} />
     </div>
   );
 }
 
-type D = ReturnType<typeof useLoaderData<typeof loader>>;
-
-function Card({ id, title, text, price, children }: { id: string; title: string; text: string; price?: string; children: React.ReactNode }) {
+function Hero({ d, blocked }: { d: D; blocked: number }) {
+  const chips: { href: string; emoji: string; label: string; value: string; on: boolean }[] = [
+    { href: "#cod", emoji: "⏳", label: "COD wait", value: d.cod.cooldownOn ? `${d.cod.cooldown.value} ${d.cod.cooldown.unit}` : "Off", on: d.cod.cooldownOn },
+    { href: "#otp", emoji: "🔐", label: "OTP", value: d.otp.on ? [d.otp.prepaid && "Prepaid", d.otp.cod && "COD"].filter(Boolean).join(" + ") : "Off", on: d.otp.on },
+    { href: "#block", emoji: "🚫", label: "Block list", value: d.block.on ? `${blocked} entr${blocked === 1 ? "y" : "ies"}` : "Off", on: d.block.on },
+    { href: "#confirm", emoji: "💬", label: "Confirmation", value: d.confirm.on ? "WhatsApp" : "Off", on: d.confirm.on },
+  ];
   return (
-    <section id={id} className="panel scroll-mt-6">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-rule px-5 py-4">
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold">{title}</h2>
-          <p className="mt-0.5 max-w-2xl text-sm text-ink-soft">{text}</p>
+    <section className="panel relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-pine px-5 py-6 text-white sm:px-7">
+      <div aria-hidden className="pointer-events-none absolute -left-10 -bottom-20 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl" />
+      <div className="relative">
+        <p className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200"><Icon name="shield" className="h-3 w-3" />RTO Suite</p>
+        <h2 className="mt-3 text-lg font-semibold sm:text-xl">Fewer fake orders. Fewer doors that don't open.</h2>
+        <p className="mt-1 max-w-xl text-xs leading-relaxed text-white/70 sm:text-[13px]">Four simple guards that run at checkout. Turn on only what you need.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+          {chips.map((c) => (
+            <a key={c.href} href={c.href} className="group rounded-xl bg-white/10 px-3 py-2.5 transition hover:bg-white/15">
+              <p className="flex items-center justify-between text-[11px] text-white/60">{c.label}<span className={`h-1.5 w-1.5 rounded-full ${c.on ? "bg-emerald-400" : "bg-white/25"}`} /></p>
+              <p className="mt-0.5 truncate text-sm font-semibold"><span className="mr-1" aria-hidden>{c.emoji}</span>{c.value}</p>
+            </a>
+          ))}
+          <Link to={`/dashboard/stores/${d.storeId}/${d.shield.unlocked ? "rto-shield" : "logistics"}`} className="col-span-2 rounded-xl bg-gradient-to-r from-emerald-400/30 to-sky-400/20 px-3 py-2.5 ring-1 ring-emerald-300/30 transition hover:from-emerald-400/40 sm:col-span-4 lg:col-span-1">
+            <p className="flex items-center justify-between text-[11px] text-emerald-100">RTO Shield<span className={`h-1.5 w-1.5 rounded-full ${d.shield.on ? "bg-emerald-400" : "bg-white/25"}`} /></p>
+            <p className="mt-0.5 truncate text-sm font-semibold">🛡️ {d.shield.unlocked ? (d.shield.on ? "On" : "Set up →") : "Connect courier →"}</p>
+          </Link>
         </div>
-        {price && <span className="rounded-full bg-pine-tint px-2.5 py-1 text-xs font-semibold text-pine">{price} · from wallet</span>}
-      </header>
-      <div className="p-5">{children}</div>
+      </div>
     </section>
   );
 }
 
-function Stat({ icon, label, value }: { icon: "shipping" | "check" | "users" | "sparkle"; label: string; value: string }) {
+function Switch({ name, on, setOn, label }: { name: string; on: boolean; setOn: (v: boolean) => void; label: string }) {
   return (
-    <div className="panel flex items-center gap-3 p-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-pine-tint text-pine"><Icon name={icon} className="h-4 w-4" /></span>
-      <div className="min-w-0"><p className="text-xs text-ink-soft">{label}</p><p className="truncate font-semibold">{value}</p></div>
+    <label className="relative inline-flex shrink-0 cursor-pointer items-center" aria-label={label}>
+      <input type="checkbox" name={name} checked={on} onChange={(e) => setOn(e.target.checked)} className="peer sr-only" />
+      <span aria-hidden className={`h-6 w-10 rounded-full transition peer-focus-visible:ring-2 peer-focus-visible:ring-brand ${on ? "bg-brand" : "bg-rule-strong"}`} />
+      <span aria-hidden className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+    </label>
+  );
+}
+
+/** Feature header: emoji tile, title, short text, price tag, on/off switch. */
+function Head({ emoji, title, text, on, setOn, name, price }: { emoji: string; title: string; text: string; on: boolean; setOn: (v: boolean) => void; name: string; price?: string }) {
+  return (
+    <div className="flex items-center gap-4">
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl transition ${on ? "bg-pine-tint" : "bg-paper-sunk grayscale"}`} aria-hidden>{emoji}</span>
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-2 font-semibold">
+          {title}
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${on ? "bg-emerald-50 text-good" : "bg-paper-sunk text-ink-faint"}`}>{on ? "On" : "Off"}</span>
+          {price && <span className="rounded-full bg-pine-tint px-2 py-0.5 text-[10px] font-semibold text-pine">{price} · from wallet</span>}
+        </p>
+        <p className="text-xs text-ink-soft">{text}</p>
+      </div>
+      <Switch name={name} on={on} setOn={setOn} label={title} />
     </div>
   );
 }
 
-/** Big on/off switch that controls the options under it. */
-function Master({ name, label, on, setOn }: { name: string; label: string; on: boolean; setOn: (v: boolean) => void }) {
+/** Option row with a small switch (like RTO Shield rows). */
+function Row({ name, title, text, checked, onChange, disabled, extra }: { name: string; title: React.ReactNode; text?: React.ReactNode; checked: boolean; onChange?: (v: boolean) => void; disabled?: boolean; extra?: React.ReactNode }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-rule bg-paper/60 px-4 py-3">
-      <span className="font-medium">{label}</span>
-      <input type="checkbox" name={name} checked={on} onChange={(e) => setOn(e.target.checked)} className="sr-only" />
-      <span aria-hidden className={`relative h-6 w-10 shrink-0 rounded-full transition ${on ? "bg-brand" : "bg-rule-strong"}`}>
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
-      </span>
-    </label>
-  );
-}
-
-/** Round tick option (Prepaid / COD …). */
-function Tick({ name, label, hint, checked, onChange, disabled }: { name: string; label: React.ReactNode; hint?: React.ReactNode; checked: boolean; onChange?: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className={`flex items-start gap-3 rounded-lg px-1 py-1.5 ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+    <label className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition ${disabled ? "cursor-not-allowed border-dashed border-rule-strong opacity-70" : "cursor-pointer"} ${checked && !disabled ? "border-brand/40 bg-pine-tint/40" : "border-rule"}`}>
       <input type="checkbox" name={name} checked={checked} disabled={disabled} onChange={(e) => onChange?.(e.target.checked)} className="peer sr-only" />
-      <span aria-hidden className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 ${checked ? "border-brand bg-brand text-white" : "border-rule-strong bg-white"}`}>
+      <span aria-hidden className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40 ${checked ? "border-brand bg-brand text-white" : "border-rule-strong bg-white"}`}>
         {checked && <Icon name="check" className="h-3 w-3" strokeWidth={3} />}
       </span>
-      <span className="min-w-0"><span className="block text-sm font-medium">{label}</span>{hint && <span className="block text-xs text-ink-faint">{hint}</span>}</span>
+      <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{title}</span>{text && <span className="block text-xs text-ink-faint">{text}</span>}</span>
+      {extra}
     </label>
   );
 }
 
-function CodForm({ d }: { d: D }) {
+function Save({ intent, label, msg }: { intent: string; label: string; msg: Msg }) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-3 border-t border-rule pt-4">
+      <div className="mr-auto min-w-0 text-sm">{msg(intent)}</div>
+      <SubmitButton intent={intent} className="btn-primary h-9 px-4 text-sm" busyText="Saving">{label}</SubmitButton>
+    </div>
+  );
+}
+
+function CodForm({ d, msg }: { d: D; msg: Msg }) {
   const [on, setOn] = useState(d.cod.cooldownOn);
   const [after, setAfter] = useState(d.cod.blockAfterPrepaid);
+  const active = on || after;
   return (
-    <Form method="post" className="space-y-4">
-      <Master name="cooldownOn" label="Wait time between COD orders" on={on} setOn={setOn} />
-      {on && (
-        <div className="pl-1">
-          <div className="flex max-w-sm gap-2">
-            <input type="number" name="cooldownValue" min={1} defaultValue={d.cod.cooldown.value} className="input w-28" aria-label="Wait time" />
-            <select name="cooldownUnit" defaultValue={d.cod.cooldown.unit} className="input" aria-label="Unit">
-              <option value="hours">hours</option><option value="days">days</option><option value="months">months</option>
-            </select>
+    <Form method="post" id="cod" className="panel scroll-mt-6 space-y-4 p-5">
+      <Head emoji="⏳" title="COD rules" text="Stop the same customer from piling up Cash on Delivery orders." on={active} setOn={(v) => { setOn(v); if (!v) setAfter(false); }} name="_codMaster" />
+      <div className={`space-y-2 transition ${active ? "" : "opacity-60"}`}>
+        <div className={`rounded-xl border px-4 py-3 transition ${on ? "border-brand/40 bg-pine-tint/40" : "border-rule"}`}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Switch name="cooldownOn" on={on} setOn={setOn} label="Wait time between COD orders" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Wait time between COD orders</p>
+              <p className="text-xs text-ink-faint">Same number can't place another COD order for this long. Online payment stays open.</p>
+            </div>
+            <div className={`flex gap-1.5 ${on ? "" : "pointer-events-none opacity-50"}`}>
+              <input type="number" name="cooldownValue" min={1} defaultValue={d.cod.cooldown.value} className="input h-9 w-16 py-1 text-center text-sm" aria-label="Wait time" />
+              <select name="cooldownUnit" defaultValue={d.cod.cooldown.unit} className="input h-9 w-28 py-1 text-sm" aria-label="Unit">
+                <option value="hours">hours</option><option value="days">days</option><option value="months">months</option>
+              </select>
+            </div>
           </div>
-          <p className="hint">After a COD order, the same mobile number can't order on COD again for this long. It can still pay online.</p>
         </div>
-      )}
-      {!on && <input type="hidden" name="cooldownValue" value={d.cod.cooldown.value} />}
-      {!on && <input type="hidden" name="cooldownUnit" value={d.cod.cooldown.unit} />}
-      <Tick name="blockAfterPrepaid" checked={after} onChange={setAfter} label="Online-only for customers who have paid online before" hint="Once a number completes a prepaid order, COD is hidden for it." />
-      <SubmitButton intent="cod" busyText="Saving">Save COD rules</SubmitButton>
+        <Row name="blockAfterPrepaid" checked={after} onChange={setAfter} title="Online-only after a prepaid order" text="Once a number completes a prepaid order, COD is hidden for it." />
+      </div>
+      <Save intent="cod" label="Save COD rules" msg={msg} />
     </Form>
   );
 }
 
-function OtpForm({ d }: { d: D }) {
+function OtpForm({ d, msg }: { d: D; msg: Msg }) {
   const [on, setOn] = useState(d.otp.on);
   const [prepaid, setPrepaid] = useState(d.otp.prepaid);
   const [cod, setCod] = useState(d.otp.cod);
   return (
-    <Form method="post" className="space-y-4">
+    <Form method="post" id="otp" className="panel scroll-mt-6 space-y-4 p-5">
+      <Head emoji="🔐" title="OTP verification" text="Customers confirm their mobile number with a code. Cuts fake numbers and prank orders." on={on} setOn={setOn} name="otpOn" price={`${rupees(d.otp.price)} per OTP`} />
       {!d.otp.ready && <Notice tone="warning">{d.isAdmin ? <>OTP sending isn't set up yet. Add the MSG91 key in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "OTP sending is being set up by Growpefy. Your settings are saved and OTP starts automatically once it's live."}</Notice>}
-      <Master name="otpOn" label="Ask for OTP at checkout" on={on} setOn={setOn} />
-      {on ? (
-        <div className="space-y-1 pl-1">
-          <Tick name="otpPrepaid" checked={prepaid} onChange={setPrepaid} label="Prepaid" hint="OTP before the customer goes to the payment page" />
-          <Tick name="otpCod" checked={cod} onChange={setCod} label="COD" hint="OTP before the Cash on Delivery order is placed" />
-        </div>
-      ) : (<>{prepaid && <input type="hidden" name="otpPrepaid" value="on" />}{cod && <input type="hidden" name="otpCod" value="on" />}</>)}
-      <p className="text-xs text-ink-faint">Each OTP sent costs {rupees(d.otp.price)} from your wallet. A verified number can order for 30 minutes without a new OTP.</p>
-      <SubmitButton intent="otp" busyText="Saving">Save OTP settings</SubmitButton>
+      <div className={`grid gap-2 sm:grid-cols-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>
+        <Row name="otpPrepaid" checked={prepaid} onChange={setPrepaid} title="💳 Prepaid" text="Before the payment page" />
+        <Row name="otpCod" checked={cod} onChange={setCod} title="💵 COD" text="Before the COD order is placed" />
+      </div>
+      <p className="text-[11px] text-ink-faint">A verified number can order for 30 minutes without a new OTP.</p>
+      <Save intent="otp" label="Save OTP settings" msg={msg} />
     </Form>
   );
 }
 
-function BlockSettings({ d }: { d: D }) {
+function BlockCard({ d, msg, blocked }: { d: D; msg: Msg; blocked: number }) {
   const [on, setOn] = useState(d.block.on);
   const [codOnly, setCodOnly] = useState(d.block.codOnly);
+  const r = useActionData<typeof action>();
   return (
-    <Form method="post" className="space-y-4">
-      <Master name="blockOn" label="Block customers on the list below" on={on} setOn={setOn} />
-      {on ? (
-        <div className="pl-1">
-          <Tick name="codOnly" checked={codOnly} onChange={setCodOnly} label="COD block only"
-            hint={codOnly ? "Blocked customers can still pay online. Only Cash on Delivery is hidden." : "Blocked customers can't place any order, prepaid or COD."} />
+    <section id="block" className="panel scroll-mt-6">
+      <Form method="post" className="space-y-4 p-5">
+        <Head emoji="🚫" title="Block customers" text="Stop customers with a bad history by mobile, email, pincode, city, state or country." on={on} setOn={setOn} name="blockOn" />
+        <div className={`transition ${on ? "" : "pointer-events-none opacity-60"}`}>
+          <div className="inline-flex rounded-lg border border-rule-strong p-0.5 text-xs font-medium" role="radiogroup" aria-label="What to block">
+            {codOnly && <input type="hidden" name="codOnly" value="on" />}
+            {([[true, "Hide COD only"], [false, "Block all orders"]] as const).map(([v, l]) => (
+              <button key={l} type="button" role="radio" aria-checked={codOnly === v} onClick={() => setCodOnly(v)}
+                className={`rounded-md px-3 py-1.5 transition ${codOnly === v ? (v ? "bg-ink text-white" : "bg-red-600 text-white") : "text-ink-soft hover:text-ink"}`}>{l}</button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-ink-faint">{codOnly ? "Blocked customers can still pay online." : "Blocked customers can't place any order, prepaid or COD."}</p>
         </div>
-      ) : codOnly && <input type="hidden" name="codOnly" value="on" />}
-      <SubmitButton intent="blockSettings" busyText="Saving">Save block settings</SubmitButton>
-    </Form>
+        <Save intent="blockSettings" label="Save block settings" msg={msg} />
+      </Form>
+
+      <div className="grid gap-4 border-t border-rule bg-paper/40 p-5 lg:grid-cols-2">
+        <div className="rounded-2xl border border-rule bg-white p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold"><span aria-hidden>✍️</span>Add manually</p>
+          <Form method="post" className="mt-3 space-y-2.5" key={r?.form === "blockAdd" && r.ok ? r.ok + Date.now() : "add"}>
+            <select name="kind" className="input h-9 py-1 text-sm" defaultValue="phone" aria-label="What to block">
+              {BLOCK_KINDS.map((k) => <option key={k} value={k}>{BLOCK_LABELS[k]}</option>)}
+            </select>
+            <textarea name="values" rows={3} className="input text-sm" placeholder="One per line, or separated by commas. E.g. 9876543210" />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0 text-sm">{msg("blockAdd")}</div>
+              <SubmitButton intent="blockAdd" className="btn-primary h-9 px-4 text-sm" busyText="Adding">Add to block list</SubmitButton>
+            </div>
+          </Form>
+        </div>
+        <CsvUpload msg={msg} />
+      </div>
+      <BlockList d={d} msg={msg} totalAll={blocked} />
+    </section>
   );
 }
 
@@ -303,47 +329,50 @@ const SOURCE_HINT: Record<CsvSource, string> = {
   other: "Columns: A email, B phone, C pincode, D city, E state, F country. 10-digit phones use your store's country.",
 };
 
-function CsvUpload({ storeId: _s, msg }: { storeId: number; msg: React.ReactNode }) {
+function CsvUpload({ msg }: { msg: Msg }) {
   const [source, setSource] = useState<CsvSource>("shopify");
   const [kinds, setKinds] = useState<BlockKind[]>(["phone"]);
   const toggle = (k: BlockKind) => setKinds((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]));
   return (
-    <div>
+    <div className="rounded-2xl border border-rule bg-white p-4">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="font-semibold">Upload a CSV</h3>
-        <a href={SAMPLE[source]} download className="inline-flex items-center gap-1 text-xs font-medium text-pine hover:underline"><Icon name="download" className="h-3.5 w-3.5" />Sample file</a>
+        <p className="flex items-center gap-2 text-sm font-semibold"><span aria-hidden>📄</span>Upload a CSV</p>
+        <a href={SAMPLE[source]} download className="inline-flex items-center gap-1 text-[11px] font-medium text-pine hover:underline"><Icon name="download" className="h-3.5 w-3.5" />Sample file</a>
       </div>
-      {msg}
-      <Form method="post" encType="multipart/form-data" className="mt-3 space-y-3">
-        <label className="block">
-          <span className="label">Where did you export this file from?</span>
-          <select name="source" value={source} onChange={(e) => setSource(e.target.value as CsvSource)} className="input">
-            {CSV_SOURCES.map((s) => <option key={s} value={s}>{CSV_SOURCE_LABELS[s]}</option>)}
-          </select>
-          <span className="hint">{SOURCE_HINT[source]}</span>
-        </label>
+      <Form method="post" encType="multipart/form-data" className="mt-3 space-y-2.5">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Exported from">
+          <input type="hidden" name="source" value={source} />
+          {CSV_SOURCES.map((s) => (
+            <button key={s} type="button" role="radio" aria-checked={source === s} onClick={() => setSource(s)}
+              className={`rounded-full border px-3 py-1 text-xs transition ${source === s ? "border-ink bg-ink font-medium text-white" : "border-rule-strong text-ink-soft hover:border-ink-faint"}`}>{CSV_SOURCE_LABELS[s]}</button>
+          ))}
+        </div>
+        <p className="text-[11px] text-ink-faint">{SOURCE_HINT[source]}</p>
         <fieldset>
-          <legend className="label">What do you want to block from this file?</legend>
-          <div className="flex flex-wrap gap-2">
+          <legend className="mb-1 text-xs font-medium">Block from this file</legend>
+          <div className="flex flex-wrap gap-1.5">
             {BLOCK_KINDS.map((k) => {
               const on = kinds.includes(k);
               return (
-                <label key={k} className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm transition ${on ? "border-brand bg-pine-tint font-medium text-pine" : "border-rule-strong text-ink-soft hover:border-ink-faint"}`}>
-                  <input type="checkbox" name="kinds" value={k} checked={on} onChange={() => toggle(k)} className="sr-only" />{BLOCK_LABELS[k]}
+                <label key={k} className={`cursor-pointer rounded-full border px-2.5 py-1 text-xs transition ${on ? "border-brand bg-pine-tint font-medium text-pine" : "border-rule-strong text-ink-soft hover:border-ink-faint"}`}>
+                  <input type="checkbox" name="kinds" value={k} checked={on} onChange={() => toggle(k)} className="sr-only" />{on ? "✓ " : ""}{BLOCK_LABELS[k]}
                 </label>
               );
             })}
           </div>
-          {kinds.some((k) => k === "country" || k === "state") && <p className="mt-2 text-xs text-warn">Careful: blocking a state or country affects every customer from there.</p>}
+          {kinds.some((k) => k === "country" || k === "state") && <p className="mt-1.5 text-[11px] text-warn">Careful: blocking a state or country affects every customer from there.</p>}
         </fieldset>
-        <input type="file" name="file" accept=".csv,text/csv" required className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-paper-sunk file:px-3 file:py-2 file:text-sm file:font-medium" />
-        <SubmitButton intent="blockCsv" busyText="Uploading" disabled={!kinds.length}>Upload and block</SubmitButton>
+        <input type="file" name="file" accept=".csv,text/csv" required className="block w-full text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-paper-sunk file:px-3 file:py-1.5 file:text-xs file:font-medium" />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 text-sm">{msg("blockCsv")}</div>
+          <SubmitButton intent="blockCsv" className="btn-primary h-9 px-4 text-sm" busyText="Uploading" disabled={!kinds.length}>Upload and block</SubmitButton>
+        </div>
       </Form>
     </div>
   );
 }
 
-function BlockList({ d, msg }: { d: D; msg: React.ReactNode }) {
+function BlockList({ d, msg, totalAll }: { d: D; msg: Msg; totalAll: number }) {
   const [params] = useSearchParams();
   const href = (patch: Record<string, string | null>) => {
     const sp = new URLSearchParams(params);
@@ -351,64 +380,57 @@ function BlockList({ d, msg }: { d: D; msg: React.ReactNode }) {
     if (!("page" in patch)) sp.delete("page");
     return `?${sp.toString()}#block`;
   };
-  const totalAll = Object.values(d.counts).reduce((a, b) => a + (b ?? 0), 0);
   const [clear, setClear] = useState(false);
   useEffect(() => setClear(false), [d.total]);
   const pages = Math.max(1, Math.ceil(d.total / PAGE));
+  const note = msg("blockDelete") ?? msg("blockClear");
   return (
-    <div className="mt-6 border-t border-rule pt-6">
+    <div className="border-t border-rule p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto font-semibold">Block list <span className="font-normal text-ink-faint">({totalAll})</span></h3>
+        <p className="mr-auto text-sm font-semibold">Block list <span className="font-normal text-ink-faint">({totalAll})</span></p>
         <Form method="get" className="flex gap-2" preventScrollReset>
           {d.kind && <input type="hidden" name="kind" value={d.kind} />}
-          <input name="q" defaultValue={d.q} placeholder="Search" className="input h-9 w-44 py-1.5 text-sm" aria-label="Search block list" />
+          <input name="q" defaultValue={d.q} placeholder="Search" className="input h-8 w-40 py-1 text-xs" aria-label="Search block list" />
         </Form>
-        {totalAll > 0 && <button type="button" className="btn-quiet text-xs text-bad" onClick={() => setClear((v) => !v)}>Clear list</button>}
+        {totalAll > 0 && <button type="button" className="btn-quiet h-8 px-2 text-xs text-bad" onClick={() => setClear((v) => !v)}>Clear list</button>}
       </div>
-      {msg}
+      {note && <div className="mt-3 text-sm">{note}</div>}
       {clear && (
-        <Form method="post" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+        <Form method="post" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs">
           <span>Remove {d.kind ? `all blocked ${BLOCK_LABELS[d.kind].toLowerCase()}s` : "everything"} from the list? Type <b>REMOVE</b>:</span>
           <input type="hidden" name="kind" value={d.kind ?? ""} />
-          <input name="confirm" className="input h-8 w-28 py-1 text-sm" />
-          <SubmitButton intent="blockClear" className="btn-danger border border-red-200 bg-white" busyText="Removing">Remove</SubmitButton>
+          <input name="confirm" className="input h-8 w-28 py-1 text-xs" />
+          <SubmitButton intent="blockClear" className="btn-danger h-8 border border-red-200 bg-white px-3 text-xs" busyText="Removing">Remove</SubmitButton>
         </Form>
       )}
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <Link to={href({ kind: null })} preventScrollReset className={`rounded-full px-3 py-1 text-xs font-medium ${!d.kind ? "bg-ink text-white" : "bg-paper-sunk text-ink-soft"}`}>All {totalAll}</Link>
+        <Link to={href({ kind: null })} preventScrollReset className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${!d.kind ? "bg-ink text-white" : "bg-paper-sunk text-ink-soft"}`}>All {totalAll}</Link>
         {BLOCK_KINDS.map((k) => (
-          <Link key={k} to={href({ kind: k })} preventScrollReset className={`rounded-full px-3 py-1 text-xs font-medium ${d.kind === k ? "bg-ink text-white" : "bg-paper-sunk text-ink-soft"}`}>{BLOCK_LABELS[k]} {d.counts[k] ?? 0}</Link>
+          <Link key={k} to={href({ kind: k })} preventScrollReset className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${d.kind === k ? "bg-ink text-white" : "bg-paper-sunk text-ink-soft"}`}>{BLOCK_LABELS[k]} {d.counts[k] ?? 0}</Link>
         ))}
       </div>
       {d.list.length === 0 ? (
-        <p className="mt-4 rounded-lg bg-paper px-4 py-6 text-center text-sm text-ink-faint">{d.q || d.kind ? "Nothing matches." : "No one is blocked yet."}</p>
+        <p className="mt-4 rounded-xl bg-paper px-4 py-6 text-center text-xs text-ink-faint">{d.q || d.kind ? "Nothing matches." : "No one is blocked yet."}</p>
       ) : (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-rule">
-          <table className="table min-w-[520px]">
-            <thead><tr><th>Type</th><th>Value</th><th>Added</th><th /></tr></thead>
-            <tbody>
-              {d.list.map((b) => (
-                <tr key={b.id}>
-                  <td className="text-ink-soft">{BLOCK_LABELS[b.kind]}</td>
-                  <td className="font-medium">{b.label}</td>
-                  <td className="text-xs text-ink-faint">{new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} · {b.source === "csv" ? "CSV" : "Manual"}</td>
-                  <td className="text-right">
-                    <Form method="post" preventScrollReset><input type="hidden" name="id" value={b.id} />
-                      <button name="intent" value="blockDelete" className="btn-quiet text-xs" aria-label={`Unblock ${b.label}`}>Unblock</button>
-                    </Form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="mt-3 divide-y divide-rule overflow-hidden rounded-xl border border-rule">
+          {d.list.map((b) => (
+            <li key={b.id} className="flex items-center gap-3 px-3.5 py-2.5">
+              <span className="w-20 shrink-0 rounded-md bg-paper-sunk px-1.5 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide text-ink-soft">{BLOCK_LABELS[b.kind]}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{b.label}</span>
+              <span className="hidden text-[11px] text-ink-faint sm:block">{new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} · {b.source === "csv" ? "CSV" : "Manual"}</span>
+              <Form method="post" preventScrollReset><input type="hidden" name="id" value={b.id} />
+                <button name="intent" value="blockDelete" className="btn-quiet h-7 px-2 text-[11px]" aria-label={`Unblock ${b.label}`}>Unblock</button>
+              </Form>
+            </li>
+          ))}
+        </ul>
       )}
       {pages > 1 && (
-        <div className="mt-3 flex items-center justify-between text-sm">
+        <div className="mt-3 flex items-center justify-between text-xs">
           <span className="text-ink-faint">Page {d.page} of {pages}</span>
           <div className="flex gap-2">
-            {d.page > 1 && <Link to={href({ page: String(d.page - 1) })} preventScrollReset className="btn-secondary px-3 py-1.5">Previous</Link>}
-            {d.page < pages && <Link to={href({ page: String(d.page + 1) })} preventScrollReset className="btn-secondary px-3 py-1.5">Next</Link>}
+            {d.page > 1 && <Link to={href({ page: String(d.page - 1) })} preventScrollReset className="btn-secondary h-8 px-3 text-xs">Previous</Link>}
+            {d.page < pages && <Link to={href({ page: String(d.page + 1) })} preventScrollReset className="btn-secondary h-8 px-3 text-xs">Next</Link>}
           </div>
         </div>
       )}
@@ -416,36 +438,38 @@ function BlockList({ d, msg }: { d: D; msg: React.ReactNode }) {
   );
 }
 
-function ConfirmForm({ d }: { d: D }) {
+function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
   const [on, setOn] = useState(d.confirm.on);
   const [wa, setWa] = useState(d.confirm.whatsapp);
   const [prepaid, setPrepaid] = useState(d.confirm.prepaid);
   const [cod, setCod] = useState(d.confirm.cod);
   const unlocked = d.confirm.orders >= CALL_UNLOCK_ORDERS;
   return (
-    <Form method="post" className="space-y-4">
+    <Form method="post" id="confirm" className="panel scroll-mt-6 space-y-4 p-5">
+      <Head emoji="💬" title="Order confirmation" text="Confirm every order with the customer right after checkout, so fewer orders get refused at the door." on={on} setOn={setOn} name="confirmOn" />
       {!d.confirm.ready && <Notice tone="warning">{d.isAdmin ? <>WhatsApp sending isn't set up yet. Add the WhatsApp Cloud API details in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "WhatsApp messages are being set up by Growpefy. Your settings are saved and messages start automatically once it's live."}</Notice>}
-      <Master name="confirmOn" label="Confirm orders with customers" on={on} setOn={setOn} />
-      {on ? (
-        <div className="space-y-3 pl-1">
-          <div className="rounded-xl border border-rule p-3">
-            <Tick name="waOn" checked={wa} onChange={setWa} label={<>WhatsApp confirmation <span className="ml-1 rounded-full bg-pine-tint px-2 py-0.5 text-[11px] font-semibold text-pine">{rupees(d.confirm.price)} per message</span></>}
-              hint="Sends the order details on WhatsApp right after the order is placed." />
-            {wa && (
-              <div className="ml-8 mt-1 space-y-0.5">
-                <Tick name="waPrepaid" checked={prepaid} onChange={setPrepaid} label="Prepaid orders" />
-                <Tick name="waCod" checked={cod} onChange={setCod} label="COD orders" />
-              </div>
-            )}
-          </div>
-          <div className="rounded-xl border border-dashed border-rule-strong p-3">
-            <Tick name="callOn" checked={false} disabled label={<>Call confirmation <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-paper-sunk px-2 py-0.5 text-[11px] font-semibold text-ink-soft">🔒 {unlocked ? "Coming soon" : `Unlocks at ${CALL_UNLOCK_ORDERS} orders`}</span></>}
-              hint={unlocked ? "You've crossed 100 orders. Call confirmation will appear here soon." : `Your store has ${d.confirm.orders} of ${CALL_UNLOCK_ORDERS} orders.`} />
-            {!unlocked && <div className="ml-8 mt-1 h-1.5 max-w-xs overflow-hidden rounded-full bg-paper-sunk"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, (d.confirm.orders / CALL_UNLOCK_ORDERS) * 100)}%` }} /></div>}
-          </div>
+      <div className={`space-y-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>
+        <Row name="waOn" checked={wa} onChange={setWa} title="WhatsApp confirmation" text="Order details on WhatsApp right after the order is placed."
+          extra={<span className="rounded-full bg-pine-tint px-2 py-0.5 text-[10px] font-semibold text-pine">{rupees(d.confirm.price)}/msg</span>} />
+        <div className={`ml-8 flex flex-wrap gap-2 ${wa ? "" : "hidden"}`}>
+          {([["waPrepaid", "💳 Prepaid orders", prepaid, setPrepaid], ["waCod", "💵 COD orders", cod, setCod]] as const).map(([n, l, v, set]) => (
+            <label key={n} className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${v ? "border-brand bg-pine-tint font-medium text-pine" : "border-rule-strong text-ink-soft"}`}>
+              <input type="checkbox" name={n} checked={v} onChange={(e) => set(e.target.checked)} className="sr-only" />{v ? "✓ " : ""}{l}
+            </label>
+          ))}
         </div>
-      ) : (<>{wa && <input type="hidden" name="waOn" value="on" />}{prepaid && <input type="hidden" name="waPrepaid" value="on" />}{cod && <input type="hidden" name="waCod" value="on" />}</>)}
-      <SubmitButton intent="confirm" busyText="Saving">Save confirmation settings</SubmitButton>
+        <div className="rounded-xl border border-dashed border-rule-strong px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-5 w-5 items-center justify-center text-sm" aria-hidden>📞</span>
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2 text-sm font-medium">Call confirmation<span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[10px] font-semibold text-ink-soft">🔒 {unlocked ? "Coming soon" : `Unlocks at ${CALL_UNLOCK_ORDERS} orders`}</span></p>
+              <p className="text-xs text-ink-faint">{unlocked ? "You've crossed 100 orders. Call confirmation will appear here soon." : `Your store has ${d.confirm.orders} of ${CALL_UNLOCK_ORDERS} orders.`}</p>
+            </div>
+          </div>
+          {!unlocked && <div className="ml-8 mt-2 h-1.5 max-w-xs overflow-hidden rounded-full bg-paper-sunk"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, (d.confirm.orders / CALL_UNLOCK_ORDERS) * 100)}%` }} /></div>}
+        </div>
+      </div>
+      <Save intent="confirm" label="Save confirmation settings" msg={msg} />
     </Form>
   );
 }

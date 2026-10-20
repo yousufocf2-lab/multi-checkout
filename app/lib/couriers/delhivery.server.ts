@@ -1,5 +1,6 @@
 // Delhivery: token check and shipment tracking. Token = Delhivery One → Settings → API Setup.
 import type { ShipStatus } from "../rto-shield";
+import type { TrackResult } from "./common.server";
 
 const BASE = () => (process.env.DELHIVERY_BASE_URL || "https://track.delhivery.com").replace(/\/+$/, "");
 const headers = (token: string) => ({ Authorization: `Token ${token}`, Accept: "application/json" });
@@ -34,8 +35,6 @@ export function mapDelhivery(status: string, type: string): ShipStatus | null {
   if (s.includes("rto")) return "rto_transit";
   return "in_transit"; // UD: manifested, pending, in transit, dispatched…
 }
-
-export type TrackResult = { awb: string; status: ShipStatus | null; raw: string; at: Date | null };
 
 /** Tracks up to 50 AWBs in one call. */
 export async function trackDelhivery(token: string, awbs: string[]): Promise<TrackResult[]> {

@@ -320,20 +320,34 @@ export async function createShopifyOrder(store: Store, order: Order) {
 }
 // ---------- fulfillment tracking (for courier sync) ----------
 
-export type OrderTracking = { orderId: string; tracking: { number: string; company: string | null }[] };
+export type OrderTracking = {
+  orderId: string;
+  tags: string[];
+  cancelled: boolean;
+  /** Latest fulfillment first. */
+  fulfillments: { status: string | null; updatedAt: string | null; tracking: { number: string; company: string | null; url: string | null }[] }[];
+  tracking: { number: string; company: string | null; url: string | null }[];
+};
 
-/** AWB numbers and courier names from the fulfillments of up to 50 orders (Order GIDs). */
+/** AWB numbers, courier names and fulfillment statuses for up to 50 orders (Order GIDs). */
 export async function fetchFulfillmentTracking(store: Store, orderGids: string[]): Promise<OrderTracking[]> {
   if (!orderGids.length) return [];
-  const data = await adminGraphql<{ nodes: ({ id: string; fulfillments: { trackingInfo: { number: string | null; company: string | null }[] }[] } | null)[] }>(
+  type F = { displayStatus: string | null; updatedAt: string | null; trackingInfo: { number: string | null; company: string | null; url: string | null }[] };
+  const data = await adminGraphql<{ nodes: ({ id: string; tags: string[]; cancelledAt: string | null; fulfillments: F[] } | null)[] }>(
     store,
-    `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Order { id fulfillments(first: 5) { trackingInfo(first: 3) { number company } } } } }`,
+    `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Order { id tags cancelledAt fulfillments(first: 5) { displayStatus updatedAt trackingInfo(first: 3) { number company url } } } } }`,
     { ids: orderGids.slice(0, 50) },
   );
   return data.nodes
     .filter((n): n is NonNullable<typeof n> => Boolean(n?.id))
-    .map((n) => ({
-      orderId: n.id,
-      tracking: (n.fulfillments ?? []).flatMap((f) => f.trackingInfo ?? []).filter((t) => t.number).map((t) => ({ number: String(t.number).trim(), company: t.company })),
-    }));
+    .map((n) => {
+      const fulfillments = [...(n.fulfillments ?? [])]
+        .sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
+        .map((f) => ({
+          status: f.displayStatus,
+          updatedAt: f.updatedAt,
+          tracking: (f.trackingInfo ?? []).filter((t) => t.number).map((t) => ({ number: String(t.number).trim(), company: t.company, url: t.url })),
+        }));
+      return { orderId: n.id, tags: n.tags ?? [], cancelled: Boolean(n.cancelledAt), fulfillments, tracking: fulfillments.flatMap((f) => f.tracking) };
+    });
 }

@@ -1,4 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import { COURIER_LOGOS } from "~/lib/courier-catalog";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useFetcher, useLoaderData, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
@@ -962,12 +963,24 @@ function Field({ label, error, className = "", children }: { label: string; erro
 }
 
 function Trust({ phone, text, className = "" }: { phone: string | null; text: string | null; className?: string }) {
-  if (!text && !phone) return null;
   return (
     <div className={`space-y-1 text-center text-xs text-ink-faint ${className}`}>
+      <CourierStrip />
       {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
       <p className="pt-1"><PoweredBy /></p>
+    </div>
+  );
+}
+
+/** "Delivered by" row of courier logos. */
+function CourierStrip() {
+  return (
+    <div className="pb-2">
+      <p className="text-[10px] font-medium uppercase tracking-wider">Delivered by trusted couriers</p>
+      <div className="mt-1.5 flex items-center justify-center gap-1.5">
+        {COURIER_LOGOS.map((c) => <img key={c.id} src={c.logo} alt={c.name} title={c.name} width={28} height={28} loading="lazy" className="h-7 w-7 rounded-full bg-white object-contain" />)}
+      </div>
     </div>
   );
 }

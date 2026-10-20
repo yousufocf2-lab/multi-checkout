@@ -140,13 +140,14 @@ export const blockedCustomers = pgTable(
 );
 
 /** Courier accounts connected by a store (API token from the courier's own panel). */
-export type CourierCreds = { token: string; clientName?: string };
+/** Courier login. Passwords are sealed (AES-GCM) before saving. Shopify-tracked couriers have no creds. */
+export type CourierCreds = { token?: string; clientName?: string; email?: string; password?: string; clientId?: string; username?: string; label?: string };
 export const courierAccounts = pgTable(
   "courier_accounts",
   {
     id: serial("id").primaryKey(),
     storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
-    courier: text("courier").notNull(), // delhivery
+    courier: text("courier").notNull(), // see app/lib/courier-catalog.ts
     creds: jsonb("creds").$type<CourierCreds>().notNull(),
     status: text("status").notNull().default("connected"), // connected | error
     lastError: text("last_error"),

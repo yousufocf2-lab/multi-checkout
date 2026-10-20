@@ -1,4 +1,6 @@
 import { Link } from "@remix-run/react";
+import { CourierLogo } from "~/components/CourierLogo";
+import { COURIERS } from "~/lib/courier-catalog";
 import { rupees } from "~/lib/wallet";
 
 export function SectionHead({ eyebrow, title, text }: { eyebrow: string; title: string; text?: string }) {
@@ -116,5 +118,54 @@ export function Platforms() {
         </div>
       ))}
     </div>
+  );
+}
+
+/** "We cut RTO through your courier" band with sliding courier logos. */
+export function LogisticsBand() {
+  const bubbles = COURIERS.filter((c) => c.id !== "other");
+  const names = COURIERS.filter((c) => c.id !== "other").map((c) => c.name);
+  return (
+    <section className="relative overflow-hidden border-t border-rule bg-gradient-to-b from-white via-emerald-50/50 to-white">
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-72 w-[42rem] -translate-x-1/2 rounded-full bg-emerald-300/20 blur-3xl" />
+      <div className="relative mx-auto max-w-6xl px-4 py-20 sm:px-6">
+        <SectionHead eyebrow="Logistics + RTO Shield" title="Your courier data now stops RTO at checkout" text="Connect Delhivery, Shiprocket, NimbusPost, Xpressbees, Ekart or any courier you use, even 3 or 4 together. Growpefy tracks every AWB and spots customers who keep refusing deliveries. Their next COD order is stopped before it ships." />
+
+        <div className="mt-12 space-y-4 [mask-image:linear-gradient(90deg,transparent,#000_8%,#000_92%,transparent)]">
+          <div className="group overflow-hidden">
+            <div className="flex w-max animate-marquee items-center gap-6 py-2 group-hover:[animation-play-state:paused] motion-reduce:animate-none">
+              {[0, 1].map((copy) => bubbles.map((c) => (
+                <div key={`${copy}-${c.id}`} aria-hidden={copy === 1 || undefined} className="flex shrink-0 items-center gap-3 rounded-full border border-rule bg-white py-2 pl-2 pr-5 shadow-sm">
+                  <CourierLogo c={c} size={44} />
+                  <span className="text-sm font-semibold text-ink">{c.name}</span>
+                </div>
+              )))}
+            </div>
+          </div>
+          <div className="group overflow-hidden">
+            <div className="flex w-max animate-marquee items-center gap-3 py-1 [animation-direction:reverse] group-hover:[animation-play-state:paused] motion-reduce:animate-none">
+              {[0, 1].map((copy) => names.map((n) => (
+                <span key={`${copy}-${n}`} aria-hidden={copy === 1 || undefined} className="shrink-0 rounded-full bg-ink/5 px-3.5 py-1.5 text-xs font-medium text-ink-soft">✓ {n}</span>
+              )))}
+              {[0, 1].map((copy) => <span key={`o${copy}`} aria-hidden className="shrink-0 rounded-full bg-pine-tint px-3.5 py-1.5 text-xs font-semibold text-pine">+ Any other courier</span>)}
+            </div>
+          </div>
+        </div>
+
+        <ol className="mt-12 grid gap-4 md:grid-cols-3">
+          {[
+            ["🔌", "Connect in a minute", "Paste your courier login or token. No courier app to install, and it's optional."],
+            ["📦", "Every AWB tracked", "In transit, delivered, RTO, returned. Synced every hour from your courier or Shopify."],
+            ["🛡️", "Repeat RTO stopped", "2 RTOs → COD hidden. 5 → no orders. You set the rules, prepaid can stay open."],
+          ].map(([e, t, x]) => (
+            <li key={t} className="rounded-2xl border border-rule bg-white/80 p-5 backdrop-blur">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-pine-tint text-xl" aria-hidden>{e}</span>
+              <h3 className="mt-4 text-[15px] font-semibold">{t}</h3>
+              <p className="mt-1 text-sm leading-relaxed text-ink-soft">{x}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
   );
 }

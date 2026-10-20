@@ -3,7 +3,7 @@ import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { eq } from "drizzle-orm";
 import { Icon, type IconName } from "~/components/Icons";
-import { CtaBand, Gateways, Platforms, RateCard, SectionHead } from "~/components/site/Blocks";
+import { CtaBand, Gateways, LogisticsBand, Platforms, RateCard, SectionHead } from "~/components/site/Blocks";
 import { SiteLayout, siteMeta } from "~/components/site/SiteLayout";
 import { db, stores } from "~/db.server";
 import { siteData } from "~/lib/site.server";
@@ -35,7 +35,8 @@ const FEATURES: { icon: IconName; title: string; text: string; tint: string }[] 
 const FAQ: [string, string][] = [
   ["Which platforms does Growpefy work with?", "Shopify today: one script in your theme and the Checkout and Buy Now buttons open Growpefy, with every order created back in Shopify. WooCommerce and custom websites (built in VS Code, React, PHP and so on) are coming next."],
   ["Which payment gateway do you support?", "You connect your own gateway account, so money settles directly to your bank. PayU is live; Razorpay, Cashfree and other Indian and international gateways are rolling out. Cash on Delivery is built in with rules you control."],
-  ["How does Growpefy reduce RTO?", "With the RTO Suite: OTP verification before prepaid or COD orders, a wait time between COD orders, blocking customers by number, email, pincode, city, state or country (upload a CSV of past RTO orders), and WhatsApp order confirmation."],
+  ["How does Growpefy reduce RTO?", "With the RTO Suite: OTP verification before prepaid or COD orders, a wait time between COD orders, blocking customers by number, email, pincode, city, state or country (upload a CSV of past RTO orders), and WhatsApp order confirmation. Connect your courier too and RTO Shield reads each customer's delivery history, so people who keep refusing COD parcels get COD hidden or orders stopped."],
+  ["Which couriers can I connect?", "Delhivery, Shiprocket, NimbusPost, Xpressbees and Ekart connect directly. Shadowfax, Blue Dart, DTDC, Ecom Express, Amazon Shipping, India Post and any other courier are tracked from your Shopify fulfillments. You can connect several at once, and it's optional."],
   ["Is there a monthly fee?", "No. You recharge a prepaid wallet and pay only a small fee on each order placed through the checkout. See the pricing page for the full rate card."],
   ["Can I run more than one store?", "Yes. Connect as many stores as you like and manage them from one login. Each store can have its own checkout domain, design and offers."],
   ["What happens if my wallet balance runs out?", "Your checkout never stops taking orders. The wallet can go slightly below zero; past that limit promotional messages pause and some dashboard tools lock until you recharge."],
@@ -90,6 +91,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <LogisticsBand />
 
       {/* Ads band */}
       <section className="bg-night text-white">
