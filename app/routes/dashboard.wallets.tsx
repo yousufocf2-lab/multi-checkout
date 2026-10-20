@@ -46,7 +46,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       billing: p.billing ?? {}, payuKey: p.payuKey ?? "", hasSalt: Boolean(p.payuSalt), payuMode: p.payuMode,
       msg: {
         msg91TemplateId: p.messaging?.msg91TemplateId ?? "", hasMsg91Key: Boolean(p.messaging?.msg91AuthKey),
-        msg91WidgetId: p.messaging?.msg91WidgetId ?? "", msg91TokenAuth: p.messaging?.msg91TokenAuth ?? "",
+        msg91WidgetId: p.messaging?.msg91WidgetId ?? "", msg91TokenAuth: p.messaging?.msg91TokenAuth ?? "", msg91OtpLength: p.messaging?.msg91OtpLength === 6 ? 6 : 4,
         otpMode: otpMode(m), otpReady: otpMode(m) !== null,
         otpTest: m.msg91AuthKey === "test" || (otpMode(m) === "widget" && m.msg91WidgetId === "test"),
         waPhoneNumberId: p.messaging?.waPhoneNumberId ?? "", hasWaToken: Boolean(p.messaging?.waToken),
@@ -100,7 +100,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.update(platformSettings).set({
       messaging: {
         msg91AuthKey: s("msg91AuthKey") || m.msg91AuthKey, msg91TemplateId: s("msg91TemplateId"),
-        msg91WidgetId: s("msg91WidgetId"), msg91TokenAuth: s("msg91TokenAuth"),
+        msg91WidgetId: s("msg91WidgetId"), msg91TokenAuth: s("msg91TokenAuth"), msg91OtpLength: s("msg91OtpLength") === "6" ? 6 : 4,
         waPhoneNumberId: s("waPhoneNumberId").replace(/\D/g, ""), waToken: s("waToken") || m.waToken, waTemplate: s("waTemplate"), waLang: s("waLang") || "en",
       },
       updatedAt: new Date(),
@@ -297,6 +297,9 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
               <Field label="OTP template ID (DLT approved)" name="msg91TemplateId" value={s.msg.msg91TemplateId} />
               <Field label="Widget ID (OTP Widget, no DLT needed)" name="msg91WidgetId" value={s.msg.msg91WidgetId} />
               <Field label="Widget token (Token Auth)" name="msg91TokenAuth" value={s.msg.msg91TokenAuth} />
+              <label className="block"><span className="label">Widget OTP length</span>
+                <select name="msg91OtpLength" defaultValue={String(s.msg.msg91OtpLength)} className="input"><option value="4">4 digits</option><option value="6">6 digits</option></select>
+                <span className="hint">Must match "OTP Length" on the widget in MSG91.</span></label>
             </div>
             <p className="hint mt-2">No DLT yet? Fill Auth key + Widget ID + Widget token. Once your DLT template is approved, add the Template ID and it is used instead (store name can then go in the SMS).
               In MSG91 → OTP Widget, allow your domains (growpefy.com and the stores' checkout domains).</p>

@@ -1,7 +1,7 @@
 import { Form, useNavigation } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "./ui";
-import { widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "./msg91-widget";
+import { codeLength, widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "./msg91-widget";
 
 /** Mobile / Email switch with one input. Submits as "contact". */
 export function ContactInput({ mode, setMode, defaultValue, error }: { mode: "phone" | "email"; setMode: (m: "phone" | "email") => void; defaultValue?: string; error?: string }) {
@@ -47,6 +47,7 @@ export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel, w
   const input = useRef<HTMLInputElement>(null);
   const [w, setW] = useState<{ reqId: string | null; token: string; busy: boolean; error: string | null }>({ reqId: null, token: "", busy: false, error: null });
   const useWidget = Boolean(widget && phone);
+  const len = useWidget ? codeLength(widget) : 6;
   useEffect(() => {
     if (!useWidget) return;
     setW((x) => ({ ...x, busy: true }));
@@ -74,11 +75,11 @@ export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel, w
   return (
     <Form method="post" ref={formRef} className="space-y-4" noValidate>
       {Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-      <input ref={input} name="code" value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus aria-label="6-digit code"
+      <input ref={input} name="code" value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={len} autoFocus aria-label={`${len}-digit code`}
         onChange={(e) => {
-          const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+          const v = e.target.value.replace(/\D/g, "").slice(0, len);
           setCode(v);
-          if (v.length === 6) {
+          if (v.length === len) {
             if (useWidget) verifyWithWidget(v);
             else setTimeout(() => formRef.current?.requestSubmit(formRef.current.querySelector<HTMLButtonElement>("[data-verify]") ?? undefined), 0);
           }
@@ -86,7 +87,7 @@ export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel, w
         className="input num text-center text-2xl font-semibold tracking-[0.5em]" placeholder="••••••" aria-invalid={Boolean(error) || undefined} />
       {useWidget && <input type="hidden" name="token" value={w.token} />}
       {(w.error ?? error) && <p className="error-text" role="alert">{w.error ?? error}</p>}
-      <button type={useWidget && !w.token ? "button" : "submit"} name="intent" value="verify" data-verify className="btn-primary w-full py-3" disabled={code.length !== 6 || verifying || w.busy}
+      <button type={useWidget && !w.token ? "button" : "submit"} name="intent" value="verify" data-verify className="btn-primary w-full py-3" disabled={code.length !== len || verifying || w.busy}
         onClick={useWidget && !w.token ? () => verifyWithWidget(code) : undefined}>
         {verifying || (w.busy && w.reqId) ? <><Spinner /> Verifying</> : submitLabel}
       </button>

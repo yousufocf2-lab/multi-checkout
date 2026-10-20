@@ -478,7 +478,7 @@ export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; 
 export type MessagingSettings = {
   msg91AuthKey?: string; msg91TemplateId?: string;
   // MSG91 OTP Widget (works without DLT): widget ID + token auth, verified server-side with the auth key
-  msg91WidgetId?: string; msg91TokenAuth?: string;
+  msg91WidgetId?: string; msg91TokenAuth?: string; msg91OtpLength?: number;
   waPhoneNumberId?: string; waToken?: string; waTemplate?: string; waLang?: string;
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };

@@ -16,6 +16,7 @@ export async function messaging(): Promise<MessagingSettings> {
     msg91TemplateId: m.msg91TemplateId || process.env.MSG91_OTP_TEMPLATE_ID || undefined,
     msg91WidgetId: m.msg91WidgetId || process.env.MSG91_WIDGET_ID || undefined,
     msg91TokenAuth: m.msg91TokenAuth || process.env.MSG91_TOKEN_AUTH || undefined,
+    msg91OtpLength: m.msg91OtpLength || Number(process.env.MSG91_OTP_LENGTH) || undefined,
     waPhoneNumberId: m.waPhoneNumberId || process.env.WA_PHONE_NUMBER_ID || undefined,
     waToken: m.waToken || process.env.WA_ACCESS_TOKEN || undefined,
     waTemplate: m.waTemplate || process.env.WA_CONFIRM_TEMPLATE || undefined,
@@ -35,7 +36,7 @@ export function otpMode(m: MessagingSettings): "api" | "widget" | null {
 export const otpReady = (m: MessagingSettings) => otpMode(m) !== null;
 /** What the browser needs to run the MSG91 widget (both values are meant to be public). */
 export function widgetPublic(m: MessagingSettings) {
-  return otpMode(m) === "widget" ? { widgetId: m.msg91WidgetId!, tokenAuth: m.msg91TokenAuth! } : null;
+  return otpMode(m) === "widget" ? { widgetId: m.msg91WidgetId!, tokenAuth: m.msg91TokenAuth!, length: m.msg91OtpLength === 6 ? 6 : 4 } : null;
 }
 
 /**

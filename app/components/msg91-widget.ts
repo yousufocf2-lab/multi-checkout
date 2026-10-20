@@ -1,6 +1,8 @@
 // Browser side of the MSG91 OTP Widget (exposeMethods mode): we keep our own OTP UI and call the widget's
 // sendOtp / verifyOtp / retryOtp. The access token from verifyOtp is then checked on our server.
-export type WidgetConfig = { widgetId: string; tokenAuth: string };
+/** length = digits the widget sends (MSG91 widgets default to 4) */
+export type WidgetConfig = { widgetId: string; tokenAuth: string; length?: number };
+export const codeLength = (cfg: WidgetConfig | null | undefined) => (cfg ? cfg.length ?? 4 : 6);
 
 type Cb = (data: { type?: string; message?: string } | undefined) => void;
 type W = Window & {
@@ -53,7 +55,7 @@ export async function widgetRetry(cfg: WidgetConfig, reqId: string): Promise<voi
 /** Verifies the code with MSG91. Resolves with the access token our server checks. */
 export async function widgetVerify(cfg: WidgetConfig, code: string, reqId: string, phone: string): Promise<string> {
   if (cfg.widgetId === "test") {
-    if (code !== "123456") throw new Error("That OTP isn't right. Check and try again.");
+    if (code !== "123456".slice(0, codeLength(cfg))) throw new Error("That OTP isn't right. Check and try again.");
     return `test:${phone}`;
   }
   await load(cfg);

@@ -12,7 +12,7 @@ import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
 import { BLOCK_MESSAGE, blockFor, messaging, otpReady, otpRequired, otpVerified, sendOtp, verifyOtp, verifyWidgetOtp, widgetPublic } from "~/lib/rto.server";
-import { widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "~/components/msg91-widget";
+import { codeLength, widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "~/components/msg91-widget";
 import { shieldFor } from "~/lib/rto-shield.server";
 import { SHIELD_MESSAGE } from "~/lib/rto-shield";
 import { lookupAddresses, revealAddress } from "~/lib/addresses.server";
@@ -999,6 +999,7 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   // MSG91 widget mode: the browser sends and checks the OTP, our server confirms the token
   const [w, setW] = useState<{ reqId: string | null; busy: "send" | "verify" | null; error: string | null }>({ reqId: null, busy: null, error: null });
   const input = useRef<HTMLInputElement>(null);
+  const len = codeLength(widget);
   const sendOtp = () => {
     if (!widget) { send.submit({ intent: "otp_send", phone }, { method: "post" }); return; }
     setW((x) => ({ ...x, busy: "send", error: null }));
@@ -1011,7 +1012,7 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((x) => x - 1), 1000); return () => clearTimeout(t); }, [wait]);
   useEffect(() => { if (verify.data?.ok) onVerified(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [verify.data]);
   const submit = (v = code) => {
-    if (v.length !== 6) return;
+    if (v.length !== len) return;
     if (!widget) { verify.submit({ intent: "otp_verify", phone, code: v }, { method: "post" }); return; }
     if (!w.reqId) return;
     setW((x) => ({ ...x, busy: "verify", error: null }));
@@ -1028,15 +1029,15 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="otp-title" className="text-lg font-semibold">Verify your mobile number</h2>
-            <p className="mt-1 text-sm text-ink-soft">{sending ? "Sending a 6-digit code to" : "Enter the 6-digit code sent to"} <b className="num text-ink">+91 {phone}</b></p>
+            <p className="mt-1 text-sm text-ink-soft">{sending ? `Sending a ${len}-digit code to` : `Enter the ${len}-digit code sent to`} <b className="num text-ink">+91 {phone}</b></p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-ink-faint hover:text-ink" aria-label="Close">✕</button>
         </div>
-        <input ref={input} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={6} aria-label="OTP"
-          onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setCode(v); if (v.length === 6) submit(v); }}
-          className="input num mt-5 text-center text-2xl font-semibold tracking-[0.5em]" placeholder="••••••" />
+        <input ref={input} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={len} aria-label="OTP"
+          onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, len); setCode(v); if (v.length === len) submit(v); }}
+          className="input num mt-5 text-center text-2xl font-semibold tracking-[0.5em]" placeholder={"•".repeat(len)} />
         {error && <p className="mt-2 text-sm font-medium text-bad" role="alert">{error}</p>}
-        <button type="button" onClick={() => submit()} disabled={code.length !== 6 || verifying} className="btn-primary mt-4 w-full py-3">
+        <button type="button" onClick={() => submit()} disabled={code.length !== len || verifying} className="btn-primary mt-4 w-full py-3">
           {verifying ? <><Spinner /> Verifying</> : "Verify and continue"}
         </button>
         <div className="mt-4 flex items-center justify-between text-sm">
