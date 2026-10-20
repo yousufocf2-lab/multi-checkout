@@ -9,7 +9,7 @@ import { Notice, SubmitButton, TextField } from "~/components/ui";
 import { findOwner, getViewer, login, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { clientIp } from "~/lib/orders.server";
-import { parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
+import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
 
 export const meta: MetaFunction = () => [{ title: "Log in · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -19,7 +19,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return json({ signup: signupOpen() });
 }
 
-type Data = { stage: "start" | "otp" | "password"; contact: string; shown?: string; resendIn?: number; error?: string; codeError?: string };
+type Data = { stage: "start" | "otp" | "password"; contact: string; shown?: string; resendIn?: number; error?: string; codeError?: string; widget?: { widgetId: string; tokenAuth: string } | null; phone?: string };
 
 export async function action({ request }: ActionFunctionArgs) {
   requireAppHost(request);
@@ -45,11 +45,11 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     const r = await sendOwnerOtp(c, "login", clientIp(request));
     if (!r.ok && !r.resendIn) return json<Data>({ stage: "start", contact: raw, error: r.error }, { status: 400 });
-    return json<Data>({ stage: "otp", contact: raw, shown: showContact(c), resendIn: r.resendIn, codeError: r.ok ? undefined : r.error });
+    return json<Data>({ stage: "otp", contact: raw, shown: showContact(c), resendIn: r.resendIn, codeError: r.ok ? undefined : r.error, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined });
   }
 
-  const v = await verifyOwnerOtp(c, "login", String(fd.get("code") ?? ""));
-  if (!v.ok || !user || !user.active) return json<Data>({ stage: "otp", contact: raw, shown: showContact(c), codeError: v.ok ? "This account is turned off. Contact Growpefy." : v.error }, { status: 400 });
+  const v = await verifyOwnerOtp(c, "login", String(fd.get("code") ?? ""), String(fd.get("token") ?? "") || undefined);
+  if (!v.ok || !user || !user.active) return json<Data>({ stage: "otp", contact: raw, shown: showContact(c), codeError: v.ok ? "This account is turned off. Contact Growpefy." : v.error, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined }, { status: 400 });
   return startSession(request, { user }, next);
 }
 
@@ -87,7 +87,7 @@ export default function Login() {
         )}
 
         {stage === "otp" && (
-          <OtpStep hidden={{ contact: data?.contact ?? "", next }} error={data?.codeError} resendIn={data?.resendIn} onChange={() => setStage("start")} submitLabel="Log in" />
+          <OtpStep hidden={{ contact: data?.contact ?? "", next }} error={data?.codeError} resendIn={data?.resendIn} onChange={() => setStage("start")} submitLabel="Log in" widget={data?.widget} phone={data?.phone} />
         )}
 
         {stage === "password" && (

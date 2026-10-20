@@ -11,7 +11,8 @@ import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates,
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
-import { BLOCK_MESSAGE, blockFor, messaging, otpReady, otpRequired, otpVerified, sendOtp, verifyOtp } from "~/lib/rto.server";
+import { BLOCK_MESSAGE, blockFor, messaging, otpReady, otpRequired, otpVerified, sendOtp, verifyOtp, verifyWidgetOtp, widgetPublic } from "~/lib/rto.server";
+import { widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "~/components/msg91-widget";
 import { shieldFor } from "~/lib/rto-shield.server";
 import { SHIELD_MESSAGE } from "~/lib/rto-shield";
 import { lookupAddresses, revealAddress } from "~/lib/addresses.server";
@@ -78,7 +79,7 @@ async function shippingRulesFor(storeId: number): Promise<ShipRule[]> {
 /** Small background requests (draft save, COD check, coupon) don't need to reload the cart. */
 export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, defaultShouldRevalidate }) => {
   const intent = formData?.get("intent");
-  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify" || intent === "addr_lookup" || intent === "addr_reveal") return false;
+  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify" || intent === "otp_widget" || intent === "addr_lookup" || intent === "addr_reveal") return false;
   return defaultShouldRevalidate;
 };
 
@@ -126,6 +127,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     },
     theme: resolveTheme(store.theme),
     otp: { prepaid: otpPrepaid, cod: otpCod },
+    otpWidget: widgetPublic(await messaging()),
     rule,
     shipping,
     gifts,
@@ -191,6 +193,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (intent === "otp_send") {
     const r = await sendOtp(store, session.id, normalizePhone(String(fd.get("phone") ?? "")));
     return json({ otp: "sent" as const, ...r });
+  }
+  if (intent === "otp_widget") {
+    const r = await verifyWidgetOtp(store, session.id, normalizePhone(String(fd.get("phone") ?? "")), String(fd.get("token") ?? ""));
+    return json({ otp: "verify" as const, ...r });
   }
   if (intent === "otp_verify") {
     const r = await verifyOtp(session.id, normalizePhone(String(fd.get("phone") ?? "")), String(fd.get("code") ?? ""));
@@ -307,7 +313,7 @@ const LS_KEY = "cx_customer_v1";
 type LoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Checkout() {
-  const { store, theme, otp, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
+  const { store, theme, otp, otpWidget, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const couponFetcher = useFetcher<typeof action>();
@@ -681,7 +687,7 @@ export default function Checkout() {
 
       {redirectingToPay && <PaymentOverlay name={store.name} logo={store.logoUrl} />}
       {otpOpen && (
-        <OtpDialog phone={c.phone} onClose={() => setOtpOpen(false)}
+        <OtpDialog phone={c.phone} widget={otpWidget} onClose={() => setOtpOpen(false)}
           onVerified={() => {
             verifiedPhone.current = c.phone; setOtpOpen(false);
             const f = otpFor.current;
@@ -985,20 +991,37 @@ function CourierStrip() {
   );
 }
 
-function OtpDialog({ phone, onClose, onVerified }: { phone: string; onClose: () => void; onVerified: () => void }) {
+function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widget: WidgetConfig | null; onClose: () => void; onVerified: () => void }) {
   const send = useFetcher<{ ok: boolean; error?: string; resendIn?: number }>();
   const verify = useFetcher<{ ok: boolean; error?: string }>();
   const [code, setCode] = useState("");
   const [wait, setWait] = useState(0);
+  // MSG91 widget mode: the browser sends and checks the OTP, our server confirms the token
+  const [w, setW] = useState<{ reqId: string | null; busy: "send" | "verify" | null; error: string | null }>({ reqId: null, busy: null, error: null });
   const input = useRef<HTMLInputElement>(null);
-  const sendOtp = () => send.submit({ intent: "otp_send", phone }, { method: "post" });
+  const sendOtp = () => {
+    if (!widget) { send.submit({ intent: "otp_send", phone }, { method: "post" }); return; }
+    setW((x) => ({ ...x, busy: "send", error: null }));
+    (w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!) : widgetSend(widget, phone))
+      .then((reqId) => { setW({ reqId, busy: null, error: null }); setWait(30); })
+      .catch((e: Error) => setW((x) => ({ ...x, busy: null, error: e.message })));
+  };
   useEffect(() => { sendOtp(); input.current?.focus(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => { if (send.data?.resendIn) setWait(send.data.resendIn); }, [send.data]);
-  useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((w) => w - 1), 1000); return () => clearTimeout(t); }, [wait]);
+  useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((x) => x - 1), 1000); return () => clearTimeout(t); }, [wait]);
   useEffect(() => { if (verify.data?.ok) onVerified(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [verify.data]);
-  const submit = (v = code) => { if (v.length === 6) verify.submit({ intent: "otp_verify", phone, code: v }, { method: "post" }); };
-  const error = verify.data && !verify.data.ok ? verify.data.error : send.data && !send.data.ok && !send.data.resendIn ? send.data.error : null;
-  const sending = send.state !== "idle";
+  const submit = (v = code) => {
+    if (v.length !== 6) return;
+    if (!widget) { verify.submit({ intent: "otp_verify", phone, code: v }, { method: "post" }); return; }
+    if (!w.reqId) return;
+    setW((x) => ({ ...x, busy: "verify", error: null }));
+    widgetVerify(widget, v, w.reqId, phone)
+      .then((token) => { setW((x) => ({ ...x, busy: null })); verify.submit({ intent: "otp_widget", phone, token }, { method: "post" }); })
+      .catch((e: Error) => setW((x) => ({ ...x, busy: null, error: e.message })));
+  };
+  const error = w.error ?? (verify.data && !verify.data.ok ? verify.data.error : send.data && !send.data.ok && !send.data.resendIn ? send.data.error : null);
+  const sending = send.state !== "idle" || w.busy === "send";
+  const verifying = verify.state !== "idle" || w.busy === "verify";
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="otp-title">
       <div className="w-full max-w-sm animate-fadein rounded-t-2xl bg-surface p-6 shadow-lift sm:rounded-2xl">
@@ -1013,8 +1036,8 @@ function OtpDialog({ phone, onClose, onVerified }: { phone: string; onClose: () 
           onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); setCode(v); if (v.length === 6) submit(v); }}
           className="input num mt-5 text-center text-2xl font-semibold tracking-[0.5em]" placeholder="••••••" />
         {error && <p className="mt-2 text-sm font-medium text-bad" role="alert">{error}</p>}
-        <button type="button" onClick={() => submit()} disabled={code.length !== 6 || verify.state !== "idle"} className="btn-primary mt-4 w-full py-3">
-          {verify.state !== "idle" ? <><Spinner /> Verifying</> : "Verify and continue"}
+        <button type="button" onClick={() => submit()} disabled={code.length !== 6 || verifying} className="btn-primary mt-4 w-full py-3">
+          {verifying ? <><Spinner /> Verifying</> : "Verify and continue"}
         </button>
         <div className="mt-4 flex items-center justify-between text-sm">
           <button type="button" onClick={onClose} className="text-ink-soft hover:text-ink">Change number</button>

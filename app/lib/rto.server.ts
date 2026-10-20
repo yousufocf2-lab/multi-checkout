@@ -14,13 +14,61 @@ export async function messaging(): Promise<MessagingSettings> {
   return {
     msg91AuthKey: m.msg91AuthKey || process.env.MSG91_AUTH_KEY || undefined,
     msg91TemplateId: m.msg91TemplateId || process.env.MSG91_OTP_TEMPLATE_ID || undefined,
+    msg91WidgetId: m.msg91WidgetId || process.env.MSG91_WIDGET_ID || undefined,
+    msg91TokenAuth: m.msg91TokenAuth || process.env.MSG91_TOKEN_AUTH || undefined,
     waPhoneNumberId: m.waPhoneNumberId || process.env.WA_PHONE_NUMBER_ID || undefined,
     waToken: m.waToken || process.env.WA_ACCESS_TOKEN || undefined,
     waTemplate: m.waTemplate || process.env.WA_CONFIRM_TEMPLATE || undefined,
     waLang: m.waLang || "en",
   };
 }
-export const otpReady = (m: MessagingSettings) => Boolean(m.msg91AuthKey && m.msg91TemplateId);
+/**
+ * How OTPs go out: "api" = our own code via a DLT template (Auth key + Template ID);
+ * "widget" = MSG91 OTP Widget (Widget ID + Token auth, no DLT needed), verified server-side with the Auth key.
+ * A Template ID wins when both are set.
+ */
+export function otpMode(m: MessagingSettings): "api" | "widget" | null {
+  if (m.msg91AuthKey && m.msg91TemplateId) return "api";
+  if (m.msg91AuthKey && m.msg91WidgetId && m.msg91TokenAuth) return "widget";
+  return null;
+}
+export const otpReady = (m: MessagingSettings) => otpMode(m) !== null;
+/** What the browser needs to run the MSG91 widget (both values are meant to be public). */
+export function widgetPublic(m: MessagingSettings) {
+  return otpMode(m) === "widget" ? { widgetId: m.msg91WidgetId!, tokenAuth: m.msg91TokenAuth! } : null;
+}
+
+/**
+ * Checks a widget access token with MSG91 and returns the 10-digit mobile it was issued for, or null.
+ * Fails closed: if MSG91 doesn't tell us the number, the token is not accepted.
+ * Test widget (ID "test"): tokens look like "test:9876543210".
+ */
+export async function verifyWidgetToken(token: string): Promise<string | null> {
+  const m = await messaging();
+  if (otpMode(m) !== "widget" || !token) return null;
+  if (m.msg91WidgetId === "test") { const t = /^test:([6-9]\d{9})$/.exec(token); return t ? t[1] : null; }
+  try {
+    const res = await fetch("https://control.msg91.com/api/v5/widget/verifyAccessToken", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ authkey: m.msg91AuthKey, "access-token": token }), signal: AbortSignal.timeout(8000),
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok || String(body.type ?? "").toLowerCase() !== "success") {
+      console.error("[otp] widget verify:", res.status, body.message);
+      return null;
+    }
+    // The verified number comes back in "message" (or a data field on some accounts)
+    const strings: string[] = [];
+    const walk = (v: unknown) => { if (typeof v === "string" || typeof v === "number") strings.push(String(v)); else if (v && typeof v === "object") Object.values(v).forEach(walk); };
+    walk(body);
+    for (const s of strings) { const d = s.replace(/\D/g, "").replace(/^(91|0)(?=[6-9]\d{9}$)/, ""); if (/^[6-9]\d{9}$/.test(d)) return d; }
+    console.error("[otp] widget verify: success but no mobile number in response");
+    return null;
+  } catch (e) {
+    console.error("[otp] widget verify:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
 export const waReady = (m: MessagingSettings) => Boolean(m.waPhoneNumberId && m.waToken && m.waTemplate);
 /** "test" as the MSG91 key: no SMS is sent and the code is always 123456 (for trying the flow). */
 const otpTestMode = (m: MessagingSettings) => m.msg91AuthKey === "test";
@@ -86,6 +134,7 @@ export async function sendOtp(store: Store, sessionId: string, phone: string): P
   if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: "Enter a valid 10-digit mobile number" };
   const m = await messaging();
   if (!otpReady(m)) return { ok: false, error: "OTP service isn't available right now" };
+  if (otpMode(m) === "widget") return { ok: false, error: "Please refresh the page and try again" }; // the browser sends widget OTPs
 
   const recent = await db.select({ createdAt: checkoutOtps.createdAt }).from(checkoutOtps)
     .where(and(eq(checkoutOtps.sessionId, sessionId), gt(checkoutOtps.createdAt, new Date(Date.now() - 3600_000))))
@@ -118,6 +167,21 @@ export async function sendOtp(store: Store, sessionId: string, phone: string): P
   // ₹ per OTP from the store's wallet, only after the provider accepted it
   await chargeUsage(store.id, "otp", id, `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.slice(-2)}`).catch((e) => console.error("[otp] charge:", e));
   return { ok: true, resendIn: RESEND_AFTER_MS / 1000 };
+}
+
+/** Widget mode: the browser verified the OTP with MSG91; we confirm the token and mark this session's phone verified. */
+export async function verifyWidgetOtp(store: Store, sessionId: string, phone: string, token: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: "Enter a valid 10-digit mobile number" };
+  const recent = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
+    .where(and(eq(checkoutOtps.sessionId, sessionId), gt(checkoutOtps.createdAt, new Date(Date.now() - 3600_000)))).limit(MAX_SENDS_PER_HOUR + 1);
+  if (recent.length > MAX_SENDS_PER_HOUR) return { ok: false, error: "Too many OTP requests. Please try again in a while." };
+  const verified = await verifyWidgetToken(token);
+  if (!verified) return { ok: false, error: "Couldn't confirm the OTP. Please try again." };
+  if (verified !== phone) return { ok: false, error: "The OTP was for a different number." };
+  const id = crypto.randomUUID();
+  await db.insert(checkoutOtps).values({ id, storeId: store.id, sessionId, phone, codeHash: hashCode(id, crypto.randomUUID()), expiresAt: new Date(Date.now() + OTP_TTL_MS), verifiedAt: new Date() });
+  await chargeUsage(store.id, "otp", id, `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.slice(-2)}`).catch((e) => console.error("[otp] charge:", e));
+  return { ok: true };
 }
 
 export async function verifyOtp(sessionId: string, phone: string, code: string): Promise<{ ok: true } | { ok: false; error: string }> {

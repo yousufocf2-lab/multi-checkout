@@ -13,6 +13,7 @@ import { INDIAN_STATES } from "~/lib/states";
 import { TX_LABELS, mergeRates, rupees, type TxType } from "~/lib/wallet";
 import { getPlatform, platformPayu, rechargeSummary, stateOf, usageSummary, walletsFor } from "~/lib/wallet.server";
 import { testPayu } from "~/lib/payu.server";
+import { messaging, otpMode } from "~/lib/rto.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
@@ -29,6 +30,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const perWallet = await Promise.all(ws.map(async (w) => ({ id: w.id, usage: await usageSummary([w.id], from, to) })));
   const ownerName = new Map(owners.map((o) => [o.id, o.name]));
   const creds = platformPayu(p);
+  const m = await messaging();
 
   return json({
     range,
@@ -44,8 +46,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       billing: p.billing ?? {}, payuKey: p.payuKey ?? "", hasSalt: Boolean(p.payuSalt), payuMode: p.payuMode,
       msg: {
         msg91TemplateId: p.messaging?.msg91TemplateId ?? "", hasMsg91Key: Boolean(p.messaging?.msg91AuthKey),
-        otpReady: Boolean((p.messaging?.msg91AuthKey || process.env.MSG91_AUTH_KEY) && (p.messaging?.msg91TemplateId || process.env.MSG91_OTP_TEMPLATE_ID)),
-        otpTest: (p.messaging?.msg91AuthKey || process.env.MSG91_AUTH_KEY) === "test",
+        msg91WidgetId: p.messaging?.msg91WidgetId ?? "", msg91TokenAuth: p.messaging?.msg91TokenAuth ?? "",
+        otpMode: otpMode(m), otpReady: otpMode(m) !== null,
+        otpTest: m.msg91AuthKey === "test" || (otpMode(m) === "widget" && m.msg91WidgetId === "test"),
         waPhoneNumberId: p.messaging?.waPhoneNumberId ?? "", hasWaToken: Boolean(p.messaging?.waToken),
         waTemplate: p.messaging?.waTemplate ?? "", waLang: p.messaging?.waLang ?? "en",
       },
@@ -97,6 +100,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await db.update(platformSettings).set({
       messaging: {
         msg91AuthKey: s("msg91AuthKey") || m.msg91AuthKey, msg91TemplateId: s("msg91TemplateId"),
+        msg91WidgetId: s("msg91WidgetId"), msg91TokenAuth: s("msg91TokenAuth"),
         waPhoneNumberId: s("waPhoneNumberId").replace(/\D/g, ""), waToken: s("waToken") || m.waToken, waTemplate: s("waTemplate"), waLang: s("waLang") || "en",
       },
       updatedAt: new Date(),
@@ -283,15 +287,19 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
             {s.msg.otpTest ? (
               <div className="mt-2"><Notice tone="error">Test mode is on: every OTP is 123456 and no SMS is sent. Anyone could open a customer's saved address with it. Use only for testing, never on live stores.</Notice></div>
             ) : !s.msg.otpReady ? (
-              <div className="mt-2"><Notice tone="warning">OTP is off until both the Auth key and the Template ID are saved. Until then checkout OTP and <b>saved addresses across stores</b> don't show to customers (a saved address can only be used after an OTP).</Notice></div>
+              <div className="mt-2"><Notice tone="warning">OTP is off until the Auth key and either the Widget ID + Token (no DLT) or a DLT Template ID are saved. Until then checkout OTP and <b>saved addresses across stores</b> don't show to customers (a saved address can only be used after an OTP).</Notice></div>
             ) : (
-              <p className="mt-1 text-sm text-good">OTP is live. Checkout OTP and saved addresses across all stores are on.</p>
+              <p className="mt-1 text-sm text-good">OTP is live via {s.msg.otpMode === "widget" ? "the MSG91 OTP Widget" : "your DLT template"}. Checkout OTP, phone login and saved addresses across all stores are on.</p>
             )}
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="block"><span className="label">Auth key</span><input name="msg91AuthKey" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasMsg91Key ? "Saved. Leave blank to keep it." : "From MSG91 → API"} />
                 <span className="hint">Type <code>test</code> to try the flow without sending SMS (code is always 123456).</span></label>
               <Field label="OTP template ID (DLT approved)" name="msg91TemplateId" value={s.msg.msg91TemplateId} />
+              <Field label="Widget ID (OTP Widget, no DLT needed)" name="msg91WidgetId" value={s.msg.msg91WidgetId} />
+              <Field label="Widget token (Token Auth)" name="msg91TokenAuth" value={s.msg.msg91TokenAuth} />
             </div>
+            <p className="hint mt-2">No DLT yet? Fill Auth key + Widget ID + Widget token. Once your DLT template is approved, add the Template ID and it is used instead (store name can then go in the SMS).
+              In MSG91 → OTP Widget, allow your domains (growpefy.com and the stores' checkout domains).</p>
           </div>
           <div>
             <h3 className="font-semibold">WhatsApp (Meta Cloud API)</h3>

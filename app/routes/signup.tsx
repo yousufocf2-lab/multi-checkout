@@ -9,7 +9,7 @@ import { Notice, SubmitButton, TextField } from "~/components/ui";
 import { adminEmail, createOwner, findOwner, getViewer, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { clientIp } from "~/lib/orders.server";
-import { parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
+import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
 
 export const meta: MetaFunction = () => [{ title: "Create account · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -28,6 +28,8 @@ type Data = {
   resendIn?: number;
   errors?: { contact?: string; brand?: string; code?: string; form?: string };
   sent?: boolean;
+  widget?: { widgetId: string; tokenAuth: string } | null;
+  phone?: string;
 };
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -50,12 +52,12 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "send") {
     const r = await sendOwnerOtp(c, "signup", clientIp(request));
     if (!r.ok && !r.resendIn) return json<Data>({ ...base, errors: { contact: r.error } }, { status: 400 });
-    return json<Data>({ ...base, stage: "otp", shown: showContact(c), resendIn: r.resendIn, sent: r.ok, errors: r.ok ? {} : { code: r.error } });
+    return json<Data>({ ...base, stage: "otp", shown: showContact(c), resendIn: r.resendIn, sent: r.ok, errors: r.ok ? {} : { code: r.error }, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined });
   }
 
   // verify
-  const v = await verifyOwnerOtp(c, "signup", String(fd.get("code") ?? ""));
-  if (!v.ok) return json<Data>({ ...base, stage: "otp", shown: showContact(c), errors: { code: v.error } }, { status: 400 });
+  const v = await verifyOwnerOtp(c, "signup", String(fd.get("code") ?? ""), String(fd.get("token") ?? "") || undefined);
+  if (!v.ok) return json<Data>({ ...base, stage: "otp", shown: showContact(c), errors: { code: v.error }, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined }, { status: 400 });
   const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target });
   return startSession(request, { user }, "/onboarding");
 }
@@ -93,6 +95,8 @@ export default function Signup() {
             resendIn={data?.resendIn}
             onChange={() => setStage("start")}
             submitLabel="Verify and create account"
+            widget={data?.widget}
+            phone={data?.phone}
           />
         )}
       </AuthShell>

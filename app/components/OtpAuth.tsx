@@ -1,6 +1,7 @@
 import { Form, useNavigation } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "./ui";
+import { widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "./msg91-widget";
 
 /** Mobile / Email switch with one input. Submits as "contact". */
 export function ContactInput({ mode, setMode, defaultValue, error }: { mode: "phone" | "email"; setMode: (m: "phone" | "email") => void; defaultValue?: string; error?: string }) {
@@ -34,14 +35,36 @@ export function ContactInput({ mode, setMode, defaultValue, error }: { mode: "ph
 }
 
 /** 6-digit code entry with resend timer. Posts intent=verify (or intent=send to resend). */
-export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel }: {
+export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel, widget, phone }: {
   hidden: Record<string, string>; error?: string; resendIn?: number; onChange: () => void; submitLabel: string;
+  /** MSG91 widget mode (SMS without DLT): the browser sends and checks the code, the form posts the token */
+  widget?: WidgetConfig | null; phone?: string;
 }) {
   const nav = useNavigation();
   const [code, setCode] = useState("");
   const [wait, setWait] = useState(resendIn);
   const formRef = useRef<HTMLFormElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const [w, setW] = useState<{ reqId: string | null; token: string; busy: boolean; error: string | null }>({ reqId: null, token: "", busy: false, error: null });
+  const useWidget = Boolean(widget && phone);
+  useEffect(() => {
+    if (!useWidget) return;
+    setW((x) => ({ ...x, busy: true }));
+    widgetSend(widget!, phone!).then((reqId) => setW((x) => ({ ...x, reqId, busy: false }))).catch((e: Error) => setW((x) => ({ ...x, busy: false, error: e.message })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useWidget, phone]);
+  const verifyWithWidget = (v: string) => {
+    if (!w.reqId) return;
+    setW((x) => ({ ...x, busy: true, error: null }));
+    widgetVerify(widget!, v, w.reqId, phone!)
+      .then((token) => { setW((x) => ({ ...x, token, busy: false })); setTimeout(() => formRef.current?.requestSubmit(formRef.current.querySelector<HTMLButtonElement>("[data-verify]") ?? undefined), 0); })
+      .catch((e: Error) => setW((x) => ({ ...x, busy: false, error: e.message })));
+  };
+  const resendWidget = () => {
+    if (!w.reqId) return;
+    setW((x) => ({ ...x, busy: true, error: null }));
+    widgetRetry(widget!, w.reqId).then(() => { setW((x) => ({ ...x, busy: false })); setWait(30); }).catch((e: Error) => setW((x) => ({ ...x, busy: false, error: e.message })));
+  };
   useEffect(() => { setWait(resendIn); }, [resendIn]);
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((w) => w - 1), 1000); return () => clearTimeout(t); }, [wait]);
   useEffect(() => { if (error) { setCode(""); input.current?.focus(); } }, [error]);
@@ -55,16 +78,21 @@ export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel }:
         onChange={(e) => {
           const v = e.target.value.replace(/\D/g, "").slice(0, 6);
           setCode(v);
-          if (v.length === 6) setTimeout(() => formRef.current?.requestSubmit(formRef.current.querySelector<HTMLButtonElement>("[data-verify]") ?? undefined), 0);
+          if (v.length === 6) {
+            if (useWidget) verifyWithWidget(v);
+            else setTimeout(() => formRef.current?.requestSubmit(formRef.current.querySelector<HTMLButtonElement>("[data-verify]") ?? undefined), 0);
+          }
         }}
         className="input num text-center text-2xl font-semibold tracking-[0.5em]" placeholder="••••••" aria-invalid={Boolean(error) || undefined} />
-      {error && <p className="error-text" role="alert">{error}</p>}
-      <button type="submit" name="intent" value="verify" data-verify className="btn-primary w-full py-3" disabled={code.length !== 6 || verifying}>
-        {verifying ? <><Spinner /> Verifying</> : submitLabel}
+      {useWidget && <input type="hidden" name="token" value={w.token} />}
+      {(w.error ?? error) && <p className="error-text" role="alert">{w.error ?? error}</p>}
+      <button type={useWidget && !w.token ? "button" : "submit"} name="intent" value="verify" data-verify className="btn-primary w-full py-3" disabled={code.length !== 6 || verifying || w.busy}
+        onClick={useWidget && !w.token ? () => verifyWithWidget(code) : undefined}>
+        {verifying || (w.busy && w.reqId) ? <><Spinner /> Verifying</> : submitLabel}
       </button>
       <div className="flex items-center justify-between text-sm">
         <button type="button" onClick={onChange} className="text-ink-soft hover:text-ink">← Change details</button>
-        <button type="submit" name="intent" value="send" formNoValidate disabled={wait > 0 || resending} className="font-medium text-brand disabled:text-ink-faint">
+        <button type={useWidget ? "button" : "submit"} name="intent" value="send" formNoValidate disabled={wait > 0 || resending || w.busy} onClick={useWidget ? resendWidget : undefined} className="font-medium text-brand disabled:text-ink-faint">
           {resending ? "Sending…" : wait > 0 ? `Resend in ${wait}s` : "Resend code"}
         </button>
       </div>

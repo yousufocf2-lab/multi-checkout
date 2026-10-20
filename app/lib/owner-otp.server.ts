@@ -3,7 +3,7 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, ownerOtps } from "~/db.server";
 import { env } from "./env.server";
-import { messaging, otpReady } from "./rto.server";
+import { messaging, otpMode, otpReady, verifyWidgetToken, widgetPublic } from "./rto.server";
 
 export type Channel = "phone" | "email";
 export type Purpose = "signup" | "login";
@@ -36,6 +36,11 @@ const emailTestMode = () => process.env.RESEND_API_KEY === "test" || (!process.e
 export async function channelReady(channel: Channel) {
   if (channel === "email") return Boolean(process.env.RESEND_API_KEY) || emailTestMode();
   return otpReady(await messaging());
+}
+
+/** MSG91 widget config for the browser when SMS OTPs go through the widget (no DLT), else null. */
+export async function ownerWidget(c: { channel: Channel } | null) {
+  return c?.channel === "phone" ? widgetPublic(await messaging()) : null;
 }
 
 async function sendSms(phone: string, code: string) {
@@ -86,6 +91,8 @@ export async function sendOwnerOtp(c: { channel: Channel; target: string }, purp
     if (byIp.length >= MAX_SENDS_PER_IP_HOUR) return { ok: false, error: "Too many codes requested from this network. Try again later." };
   }
 
+  // Widget mode: the browser sends the SMS through MSG91's widget; nothing to send from here
+  if (c.channel === "phone" && otpMode(await messaging()) === "widget") return { ok: true, resendIn: RESEND_AFTER_MS / 1000 };
   const test = c.channel === "phone" ? (await messaging()).msg91AuthKey === "test" : emailTestMode();
   const code = test ? "123456" : String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
   const sent = await (c.channel === "phone" ? sendSms(c.target, code) : sendEmail(c.target, code)).catch((e) => {
@@ -98,7 +105,13 @@ export async function sendOwnerOtp(c: { channel: Channel; target: string }, purp
   return { ok: true, resendIn: RESEND_AFTER_MS / 1000 };
 }
 
-export async function verifyOwnerOtp(c: { channel: Channel; target: string }, purpose: Purpose, code: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function verifyOwnerOtp(c: { channel: Channel; target: string }, purpose: Purpose, code: string, widgetToken?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (c.channel === "phone" && otpMode(await messaging()) === "widget") {
+    if (!widgetToken) return { ok: false, error: "Enter the code we sent you" };
+    const phone = await verifyWidgetToken(widgetToken);
+    if (!phone) return { ok: false, error: "Couldn't confirm the code. Please try again." };
+    return phone === c.target ? { ok: true } : { ok: false, error: "The code was for a different number." };
+  }
   const [row] = await db.select().from(ownerOtps)
     .where(and(eq(ownerOtps.target, c.target), eq(ownerOtps.purpose, purpose)))
     .orderBy(desc(ownerOtps.createdAt)).limit(1);
