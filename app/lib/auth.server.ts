@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { db, stores, users, type Store, type User } from "~/db.server";
 import { env } from "./env.server";
+import { kycIncomplete } from "./kyc";
 
 const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -55,7 +56,7 @@ function safeEqual(a: string, b: string) {
 
 export type Viewer =
   | { role: "admin"; name: string; email: string }
-  | { role: "owner"; name: string; email: string; userId: number; kycStatus: string };
+  | { role: "owner"; name: string; email: string; userId: number; kycStatus: string; kycDone: boolean };
 
 /** What we show for an owner: email, or the mobile number for mobile signups. */
 export const ownerContact = (u: Pick<User, "email" | "phone">) => u.email ?? (u.phone ? `+91 ${u.phone}` : "");
@@ -76,7 +77,7 @@ export async function getViewer(request: Request): Promise<Viewer | null> {
   if (!uid) return null;
   const [u] = await db.select().from(users).where(eq(users.id, uid)).limit(1);
   if (!u || !u.active) return null;
-  return { role: "owner", name: u.name, email: ownerContact(u), userId: u.id, kycStatus: u.kycStatus };
+  return { role: "owner", name: u.name, email: ownerContact(u), userId: u.id, kycStatus: u.kycStatus, kycDone: !kycIncomplete(u) };
 }
 
 export async function requireViewer(request: Request) {
@@ -117,9 +118,30 @@ export async function requireStore(v: Viewer, id: string | number | undefined): 
 export async function login(email: string, password: string): Promise<{ admin: true } | { user: User } | null> {
   const e = email.trim().toLowerCase();
   if (e === adminEmail() && safeEqual(password, env.adminPassword)) return { admin: true };
-  const [u] = await db.select().from(users).where(eq(users.email, e)).limit(1);
+  // Owners can use their email or mobile number with a password
+  const phone = e.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
+  const [u] = await db.select().from(users).where(e.includes("@") ? eq(users.email, e) : eq(users.phone, phone)).limit(1);
   if (u && u.active && u.passwordHash && (await verifyPassword(password, u.passwordHash))) return { user: u };
   return null;
+}
+
+/** Signed, short-lived proof that the owner verified an OTP to reset the password. Stops working once the password changes. */
+export function resetTicket(u: Pick<User, "id" | "passwordHash">, exp = Date.now() + 15 * 60_000) {
+  const body = `${u.id}.${exp}`;
+  const sig = crypto.createHmac("sha256", env.sessionSecret).update(`reset:${body}:${u.passwordHash ?? ""}`).digest("base64url");
+  return `${body}.${sig}`;
+}
+export async function userFromResetTicket(ticket: string) {
+  const [id, exp, sig] = ticket.split(".");
+  if (!id || !exp || !sig || Number(exp) < Date.now()) return null;
+  const [u] = await db.select().from(users).where(eq(users.id, Number(id))).limit(1);
+  if (!u || !u.active) return null;
+  const good = resetTicket(u, Number(exp)).split(".")[2];
+  return good.length === sig.length && crypto.timingSafeEqual(Buffer.from(good), Buffer.from(sig)) ? u : null;
+}
+
+export async function setPassword(userId: number, password: string) {
+  await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, userId));
 }
 
 /** Finds an owner by the mobile number or email they log in with. */
@@ -150,7 +172,7 @@ export async function createOwner(input: { brandName: string; channel: "phone" |
 
 /** Owners must finish KYC before using the dashboard. */
 export function needsKyc(v: Viewer) {
-  return v.role === "owner" && v.kycStatus !== "approved";
+  return v.role === "owner" && !v.kycDone;
 }
 
 export async function createUser(input: { name: string; email: string; password: string }) {
@@ -169,7 +191,7 @@ export async function startSession(request: Request, who: { admin: true } | { us
   if ("admin" in who) s.set("admin", true);
   else s.set("uid", who.user.id);
   s.set("seen", Date.now());
-  const pending = "user" in who && who.user.kycStatus !== "approved";
+  const pending = "user" in who && kycIncomplete(who.user);
   const safeNext = pending ? "/onboarding" : next.startsWith("/dashboard") ? next : "/dashboard";
   return redirect(safeNext, { headers: { "Set-Cookie": await st.commitSession(s) } });
 }

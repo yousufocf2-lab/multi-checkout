@@ -7,7 +7,7 @@ import { Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import {
-  DEFAULT_THEME, FONTS, FONT_SCALE, SECTION_ORDERS, UPSELL_PLACEMENTS,
+  BLOCK_LABELS, DEFAULT_THEME, FONTS, FONT_SCALE, UPSELL_PLACEMENTS, type BlockKey,
   buttonText, resolveTheme, themeFromForm, themeVars, type CheckoutTheme,
 } from "~/lib/theme";
 
@@ -49,6 +49,13 @@ export default function Design() {
   const [logo, setLogo] = useState(d.store.logoUrl ?? "");
   useEffect(() => { setT(d.theme); setBrand(d.store.primaryColor); setLogo(d.store.logoUrl ?? ""); }, [d]);
   const set = <K extends keyof CheckoutTheme>(k: K, v: CheckoutTheme[K]) => setT((p) => ({ ...p, [k]: v }));
+  const move = (from: number, to: number) => setT((p) => {
+    if (to < 0 || to >= p.blocks.length) return p;
+    const b: BlockKey[] = [...p.blocks];
+    const [x] = b.splice(from, 1);
+    b.splice(to, 0, x);
+    return { ...p, blocks: b };
+  });
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
@@ -60,7 +67,7 @@ export default function Design() {
             {PRESETS.map((p) => {
               const th = { ...DEFAULT_THEME, ...p.t };
               return (
-                <button key={p.name} type="button" onClick={() => { setT({ ...t, ...DEFAULT_THEME, ...p.t, announcement: t.announcement, prepaidButtonText: t.prepaidButtonText, codButtonText: t.codButtonText, upsellTitle: t.upsellTitle, trustText: t.trustText }); setBrand(p.brand); }}
+                <button key={p.name} type="button" onClick={() => { setT({ ...t, ...DEFAULT_THEME, ...p.t, announcement: t.announcement, prepaidButtonText: t.prepaidButtonText, codButtonText: t.codButtonText, upsellTitle: t.upsellTitle, trustText: t.trustText, blocks: t.blocks, layout: t.layout, upsellPlacement: t.upsellPlacement, showEmail: t.showEmail }); setBrand(p.brand); }}
                   className="flex items-center gap-2 rounded-lg border border-rule-strong bg-surface px-3 py-2 text-sm hover:border-ink/40">
                   <span className="flex -space-x-1" aria-hidden>
                     {[th.bgColor, th.surfaceColor, th.buttonColor || p.brand, th.textColor].map((c, i) => <span key={i} className="h-4 w-4 rounded-full border border-black/10" style={{ background: c }} />)}
@@ -120,10 +127,21 @@ export default function Design() {
                 ? "Page 1: mobile number. Page 2: address (skipped when the customer has a saved address). Page 3: payment. Order summary, offers and “You may also like” show on every page."
                 : "Everything on one page."}</p>
             </div>
-            <label className="block"><span className="label">Section order</span>
-              <select name="sectionOrder" value={t.sectionOrder} onChange={(e) => set("sectionOrder", e.target.value as CheckoutTheme["sectionOrder"])} className="input">
-                {SECTION_ORDERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select></label>
+            <div className="block">
+              <span className="label">Section order</span>
+              <input type="hidden" name="blocks" value={t.blocks.join(",")} />
+              <input type="hidden" name="sectionOrder" value={t.sectionOrder} />
+              <ol className="space-y-1">
+                {t.blocks.map((k, i) => (
+                  <li key={k} className="flex items-center gap-2 rounded-lg border border-rule bg-surface px-2.5 py-1.5 text-sm">
+                    <span className="num w-4 text-xs text-ink-faint">{i + 1}</span><span className="flex-1">{BLOCK_LABELS[k]}</span>
+                    <button type="button" className="px-1 text-ink-soft hover:text-ink disabled:opacity-30" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label={`Move ${BLOCK_LABELS[k]} up`}>↑</button>
+                    <button type="button" className="px-1 text-ink-soft hover:text-ink disabled:opacity-30" disabled={i === t.blocks.length - 1} onClick={() => move(i, i + 1)} aria-label={`Move ${BLOCK_LABELS[k]} down`}>↓</button>
+                  </li>
+                ))}
+              </ol>
+              <span className="hint">Or drag the sections in the live preview.</span>
+            </div>
             <label className="block"><span className="label">“You may also like” position</span>
               <select name="upsellPlacement" value={t.upsellPlacement} onChange={(e) => set("upsellPlacement", e.target.value as CheckoutTheme["upsellPlacement"])} className="input">
                 {UPSELL_PLACEMENTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -161,7 +179,7 @@ export default function Design() {
 
       <div className="xl:sticky xl:top-6 xl:self-start">
         <p className="mb-2 text-xs font-medium text-ink-soft">Live preview</p>
-        <Preview t={t} brand={brand} logo={logo} name={d.store.name} prepaidPct={d.store.prepaidPct} codPct={d.store.codPct} />
+        <Preview t={t} brand={brand} logo={logo} name={d.store.name} prepaidPct={d.store.prepaidPct} codPct={d.store.codPct} onMove={move} />
       </div>
     </div>
   );
@@ -216,93 +234,146 @@ function Check({ name, label, checked, onChange }: { name: string; label: string
   );
 }
 
-/** Phone-sized mock of the checkout using the same theme variables as the real page. */
-function Preview({ t, brand, logo, name, prepaidPct, codPct }: { t: CheckoutTheme; brand: string; logo: string; name: string; prepaidPct: number; codPct: number }) {
+/** Phone-sized mock of the checkout using the same theme variables as the real page. Sections can be dragged to reorder. */
+function Preview({ t, brand, logo, name, prepaidPct, codPct, onMove }: {
+  t: CheckoutTheme; brand: string; logo: string; name: string; prepaidPct: number; codPct: number; onMove: (from: number, to: number) => void;
+}) {
   const font = FONTS[t.font];
-  const order = SECTION_ORDERS.find((o) => o.id === t.sectionOrder)!.order;
+  const steps = t.layout === "steps";
+  const [page, setPage] = useState<1 | 2 | 3>(1);
+  const [drag, setDrag] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
   const price = 1499;
   const online = Math.round(price * (1 - prepaidPct / 100));
   const cod = Math.round(price * (1 - codPct / 100));
-  const upsell = (
-    <div className="mt-3 border-t border-rule pt-3">
+  const upsellInCart = t.upsellPlacement === "cart";
+  const upsellShown = t.upsellPlacement !== "hidden";
+  const upsell = (bare = false) => (
+    <div className={bare ? "" : "mt-3 border-t border-rule pt-3"}>
       <p className="mb-2 text-xs font-semibold">{t.upsellTitle}</p>
       <div className="flex gap-2">{[0, 1, 2].map((i) => <div key={i} className="w-20 shrink-0"><div className="aspect-square rounded-lg border border-rule bg-paper" /><p className="mt-1 h-2 w-16 rounded bg-paper-sunk" /><p className="mt-1 text-[10px] font-semibold">₹{299 + i * 100}</p></div>)}</div>
     </div>
   );
-  const upsellCard = <section className="rounded-xl border border-rule bg-surface p-3">{upsell}</section>;
-  const sections = {
-    address: (
-      <section key="a" className="rounded-xl border border-rule bg-surface p-3">
-        <p className="mb-2.5 text-[13px] font-semibold">Delivery details</p>
-        <div className="grid grid-cols-2 gap-2">
-          {["Mobile number", "First name", "Last name", ...(t.showEmail ? ["Email (optional)"] : []), "Pincode", "City"].map((l, i) => (
-            <div key={l} className={i === 0 || l.startsWith("Email") ? "col-span-2" : ""}><p className="mb-1 text-[10px] text-ink-soft">{l}</p><div className="input h-7 py-0" /></div>
-          ))}
-        </div>
-      </section>
-    ),
-    offers: (
-      <section key="o" className="rounded-xl border border-rule bg-surface p-3">
-        <p className="mb-2.5 text-[13px] font-semibold">Offers</p>
-        <div className="flex gap-2"><div className="input h-8 flex-1 py-0 text-[11px] leading-8 text-ink-faint">Enter coupon code</div><span className="btn-primary h-8 px-3 py-0 text-xs">Apply</span></div>
-      </section>
-    ),
-    payment: (
-      <div key="p" className="space-y-3">
-        {t.upsellPlacement === "before_payment" && upsellCard}
-        <section className="rounded-xl border border-rule bg-surface p-3">
-          <p className="mb-2.5 text-[13px] font-semibold">Payment</p>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 rounded-xl border-2 border-brand bg-brand/[0.05] p-2.5">
-              <span className="flex h-4 w-4 items-center justify-center rounded-full border-2 border-brand"><span className="h-2 w-2 rounded-full bg-brand" /></span>
-              <span className="flex-1 text-xs font-semibold">Pay online <span className="ml-1 rounded bg-good px-1 py-px text-[9px] text-white">{prepaidPct}% off</span></span>
-              <span className="num text-xs font-semibold">₹{online.toLocaleString("en-IN")}</span>
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border-2 border-rule p-2.5">
-              <span className="h-4 w-4 rounded-full border-2 border-rule-strong" />
-              <span className="flex-1 text-xs font-semibold">Cash on Delivery</span>
-              <span className="num text-xs font-semibold">₹{cod.toLocaleString("en-IN")}</span>
-            </div>
-          </div>
-        </section>
-        {t.upsellPlacement === "after_payment" && upsellCard}
+  const card = (title: string, body: React.ReactNode) => (
+    <section className="rounded-xl border border-rule bg-surface p-3"><p className="mb-2.5 text-[13px] font-semibold">{title}</p>{body}</section>
+  );
+  const fields = (labels: string[]) => (
+    <div className="grid grid-cols-2 gap-2">
+      {labels.map((l, i) => <div key={l} className={i === 0 || l.startsWith("Email") || l.startsWith("House") ? "col-span-2" : ""}><p className="mb-1 text-[10px] text-ink-soft">{l}</p><div className="input h-7 py-0" /></div>)}
+    </div>
+  );
+  const email = t.showEmail ? ["Email (optional)"] : [];
+  const payment = card("Payment", (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 rounded-xl border-2 border-brand bg-brand/[0.05] p-2.5">
+        <span className="flex h-4 w-4 items-center justify-center rounded-full border-2 border-brand"><span className="h-2 w-2 rounded-full bg-brand" /></span>
+        <span className="flex-1 text-xs font-semibold">Pay online <span className="ml-1 rounded bg-good px-1 py-px text-[9px] text-white">{prepaidPct}% off</span></span>
+        <span className="num text-xs font-semibold">₹{online.toLocaleString("en-IN")}</span>
       </div>
-    ),
+      <div className="flex items-center gap-2 rounded-xl border-2 border-rule p-2.5">
+        <span className="h-4 w-4 rounded-full border-2 border-rule-strong" />
+        <span className="flex-1 text-xs font-semibold">Cash on Delivery</span>
+        <span className="num text-xs font-semibold">₹{cod.toLocaleString("en-IN")}</span>
+      </div>
+    </div>
+  ));
+  const stepCard = page === 1
+    ? card("Mobile number", fields(["Mobile number", ...email]))
+    : page === 2
+      ? card("Delivery address", fields(["First name", "Last name", "Pincode", "City", "House number, street"]))
+      : <div className="space-y-3">{card("Delivering to", <p className="text-[11px] text-ink-soft">Aman · House 5, Connaught Place, Delhi – 110001</p>)}{payment}</div>;
+  const blocks: Record<BlockKey, React.ReactNode> = {
+    order: card("Your order (1)", (
+      <>
+        <div className="flex gap-2.5">
+          <div className="h-12 w-12 shrink-0 rounded-lg border border-rule bg-paper" />
+          <div className="flex-1"><p className="text-xs font-medium">Your best-selling product</p><p className="text-[10px] text-ink-faint">Black / Free size</p></div>
+          <p className="num text-xs font-semibold">₹{price.toLocaleString("en-IN")}</p>
+        </div>
+        {upsellInCart && upsell()}
+      </>
+    )),
+    address: steps ? stepCard : card("Delivery details", fields(["Mobile number", "First name", "Last name", ...email, "Pincode", "City"])),
+    offers: card("Offers", <div className="flex gap-2"><div className="input h-8 flex-1 py-0 text-[11px] leading-8 text-ink-faint">Enter coupon code</div><span className="btn-primary h-8 px-3 py-0 text-xs">Apply</span></div>),
+    upsell: upsellShown && !upsellInCart ? <section className="rounded-xl border border-rule bg-surface p-3">{upsell(true)}</section> : null,
+    payment: steps ? stepCard : payment,
+    price: card("Price details", (
+      <div className="space-y-1 text-[11px]">
+        <div className="flex justify-between"><span className="text-ink-soft">Item total</span><span className="num">₹{price.toLocaleString("en-IN")}</span></div>
+        <div className="flex justify-between"><span className="text-ink-soft">Online payment discount</span><span className="num text-good">−₹{(price - online).toLocaleString("en-IN")}</span></div>
+        <div className="flex justify-between border-t border-rule pt-1 font-semibold"><span>To pay</span><span className="num">₹{online.toLocaleString("en-IN")}</span></div>
+      </div>
+    )),
   };
+  // In 3 pages, Delivery details + Payment become one "current page" slot (where the first of them is)
+  const firstStepSlot = t.blocks.findIndex((k) => k === "address" || k === "payment");
   const scale = FONT_SCALE[t.fontScale] / 16;
+  const btn = steps && page < 3 ? "Continue" : buttonText(t.prepaidButtonText, `₹${online.toLocaleString("en-IN")}`);
 
   return (
-    <div className="mx-auto w-full max-w-[380px] rounded-[2.2rem] border-[10px] border-[#11161a] bg-[#11161a] shadow-lift">
-      {font.google && <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`} />}
-      <div className="cx relative h-[680px] overflow-hidden rounded-[1.6rem] bg-paper text-ink" style={themeVars(t, brand) as React.CSSProperties}>
-        <div className="h-full overflow-y-auto pb-16" style={{ zoom: scale }}>
-          {t.announcement && <div className="px-3 py-1.5 text-center text-[11px] font-medium" style={{ background: t.announcementBg, color: t.announcementText }}>{t.announcement}</div>}
-          <header className="border-b border-rule px-3 py-2.5" style={{ background: t.headerBg, color: t.headerText }}>
-            <div className={`flex items-center ${t.logoAlign === "center" ? "justify-center" : "justify-between"}`}>
-              {logo ? <img src={logo} alt="" style={{ height: t.logoHeight * 0.8 }} className="w-auto max-w-[160px] object-contain" /> : <span className="font-semibold" style={{ fontSize: Math.max(13, t.logoHeight * 0.45) }}>{name}</span>}
-              {t.logoAlign === "left" && <span className="text-[10px] opacity-70">🔒 Secure checkout</span>}
-            </div>
-          </header>
-          {t.showSavingsBar && <div className="bg-brand px-3 py-1.5 text-center text-[11px] font-medium text-white">You're saving ₹{(price - online).toLocaleString("en-IN")} on this order</div>}
-          <div className="space-y-3 p-3">
-            <section className="rounded-xl border border-rule bg-surface p-3">
-              <p className="mb-2.5 text-[13px] font-semibold">Your order (1)</p>
-              <div className="flex gap-2.5">
-                <div className="h-12 w-12 shrink-0 rounded-lg border border-rule bg-paper" />
-                <div className="flex-1"><p className="text-xs font-medium">Your best-selling product</p><p className="text-[10px] text-ink-faint">Black / Free size</p></div>
-                <p className="num text-xs font-semibold">₹{price.toLocaleString("en-IN")}</p>
+    <div>
+      {steps && (
+        <div className="mx-auto mb-3 flex max-w-[380px] rounded-lg border border-rule-strong bg-surface p-0.5 text-xs" role="tablist" aria-label="Preview page">
+          {([[1, "1 · Mobile"], [2, "2 · Address"], [3, "3 · Payment"]] as const).map(([n, l]) => (
+            <button key={n} type="button" role="tab" aria-selected={page === n} onClick={() => setPage(n)}
+              className={`flex-1 rounded-md px-2 py-1.5 ${page === n ? "bg-ink font-medium text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+          ))}
+        </div>
+      )}
+      <div className="mx-auto w-full max-w-[380px] rounded-[2.2rem] border-[10px] border-[#11161a] bg-[#11161a] shadow-lift">
+        {font.google && <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`} />}
+        <div className="cx relative h-[680px] overflow-hidden rounded-[1.6rem] bg-paper text-ink" style={themeVars(t, brand) as React.CSSProperties}>
+          <div className="h-full overflow-y-auto pb-16" style={{ zoom: scale }}>
+            {t.announcement && <div className="px-3 py-1.5 text-center text-[11px] font-medium" style={{ background: t.announcementBg, color: t.announcementText }}>{t.announcement}</div>}
+            <header className="border-b border-rule px-3 py-2.5" style={{ background: t.headerBg, color: t.headerText }}>
+              <div className={`flex items-center ${t.logoAlign === "center" ? "justify-center" : "justify-between"}`}>
+                {logo ? <img src={logo} alt="" style={{ height: t.logoHeight * 0.8 }} className="w-auto max-w-[160px] object-contain" /> : <span className="font-semibold" style={{ fontSize: Math.max(13, t.logoHeight * 0.45) }}>{name}</span>}
+                {t.logoAlign === "left" && <span className="text-[10px] opacity-70">🔒 Secure checkout</span>}
               </div>
-              {t.upsellPlacement === "cart" && upsell}
-            </section>
-            {order.map((k) => sections[k])}
-            {t.showTrust && <p className="px-2 text-center text-[10px] text-ink-faint">🔒 {t.trustText}</p>}
+            </header>
+            {t.showSavingsBar && <div className="bg-brand px-3 py-1.5 text-center text-[11px] font-medium text-white">You're saving ₹{(price - online).toLocaleString("en-IN")} on this order</div>}
+            <div className="space-y-3 p-3">
+              {steps && (
+                <div className="flex items-center gap-1.5 text-[10px] font-medium">
+                  {["Mobile", "Address", "Payment"].map((l, i) => (
+                    <span key={l} className={`flex flex-1 items-center gap-1 ${i + 1 <= page ? "text-ink" : "text-ink-faint"}`}>
+                      <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${i + 1 < page ? "bg-brand text-white" : i + 1 === page ? "border border-brand text-brand" : "border border-rule-strong"}`}>{i + 1 < page ? "✓" : i + 1}</span>{l}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {t.blocks.map((k, i) => {
+                if (steps && (k === "address" || k === "payment") && i !== firstStepSlot) return null;
+                const body = blocks[k];
+                if (!body) return null;
+                const label = steps && (k === "address" || k === "payment") ? `Current page (${page === 1 ? "mobile" : page === 2 ? "address" : "payment"})` : BLOCK_LABELS[k];
+                return (
+                  <div key={k} draggable
+                    onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = "move"; }}
+                    onDragOver={(e) => { e.preventDefault(); if (over !== i) setOver(i); }}
+                    onDragLeave={() => setOver((o) => (o === i ? null : o))}
+                    onDrop={(e) => { e.preventDefault(); if (drag != null && drag !== i) onMove(drag, i); setDrag(null); setOver(null); }}
+                    onDragEnd={() => { setDrag(null); setOver(null); }}
+                    className={`group relative cursor-grab rounded-xl transition active:cursor-grabbing ${drag === i ? "opacity-40" : ""} ${over === i && drag !== i ? "ring-2 ring-brand ring-offset-2" : ""}`}>
+                    <div className="pointer-events-none absolute -top-2 left-2 z-10 flex items-center gap-1 rounded-md bg-ink px-1.5 py-0.5 text-[9px] font-medium text-white opacity-0 shadow transition group-hover:opacity-100">⠿ {label}</div>
+                    <div className="absolute right-1.5 top-1.5 z-10 flex gap-1 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                      <button type="button" aria-label={`Move ${label} up`} disabled={i === 0} onClick={() => onMove(i, i - 1)} className="flex h-6 w-6 items-center justify-center rounded-md bg-ink text-[11px] text-white shadow disabled:opacity-30">↑</button>
+                      <button type="button" aria-label={`Move ${label} down`} disabled={i === t.blocks.length - 1} onClick={() => onMove(i, i + 1)} className="flex h-6 w-6 items-center justify-center rounded-md bg-ink text-[11px] text-white shadow disabled:opacity-30">↓</button>
+                    </div>
+                    <div className="pointer-events-none">{body}</div>
+                  </div>
+                );
+              })}
+              {t.showTrust && <p className="px-2 text-center text-[10px] text-ink-faint">🔒 {t.trustText}</p>}
+            </div>
+          </div>
+          <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-rule bg-surface px-3 py-2.5">
+            <p className="num text-sm font-semibold">₹{online.toLocaleString("en-IN")}</p>
+            <button type="button" className="btn-primary flex-1 py-2 text-xs" onClick={() => steps && setPage((p) => (p < 3 ? ((p + 1) as 2 | 3) : 1))}>{btn}</button>
           </div>
         </div>
-        <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-rule bg-surface px-3 py-2.5">
-          <p className="num text-sm font-semibold">₹{online.toLocaleString("en-IN")}</p>
-          <span className="btn-primary flex-1 py-2 text-xs">{buttonText(t.prepaidButtonText, `₹${online.toLocaleString("en-IN")}`)}</span>
-        </div>
       </div>
+      <p className="mx-auto mt-3 max-w-[380px] text-center text-xs text-ink-faint">Drag any section to move it, or hover and use ↑ ↓. On computers, “Your order” and “Price details” stay on the right side.</p>
     </div>
   );
 }

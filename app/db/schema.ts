@@ -1,5 +1,6 @@
 import type { PaymentMethodsSettings } from "~/lib/payment-methods";
 import {
+  customType,
   bigint,
   boolean,
   integer,
@@ -52,6 +53,24 @@ export const ownerOtps = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("owner_otps_target_idx").on(t.target, t.createdAt)],
+);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+/** KYC documents (PAN card, GST certificate…) uploaded by store owners. Kept in the database, max 5 MB each. */
+export const kycDocuments = pgTable(
+  "kyc_documents",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // pan | gst | other
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("kyc_documents_user_kind_idx").on(t.userId, t.kind)],
 );
 
 /** One row per connected Shopify store. */
@@ -275,6 +294,7 @@ export const discountRules = pgTable("discount_rules", {
   type: text("type").notNull().default("percent"), // percent | flat (₹ off each item)
   prepaidPct: integer("prepaid_pct").notNull(), // % off, or rupees off per item when type = flat
   codPct: integer("cod_pct").notNull(),
+  partialPct: integer("partial_pct"), // Partial COD; null = use the Payment methods setting
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

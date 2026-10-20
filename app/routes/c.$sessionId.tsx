@@ -26,7 +26,7 @@ import {
 } from "~/lib/pricing";
 import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
-import { FONTS, FONT_SCALE, SECTION_ORDERS, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
+import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost } from "~/lib/urls.server";
 import { legacyMethod, methodShows, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
@@ -68,7 +68,7 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
     prepaidDiscountPct: store.prepaidDiscountPct,
     codDiscountPct: store.codDiscountPct,
     mix: prepaidDeal || codDeal ? { prepaid: prepaidDeal, cod: codDeal } : null,
-    rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct })),
+    rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct, partialPct: r.partialPct })),
   };
 }
 
@@ -752,6 +752,41 @@ export default function Checkout() {
   const priceDetails = <PriceDetails p={p} method={method} coupon={coupon} hasOffers={offers.length > 0} giftWorth={giftWorth} advance={method === "partial" ? advance : null} />;
   const stateName = INDIAN_STATES.find((s) => s.code === c.state)?.name ?? c.state;
   const savedNow = usingSaved ? saved.find((a) => a.id === savedId) : null;
+  const stepContent = (
+    <>
+      {step === 1 && (
+        <Card title="Mobile number">
+          <div className="grid grid-cols-2 gap-3">{phoneField}{emailField}</div>
+          <p className="mt-3 text-xs text-ink-faint">{otp.start ? "We'll send a one-time code to confirm your number." : "We'll use this for order and delivery updates."}</p>
+          <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromContact(); }}>Continue</button>
+        </Card>
+      )}
+      {step === 2 && (
+        <Card title="Delivery address">
+          <ContactLine phone={c.phone} onChange={() => setStep(1)} />
+          <div className="grid grid-cols-2 gap-3">{addressFields(null)}</div>
+          <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromAddress(); }}>Continue to payment</button>
+        </Card>
+      )}
+      {step === 3 && (
+        <>
+          <Card title="Delivering to">
+            <ContactLine phone={c.phone} onChange={() => setStep(1)} />
+            <div className="flex items-start justify-between gap-3 text-sm">
+              {savedNow ? (
+                <div className="min-w-0"><p className="font-medium">{savedNow.name}</p><p className="text-ink-soft">{savedNow.line}</p><p className="text-ink-soft">{savedNow.city}, {INDIAN_STATES.find((s) => s.code === savedNow.state)?.name ?? savedNow.state} – {savedNow.pincode}</p>
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-ink-faint"><LockIcon /> Saved address, partly hidden for privacy</p></div>
+              ) : (
+                <div className="min-w-0"><p className="font-medium">{c.firstName} {c.lastName}</p><p className="text-ink-soft">{c.address1}{c.address2 ? `, ${c.address2}` : ""}</p><p className="text-ink-soft">{c.city}, {stateName} – {c.pincode}</p></div>
+              )}
+              <button type="button" className="shrink-0 font-medium text-brand" onClick={() => setStep(2)}>Change</button>
+            </div>
+          </Card>
+          {paymentCard}
+        </>
+      )}
+    </>
+  );
 
   return (
     <Shell store={store} theme={theme}>
@@ -778,64 +813,28 @@ export default function Checkout() {
         <div className="space-y-4">
           {steps && <StepBar step={step} onGo={(s) => { if (s < step) setStep(s); }} />}
 
-          {/* Mobile: order first so customers can edit it */}
-          <Card title={giftTitle} className="lg:hidden">{orderItems}</Card>
-
-          {steps ? (
-            <>
-              {theme.upsellPlacement === "before_payment" && upsellCard}
-              {step === 1 && (
-                <Card title="Mobile number">
-                  <div className="grid grid-cols-2 gap-3">{phoneField}{emailField}</div>
-                  <p className="mt-3 text-xs text-ink-faint">{otp.start ? "We'll send a one-time code to confirm your number." : "We'll use this for order and delivery updates."}</p>
-                  <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromContact(); }}>Continue</button>
+          {theme.blocks.map((key, i) => {
+            // In the 3-page checkout, Delivery details and Payment are replaced by the current page (shown once)
+            if (steps && (key === "address" || key === "payment")) {
+              const first = theme.blocks.findIndex((k) => k === "address" || k === "payment");
+              return i === first ? <div key="step" className="space-y-4">{stepContent}</div> : null;
+            }
+            switch (key) {
+              case "order": return <Card key={key} title={giftTitle} className="lg:hidden">{orderItems}</Card>;
+              case "address": return (
+                <Card key={key} title="Delivery details">
+                  <div className="grid grid-cols-2 gap-3">
+                    {phoneField}
+                    {addressFields(emailField)}
+                  </div>
                 </Card>
-              )}
-              {step === 2 && (
-                <Card title="Delivery address">
-                  <ContactLine phone={c.phone} onChange={() => setStep(1)} />
-                  <div className="grid grid-cols-2 gap-3">{addressFields(null)}</div>
-                  <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromAddress(); }}>Continue to payment</button>
-                </Card>
-              )}
-              {step === 3 && (
-                <>
-                  <Card title="Delivering to">
-                    <ContactLine phone={c.phone} onChange={() => setStep(1)} />
-                    <div className="flex items-start justify-between gap-3 text-sm">
-                      {savedNow ? (
-                        <div className="min-w-0"><p className="font-medium">{savedNow.name}</p><p className="text-ink-soft">{savedNow.line}</p><p className="text-ink-soft">{savedNow.city}, {INDIAN_STATES.find((s) => s.code === savedNow.state)?.name ?? savedNow.state} – {savedNow.pincode}</p>
-                          <p className="mt-1 flex items-center gap-1 text-[11px] text-ink-faint"><LockIcon /> Saved address, partly hidden for privacy</p></div>
-                      ) : (
-                        <div className="min-w-0"><p className="font-medium">{c.firstName} {c.lastName}</p><p className="text-ink-soft">{c.address1}{c.address2 ? `, ${c.address2}` : ""}</p><p className="text-ink-soft">{c.city}, {stateName} – {c.pincode}</p></div>
-                      )}
-                      <button type="button" className="shrink-0 font-medium text-brand" onClick={() => setStep(2)}>Change</button>
-                    </div>
-                  </Card>
-                  {paymentCard}
-                </>
-              )}
-              {theme.upsellPlacement === "after_payment" && upsellCard}
-              {offersCard}
-            </>
-          ) : SECTION_ORDERS.find((o) => o.id === theme.sectionOrder)!.order.map((key) => key === "address" ? (
-            <Card key={key} title="Delivery details">
-              <div className="grid grid-cols-2 gap-3">
-                {phoneField}
-                {addressFields(emailField)}
-              </div>
-            </Card>
-          ) : key === "offers" ? (
-            <div key={key}>{offersCard}</div>
-          ) : (
-            <div key={key} className="space-y-4">
-              {theme.upsellPlacement === "before_payment" && upsellCard}
-              {paymentCard}
-              {theme.upsellPlacement === "after_payment" && upsellCard}
-            </div>
-          ))}
-
-          <Card title="Price details" className="lg:hidden">{priceDetails}</Card>
+              );
+              case "offers": return <div key={key}>{offersCard}</div>;
+              case "upsell": return upsellCard ? <div key={key}>{upsellCard}</div> : null;
+              case "payment": return <div key={key}>{paymentCard}</div>;
+              case "price": return <Card key={key} title="Price details" className="lg:hidden">{priceDetails}</Card>;
+            }
+          })}
           <Trust phone={store.supportPhone} text={theme.showTrust ? theme.trustText : null} className="lg:hidden" />
         </div>
 

@@ -4,9 +4,16 @@ export type SectionOrder = "address_offers_payment" | "offers_address_payment" |
 export type UpsellPlacement = "cart" | "before_payment" | "after_payment" | "hidden";
 
 export type CheckoutLayout = "single" | "steps";
+/** Checkout sections the store can drag into any order (on phones; on computers the order card and price sit on the right). */
+export type BlockKey = "order" | "address" | "offers" | "upsell" | "payment" | "price";
+export const BLOCK_KEYS: BlockKey[] = ["order", "address", "offers", "upsell", "payment", "price"];
+export const BLOCK_LABELS: Record<BlockKey, string> = {
+  order: "Your order", address: "Delivery details", offers: "Coupons & bank offers", upsell: "You may also like", payment: "Payment", price: "Price details",
+};
 
 export type CheckoutTheme = {
   layout: CheckoutLayout; // single page, or 3 steps (mobile → address → payment)
+  blocks: BlockKey[]; // section order, see BLOCK_KEYS
   bgColor: string; // page background
   surfaceColor: string; // cards
   textColor: string;
@@ -36,6 +43,7 @@ export type CheckoutTheme = {
 
 export const DEFAULT_THEME: CheckoutTheme = {
   layout: "single",
+  blocks: ["order", "address", "offers", "upsell", "payment", "price"],
   bgColor: "#F4F5F2",
   surfaceColor: "#FFFFFF",
   textColor: "#1C2430",
@@ -87,8 +95,7 @@ export const SECTION_ORDERS: { id: SectionOrder; label: string; order: ("address
 
 export const UPSELL_PLACEMENTS: { id: UpsellPlacement; label: string }[] = [
   { id: "cart", label: "Under the cart items" },
-  { id: "before_payment", label: "Just above payment" },
-  { id: "after_payment", label: "Below payment" },
+  { id: "before_payment", label: "As its own section (drag it in the preview)" },
   { id: "hidden", label: "Don't show" },
 ];
 
@@ -97,12 +104,28 @@ const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T):
 const color = (v: unknown, fallback: string) => (typeof v === "string" && HEX.test(v) ? v : fallback);
 const text = (v: unknown, fallback: string, max = 140) => (typeof v === "string" ? v.slice(0, max) : fallback);
 
+/**
+ * Section order. Old themes only had a preset order + an upsell position, so build the list from those.
+ * Always returns every key exactly once.
+ */
+function resolveBlocks(raw: unknown, sectionOrder: unknown, upsell: unknown): BlockKey[] {
+  const list = (Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(",") : []).map((x) => String(x).trim()) as BlockKey[];
+  const seen = [...new Set(list.filter((k) => BLOCK_KEYS.includes(k)))];
+  if (seen.length) return [...seen, ...BLOCK_KEYS.filter((k) => !seen.includes(k))];
+  const base = (SECTION_ORDERS.find((o) => o.id === sectionOrder) ?? SECTION_ORDERS[0]).order as BlockKey[];
+  const out: BlockKey[] = ["order", ...base, "price"];
+  const at = out.indexOf("payment");
+  out.splice(upsell === "after_payment" ? at + 1 : at, 0, "upsell");
+  return out;
+}
+
 /** Saved theme + defaults, with every value validated. */
 export function resolveTheme(raw: unknown): CheckoutTheme {
   const t = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof CheckoutTheme, unknown>>;
   const d = DEFAULT_THEME;
   return {
     layout: pick(t.layout, ["single", "steps"] as const, d.layout),
+    blocks: resolveBlocks(t.blocks, t.sectionOrder, t.upsellPlacement),
     bgColor: color(t.bgColor, d.bgColor),
     surfaceColor: color(t.surfaceColor, d.surfaceColor),
     textColor: color(t.textColor, d.textColor),

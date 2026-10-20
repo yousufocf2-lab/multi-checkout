@@ -6,7 +6,7 @@ import { env } from "./env.server";
 import { messaging, otpMode, otpReady, verifyWidgetToken, widgetPublic } from "./rto.server";
 
 export type Channel = "phone" | "email";
-export type Purpose = "signup" | "login";
+export type Purpose = "signup" | "login" | "reset" | "verify";
 
 const TTL_MS = 10 * 60_000;
 const RESEND_AFTER_MS = 30_000;

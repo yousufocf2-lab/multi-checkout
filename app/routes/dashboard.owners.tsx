@@ -3,16 +3,30 @@ import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import { asc, eq, sql } from "drizzle-orm";
 import { EmptyState, Notice, PageHeader, RowAction, Section, StatusBadge, SubmitButton, TextField } from "~/components/ui";
-import { db, stores, users } from "~/db.server";
+import { db, kycDocuments, users } from "~/db.server";
+import { DOC_KINDS, gstVerified, kycIncomplete, type DocKind } from "~/lib/kyc";
+import { VerifiedBadge } from "~/components/VerifiedBadge";
 import { adminEmail, createUser, hashPassword, requireAdmin, signupOpen } from "~/lib/auth.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const rows = await db
-    .select({ id: users.id, name: users.name, email: users.email, active: users.active, createdAt: users.createdAt, stores: sql<number>`(select count(*)::int from ${stores} where ${stores.ownerId} = ${users.id})` })
+    .select({ id: users.id, name: users.name, email: users.email, phone: users.phone, kyc: users.kyc, kycStatus: users.kycStatus, active: users.active, createdAt: users.createdAt, stores: sql<number>`(select count(*)::int from "stores" s where s."owner_id" = "users"."id")` })
     .from(users)
     .orderBy(asc(users.name));
-  return json({ owners: rows, signupOpen: signupOpen() });
+  const docs = await db.select({ id: kycDocuments.id, userId: kycDocuments.userId, kind: kycDocuments.kind, filename: kycDocuments.filename }).from(kycDocuments);
+  return json({
+    signupOpen: signupOpen(),
+    owners: rows.map(({ kyc, kycStatus, ...o }) => ({
+      ...o,
+      kyc: {
+        done: !kycIncomplete({ kyc, kycStatus }), pan: kyc.pan ?? null, legalName: kyc.legalName ?? null, gstin: kyc.gstin || null,
+        phoneOk: Boolean(kyc.phone && kyc.phoneVerified === kyc.phone), emailOk: Boolean(kyc.email && kyc.emailVerified === kyc.email), business: gstVerified(kyc),
+        altPhone: kyc.altPhone || null, altEmail: kyc.altEmail || null, address: [kyc.address, kyc.landmark, kyc.city, kyc.state, kyc.pincode].filter(Boolean).join(", "),
+      },
+      docs: docs.filter((d) => d.userId === o.id).map((d) => ({ id: d.id, kind: d.kind as DocKind, filename: d.filename })),
+    })),
+  });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -71,12 +85,27 @@ export default function Owners() {
           <EmptyState title="No store owners yet">Owners you add can log in and manage only their own stores.</EmptyState>
         ) : (
           <div className="panel overflow-x-auto">
-            <table className="table min-w-[720px]">
-              <thead><tr><th>Owner</th><th className="text-right">Stores</th><th>Status</th><th>Set new password</th><th /></tr></thead>
+            <table className="table min-w-[980px]">
+              <thead><tr><th>Owner</th><th>KYC</th><th className="text-right">Stores</th><th>Status</th><th>Set new password</th><th /></tr></thead>
               <tbody>
                 {owners.map((o) => (
                   <tr key={o.id}>
-                    <td><p className="font-medium">{o.name}</p><p className="text-xs text-ink-faint">{o.email}</p></td>
+                    <td>
+                      <p className="font-medium">{o.name}</p>
+                      <p className="flex items-center gap-1.5 text-xs text-ink-faint">{o.phone ? `+91 ${o.phone}` : "No mobile"}{o.kyc.phoneOk && <VerifiedBadge label="" />}</p>
+                      <p className="flex items-center gap-1.5 text-xs text-ink-faint">{o.email ?? "No email"}{o.kyc.emailOk && <VerifiedBadge label="" />}</p>
+                      {(o.kyc.altPhone || o.kyc.altEmail) && <p className="text-[11px] text-ink-faint">Alt: {[o.kyc.altPhone, o.kyc.altEmail].filter(Boolean).join(" · ")}</p>}
+                    </td>
+                    <td className="max-w-[280px] text-xs">
+                      <p className="mb-1 flex flex-wrap items-center gap-1.5">
+                        {o.kyc.done ? <StatusBadge status="live" label="KYC done" /> : <StatusBadge status="pending_payment" label="KYC pending" />}
+                        {o.kyc.business && <VerifiedBadge label="Verified business" />}
+                      </p>
+                      {o.kyc.pan && <p><span className="text-ink-faint">PAN</span> <b className="num">{o.kyc.pan}</b>{o.kyc.legalName ? ` · ${o.kyc.legalName}` : ""}</p>}
+                      {o.kyc.gstin && <p><span className="text-ink-faint">GST</span> <b className="num">{o.kyc.gstin}</b></p>}
+                      {o.kyc.address && <p className="truncate text-ink-faint" title={o.kyc.address}>{o.kyc.address}</p>}
+                      {o.docs.length > 0 && <p className="mt-1 flex flex-wrap gap-2">{o.docs.map((d) => <a key={d.id} href={`/dashboard/owners/doc/${d.id}`} target="_blank" rel="noreferrer" className="font-medium text-pine underline">{DOC_KINDS[d.kind] ?? d.kind}</a>)}</p>}
+                    </td>
                     <td className="num text-right">{o.stores}</td>
                     <td><StatusBadge status={o.active ? "live" : "off"} label={o.active ? "Active" : "Paused"} /></td>
                     <td>

@@ -19,6 +19,7 @@ export interface ProductRule {
   type?: "percent" | "flat"; // flat = rupees off each item
   prepaidPct: number; // % off, or ₹ per item when flat
   codPct: number;
+  partialPct?: number | null; // null = Partial COD uses the store setting for this product
 }
 
 /** Mix & Match: any `buyQty` items in the cart → `freeQty` of them free (cheapest or priciest). */
@@ -118,10 +119,12 @@ const lineTotal = (l: PricedLine) => l.pricePaise * l.quantity;
  * Returns paise off per item, the effective % and a label like "70% off" or "₹100 off".
  */
 export function lineOff(line: Pick<PricedLine, "productId" | "pricePaise">, store: StoreRule, method: PaymentMethod) {
-  const rule = store.rules?.find((r) => r.productIds.includes(line.productId));
+  const found = store.rules?.find((r) => r.productIds.includes(line.productId));
+  // A product discount without a Partial COD value leaves Partial COD to the Payment methods setting
+  const rule = found && method === "partial" && found.partialPct == null ? undefined : found;
   const adj = store.methods?.[method];
   const storeValue = adj ? (adj.adjust === "discount" && adj.type === "percent" ? adj.value : 0) : legacyMethod(method) === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
-  const value = rule ? (method === "prepaid" ? rule.prepaidPct : rule.codPct) : storeValue;
+  const value = rule ? (method === "prepaid" ? rule.prepaidPct : method === "partial" ? rule.partialPct ?? rule.codPct : rule.codPct) : storeValue;
   if (rule?.type === "flat") {
     const unit = Math.max(0, Math.min(line.pricePaise, Math.round(value * 100)));
     const pct = line.pricePaise ? Math.round((unit / line.pricePaise) * 100) : 0;
@@ -164,7 +167,7 @@ export function computePricing(
   let paymentDiscountPct: number | null = pcts.length === 1 && !perLine.some((x) => x.flat) ? pcts[0] : null;
   // Flat ₹ off the order for this payment method (lines with their own product discount keep that instead)
   if (!noPaymentDiscount && adj?.adjust === "discount" && adj.type === "flat" && adj.value > 0) {
-    const open = perLine.filter((x) => !store.rules?.some((r) => r.productIds.includes(x.line.productId)));
+    const open = perLine.filter((x) => !store.rules?.some((r) => r.productIds.includes(x.line.productId) && (method !== "partial" || r.partialPct != null)));
     const room = open.reduce((s, x) => s + x.net - x.discount, 0);
     const flat = Math.min(Math.round(adj.value * 100), room);
     if (flat > 0) {

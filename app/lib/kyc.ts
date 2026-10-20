@@ -19,30 +19,42 @@ export const CATEGORIES = [
 ];
 
 export type KycData = {
-  // Step 1 · Business
+  v?: number; // 2 = current KYC (personal → business → tax → address → documents → review)
+  // Personal
+  contactName?: string;
+  phone?: string;
+  phoneVerified?: string; // the number that was verified by OTP
+  altPhone?: string;
+  email?: string;
+  emailVerified?: string; // the email that was verified by OTP
+  altEmail?: string;
+  whatsapp?: string;
+  // Business
   brandName?: string;
-  legalName?: string;
   businessType?: BusinessType;
   category?: string;
   website?: string;
-  // Step 2 · Contact
-  email?: string;
-  phone?: string;
-  whatsapp?: string;
-  contactName?: string;
-  // Step 3 · Tax & billing
+  // Tax
   pan?: string;
+  legalName?: string; // name as per PAN
   gstin?: string;
+  // Address
   address?: string;
+  landmark?: string;
   city?: string;
   state?: string; // full state name (same as wallet billing)
   pincode?: string;
-  step?: number; // last completed step (1..3)
+  geo?: { lat: number; lng: number };
+  // Progress
+  step?: number; // old 3-step KYC
+  v2Step?: number; // last completed step of the current KYC
+  submittedAt?: string;
 };
 
 export type KycStatus = "pending" | "approved" | "rejected";
 
-export const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+/** PAN: 5 letters (4th = holder type), 4 digits (not 0000), 1 letter. */
+export const PAN_RE = /^[A-Z]{3}[PCHFATBLJG][A-Z](?!0000)[0-9]{4}[A-Z]$/;
 export const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
 /** GSTIN check digit (15th character), as defined by GSTN. */
@@ -77,6 +89,17 @@ export const panFromGstin = (g: string) => (g.length >= 12 ? g.slice(2, 12) : ""
 const PAN_HOLDER: Record<string, string> = { P: "individual", C: "company", F: "firm / LLP", H: "HUF", A: "association", T: "trust", B: "body of individuals", L: "local authority", J: "artificial person", G: "government" };
 export const panHolder = (pan: string) => PAN_HOLDER[pan[3]] ?? null;
 
+/**
+ * The 5th PAN letter is the first letter of the holder's surname (people) or of the name (businesses).
+ * People: accept it matching any word of the name, since surnames are written in different orders.
+ */
+export function panNameMatches(pan: string, name: string) {
+  const words = name.toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/).filter((w) => w && !["MR", "MRS", "MS", "DR", "M/S", "SHRI", "SMT", "THE"].includes(w));
+  if (!words.length) return false;
+  const c = pan[4];
+  return pan[3] === "P" ? words.some((w) => w[0] === c) : words[0][0] === c || words.some((w) => w[0] === c);
+}
+
 /** Soft warning when the PAN type doesn't fit the chosen business type. */
 export function panTypeWarning(pan: string, type?: BusinessType): string | null {
   if (!PAN_RE.test(pan) || !type) return null;
@@ -87,40 +110,72 @@ export function panTypeWarning(pan: string, type?: BusinessType): string | null 
   return null;
 }
 
-export type KycErrors = Partial<Record<keyof KycData | "form", string>>;
+export type KycErrors = Partial<Record<keyof KycData | "form" | "docs" | "panDoc" | "gstDoc" | "declare", string>>;
 
-export function validateStep(step: number, k: KycData): KycErrors {
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+export const MOBILE_RE = /^[6-9]\d{9}$/;
+/** Name as on PAN: letters, spaces, dots, & and a few business symbols. */
+const NAME_RE = /^[A-Za-z][A-Za-z .&'()\-/,]{1,159}$/;
+
+/** Checks one step of the KYC. `ready` = whether OTP can be sent on that channel (else verification is skipped). */
+export function validateStep(step: number, k: KycData, ready: { phone: boolean; email: boolean } = { phone: true, email: true }): KycErrors {
   const e: KycErrors = {};
   if (step === 1) {
+    if (!k.contactName || k.contactName.length < 2) e.contactName = "Enter your full name";
+    if (!k.phone || !MOBILE_RE.test(k.phone)) e.phone = "Enter a valid 10-digit mobile number";
+    else if (ready.phone && k.phoneVerified !== k.phone) e.phone = "Verify this mobile number with the OTP";
+    if (k.altPhone && !MOBILE_RE.test(k.altPhone)) e.altPhone = "Enter a valid 10-digit mobile number";
+    else if (k.altPhone && k.altPhone === k.phone) e.altPhone = "Use a different number than your main one";
+    if (!k.email || !EMAIL_RE.test(k.email)) e.email = "Enter a valid email address";
+    else if (ready.email && k.emailVerified !== k.email) e.email = "Verify this email with the OTP";
+    if (k.altEmail && !EMAIL_RE.test(k.altEmail)) e.altEmail = "Enter a valid email address";
+    else if (k.altEmail && k.altEmail === k.email) e.altEmail = "Use a different email than your main one";
+  }
+  if (step === 2) {
     if (!k.brandName || k.brandName.length < 2) e.brandName = "Enter your brand name";
-    if (!k.legalName || k.legalName.length < 2) e.legalName = "Enter the name on your PAN or GST certificate";
     if (!k.businessType) e.businessType = "Choose your business type";
     if (!k.category) e.category = "Choose what you sell";
     if (k.website && !/^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(k.website)) e.website = "Enter a website like mybrand.com";
   }
-  if (step === 2) {
-    if (!k.contactName || k.contactName.length < 2) e.contactName = "Enter your name";
-    if (!k.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(k.email)) e.email = "Enter a valid email for invoices and alerts";
-    if (!k.phone || !/^[6-9]\d{9}$/.test(k.phone)) e.phone = "Enter a valid 10-digit mobile number";
-    if (k.whatsapp && !/^[6-9]\d{9}$/.test(k.whatsapp)) e.whatsapp = "Enter a valid 10-digit WhatsApp number";
-  }
   if (step === 3) {
-    if (!k.pan || !PAN_RE.test(k.pan)) e.pan = "PAN has 10 characters, e.g. ABCDE1234F";
+    if (!k.pan || !PAN_RE.test(k.pan)) e.pan = "Enter a valid PAN: 5 letters, 4 digits, 1 letter (e.g. ABCPK1234F). The 4th letter shows the holder type (P for a person, C for a company, F for a firm…).";
+    if (!k.legalName || !NAME_RE.test(k.legalName)) e.legalName = "Enter the name exactly as on your PAN card";
+    else if (k.pan && PAN_RE.test(k.pan) && !panNameMatches(k.pan, k.legalName)) e.legalName = `This name doesn't match the PAN. The 5th letter of the PAN (${k.pan[4]}) is the first letter of the ${k.pan[3] === "P" ? "surname" : "business name"} on the PAN.`;
     if (k.gstin) {
-      if (!GSTIN_RE.test(k.gstin) || !gstinChecksumOk(k.gstin)) e.gstin = "This GSTIN isn't valid. It has 15 characters, e.g. 09ABCDE1234F1Z5";
+      if (!GSTIN_RE.test(k.gstin)) e.gstin = "GSTIN must be 15 characters: 2-digit state code, your PAN, 1 entity digit/letter, Z and a check character";
+      else if (!stateFromGstin(k.gstin)) e.gstin = "The first 2 digits aren't a valid GST state code";
+      else if (!PAN_RE.test(panFromGstin(k.gstin))) e.gstin = "Characters 3 to 12 of a GSTIN are a PAN, and these aren't a valid PAN";
+      else if (!gstinChecksumOk(k.gstin)) e.gstin = "This GSTIN isn't valid (the last character doesn't match). Check it on your GST certificate.";
       else if (k.pan && PAN_RE.test(k.pan) && panFromGstin(k.gstin) !== k.pan) e.gstin = "This GSTIN belongs to a different PAN. Use the GSTIN of the PAN above.";
-      else if (k.state && stateFromGstin(k.gstin) && stateFromGstin(k.gstin) !== k.state) e.state = `Your GSTIN is registered in ${stateFromGstin(k.gstin)}. Use the address of that registration.`;
     }
-    if (!k.address || k.address.length < 8) e.address = "Enter your full billing address";
+  }
+  if (step === 4) {
+    if (!k.address || k.address.length < 8) e.address = "Enter house / building, street and area";
     if (!k.city) e.city = "Enter your city";
-    if (!k.state || !INDIAN_STATES.some((s) => s.name === k.state)) e.state = e.state ?? "Choose your state";
-    if (!k.pincode || !/^\d{6}$/.test(k.pincode)) e.pincode = "Enter a 6-digit pincode";
+    if (!k.state || !INDIAN_STATES.some((s) => s.name === k.state)) e.state = "Choose your state";
+    if (!k.pincode || !/^[1-9]\d{5}$/.test(k.pincode)) e.pincode = "Enter a valid 6-digit pincode";
+    if (!e.state && k.gstin && GSTIN_RE.test(k.gstin) && stateFromGstin(k.gstin) && stateFromGstin(k.gstin) !== k.state) e.state = `Your GSTIN is registered in ${stateFromGstin(k.gstin)}. Use the address of that registration.`;
   }
   return e;
 }
 
+/** GSTIN passes every check (format, state code, checksum, matches the PAN). */
+export const gstVerified = (k: KycData) => Boolean(k.gstin && k.pan && GSTIN_RE.test(k.gstin) && stateFromGstin(k.gstin) && gstinChecksumOk(k.gstin) && panFromGstin(k.gstin) === k.pan);
+
 export const KYC_STEPS = [
-  { n: 1, title: "Business details", note: "Tell us about your brand" },
-  { n: 2, title: "Contact", note: "Where we reach you" },
-  { n: 3, title: "Tax & billing", note: "For your GST invoices" },
+  { n: 1, title: "Personal details", note: "Mobile & email, verified" },
+  { n: 2, title: "Business details", note: "Your brand" },
+  { n: 3, title: "PAN & GST", note: "Tax identity" },
+  { n: 4, title: "Address", note: "Business address" },
+  { n: 5, title: "Documents", note: "PAN card & GST" },
+  { n: 6, title: "Review & submit", note: "Check and confirm" },
 ] as const;
+export const KYC_LAST = 6;
+
+export const DOC_KINDS = { pan: "PAN card", gst: "GST certificate", other: "Other document" } as const;
+export type DocKind = keyof typeof DOC_KINDS;
+export const DOC_MAX_BYTES = 5 * 1024 * 1024;
+export const DOC_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+
+/** Does this owner still need to (re)do KYC? Owners from before the current KYC must do it once. */
+export const kycIncomplete = (u: { kycStatus: string; kyc: KycData }) => u.kycStatus !== "approved" || (u.kyc.v ?? 1) < 2;

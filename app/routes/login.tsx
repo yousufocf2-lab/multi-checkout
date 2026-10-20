@@ -30,7 +30,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "password") {
     const email = String(fd.get("email") ?? "");
     const who = await login(email, String(fd.get("password") ?? ""));
-    if (!who) return json<Data>({ stage: "password", contact: email, error: "That email and password don't match an account." }, { status: 401 });
+    if (!who) return json<Data>({ stage: "password", contact: email, error: "That login and password don't match an account." }, { status: 401 });
     return startSession(request, who, next);
   }
 
@@ -95,8 +95,11 @@ export default function Login() {
             <input type="hidden" name="intent" value="password" />
             <input type="hidden" name="next" value={next} />
             {data?.error && <Notice tone="error">{data.error}</Notice>}
-            <TextField label="Email" name="email" type="text" autoComplete="username" defaultValue={data?.stage === "password" ? data.contact : ""} required autoFocus />
-            <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
+            <TextField label="Email or mobile number" name="email" type="text" autoComplete="username" defaultValue={data?.stage === "password" ? data.contact : ""} required autoFocus />
+            <div>
+              <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
+              <Link to="/forgot-password" className="mt-1.5 inline-block text-sm font-medium text-ink-soft underline-offset-2 hover:text-ink hover:underline">Forgot password?</Link>
+            </div>
             <SubmitButton className="btn-primary w-full py-3" busyText="Logging in">Log in</SubmitButton>
             <button type="button" onClick={() => setStage("start")} className="w-full text-center text-sm text-ink-soft hover:text-ink">Log in with OTP instead</button>
           </Form>
