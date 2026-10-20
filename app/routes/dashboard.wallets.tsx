@@ -44,6 +44,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       billing: p.billing ?? {}, payuKey: p.payuKey ?? "", hasSalt: Boolean(p.payuSalt), payuMode: p.payuMode,
       msg: {
         msg91TemplateId: p.messaging?.msg91TemplateId ?? "", hasMsg91Key: Boolean(p.messaging?.msg91AuthKey),
+        otpReady: Boolean((p.messaging?.msg91AuthKey || process.env.MSG91_AUTH_KEY) && (p.messaging?.msg91TemplateId || process.env.MSG91_OTP_TEMPLATE_ID)),
+        otpTest: (p.messaging?.msg91AuthKey || process.env.MSG91_AUTH_KEY) === "test",
         waPhoneNumberId: p.messaging?.waPhoneNumberId ?? "", hasWaToken: Boolean(p.messaging?.waToken),
         waTemplate: p.messaging?.waTemplate ?? "", waLang: p.messaging?.waLang ?? "en",
       },
@@ -278,6 +280,13 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
           <p className="text-sm text-ink-soft">Your own accounts for OTP and WhatsApp. Stores turn the services on in RTO Suite and pay per message from their wallet.</p>
           <div>
             <h3 className="font-semibold">OTP (MSG91)</h3>
+            {s.msg.otpTest ? (
+              <div className="mt-2"><Notice tone="error">Test mode is on: every OTP is 123456 and no SMS is sent. Anyone could open a customer's saved address with it. Use only for testing, never on live stores.</Notice></div>
+            ) : !s.msg.otpReady ? (
+              <div className="mt-2"><Notice tone="warning">OTP is off until both the Auth key and the Template ID are saved. Until then checkout OTP and <b>saved addresses across stores</b> don't show to customers (a saved address can only be used after an OTP).</Notice></div>
+            ) : (
+              <p className="mt-1 text-sm text-good">OTP is live. Checkout OTP and saved addresses across all stores are on.</p>
+            )}
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <label className="block"><span className="label">Auth key</span><input name="msg91AuthKey" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasMsg91Key ? "Saved. Leave blank to keep it." : "From MSG91 → API"} />
                 <span className="hint">Type <code>test</code> to try the flow without sending SMS (code is always 123456).</span></label>
