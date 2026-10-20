@@ -1,3 +1,4 @@
+import type { PaymentMethodsSettings } from "~/lib/payment-methods";
 import {
   bigint,
   boolean,
@@ -78,11 +79,14 @@ export const stores = pgTable("stores", {
   codEnabled: boolean("cod_enabled").notNull().default(true),
   codCooldownHours: integer("cod_cooldown_hours").notNull().default(6), // 1 .. 8760
   codBlockAfterPrepaid: boolean("cod_block_after_prepaid").notNull().default(true),
+  // Payment methods tab: Prepaid / COD / Partial COD on/off, discount or fee, coupons, show rules (lib/payment-methods.ts)
+  paymentMethods: jsonb("payment_methods").$type<Partial<PaymentMethodsSettings>>().notNull().default({}),
   // RTO Suite
   codCooldownEnabled: boolean("cod_cooldown_enabled").notNull().default(true),
   otpEnabled: boolean("otp_enabled").notNull().default(false),
   otpPrepaid: boolean("otp_prepaid").notNull().default(false),
   otpCod: boolean("otp_cod").notNull().default(true),
+  otpTiming: text("otp_timing").notNull().default("end"), // start (right after the mobile number) | end (before placing the order)
   blockEnabled: boolean("block_enabled").notNull().default(false),
   blockCodOnly: boolean("block_cod_only").notNull().default(true), // true: blocked customers lose COD only; false: can't order at all
   confirmEnabled: boolean("confirm_enabled").notNull().default(false),
@@ -401,7 +405,7 @@ export const orders = pgTable(
       .references(() => stores.id, { onDelete: "cascade" }),
     sessionId: text("session_id"),
     status: text("status").notNull(), // pending_payment | paid | failed | cod_placed
-    paymentMethod: text("payment_method").notNull(), // prepaid | cod
+    paymentMethod: text("payment_method").notNull(), // prepaid | cod | partial
     customer: jsonb("customer").$type<OrderCustomer>().notNull(),
     items: jsonb("items").$type<OrderLine[]>().notNull(),
     subtotal: integer("subtotal").notNull(),
@@ -413,6 +417,8 @@ export const orders = pgTable(
     shipping: integer("shipping").notNull().default(0), // paise, included in total
     shippingTitle: text("shipping_title"),
     total: integer("total").notNull(), // amount sent to PayU / collected on COD (items + shipping)
+    advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery
+    paymentFee: integer("payment_fee").notNull().default(0), // fee for the payment method (e.g. COD charges), included in total
     refunded: integer("refunded").notNull().default(0), // paise
     refundStatus: text("refund_status"), // partial | full | pending
     amountPaid: integer("amount_paid"),

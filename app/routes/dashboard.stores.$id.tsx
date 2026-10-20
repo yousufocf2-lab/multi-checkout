@@ -18,12 +18,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 const TITLES: Record<string, { title: string; description: string }> = {
   ads: { title: "Ads", description: "Meta ad spend, cost per order, ROAS and recharges." },
-  discounts: { title: "Discounts", description: "Online and COD discounts, for the whole store or chosen products." },
+  payments: { title: "Payment methods", description: "Prepaid, COD and Partial COD: on/off, discount or fee, coupons and when each shows." },
+  discounts: { title: "Discounts", description: "Product discounts by payment method and checkout recommendations." },
   coupons: { title: "Coupons", description: "Codes customers can apply at checkout." },
   offers: { title: "Bank offers", description: "Card and bank offers applied on the PayU page." },
   gifts: { title: "Free gifts & deals", description: "Mix & Match, Buy 1 get 1, Buy 2 get 1 and other free gift offers." },
   shipping: { title: "Shipping", description: "Delivery charges by location, order value and payment method." },
-  settings: { title: "Store settings", description: "Shopify, PayU, COD rules and Meta ads for this store." },
+  settings: { title: "Store settings", description: "Shopify, PayU and Meta ads for this store." },
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout." },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation." },
   logistics: { title: "Logistics", description: "Connect one or more couriers to track shipments and unlock RTO Shield. Optional." },

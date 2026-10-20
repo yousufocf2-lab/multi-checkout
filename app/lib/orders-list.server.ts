@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, stores, type Store } from "~/db.server";
 import { addDays, resolveRange, type Range } from "./dates";
 import { storeBaseUrl } from "./urls.server";
@@ -6,7 +7,7 @@ import { storeBaseUrl } from "./urls.server";
 export const PAGE = 50;
 
 const OK = sql`('paid','cod_placed')`;
-const amountCol = sql`coalesce(${orders.amountPaid}, ${orders.total})`;
+const amountCol = orderValueSql;
 
 export type OrderFilters = {
   status: string; method: string; tag: string; product: string; state: string; q: string;
@@ -34,7 +35,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   else if (f.status === "pending") where.push(sql`${orders.status} in ('pending_payment','cod_placing')`);
   else if (f.status !== "any") where.push(sql`${orders.status} in ${OK}`);
 
-  if (f.method === "prepaid" || f.method === "cod") where.push(eq(orders.paymentMethod, f.method));
+  if (f.method === "prepaid" || f.method === "cod" || f.method === "partial") where.push(eq(orders.paymentMethod, f.method));
   if (range.preset !== "max") {
     where.push(gte(orders.createdAt, new Date(`${range.since}T00:00:00+05:30`)));
     where.push(lt(orders.createdAt, new Date(`${addDays(range.until, 1)}T00:00:00+05:30`)));

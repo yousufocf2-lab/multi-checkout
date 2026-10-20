@@ -114,6 +114,12 @@ export default function Design() {
 
         <Panel title="Layout">
           <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <Choice label="Checkout pages" name="layout" value={t.layout} onChange={(v) => set("layout", v as CheckoutTheme["layout"])} options={[["single", "1 page"], ["steps", "3 pages"]]} />
+              <p className="hint mt-1">{t.layout === "steps"
+                ? "Page 1: mobile number. Page 2: address (skipped when the customer has a saved address). Page 3: payment. Order summary, offers and “You may also like” show on every page."
+                : "Everything on one page."}</p>
+            </div>
             <label className="block"><span className="label">Section order</span>
               <select name="sectionOrder" value={t.sectionOrder} onChange={(e) => set("sectionOrder", e.target.value as CheckoutTheme["sectionOrder"])} className="input">
                 {SECTION_ORDERS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}

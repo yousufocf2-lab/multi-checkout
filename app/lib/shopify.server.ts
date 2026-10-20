@@ -199,9 +199,11 @@ export async function createShopifyOrder(store: Store, order: Order) {
   const c = order.customer;
   const totalDiscount = order.paymentDiscount + order.couponDiscount + order.bankDiscount + order.offerDiscount;
   const isCod = order.paymentMethod === "cod";
+  const isPartial = order.paymentMethod === "partial";
+  const feeLabel = isPartial ? "Partial COD charges" : isCod ? "COD charges" : "Payment charges";
 
   const codeParts = [
-    order.paymentDiscount > 0 ? (isCod ? `COD${store.codDiscountPct}` : `PREPAID${store.prepaidDiscountPct}`) : null,
+    order.paymentDiscount > 0 ? (isPartial ? "PARTIALCOD" : isCod ? `COD${store.codDiscountPct}` : `PREPAID${store.prepaidDiscountPct}`) : null,
     order.couponCode,
     order.bankDiscount > 0 ? "BANKOFFER" : null,
     order.offerDiscount > 0 ? "MIXMATCH" : null,
@@ -231,7 +233,10 @@ export async function createShopifyOrder(store: Store, order: Order) {
       requiresShipping: true,
       // Free gifts from offers go in at ₹0
       ...(l.free ? { priceSet: money(0), properties: [{ name: "Free gift", value: l.offer ?? "Offer" }] } : {}),
-    })),
+    })).concat(order.paymentFee > 0 ? [
+      // Payment method fee (e.g. COD charges) as its own line
+      { title: feeLabel, quantity: 1, priceSet: money(order.paymentFee), requiresShipping: false, taxable: false } as never,
+    ] : []),
     email: c.email || null,
     phone: `+91${c.phone}`,
     // Create / match the Shopify customer by phone (and email when given). Without this, orders without
@@ -246,9 +251,9 @@ export async function createShopifyOrder(store: Store, order: Order) {
     },
     shippingAddress: address,
     billingAddress: address,
-    financialStatus: isCod ? "PENDING" : "PAID",
-    tags: ["Growpefy", isCod ? "COD" : "Prepaid", order.couponCode, order.items.some((l) => l.free) ? "FreeGift" : null].filter(Boolean),
-    note: `Checkout order ${order.id}${order.payuMihpayid ? `, PayU ${order.payuMihpayid}` : ""}`,
+    financialStatus: isCod ? "PENDING" : isPartial ? "PARTIALLY_PAID" : "PAID",
+    tags: ["Growpefy", isCod ? "COD" : isPartial ? "Partial COD" : "Prepaid", order.couponCode, order.items.some((l) => l.free) ? "FreeGift" : null].filter(Boolean),
+    note: `Checkout order ${order.id}${order.payuMihpayid ? `, PayU ${order.payuMihpayid}` : ""}${isPartial ? `. Partial COD: advance ₹${((order.amountPaid ?? order.advance ?? 0) / 100).toFixed(2)} paid online, collect ₹${((order.total - (order.advance ?? 0)) / 100).toFixed(2)} on delivery` : ""}`,
     // Without a shipping line Shopify shows "Shipping not required" and fulfilment apps skip the order
     shippingLines: [
       {

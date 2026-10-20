@@ -1,6 +1,7 @@
 // Shared pricing engine (runs on both client and server). All money in paise.
+import { legacyMethod, type MethodAdjust, type PayMethod } from "./payment-methods";
 
-export type PaymentMethod = "prepaid" | "cod";
+export type PaymentMethod = PayMethod;
 
 export interface PricedLine {
   variantId: string;
@@ -40,6 +41,8 @@ export interface StoreRule {
   codDiscountPct: number;
   rules?: ProductRule[];
   mix?: MixDeals | null;
+  /** Payment methods tab: discount / fee / coupons per method. Missing = the old % fields above. */
+  methods?: Partial<Record<PaymentMethod, MethodAdjust>>;
 }
 
 export const mixTitle = (m: Pick<MixDeal, "buyQty" | "freeQty">) => `Buy ${m.buyQty - m.freeQty}, Get ${m.freeQty} Free`;
@@ -97,6 +100,8 @@ export interface PricingResult {
   couponDiscount: number;
   couponApplied: boolean;
   couponMessage: string | null;
+  /** Fee for this payment method (e.g. COD charges), included in total */
+  paymentFee: number;
   total: number;
   savings: number; // vs subtotal (real selling price)
   mixDiscount: number; // Mix & Match free items
@@ -114,7 +119,9 @@ const lineTotal = (l: PricedLine) => l.pricePaise * l.quantity;
  */
 export function lineOff(line: Pick<PricedLine, "productId" | "pricePaise">, store: StoreRule, method: PaymentMethod) {
   const rule = store.rules?.find((r) => r.productIds.includes(line.productId));
-  const value = rule ? (method === "prepaid" ? rule.prepaidPct : rule.codPct) : method === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
+  const adj = store.methods?.[method];
+  const storeValue = adj ? (adj.adjust === "discount" && adj.type === "percent" ? adj.value : 0) : legacyMethod(method) === "prepaid" ? store.prepaidDiscountPct : store.codDiscountPct;
+  const value = rule ? (method === "prepaid" ? rule.prepaidPct : rule.codPct) : storeValue;
   if (rule?.type === "flat") {
     const unit = Math.max(0, Math.min(line.pricePaise, Math.round(value * 100)));
     const pct = line.pricePaise ? Math.round((unit / line.pricePaise) * 100) : 0;
@@ -139,7 +146,8 @@ export function computePricing(
   const mrpTotal = lines.reduce((s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity, 0);
 
   // Mix & Match first: free units are taken out before payment discounts and coupons
-  const deal = store.mix?.[method] ?? null;
+  const deal = store.mix?.[legacyMethod(method)] ?? null;
+  const adj = store.methods?.[method];
   const mix = mixFreeUnits(lines, deal);
   const noPaymentDiscount = mix.discount > 0 && mixBlocksPayment(deal);
   const perLine = lines.map((l, i) => {
@@ -154,6 +162,17 @@ export function computePricing(
   const maxPaymentPct = Math.max(0, ...pcts);
   // A single "70% off" label only when every line has the same percentage discount
   let paymentDiscountPct: number | null = pcts.length === 1 && !perLine.some((x) => x.flat) ? pcts[0] : null;
+  // Flat ₹ off the order for this payment method (lines with their own product discount keep that instead)
+  if (!noPaymentDiscount && adj?.adjust === "discount" && adj.type === "flat" && adj.value > 0) {
+    const open = perLine.filter((x) => !store.rules?.some((r) => r.productIds.includes(x.line.productId)));
+    const room = open.reduce((s, x) => s + x.net - x.discount, 0);
+    const flat = Math.min(Math.round(adj.value * 100), room);
+    if (flat > 0) {
+      paymentDiscount += flat;
+      for (const x of open) x.discount += Math.round((flat * (x.net - x.discount)) / (room || 1));
+      paymentDiscountPct = null;
+    }
+  }
 
   let couponDiscount = 0;
   let couponApplied = false;
@@ -166,7 +185,9 @@ export function computePricing(
     const eligibleAfterPayment = eligible.reduce((s, x) => s + x.net - x.discount, 0);
     const eligiblePayment = eligibleSubtotal - eligibleAfterPayment;
 
-    if (coupon.paymentRestriction !== "any" && coupon.paymentRestriction !== method) {
+    if (adj && !adj.coupons) {
+      couponMessage = `Coupons can't be used with ${method === "prepaid" ? "online payment" : method === "partial" ? "Partial COD" : "Cash on Delivery"}`;
+    } else if (coupon.paymentRestriction !== "any" && coupon.paymentRestriction !== legacyMethod(method)) {
       couponMessage = coupon.paymentRestriction === "prepaid" ? "Valid only when you pay online" : "Valid only on Cash on Delivery";
     } else if (restricted && eligible.length === 0) {
       couponMessage = "Not valid on the products in your cart";
@@ -195,7 +216,11 @@ export function computePricing(
     }
   }
 
-  const total = Math.max(MIN_TOTAL, subtotal - mix.discount - paymentDiscount - couponDiscount);
+  const afterDiscounts = Math.max(MIN_TOTAL, subtotal - mix.discount - paymentDiscount - couponDiscount);
+  const paymentFee = adj?.adjust === "fee" && adj.value > 0
+    ? adj.type === "flat" ? Math.round(adj.value * 100) : Math.round((afterDiscounts * Math.min(100, adj.value)) / 100)
+    : 0;
+  const total = afterDiscounts + paymentFee;
   return {
     subtotal,
     mrpTotal,
@@ -205,8 +230,9 @@ export function computePricing(
     couponDiscount,
     couponApplied,
     couponMessage,
+    paymentFee,
     total,
-    savings: subtotal - total,
+    savings: Math.max(0, subtotal - afterDiscounts),
     mixDiscount: mix.discount,
     mixFree: mix.free,
   };

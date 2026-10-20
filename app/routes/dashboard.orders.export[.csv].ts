@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
+import { orderValuePaise } from "~/lib/payment-methods";
 import { desc } from "drizzle-orm";
 import { db, orders } from "~/db.server";
 import { requireViewer, viewerStores } from "~/lib/auth.server";
@@ -22,10 +23,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     "Items", "Item total", "Payment discount", "Coupon", "Coupon discount", "Bank discount", "Mix & Match discount", "Shipping", "Amount", "Refunded"];
   const lines = rows.map((o) => [
     o.createdAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }), o.id, o.shopifyOrderName ?? "", names.get(o.storeId) ?? "",
-    o.status, o.paymentMethod === "cod" ? "COD" : "Prepaid", `${o.customer.firstName} ${o.customer.lastName}`.trim(), o.customer.phone, o.customer.email,
+    o.status, o.paymentMethod === "cod" ? "COD" : o.paymentMethod === "partial" ? `Partial COD (advance ${((o.amountPaid ?? o.advance ?? 0) / 100).toFixed(2)})` : "Prepaid", `${o.customer.firstName} ${o.customer.lastName}`.trim(), o.customer.phone, o.customer.email,
     o.customer.city, stateName(o.customer.state), o.customer.pincode,
     o.items.map((l) => `${l.title}${l.variantTitle ? ` (${l.variantTitle})` : ""} x${l.quantity}`).join("; "),
-    rs(o.subtotal), rs(o.paymentDiscount), o.couponCode ?? "", rs(o.couponDiscount), rs(o.bankDiscount), rs(o.offerDiscount), rs(o.shipping), rs(o.amountPaid ?? o.total), rs(o.refunded),
+    rs(o.subtotal), rs(o.paymentDiscount), o.couponCode ?? "", rs(o.couponDiscount), rs(o.bankDiscount), rs(o.offerDiscount), rs(o.shipping), rs(orderValuePaise(o)), rs(o.refunded),
   ].map(esc).join(","));
   const csv = "﻿" + [head.join(","), ...lines].join("\n");
   return new Response(csv, {

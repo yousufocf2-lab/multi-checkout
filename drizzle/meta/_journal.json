@@ -99,6 +99,13 @@
       "when": 1792436999276,
       "tag": "0013_onboarding_logistics_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792496609405,
+      "tag": "0014_payment_methods",
+      "breakpoints": true
     }
   ]
 }

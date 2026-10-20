@@ -119,8 +119,8 @@ const MAX_ATTEMPTS = 5;
 
 const hashCode = (id: string, code: string) => crypto.createHmac("sha256", env.sessionSecret).update(`${id}:${code}`).digest("hex");
 
-export async function otpRequired(store: Store, method: "prepaid" | "cod") {
-  if (!store.otpEnabled || !(method === "cod" ? store.otpCod : store.otpPrepaid)) return false;
+export async function otpRequired(store: Store, method: "prepaid" | "cod" | "partial") {
+  if (!store.otpEnabled || !(method === "prepaid" ? store.otpPrepaid : store.otpCod)) return false;
   return otpReady(await messaging());
 }
 
@@ -170,18 +170,40 @@ export async function sendOtp(store: Store, sessionId: string, phone: string): P
   return { ok: true, resendIn: RESEND_AFTER_MS / 1000 };
 }
 
+const masked = (phone: string) => `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.slice(-2)}`;
+
+/**
+ * Widget mode: the browser tells us each time MSG91 sent (or re-sent) an OTP, so it's counted and charged
+ * from the store's wallet like a normal OTP. Rate-limited per checkout session.
+ */
+export async function recordWidgetSend(store: Store, sessionId: string, phone: string): Promise<{ ok: boolean }> {
+  if (!/^[6-9]\d{9}$/.test(phone) || otpMode(await messaging()) !== "widget") return { ok: false };
+  const recent = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
+    .where(and(eq(checkoutOtps.sessionId, sessionId), gt(checkoutOtps.createdAt, new Date(Date.now() - 3600_000)))).limit(MAX_SENDS_PER_HOUR + 1);
+  if (recent.length >= MAX_SENDS_PER_HOUR + 1) return { ok: false };
+  const id = crypto.randomUUID();
+  await db.insert(checkoutOtps).values({ id, storeId: store.id, sessionId, phone, codeHash: hashCode(id, crypto.randomUUID()), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
+  await chargeUsage(store.id, "otp", id, masked(phone)).catch((e) => console.error("[otp] charge:", e));
+  return { ok: true };
+}
+
 /** Widget mode: the browser verified the OTP with MSG91; we confirm the token and mark this session's phone verified. */
 export async function verifyWidgetOtp(store: Store, sessionId: string, phone: string, token: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: "Enter a valid 10-digit mobile number" };
-  const recent = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
-    .where(and(eq(checkoutOtps.sessionId, sessionId), gt(checkoutOtps.createdAt, new Date(Date.now() - 3600_000)))).limit(MAX_SENDS_PER_HOUR + 1);
-  if (recent.length > MAX_SENDS_PER_HOUR) return { ok: false, error: "Too many OTP requests. Please try again in a while." };
   const verified = await verifyWidgetToken(token);
   if (!verified) return { ok: false, error: "Couldn't confirm the OTP. Please try again." };
   if (verified !== phone) return { ok: false, error: "The OTP was for a different number." };
+  // The send was already recorded (and charged): mark it verified
+  const [sent] = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
+    .where(and(eq(checkoutOtps.sessionId, sessionId), eq(checkoutOtps.phone, phone), gt(checkoutOtps.createdAt, new Date(Date.now() - OTP_TTL_MS))))
+    .orderBy(desc(checkoutOtps.createdAt)).limit(1);
+  if (sent) {
+    await db.update(checkoutOtps).set({ verifiedAt: new Date() }).where(eq(checkoutOtps.id, sent.id));
+    return { ok: true };
+  }
   const id = crypto.randomUUID();
   await db.insert(checkoutOtps).values({ id, storeId: store.id, sessionId, phone, codeHash: hashCode(id, crypto.randomUUID()), expiresAt: new Date(Date.now() + OTP_TTL_MS), verifiedAt: new Date() });
-  await chargeUsage(store.id, "otp", id, `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.slice(-2)}`).catch((e) => console.error("[otp] charge:", e));
+  await chargeUsage(store.id, "otp", id, masked(phone)).catch((e) => console.error("[otp] charge:", e));
   return { ok: true };
 }
 
@@ -204,7 +226,7 @@ export async function verifyOtp(sessionId: string, phone: string, code: string):
 export async function sendOrderConfirmation(store: Store, order: Order) {
   try {
     if (!store.confirmEnabled || !store.confirmWhatsapp) return;
-    if (!(order.paymentMethod === "cod" ? store.confirmWaCod : store.confirmWaPrepaid)) return;
+    if (!(order.paymentMethod === "prepaid" ? store.confirmWaPrepaid : store.confirmWaCod)) return;
     if (order.status !== "paid" && order.status !== "cod_placed") return;
     const phone = order.customer.phone;
     if (!/^[6-9]\d{9}$/.test(phone)) return;
@@ -228,7 +250,7 @@ export async function sendOrderConfirmation(store: Store, order: Order) {
             { type: "text", text: store.name },
             { type: "text", text: order.shopifyOrderName || order.id.slice(0, 10).toUpperCase() },
             { type: "text", text: formatINR(order.total) },
-            { type: "text", text: order.paymentMethod === "cod" ? "Cash on Delivery" : "Paid online" },
+            { type: "text", text: order.paymentMethod === "cod" ? "Cash on Delivery" : order.paymentMethod === "partial" ? `${formatINR(order.amountPaid ?? order.advance ?? 0)} paid, ${formatINR(order.total - (order.advance ?? 0))} on delivery` : "Paid online" },
           ] }],
         },
       }),

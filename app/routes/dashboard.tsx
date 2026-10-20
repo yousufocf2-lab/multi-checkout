@@ -100,6 +100,7 @@ export default function DashboardLayout() {
           {stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
         </Group>
         <Group label="Sell more">
+          <Item to={storeHref("payments")} icon="rupee" match={/\/payments$|next=payments/}>Payment methods</Item>
           <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/}>Discounts</Item>
           <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/}>Coupons</Item>
           <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/}>Bank offers</Item>

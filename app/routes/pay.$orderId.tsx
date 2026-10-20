@@ -9,6 +9,7 @@ import { getOrderWithStore } from "~/lib/orders.server";
 import { buildPayuParams, payuEndpoint } from "~/lib/payu.server";
 import { formatINR } from "~/lib/pricing";
 import { BrandLoader } from "~/components/Brand";
+import { payNowPaise } from "~/lib/payment-methods";
 
 export const meta: MetaFunction = () => [{ title: "Opening secure payment" }, { name: "robots", content: "noindex" }];
 
@@ -28,7 +29,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     callbackUrl: `${storeBaseUrl(store)}/payu/callback`,
     offerKeys: offers.map((o) => o.key!).filter(Boolean),
   });
-  return json({ action: payuEndpoint(store), fields, store: { name: store.name, logoUrl: store.logoUrl, color: store.primaryColor }, amount: order.total });
+  return json({ action: payuEndpoint(store), fields, store: { name: store.name, logoUrl: store.logoUrl, color: store.primaryColor }, amount: payNowPaise(order), rest: order.paymentMethod === "partial" ? order.total - payNowPaise(order) : 0 });
 }
 
 function rgb(hex: string) {
@@ -37,7 +38,7 @@ function rgb(hex: string) {
 }
 
 export default function Pay() {
-  const { action, fields, store, amount } = useLoaderData<typeof loader>();
+  const { action, fields, store, amount, rest } = useLoaderData<typeof loader>();
   const ref = useRef<HTMLFormElement>(null);
   useEffect(() => { ref.current?.submit(); }, []);
   return (
@@ -45,6 +46,7 @@ export default function Pay() {
       {store.logoUrl ? <img src={store.logoUrl} alt={store.name} className="mb-6 h-9 w-auto max-w-[160px] object-contain" /> : <p className="mb-6 text-lg font-semibold">{store.name}</p>}
       <BrandLoader className="h-16 w-16" label="Opening payment" />
       <p className="mt-4 font-medium">Opening secure payment for {formatINR(amount)}</p>
+      {rest > 0 && <p className="mt-1 text-sm text-ink-soft">Advance now. The remaining {formatINR(rest)} is paid in cash on delivery.</p>}
       <p className="mt-1 text-sm text-ink-soft">Don't close this page or press back.</p>
       <form ref={ref} method="post" action={action} className="mt-8">
         {Object.entries(fields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { Order, Store } from "~/db/schema";
+import { payNowPaise } from "./payment-methods";
 
 const sha512 = (s: string) => crypto.createHash("sha512").update(s).digest("hex");
 
@@ -22,7 +23,7 @@ export function buildPayuParams(
   const p: Record<string, string> = {
     key: store.payuKey,
     txnid: order.id,
-    amount: (order.total / 100).toFixed(2),
+    amount: (payNowPaise(order) / 100).toFixed(2),
     productinfo: `${store.name} order`.slice(0, 100),
     firstname: c.firstName.slice(0, 60),
     email: c.email || `customer${c.phone}@noemail.in`,

@@ -1,4 +1,5 @@
 import { DownloadLink } from "./DownloadLink";
+import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
 import { Form, Link, useSearchParams, useSubmit } from "@remix-run/react";
 import { useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
@@ -14,7 +15,7 @@ const when = (d: string) => new Date(d).toLocaleString("en-IN", { timeZone: "Asi
 export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
-  shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; refunded: number; refundStatus: string | null;
+  shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; refunded: number; refundStatus: string | null;
   payuMihpayid: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
 };
 
@@ -23,7 +24,7 @@ const STATUS_TABS = [
   { id: "failed", label: "Failed" },
   { id: "pending", label: "Awaiting payment" },
 ];
-const METHODS = [{ id: "", label: "All payments" }, { id: "prepaid", label: "Prepaid" }, { id: "cod", label: "COD" }];
+const METHODS = [{ id: "", label: "All payments" }, { id: "prepaid", label: "Prepaid" }, { id: "cod", label: "COD" }, { id: "partial", label: "Partial COD" }];
 const TAGS = [
   { id: "", label: "Any" }, { id: "coupon", label: "Coupon used" }, { id: "bank", label: "Bank offer used" },
   { id: "refunded", label: "Refunded" }, { id: "not_synced", label: "Not in Shopify" },
@@ -44,6 +45,7 @@ function useLink() {
 export function PaymentTag({ method, status }: { method: string; status: string }) {
   if (status === "failed") return <StatusBadge status="failed" />;
   if (status === "pending_payment" || status === "cod_placing") return <StatusBadge status={status} />;
+  if (method === "partial") return <span className="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-700">Partial COD</span>;
   return method === "cod"
     ? <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-0.5 text-xs font-semibold text-warn">COD</span>
     : <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-[#1c5cab]">Paid</span>;
@@ -65,7 +67,7 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
   const [panel, setPanel] = useState(false);
 
   const chips: { label: string; clear: Record<string, string> }[] = [];
-  if (f.method) chips.push({ label: f.method === "cod" ? "COD" : "Prepaid", clear: { method: "" } });
+  if (f.method) chips.push({ label: f.method === "cod" ? "COD" : f.method === "partial" ? "Partial COD" : "Prepaid", clear: { method: "" } });
   if (f.range.preset !== "max") chips.push({ label: f.range.preset === "custom" ? `${f.range.since} → ${f.range.until}` : PRESETS.find((p) => p.id === f.range.preset)?.label ?? "", clear: { range: "", from: "", to: "" } });
   if (f.min || f.max) chips.push({ label: f.min && f.max ? `₹${f.min} – ₹${f.max}` : f.min ? `₹${f.min} and above` : `Up to ₹${f.max}`, clear: { min: "", max: "" } });
   if (f.product) chips.push({ label: f.product, clear: { product: "" } });
@@ -194,7 +196,7 @@ function RefundTag({ o }: { o: OrderRow }) {
 
 function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
   const [open, setOpen] = useState(false);
-  const paid = o.amountPaid ?? o.total;
+  const paid = orderValuePaise(o);
   return (
     <li className="panel overflow-hidden">
       <button type="button" className="flex w-full items-start gap-3 p-3.5 text-left" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
@@ -215,7 +217,7 @@ function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
 
 function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
   const [open, setOpen] = useState(false);
-  const paid = o.amountPaid ?? o.total;
+  const paid = orderValuePaise(o);
   const okStatus = o.status === "paid" || o.status === "cod_placed";
   return (
     <>
@@ -250,7 +252,7 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
 }
 
 function OrderDetails({ o }: { o: OrderRow }) {
-  const paid = o.amountPaid ?? o.total;
+  const paid = orderValuePaise(o);
   const okStatus = o.status === "paid" || o.status === "cod_placed";
   return (
     <div className="grid gap-5 sm:grid-cols-3">
@@ -263,12 +265,20 @@ function OrderDetails({ o }: { o: OrderRow }) {
       <dl className="num space-y-1 text-sm">
         <p className="mb-2 text-xs font-medium text-ink-soft">Payment</p>
         <div className="flex justify-between"><dt className="text-ink-soft">Items</dt><dd>{inr(o.subtotal)}</dd></div>
-        {o.paymentDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "cod" ? "COD" : "Online"} discount</dt><dd>−{inr(o.paymentDiscount)}</dd></div>}
+        {o.paymentDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "cod" ? "COD" : o.paymentMethod === "partial" ? "Partial COD" : "Online"} discount</dt><dd>−{inr(o.paymentDiscount)}</dd></div>}
         {o.couponCode && <div className="flex justify-between"><dt className="text-ink-soft">{o.couponCode}</dt><dd>−{inr(o.couponDiscount)}</dd></div>}
         {o.offerDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Mix & Match</dt><dd>−{inr(o.offerDiscount)}</dd></div>}
         {o.bankDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Bank offer</dt><dd>−{inr(o.bankDiscount)}</dd></div>}
         <div className="flex justify-between"><dt className="text-ink-soft">{o.shippingTitle ?? "Delivery"}</dt><dd>{o.shipping ? inr(o.shipping) : "Free"}</dd></div>
-        <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>{o.paymentMethod === "cod" ? "To collect" : "Paid"}</dt><dd>{inr(paid)}</dd></div>
+        {o.paymentFee > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "prepaid" ? "Online payment" : o.paymentMethod === "partial" ? "Partial COD" : "COD"} fee</dt><dd>{inr(o.paymentFee)}</dd></div>}
+        {o.paymentMethod === "partial" ? (
+          <>
+            <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>Advance paid</dt><dd>{inr(o.amountPaid ?? o.advance ?? 0)}</dd></div>
+            <div className="flex justify-between font-medium"><dt>To collect</dt><dd>{inr(toCollectPaise(o))}</dd></div>
+          </>
+        ) : (
+          <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>{o.paymentMethod === "cod" ? "To collect" : "Paid"}</dt><dd>{inr(paid)}</dd></div>
+        )}
         {o.refunded > 0 && <div className="flex justify-between text-bad"><dt>Refunded</dt><dd>−{inr(o.refunded)}</dd></div>}
       </dl>
       <div className="space-y-2 text-sm">
@@ -282,7 +292,7 @@ function OrderDetails({ o }: { o: OrderRow }) {
             <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
               <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to Shopify</SubmitButton></Form>
           )}
-          {o.paymentMethod === "prepaid" && (
+          {o.paymentMethod !== "cod" && (
             <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
               <SubmitButton intent="verify" className="btn-secondary px-3 py-1.5 text-xs" busyText="Checking">Check payment with PayU</SubmitButton></Form>
           )}

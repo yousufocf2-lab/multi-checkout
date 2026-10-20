@@ -9,6 +9,7 @@ import { createShopifyOrder } from "./shopify.server";
 import { sendOrderConfirmation } from "./rto.server";
 import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
 import { saveOrderAddress } from "./addresses.server";
+import { payNowPaise } from "./payment-methods";
 
 export function newOrderId() {
   // Short, unique, PayU-safe txnid
@@ -56,7 +57,7 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
     .where(eq(orders.id, order.id))
     .returning();
   await incrementCouponUse(store.id, updated.couponCode);
-  await recordOrderForCod(store.id, updated.customer.phone, updated.paymentMethod === "cod" ? "cod" : "prepaid");
+  await recordOrderForCod(store.id, updated.customer.phone, updated.paymentMethod === "prepaid" ? "prepaid" : "cod");
   // Platform sale fee from the store's wallet (idempotent per order; never blocks the customer)
   await chargeSaleFee(store, updated);
   // Address for faster checkout next time, on any store (only if the customer agreed)
@@ -99,21 +100,21 @@ export async function logPaymentEvent(e: { storeId: number | null; orderId: stri
  * Used by webhooks, the order page and the dashboard "Check payment" button.
  */
 export async function syncOrderWithPayu(store: Store, order: Order, source: string): Promise<Order> {
-  if (order.paymentMethod !== "prepaid") return order;
+  if (order.paymentMethod !== "prepaid" && order.paymentMethod !== "partial") return order;
   const v = await verifyPayment(store, order.id);
   await logPaymentEvent({ storeId: store.id, orderId: order.id, source, kind: "payment", status: v.status, payload: v.raw });
 
   if (v.status === "success" && (order.status === "pending_payment" || order.status === "failed")) {
-    if (v.amountPaise != null && v.amountPaise !== order.total) {
-      await db.update(orders).set({ error: `PayU amount ${v.amountPaise} doesn't match order total ${order.total}`, updatedAt: new Date() }).where(eq(orders.id, order.id));
+    if (v.amountPaise != null && v.amountPaise !== payNowPaise(order)) {
+      await db.update(orders).set({ error: `PayU amount ${v.amountPaise} doesn't match the amount due ${payNowPaise(order)}`, updatedAt: new Date() }).where(eq(orders.id, order.id));
       return order;
     }
-    const debited = v.netDebitPaise ?? order.total;
+    const debited = v.netDebitPaise ?? payNowPaise(order);
     return finalizeOrder(store, order, {
       status: "paid",
       payuMihpayid: v.mihpayid ?? order.payuMihpayid,
       amountPaid: debited,
-      bankDiscount: Math.max(0, order.total - debited),
+      bankDiscount: Math.max(0, payNowPaise(order) - debited),
       error: null,
     });
   }

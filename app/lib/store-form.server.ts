@@ -33,7 +33,8 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuKey: s("payuKey") || null,
     payuSalt: secret("payuSalt", existing?.payuSalt),
     payuMode: s("payuMode") === "live" ? "live" : "test",
-    codEnabled: on("codEnabled"),
+    // COD on/off now lives in Payment methods; new stores start with COD on
+    codEnabled: existing?.codEnabled ?? true,
     // COD wait time and repeat-COD rules now live in the RTO Suite page
     codCooldownHours: existing?.codCooldownHours ?? 6,
     codBlockAfterPrepaid: existing?.codBlockAfterPrepaid ?? true,

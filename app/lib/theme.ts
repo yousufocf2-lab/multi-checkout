@@ -3,7 +3,10 @@
 export type SectionOrder = "address_offers_payment" | "offers_address_payment" | "address_payment_offers";
 export type UpsellPlacement = "cart" | "before_payment" | "after_payment" | "hidden";
 
+export type CheckoutLayout = "single" | "steps";
+
 export type CheckoutTheme = {
+  layout: CheckoutLayout; // single page, or 3 steps (mobile → address → payment)
   bgColor: string; // page background
   surfaceColor: string; // cards
   textColor: string;
@@ -32,6 +35,7 @@ export type CheckoutTheme = {
 };
 
 export const DEFAULT_THEME: CheckoutTheme = {
+  layout: "single",
   bgColor: "#F4F5F2",
   surfaceColor: "#FFFFFF",
   textColor: "#1C2430",
@@ -98,6 +102,7 @@ export function resolveTheme(raw: unknown): CheckoutTheme {
   const t = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<keyof CheckoutTheme, unknown>>;
   const d = DEFAULT_THEME;
   return {
+    layout: pick(t.layout, ["single", "steps"] as const, d.layout),
     bgColor: color(t.bgColor, d.bgColor),
     surfaceColor: color(t.surfaceColor, d.surfaceColor),
     textColor: color(t.textColor, d.textColor),

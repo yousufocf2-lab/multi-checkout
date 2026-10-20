@@ -5,6 +5,7 @@ import {
   type Order, type PlatformSettings, type Store, type Wallet, type WalletRates,
 } from "~/db.server";
 import { payuEndpoint, sha512, verifyPayment, verifyPayuResponse, type PayuCreds } from "./payu.server";
+import { orderValuePaise } from "./payment-methods";
 import {
   DEFAULT_RATES, USAGE_RATE_KEY, financialYear, mergeRates, rechargeBreakup, saleFeeFor, walletState,
   type TxType, type UsageType,
@@ -92,12 +93,12 @@ export async function chargeSaleFee(store: Store, order: Order) {
     if (order.status !== "paid" && order.status !== "cod_placed") return null;
     const w = await getWallet(store.id);
     const rates = await ratesFor(w);
-    const base = order.amountPaid ?? order.total;
+    const base = orderValuePaise(order);
     const fee = saleFeeFor(base, rates.saleFeeBps);
     if (fee <= 0) return null;
     return await postTransaction({
       walletId: w.id, type: "sale_fee", amountPaise: -fee, refType: "order", refId: order.id,
-      note: `${(rates.saleFeeBps / 100).toFixed(2)}% of ₹${(base / 100).toFixed(2)} · ${order.paymentMethod === "cod" ? "COD" : "Prepaid"}${order.shopifyOrderName ? ` · ${order.shopifyOrderName}` : ""}`,
+      note: `${(rates.saleFeeBps / 100).toFixed(2)}% of ₹${(base / 100).toFixed(2)} · ${order.paymentMethod === "cod" ? "COD" : order.paymentMethod === "partial" ? "Partial COD" : "Prepaid"}${order.shopifyOrderName ? ` · ${order.shopifyOrderName}` : ""}`,
     });
   } catch (e) {
     console.error(`[wallet] sale fee for ${order.id}:`, e instanceof Error ? e.message : e);

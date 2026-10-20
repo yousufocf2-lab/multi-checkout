@@ -14,7 +14,7 @@ import { hasCourier } from "~/lib/logistics.server";
 import { resolveShield } from "~/lib/rto-shield";
 import { addBlocks, completedOrders, messaging, otpReady, waReady } from "~/lib/rto.server";
 import { rupees } from "~/lib/wallet";
-import { getWallet, ratesFor } from "~/lib/wallet.server";
+import { getWallet, ratesFor, usageSummary } from "~/lib/wallet.server";
 
 const PAGE = 50;
 const MAX_CSV_BYTES = 8 * 1024 * 1024;
@@ -37,13 +37,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     hasCourier(store.id),
   ]);
   const rates = await ratesFor(w);
+  // OTP / WhatsApp usage, charged from the wallet
+  const ist = new Date(Date.now() + 5.5 * 3600_000);
+  const monthStart = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1) - 5.5 * 3600_000);
+  const [month, ever] = await Promise.all([usageSummary([w.id], monthStart, new Date(Date.now() + 60_000)), usageSummary([w.id], new Date(0), new Date(Date.now() + 60_000))]);
+  const use = (rows: typeof month, type: string) => { const r = rows.find((x) => x.type === type); return { count: r?.count ?? 0, amount: Math.abs(r?.amount ?? 0) }; };
+  const usage = { otp: { month: use(month, "otp"), ever: use(ever, "otp") }, wa: { month: use(month, "wa_confirm"), ever: use(ever, "wa_confirm") }, balance: w.balancePaise };
   const h = store.codCooldownHours;
   const cooldown = h % 730 === 0 ? { value: h / 730, unit: "months" } : h % 24 === 0 ? { value: h / 24, unit: "days" } : { value: h, unit: "hours" };
   return json({
     storeId: store.id, isAdmin: viewer.role === "admin", codEnabled: store.codEnabled,
     shield: { unlocked: courier, on: courier && resolveShield(store.rtoShield).enabled },
     cod: { cooldownOn: store.codCooldownEnabled, cooldown, blockAfterPrepaid: store.codBlockAfterPrepaid },
-    otp: { on: store.otpEnabled, prepaid: store.otpPrepaid, cod: store.otpCod, ready: otpReady(m), price: rates.otp },
+    otp: { on: store.otpEnabled, prepaid: store.otpPrepaid, cod: store.otpCod, timing: store.otpTiming === "start" ? "start" as const : "end" as const, ready: otpReady(m), price: rates.otp },
+    usage,
     block: { on: store.blockEnabled, codOnly: store.blockCodOnly },
     confirm: { on: store.confirmEnabled, whatsapp: store.confirmWhatsapp, prepaid: store.confirmWaPrepaid, cod: store.confirmWaCod, ready: waReady(m), price: rates.waConfirm, orders: orderCount },
     list: list.map((r) => ({ id: r.id, kind: r.kind as BlockKind, value: r.value, label: showValue(r.kind as BlockKind, r.value), source: r.source, at: r.createdAt.toISOString() })),
@@ -74,7 +81,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const enabled = on("otpOn");
     const prepaid = on("otpPrepaid"), cod = on("otpCod");
     if (enabled && !prepaid && !cod) return res(null, "Tick Prepaid, COD or both");
-    await db.update(stores).set({ otpEnabled: enabled, otpPrepaid: prepaid, otpCod: cod }).where(eq(stores.id, store.id));
+    await db.update(stores).set({ otpEnabled: enabled, otpPrepaid: prepaid, otpCod: cod, otpTiming: fd.get("otpTiming") === "start" ? "start" : "end" }).where(eq(stores.id, store.id));
     return res(enabled ? "OTP verification is on" : "OTP verification is off");
   }
   if (intent === "blockSettings") {
@@ -141,7 +148,8 @@ export default function RtoSuite() {
     <div className="space-y-5">
       {uploading && <BusyOverlay title="Reading your file" note="Adding customers to the block list." />}
       <Hero d={d} blocked={blocked} />
-      {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`/dashboard/stores/${d.storeId}/settings`}>Store settings</Link>.</Notice>}
+      <UsageCard d={d} />
+      {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`/dashboard/stores/${d.storeId}/payments`}>Payment methods</Link>.</Notice>}
       <CodForm d={d} msg={msg} />
       <OtpForm d={d} msg={msg} />
       <BlockCard d={d} msg={msg} blocked={blocked} />
@@ -266,6 +274,7 @@ function OtpForm({ d, msg }: { d: D; msg: Msg }) {
   const [on, setOn] = useState(d.otp.on);
   const [prepaid, setPrepaid] = useState(d.otp.prepaid);
   const [cod, setCod] = useState(d.otp.cod);
+  const [timing, setTiming] = useState<"start" | "end">(d.otp.timing);
   return (
     <Form method="post" id="otp" className="panel scroll-mt-6 space-y-4 p-5">
       <Head emoji="🔐" title="OTP verification" text="Customers confirm their mobile number with a code. Cuts fake numbers and prank orders." on={on} setOn={setOn} name="otpOn" price={`${rupees(d.otp.price)} per OTP`} />
@@ -274,7 +283,20 @@ function OtpForm({ d, msg }: { d: D; msg: Msg }) {
         <Row name="otpPrepaid" checked={prepaid} onChange={setPrepaid} title="💳 Prepaid" text="Before the payment page" />
         <Row name="otpCod" checked={cod} onChange={setCod} title="💵 COD" text="Before the COD order is placed" />
       </div>
-      <p className="text-[11px] text-ink-faint">A verified number can order for 30 minutes without a new OTP.</p>
+      <div className={`transition ${on ? "" : "pointer-events-none opacity-60"}`}>
+        <span className="label">When to ask for the OTP</span>
+        <input type="hidden" name="otpTiming" value={timing} />
+        <div className="inline-flex rounded-lg border border-rule-strong p-0.5 text-xs font-medium" role="radiogroup" aria-label="When to ask for the OTP">
+          {([["start", "At the start"], ["end", "At the end"]] as const).map(([v, l]) => (
+            <button key={v} type="button" role="radio" aria-checked={timing === v} onClick={() => setTiming(v)}
+              className={`rounded-md px-3 py-1.5 transition ${timing === v ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-ink-faint">{timing === "start"
+          ? "Right after the customer enters the mobile number (page 1 in the 3-page checkout). Everyone verifies, whichever way they pay."
+          : "Just before the order is placed, only for the payment methods ticked above."}</p>
+      </div>
+      <p className="text-[11px] text-ink-faint">A verified number can order for 30 minutes without a new OTP. Partial COD follows the COD tick.</p>
       <Save intent="otp" label="Save OTP settings" msg={msg} />
     </Form>
   );
@@ -471,5 +493,30 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
       </div>
       <Save intent="confirm" label="Save confirmation settings" msg={msg} />
     </Form>
+  );
+}
+
+function UsageCard({ d }: { d: D }) {
+  const u = d.usage;
+  const Tile = ({ emoji, title, x, price }: { emoji: string; title: string; x: typeof u.otp; price: number }) => (
+    <div className="rounded-xl border border-rule bg-surface p-4">
+      <p className="flex items-center gap-2 text-sm font-medium"><span aria-hidden>{emoji}</span>{title}</p>
+      <p className="num mt-2 text-2xl font-semibold">{x.month.count.toLocaleString("en-IN")}<span className="ml-1.5 text-sm font-normal text-ink-faint">this month</span></p>
+      <p className="num text-sm text-ink-soft">{rupees(x.month.amount)} from wallet · {rupees(price)} each</p>
+      <p className="num mt-1 text-xs text-ink-faint">All time: {x.ever.count.toLocaleString("en-IN")} · {rupees(x.ever.amount)}</p>
+    </div>
+  );
+  return (
+    <section className="panel p-5" id="usage">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-semibold">Messages used</h3>
+        <Link to={`/dashboard/stores/${d.storeId}/wallet`} className="num text-sm text-ink-soft hover:text-ink">Wallet balance <b className={d.usage.balance < 0 ? "text-bad" : "text-ink"}>{rupees(d.usage.balance)}</b></Link>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Tile emoji="🔐" title="OTPs sent" x={u.otp} price={d.otp.price} />
+        <Tile emoji="💬" title="WhatsApp confirmations" x={u.wa} price={d.confirm.price} />
+      </div>
+      <p className="mt-2 text-[11px] text-ink-faint">Each OTP and WhatsApp message is charged from this store's wallet when it's sent. Full list in Wallet.</p>
+    </section>
   );
 }

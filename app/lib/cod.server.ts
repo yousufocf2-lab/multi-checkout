@@ -10,8 +10,9 @@ export function normalizePhone(v: string) {
 }
 
 /** Can this phone number use Cash on Delivery right now? Prepaid is never blocked. */
-export async function codEligibility(store: Store, phoneRaw: string): Promise<CodStatus> {
-  if (!store.codEnabled) return { allowed: false, reason: "disabled", until: null };
+/** `partial`: for Partial COD, which follows the COD rules but not the COD on/off switch. */
+export async function codEligibility(store: Store, phoneRaw: string, opts?: { partial?: boolean }): Promise<CodStatus> {
+  if (!store.codEnabled && !opts?.partial) return { allowed: false, reason: "disabled", until: null };
   const phone = normalizePhone(phoneRaw);
   if (!/^\d{10}$/.test(phone)) return { allowed: true, reason: null, until: null };
 

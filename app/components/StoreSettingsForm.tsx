@@ -1,5 +1,4 @@
 import { Form } from "@remix-run/react";
-import { useState } from "react";
 import { Section, SelectField, SubmitButton, TextField, Toggle } from "./ui";
 
 export type StoreFormValues = {
@@ -19,7 +18,6 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
   values?: StoreFormValues; errors?: Record<string, string>; submitLabel: string; isNew?: boolean;
 }) {
   const v = values;
-  const [codOn, setCodOn] = useState(v.codEnabled ?? true);
 
   return (
     <Form method="post" className="space-y-5" noValidate>
@@ -60,19 +58,11 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         </div>
       </Section>
 
-      <Section title="Cash on Delivery" description="Prepaid checkout is always available. These rules only limit COD.">
-        <div className="space-y-4">
-          <label className="flex items-start justify-between gap-4">
-            <span><span className="block text-sm font-medium">Offer Cash on Delivery</span><span className="block text-xs text-ink-faint">Customers can choose to pay when the order arrives.</span></span>
-            <input type="checkbox" name="codEnabled" checked={codOn} onChange={(e) => setCodOn(e.target.checked)} className="peer sr-only" />
-            <span aria-hidden className={`relative mt-0.5 h-6 w-10 shrink-0 cursor-pointer rounded-full transition peer-focus-visible:ring-2 peer-focus-visible:ring-brand ${codOn ? "bg-brand" : "bg-rule-strong"}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${codOn ? "left-[18px]" : "left-0.5"}`} />
-            </span>
-          </label>
-          <p className="border-t border-rule pt-4 text-sm text-ink-soft">
-            COD wait time, repeat-COD rules, OTP and blocking customers are in <b className="text-ink">RTO Suite</b> in the menu.
-          </p>
-        </div>
+      <Section title="Payment methods" description="Prepaid, Cash on Delivery and Partial COD.">
+        <p className="text-sm text-ink-soft">
+          Turn COD, Prepaid and Partial COD on or off, and set their discount or fee, in <b className="text-ink">Payment methods</b> in the menu.
+          COD wait time, OTP and blocking customers are in <b className="text-ink">RTO Suite</b>.
+        </p>
       </Section>
 
       <Section id="meta" title="Meta ads" description="Shows ad spend, ROAS and cost per order on your dashboard, and sends purchases to your pixel.">

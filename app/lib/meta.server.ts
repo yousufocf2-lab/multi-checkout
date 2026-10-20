@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { orderValuePaise } from "./payment-methods";
 import type { Order, Store } from "~/db/schema";
 
 // ---------------- helpers ----------------
@@ -293,7 +294,7 @@ export function shouldTrackPurchase(store: Store, order: Order) {
 }
 
 export function purchaseValue(order: Order) {
-  return (order.amountPaid ?? order.total) / 100;
+  return orderValuePaise(order) / 100;
 }
 
 /** Server-side Purchase event, deduplicated with the browser pixel via event_id = order.id. */

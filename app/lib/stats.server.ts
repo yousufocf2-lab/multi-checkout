@@ -1,4 +1,5 @@
 import { and, desc, gte, inArray, lt, sql } from "drizzle-orm";
+import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, type Store } from "~/db.server";
 import { addDays, bucketKeys, bucketLabel, granularityFor, type Granularity, type Range } from "./dates";
 import { fetchSpend } from "./meta.server";
@@ -77,7 +78,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
         bucket: bucketExpr,
         method: orders.paymentMethod,
         count: sql<number>`count(*)::int`,
-        revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
+        revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)`,
         discounts: sql<string>`coalesce(sum(${orders.paymentDiscount} + ${orders.couponDiscount} + ${orders.bankDiscount} + ${orders.offerDiscount}), 0)`,
       })
       .from(orders)
@@ -96,7 +97,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       : db
           .select({
             n: sql<number>`count(*)::int`,
-            revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
+            revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)`,
           })
           .from(orders)
           .where(and(idsFilter, inArray(orders.status, OK), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from))),
@@ -110,7 +111,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     db
       .select({
         id: orders.id, storeId: orders.storeId, customer: orders.customer, method: orders.paymentMethod,
-        status: orders.status, total: orders.total, amountPaid: orders.amountPaid, createdAt: orders.createdAt,
+        status: orders.status, total: orders.total, amountPaid: orders.amountPaid, bankDiscount: orders.bankDiscount, createdAt: orders.createdAt,
       })
       .from(orders)
       .where(and(idsFilter, inRange(orders.createdAt)))
@@ -149,7 +150,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     totals.revenue += rev;
     totals.orders += r.count;
     totals.discounts += Number(r.discounts) / 100;
-    if (r.method === "cod") { totals.codOrders += r.count; totals.codRevenue += rev; if (b) b.cod += rev; }
+    if (r.method !== "prepaid") { totals.codOrders += r.count; totals.codRevenue += rev; if (b) b.cod += rev; }
     else { totals.prepaidOrders += r.count; totals.prepaidRevenue += rev; if (b) b.prepaid += rev; }
     if (b) b.orders += r.count;
   }
@@ -192,7 +193,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       city: o.customer.city,
       method: o.method,
       status: o.status,
-      total: (o.amountPaid ?? o.total) / 100,
+      total: (o.method === "partial" ? o.total - o.bankDiscount : o.amountPaid ?? o.total) / 100,
       createdAt: o.createdAt.toISOString(),
     })),
     adErrors,
@@ -209,7 +210,7 @@ export async function loadLeaderboard(storeList: Store[], range: Range) {
       storeId: orders.storeId,
       n: sql<number>`count(*)::int`,
       prepaid: sql<number>`count(*) filter (where ${orders.paymentMethod} <> 'cod')::int`,
-      revenue: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total}) - ${orders.refunded}), 0)`,
+      revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)`,
     })
     .from(orders)
     .where(and(inArray(orders.storeId, storeList.map((s) => s.id)), inArray(orders.status, OK), gte(orders.createdAt, from), lt(orders.createdAt, to)))

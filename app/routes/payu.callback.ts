@@ -5,6 +5,7 @@ import { db, orders } from "~/db.server";
 import { finalizeOrder, getOrderWithStore, logPaymentEvent } from "~/lib/orders.server";
 import { verifyPayuResponse } from "~/lib/payu.server";
 import { rupeesToPaise } from "~/lib/pricing";
+import { payNowPaise } from "~/lib/payment-methods";
 
 export const loader = () => redirect("/");
 
@@ -24,7 +25,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const hashOk = verifyPayuResponse(store, f);
   const amount = rupeesToPaise(f.amount);
-  const amountOk = amount === order.total;
+  const amountOk = amount === payNowPaise(order);
   const success = hashOk && amountOk && f.status === "success" && f.key === store.payuKey;
 
   if (!success) {
@@ -42,8 +43,8 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   // Bank offer: PayU debits less than `amount` when an offer_key was availed
-  const debited = rupeesToPaise(f.net_amount_debit) ?? order.total;
-  const bankDiscount = Math.max(0, order.total - debited);
+  const debited = rupeesToPaise(f.net_amount_debit) ?? payNowPaise(order);
+  const bankDiscount = Math.max(0, payNowPaise(order) - debited);
 
   await finalizeOrder(store, order, {
     status: "paid",

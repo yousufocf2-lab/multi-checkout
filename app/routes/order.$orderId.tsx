@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
 import { json } from "@remix-run/node";
 import { eq } from "drizzle-orm";
 import { db, orders } from "~/db.server";
@@ -36,8 +37,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     method: order.paymentMethod,
     name: order.customer.firstName,
     shopifyName: order.shopifyOrderName,
-    total: order.amountPaid ?? order.total,
-    savings: order.subtotal - (order.amountPaid ?? order.total),
+    total: orderValuePaise(order),
+    paidNow: order.paymentMethod === "partial" ? order.amountPaid ?? order.advance ?? 0 : 0,
+    toCollect: toCollectPaise(order),
+    savings: Math.max(0, order.subtotal - orderValuePaise(order) + order.paymentFee),
     sessionId: order.sessionId,
     store: { name: store.name, logoUrl: store.logoUrl, supportPhone: store.supportPhone, color: store.primaryColor },
     items: order.items.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity, free: Boolean(l.free) })),
@@ -85,7 +88,14 @@ export default function OrderStatus() {
               <h1 className="mt-4 text-2xl font-semibold tracking-tight">Thank you, {d.name}</h1>
               <p className="mt-1 text-ink-soft">Your order is confirmed{d.shopifyName ? ` as ${d.shopifyName}` : ""}. We'll send updates to your phone.</p>
               <dl className="mt-6 space-y-2 rounded-xl bg-paper p-4 text-sm">
-                <div className="flex justify-between"><dt className="text-ink-soft">{d.method === "cod" ? "Pay on delivery" : "Paid"}</dt><dd className="num font-semibold">{formatINR(d.total)}</dd></div>
+                {d.method === "partial" ? (
+                  <>
+                    <div className="flex justify-between"><dt className="text-ink-soft">Paid now (advance)</dt><dd className="num font-semibold">{formatINR(d.paidNow)}</dd></div>
+                    <div className="flex justify-between"><dt className="text-ink-soft">Pay on delivery</dt><dd className="num font-semibold">{formatINR(d.toCollect)}</dd></div>
+                  </>
+                ) : (
+                  <div className="flex justify-between"><dt className="text-ink-soft">{d.method === "cod" ? "Pay on delivery" : "Paid"}</dt><dd className="num font-semibold">{formatINR(d.total)}</dd></div>
+                )}
                 {d.savings > 0 && <div className="flex justify-between"><dt className="text-ink-soft">You saved</dt><dd className="num font-medium text-good">{formatINR(d.savings)}</dd></div>}
                 <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>
               </dl>

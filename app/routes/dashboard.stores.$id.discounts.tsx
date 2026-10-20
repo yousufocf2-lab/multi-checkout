@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { and, desc, eq } from "drizzle-orm";
 import { ProductPicker, parsePicked } from "~/components/ProductPicker";
@@ -75,15 +75,9 @@ export default function Discounts() {
     <div className="max-w-4xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
 
-      <Section title="Store-wide discount" description="Applies to every product unless a product discount below says otherwise. Customers see both prices at checkout.">
-        <Form method="post" className="flex flex-wrap items-end gap-4">
-          <TextField label="Pay online" name="prepaid" type="number" min={0} max={100} defaultValue={store.prepaid} wrap="w-36" hint="% off" />
-          <TextField label="Cash on Delivery" name="cod" type="number" min={0} max={100} defaultValue={store.cod} wrap="w-36" hint={store.codEnabled ? "% off" : "COD is turned off"} />
-          <SubmitButton intent="defaults" busyText="Saving">Save</SubmitButton>
-        </Form>
-      </Section>
+      <Notice>The store-wide online and COD discount (or fee) is now in <Link to={`/dashboard/stores/${store.id}/payments`} className="font-medium underline">Payment methods</Link>. Product discounts below win for their products.</Notice>
 
-      <Section title="Product discounts" description="Give selected products their own online and COD discount, as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins.">
+      <Section title="Product discounts" description="Give selected products their own online and COD discount (COD value also applies to Partial COD), as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins.">
         <Form method="post" className="space-y-4 rounded-lg border border-dashed border-rule-strong p-4" key={rules.length}>
           <RuleFields storeId={store.id} defaults={{ type: "percent", prepaid: store.prepaid, cod: store.cod }} />
           {errors.rule && <span className="error-text">{errors.rule}</span>}
@@ -92,7 +86,7 @@ export default function Discounts() {
 
         <div className="mt-5">
           {rules.length === 0 ? (
-            <p className="text-sm text-ink-faint">No product discounts yet. Every product uses the store-wide discount.</p>
+            <p className="text-sm text-ink-faint">No product discounts yet. Every product uses the discount set in Payment methods.</p>
           ) : (
             <ul className="divide-y divide-rule rounded-lg border border-rule">
               {rules.map((r) => <RuleRow key={r.id} r={r} storeId={store.id} error={errors[`edit${r.id}`]} />)}
