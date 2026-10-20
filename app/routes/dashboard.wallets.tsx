@@ -1,4 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import crypto from "node:crypto";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
 import { asc, eq } from "drizzle-orm";
@@ -51,6 +52,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         otpTest: m.msg91AuthKey === "test" || (otpMode(m) === "widget" && m.msg91WidgetId === "test"),
         waPhoneNumberId: p.messaging?.waPhoneNumberId ?? "", hasWaToken: Boolean(p.messaging?.waToken),
         waTemplate: p.messaging?.waTemplate ?? "", waLang: p.messaging?.waLang ?? "en",
+        waButtons: Boolean(p.messaging?.waButtons), waVerifyToken: p.messaging?.waVerifyToken ?? "", hasWaAppSecret: Boolean(p.messaging?.waAppSecret),
+        webhookUrl: `${(process.env.APP_URL ?? "").replace(/\/+$/, "")}/webhooks/whatsapp`,
       },
       payuFromEnv: !p.payuKey && Boolean(process.env.PLATFORM_PAYU_KEY), payuReady: Boolean(creds.payuKey && creds.payuSalt),
     },
@@ -102,6 +105,9 @@ export async function action({ request }: ActionFunctionArgs) {
         msg91AuthKey: s("msg91AuthKey") || m.msg91AuthKey, msg91TemplateId: s("msg91TemplateId"),
         msg91WidgetId: s("msg91WidgetId"), msg91TokenAuth: s("msg91TokenAuth"), msg91OtpLength: s("msg91OtpLength") === "6" ? 6 : 4,
         waPhoneNumberId: s("waPhoneNumberId").replace(/\D/g, ""), waToken: s("waToken") || m.waToken, waTemplate: s("waTemplate"), waLang: s("waLang") || "en",
+        waButtons: fd.get("waButtons") === "on",
+        waVerifyToken: s("waVerifyToken") || m.waVerifyToken || crypto.randomBytes(16).toString("hex"),
+        waAppSecret: s("waAppSecret") || m.waAppSecret,
       },
       updatedAt: new Date(),
     }).where(eq(platformSettings.id, 1));
@@ -311,6 +317,19 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
               <label className="block"><span className="label">Permanent access token</span><input name="waToken" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasWaToken ? "Saved. Leave blank to keep it." : "System user token with whatsapp_business_messaging"} /></label>
               <Field label="Order confirmation template name" name="waTemplate" value={s.msg.waTemplate} hint="Approved utility template with 5 body variables: name, store, order no., amount, payment" />
               <Field label="Template language code" name="waLang" value={s.msg.waLang} hint="e.g. en, en_US, hi" />
+              <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
+                <input type="checkbox" name="waButtons" defaultChecked={s.msg.waButtons} className="mt-0.5 h-4 w-4" />
+                <span className="text-sm"><b>Template has Confirm / Cancel buttons</b><span className="block text-xs text-ink-faint">Quick-reply button 1 = Confirm order, button 2 = Cancel order. Replies mark the order and tag it in Shopify.</span></span>
+              </label>
+            </div>
+            <div className="mt-4 rounded-lg border border-rule bg-paper p-4">
+              <p className="text-sm font-medium">Webhook (for Confirm / Cancel replies)</p>
+              <p className="mt-0.5 text-xs text-ink-faint">Meta app → WhatsApp → Configuration → Webhook: paste the Callback URL and Verify token, then subscribe to <b>messages</b>.</p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <label className="block sm:col-span-2"><span className="label">Callback URL</span><input readOnly value={s.msg.webhookUrl} className="input num bg-surface" onFocus={(e) => e.currentTarget.select()} /></label>
+                <Field label="Verify token" name="waVerifyToken" value={s.msg.waVerifyToken} hint={s.msg.waVerifyToken ? "Paste this in Meta" : "Leave blank and save: one is made for you"} />
+                <label className="block"><span className="label">App secret</span><input name="waAppSecret" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasWaAppSecret ? "Saved. Leave blank to keep it." : "Meta app → App settings → Basic → App secret"} /><span className="hint">Needed to trust replies</span></label>
+              </div>
             </div>
           </div>
           <SubmitButton intent="messaging" busyText="Saving">Save messaging settings</SubmitButton>

@@ -356,3 +356,39 @@ export async function fetchFulfillmentTracking(store: Store, orderGids: string[]
       return { orderId: n.id, tags: n.tags ?? [], cancelled: Boolean(n.cancelledAt), fulfillments, tracking: fulfillments.flatMap((f) => f.tracking) };
     });
 }
+
+// ---------- order updates (WhatsApp confirmation replies) ----------
+
+const orderGid = (id: string) => (id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`);
+
+/** Adds tags to a Shopify order. Never throws; returns an error message or null. */
+export async function tagShopifyOrder(store: Store, shopifyOrderId: string, tags: string[]) {
+  try {
+    const d = await adminGraphql<{ tagsAdd: { userErrors: { message: string }[] } }>(
+      store,
+      `mutation($id: ID!, $tags: [String!]!) { tagsAdd(id: $id, tags: $tags) { userErrors { message } } }`,
+      { id: orderGid(shopifyOrderId), tags },
+    );
+    return d.tagsAdd.userErrors[0]?.message ?? null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/** Cancels a Shopify order (customer cancelled on WhatsApp): no refund, items restocked, no Shopify email. */
+export async function cancelShopifyOrder(store: Store, shopifyOrderId: string, note: string) {
+  try {
+    const d = await adminGraphql<{ orderCancel: { orderCancelUserErrors?: { message: string }[]; userErrors?: { message: string }[] } }>(
+      store,
+      `mutation($id: ID!, $note: String) {
+        orderCancel(orderId: $id, reason: CUSTOMER, refund: false, restock: true, notifyCustomer: false, staffNote: $note) {
+          orderCancelUserErrors { message }
+        }
+      }`,
+      { id: orderGid(shopifyOrderId), note },
+    );
+    return d.orderCancel.orderCancelUserErrors?.[0]?.message ?? null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}

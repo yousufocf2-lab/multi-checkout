@@ -52,7 +52,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     otp: { on: store.otpEnabled, prepaid: store.otpPrepaid, cod: store.otpCod, timing: store.otpTiming === "start" ? "start" as const : "end" as const, ready: otpReady(m), price: rates.otp },
     usage,
     block: { on: store.blockEnabled, codOnly: store.blockCodOnly },
-    confirm: { on: store.confirmEnabled, whatsapp: store.confirmWhatsapp, prepaid: store.confirmWaPrepaid, cod: store.confirmWaCod, ready: waReady(m), price: rates.waConfirm, orders: orderCount },
+    confirm: { autoCancel: store.confirmAutoCancel, buttons: Boolean(m.waButtons), on: store.confirmEnabled, whatsapp: store.confirmWhatsapp, prepaid: store.confirmWaPrepaid, cod: store.confirmWaCod, ready: waReady(m), price: rates.waConfirm, orders: orderCount },
     list: list.map((r) => ({ id: r.id, kind: r.kind as BlockKind, value: r.value, label: showValue(r.kind as BlockKind, r.value), source: r.source, at: r.createdAt.toISOString() })),
     total: Number(total), page, kind, q,
     counts: Object.fromEntries(byKind.map((r) => [r.kind, Number(r.n)])) as Partial<Record<BlockKind, number>>,
@@ -127,7 +127,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const wa = on("waOn"), prepaid = on("waPrepaid"), cod = on("waCod");
     if (enabled && !wa) return res(null, "Choose WhatsApp confirmation");
     if (enabled && wa && !prepaid && !cod) return res(null, "Tick Prepaid, COD or both");
-    await db.update(stores).set({ confirmEnabled: enabled, confirmWhatsapp: wa, confirmWaPrepaid: prepaid, confirmWaCod: cod }).where(eq(stores.id, store.id));
+    await db.update(stores).set({ confirmEnabled: enabled, confirmWhatsapp: wa, confirmWaPrepaid: prepaid, confirmWaCod: cod, confirmAutoCancel: on("autoCancel") }).where(eq(stores.id, store.id));
     return res(enabled ? "Order confirmation is on" : "Order confirmation is off");
   }
   return res(null, "Unknown action");
@@ -480,6 +480,17 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
             </label>
           ))}
         </div>
+        {wa && (
+          <div className="ml-8 rounded-lg bg-paper px-3 py-2.5 text-xs text-ink-soft">
+            {d.confirm.buttons
+              ? <>Customers get <b>✅ Confirm order</b> and <b>❌ Cancel order</b> buttons. Replies show on the order and add a <b>WA Confirmed</b> / <b>WA Cancelled</b> tag in Shopify.</>
+              : <>Confirm / Cancel buttons aren't switched on in Messaging yet, so customers only get the order details.</>}
+            <label className="mt-2 flex cursor-pointer items-start gap-2">
+              <input type="checkbox" name="autoCancel" defaultChecked={d.confirm.autoCancel} className="mt-0.5 h-4 w-4" />
+              <span><b className="text-ink">Cancel COD orders in Shopify</b> when the customer taps Cancel (items go back to stock). Prepaid and Partial COD orders are only tagged, since they need a refund.</span>
+            </label>
+          </div>
+        )}
         <div className="rounded-xl border border-dashed border-rule-strong px-4 py-3">
           <div className="flex items-center gap-3">
             <span className="flex h-5 w-5 items-center justify-center text-sm" aria-hidden>📞</span>

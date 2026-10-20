@@ -113,6 +113,7 @@ export const stores = pgTable("stores", {
   confirmWaPrepaid: boolean("confirm_wa_prepaid").notNull().default(true),
   confirmWaCod: boolean("confirm_wa_cod").notNull().default(true),
   confirmCall: boolean("confirm_call").notNull().default(false), // unlocks after 100 orders
+  confirmAutoCancel: boolean("confirm_auto_cancel").notNull().default(false), // cancel COD orders in Shopify when the customer taps Cancel
   // RTO Shield: COD / order blocks from shipment history (unlocks when a courier is connected)
   rtoShield: jsonb("rto_shield").$type<Partial<RtoShieldSettings>>().notNull().default({}),
   // Checkout upsell ("You may also like")
@@ -437,6 +438,10 @@ export const orders = pgTable(
     shipping: integer("shipping").notNull().default(0), // paise, included in total
     shippingTitle: text("shipping_title"),
     total: integer("total").notNull(), // amount sent to PayU / collected on COD (items + shipping)
+    // WhatsApp order confirmation: sent | confirmed | cancelled
+    confirmStatus: text("confirm_status"),
+    confirmAt: timestamp("confirm_at", { withTimezone: true }),
+    waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery
     paymentFee: integer("payment_fee").notNull().default(0), // fee for the payment method (e.g. COD charges), included in total
     refunded: integer("refunded").notNull().default(0), // paise
@@ -506,6 +511,9 @@ export type MessagingSettings = {
   // MSG91 OTP Widget (works without DLT): widget ID + token auth, verified server-side with the auth key
   msg91WidgetId?: string; msg91TokenAuth?: string; msg91OtpLength?: number;
   waPhoneNumberId?: string; waToken?: string; waTemplate?: string; waLang?: string;
+  waButtons?: boolean; // template has "Confirm order" / "Cancel order" quick-reply buttons
+  waVerifyToken?: string; // webhook verify token (Meta → Configuration → Webhook)
+  waAppSecret?: string; // Meta app secret, to check webhook signatures
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 

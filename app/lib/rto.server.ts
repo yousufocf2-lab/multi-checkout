@@ -1,10 +1,11 @@
 import { and, count, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
 import crypto from "node:crypto";
-import { blockedCustomers, checkoutOtps, db, orders, walletTransactions, type MessagingSettings, type Order, type Store } from "~/db.server";
+import { blockedCustomers, checkoutOtps, db, orders, stores, walletTransactions, type MessagingSettings, type Order, type Store } from "~/db.server";
 import { BLOCK_KINDS, normValue, type BlockKind } from "./blocklist";
 import { env } from "./env.server";
 import { formatINR } from "./pricing";
 import { chargeUsage, getPlatform, getWallet } from "./wallet.server";
+import { cancelShopifyOrder, tagShopifyOrder } from "./shopify.server";
 
 // ---------------- providers (platform level; Growpefy pays them and bills the wallet) ----------------
 
@@ -21,6 +22,9 @@ export async function messaging(): Promise<MessagingSettings> {
     waToken: m.waToken || process.env.WA_ACCESS_TOKEN || undefined,
     waTemplate: m.waTemplate || process.env.WA_CONFIRM_TEMPLATE || undefined,
     waLang: m.waLang || "en",
+    waButtons: m.waButtons ?? false,
+    waVerifyToken: m.waVerifyToken || process.env.WA_VERIFY_TOKEN || undefined,
+    waAppSecret: m.waAppSecret || process.env.WA_APP_SECRET || undefined,
   };
 }
 /**
@@ -251,7 +255,11 @@ export async function sendOrderConfirmation(store: Store, order: Order) {
             { type: "text", text: order.shopifyOrderName || order.id.slice(0, 10).toUpperCase() },
             { type: "text", text: formatINR(order.total) },
             { type: "text", text: order.paymentMethod === "cod" ? "Cash on Delivery" : order.paymentMethod === "partial" ? `${formatINR(order.amountPaid ?? order.advance ?? 0)} paid, ${formatINR(order.total - (order.advance ?? 0))} on delivery` : "Paid online" },
-          ] }],
+          ] },
+          // Quick-reply buttons carry the order id, so the reply webhook knows which order it is
+          ...(m.waButtons ? (["confirm", "cancel"] as const).map((a, i) => ({
+            type: "button", sub_type: "quick_reply", index: String(i), parameters: [{ type: "payload", payload: `gp:${a}:${order.id}` }],
+          })) : [])],
         },
       }),
       signal: AbortSignal.timeout(10_000),
@@ -261,6 +269,7 @@ export async function sendOrderConfirmation(store: Store, order: Order) {
       console.error(`[whatsapp] order ${order.id}:`, res.status, body.error?.message);
       return;
     }
+    await db.update(orders).set({ waMessageId: body.messages[0].id, confirmStatus: m.waButtons ? "sent" : null }).where(eq(orders.id, order.id));
     await chargeUsage(store.id, "wa_confirm", `order:${order.id}`, `Order confirmation · ${order.shopifyOrderName ?? order.id.slice(0, 10)}`);
   } catch (e) {
     console.error(`[whatsapp] order ${order.id}:`, e instanceof Error ? e.message : e);
@@ -275,3 +284,82 @@ export async function completedOrders(storeId: number) {
   return Number(r?.n ?? 0);
 }
 export { CALL_UNLOCK_ORDERS } from "./blocklist";
+
+// ---------- WhatsApp replies (Confirm / Cancel buttons) ----------
+
+/** Checks Meta's X-Hub-Signature-256 header against the raw body. */
+export function verifyMetaSignature(raw: string, header: string | null, appSecret: string) {
+  if (!header?.startsWith("sha256=")) return false;
+  const expected = crypto.createHmac("sha256", appSecret).update(raw, "utf8").digest("hex");
+  const got = header.slice(7);
+  return got.length === expected.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
+}
+
+async function sendWhatsappText(m: MessagingSettings, to: string, text: string) {
+  try {
+    await fetch(`https://graph.facebook.com/v21.0/${m.waPhoneNumberId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${m.waToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text } }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (e) {
+    console.error("[whatsapp] reply:", e instanceof Error ? e.message : e);
+  }
+}
+
+type WaMessage = {
+  from?: string; id?: string; type?: string;
+  context?: { id?: string };
+  button?: { payload?: string; text?: string };
+  interactive?: { button_reply?: { id?: string; title?: string } };
+};
+
+/**
+ * One customer reply from the webhook. Button payload "gp:confirm:<orderId>" / "gp:cancel:<orderId>";
+ * if the payload is missing, the replied-to message id or the button text is used.
+ */
+export async function handleWhatsappReply(msg: WaMessage) {
+  const payload = msg.button?.payload ?? msg.interactive?.button_reply?.id ?? "";
+  const text = (msg.button?.text ?? msg.interactive?.button_reply?.title ?? "").toLowerCase();
+  let action: "confirm" | "cancel" | null = null;
+  let orderId: string | null = null;
+  const p = /^gp:(confirm|cancel):([A-Z0-9]+)$/.exec(payload);
+  if (p) { action = p[1] as "confirm" | "cancel"; orderId = p[2]; }
+  else if (/cancel/.test(text)) action = "cancel";
+  else if (/confirm/.test(text)) action = "confirm";
+  if (!action) return { handled: false as const };
+
+  const [row] = orderId
+    ? await db.select().from(orders).where(eq(orders.id, orderId)).limit(1)
+    : msg.context?.id ? await db.select().from(orders).where(eq(orders.waMessageId, msg.context.id)).limit(1) : [];
+  if (!row) return { handled: false as const };
+  // Only the customer the message was sent to can answer for the order
+  const from = (msg.from ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
+  if (from !== row.customer.phone) { console.warn(`[whatsapp] reply for ${row.id} from a different number`); return { handled: false as const }; }
+
+  const [store] = await db.select().from(stores).where(eq(stores.id, row.storeId)).limit(1);
+  if (!store) return { handled: false as const };
+  const m = await messaging();
+  const status = action === "confirm" ? "confirmed" : "cancelled";
+  const ref = row.shopifyOrderName ?? row.id;
+  if (row.confirmStatus === status) return { handled: true as const, status, repeat: true };
+  if (row.confirmStatus === "cancelled" && action === "confirm") {
+    await sendWhatsappText(m, `91${row.customer.phone}`, `Order ${ref} was already cancelled. Please contact ${store.name} if you'd like to place it again.`);
+    return { handled: true as const, status: "cancelled" };
+  }
+
+  await db.update(orders).set({ confirmStatus: status, confirmAt: new Date(), updatedAt: new Date() }).where(eq(orders.id, row.id));
+  if (row.shopifyOrderId) {
+    const err = await tagShopifyOrder(store, row.shopifyOrderId, [action === "confirm" ? "WA Confirmed" : "WA Cancelled"]);
+    if (err) console.error(`[whatsapp] tag ${row.id}:`, err);
+    if (action === "cancel" && store.confirmAutoCancel && row.paymentMethod === "cod") {
+      const cErr = await cancelShopifyOrder(store, row.shopifyOrderId, "Cancelled by the customer on WhatsApp (Growpefy)");
+      if (cErr) console.error(`[whatsapp] cancel ${row.id}:`, cErr);
+    }
+  }
+  await sendWhatsappText(m, `91${row.customer.phone}`, action === "confirm"
+    ? `Thank you! Your order ${ref} is confirmed ✅ We'll share tracking details once it ships.`
+    : `Your order ${ref} has been cancelled.${row.paymentMethod !== "cod" ? ` ${store.name} will contact you about the refund.` : ""} If this was a mistake, please contact ${store.name}.`);
+  return { handled: true as const, status };
+}

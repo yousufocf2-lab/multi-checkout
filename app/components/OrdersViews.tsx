@@ -15,7 +15,7 @@ const when = (d: string) => new Date(d).toLocaleString("en-IN", { timeZone: "Asi
 export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
-  shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; refunded: number; refundStatus: string | null;
+  shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
   payuMihpayid: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
 };
 
@@ -189,6 +189,12 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
 
 const itemsLabel = (o: OrderRow) => { const n = o.items.reduce((a, l) => a + l.quantity, 0); return `${n} item${n === 1 ? "" : "s"}`; };
 
+function ConfirmTag({ s }: { s: string | null }) {
+  if (!s) return null;
+  const v = s === "confirmed" ? ["bg-emerald-50 text-good", "✅ Confirmed"] : s === "cancelled" ? ["bg-red-50 text-bad", "❌ Cancelled"] : ["bg-paper-sunk text-ink-soft", "💬 Awaiting reply"];
+  return <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${v[0]}`} title="WhatsApp confirmation">{v[1]}</span>;
+}
+
 function RefundTag({ o }: { o: OrderRow }) {
   if (!o.refundStatus) return null;
   return <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-bad">{o.refundStatus === "full" ? "Refunded" : o.refundStatus === "partial" ? "Part refunded" : "Refund pending"}</span>;
@@ -201,7 +207,7 @@ function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
     <li className="panel overflow-hidden">
       <button type="button" className="flex w-full items-start gap-3 p-3.5 text-left" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
         <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-1.5"><span className="num text-sm font-semibold">{o.shopifyOrderName ?? o.id}</span><PaymentTag method={o.paymentMethod} status={o.status} /><RefundTag o={o} /></p>
+          <p className="flex flex-wrap items-center gap-1.5"><span className="num text-sm font-semibold">{o.shopifyOrderName ?? o.id}</span><PaymentTag method={o.paymentMethod} status={o.status} /><ConfirmTag s={o.confirmStatus} /><RefundTag o={o} /></p>
           <p className="mt-1 truncate text-sm">{o.customer.firstName} {o.customer.lastName}<span className="text-ink-faint">, {o.customer.city}</span></p>
           <p className="truncate text-xs text-ink-faint">{showStore && `${o.storeName} · `}{when(o.createdAt)}</p>
         </div>
@@ -231,7 +237,7 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
           <p>{o.customer.firstName} {o.customer.lastName}</p>
           <p className="num text-xs text-ink-faint">{o.customer.phone}, {o.customer.city}</p>
         </td>
-        <td><div className="flex flex-wrap items-center gap-1.5"><PaymentTag method={o.paymentMethod} status={o.status} /><RefundTag o={o} /></div></td>
+        <td><div className="flex flex-wrap items-center gap-1.5"><PaymentTag method={o.paymentMethod} status={o.status} /><ConfirmTag s={o.confirmStatus} /><RefundTag o={o} /></div></td>
         <td className="num text-right">
           <p className="font-medium">{inr(paid - o.refunded)}</p>
           <p className="text-xs text-ink-faint">{itemsLabel(o)}</p>
