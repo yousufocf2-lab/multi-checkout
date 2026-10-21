@@ -134,7 +134,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       pixelId: store.metaPixelId,
     },
     theme: resolveTheme(store.theme),
-    otp: { prepaid: otpPrepaid, cod: otpCod, partial: otpCod, start: store.otpTiming === "start" && (otpPrepaid || otpCod) },
+    otp: { prepaid: otpPrepaid, cod: otpCod, partial: otpCod, start: store.otpTiming === "start" && otpPrepaid && otpCod },
     // Which methods can show (rules are checked in the browser as the cart changes, and again on the server)
     pay: {
       prepaid: { ...slim(pm.prepaid), on: pm.prepaid.on && payuReady },
@@ -387,6 +387,10 @@ export default function Checkout() {
   const addrFetcher = useFetcher<{ addresses: MaskedAddress[] }>();
   const revealFetcher = useFetcher<{ address: Partial<OrderCustomer> | null; error: string | null }>();
   const [saved, setSaved] = useState<MaskedAddress[]>([]);
+  // A saved address is picked by itself only when the chosen payment method asks for an OTP anyway;
+  // otherwise the customer taps "Use a saved address" (and then verifies)
+  const autoSaved = Boolean(otp[method]);
+  const autoPicked = useRef(false);
   const [addrMode, setAddrMode] = useState<"manual" | "saved">("manual");
   const [savedId, setSavedId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -401,6 +405,7 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [c.phone, phoneOk]);
   const pickSaved = (a: MaskedAddress) => {
+    autoPicked.current = false;
     setSavedId(a.id); setAddrMode("saved"); setShowAll(false);
     setC((prev) => ({ ...prev, city: a.city, state: a.state, pincode: a.pincode }));
   };
@@ -408,9 +413,15 @@ export default function Checkout() {
     const list = addrFetcher.data?.addresses ?? [];
     setSaved(list);
     if (!list.length) { setAddrMode("manual"); setSavedId(null); return; }
-    if (!choseManual.current && !c.address1.trim()) pickSaved(list[0]);
+    // Pick the saved address by itself only when the store uses OTP anyway; otherwise the customer chooses it (and the OTP)
+    if (autoSaved && !choseManual.current && !c.address1.trim()) { pickSaved(list[0]); autoPicked.current = true; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addrFetcher.data]);
+  // Switched to a payment method without OTP: drop the saved address we picked by ourselves
+  useEffect(() => {
+    if (!autoSaved && autoPicked.current && addrMode === "saved") { autoPicked.current = false; setAddrMode("manual"); setSavedId(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaved]);
   useEffect(() => {
     const a = revealFetcher.data?.address;
     if (!a) return;
@@ -520,7 +531,7 @@ export default function Checkout() {
   const afterContact = () => {
     if (lookupPending) { waitingForLookup.current = true; return; }
     const list = addrFetcher.data?.addresses ?? [];
-    const willUseSaved = usingSaved || (list.length > 0 && !choseManual.current && !c.address1.trim());
+    const willUseSaved = usingSaved || (autoSaved && list.length > 0 && !choseManual.current && !c.address1.trim());
     // Saved address: skip the address page
     setStep(willUseSaved || addressComplete(c) ? 3 : 2);
     window.scrollTo({ top: 0, behavior: "smooth" });

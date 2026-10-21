@@ -293,7 +293,7 @@ function OtpForm({ d, msg }: { d: D; msg: Msg }) {
           ))}
         </div>
         <p className="mt-1.5 text-xs text-ink-faint">{timing === "start"
-          ? "Right after the customer enters the mobile number (page 1 in the 3-page checkout). Everyone verifies, whichever way they pay."
+          ? (prepaid && cod ? "Right after the customer enters the mobile number (page 1 in the 3-page checkout)." : "Works only when both Prepaid and COD are ticked. With one tick, the OTP is asked at the end, for that payment method only.")
           : "Just before the order is placed, only for the payment methods ticked above."}</p>
       </div>
       <p className="text-[11px] text-ink-faint">A verified number can order for 30 minutes without a new OTP. Partial COD follows the COD tick.</p>
