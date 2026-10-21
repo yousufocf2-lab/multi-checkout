@@ -12,7 +12,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const shop = cleanShop(url.searchParams.get("shop"));
   if (!shop) throw new Response("shop missing", { status: 400 });
 
-  const store = await storeByShop(shop);
+  const store = await storeByShop(shop, Number(url.searchParams.get("store")) || null);
   if (!store) throw new Response(`Add ${shop} in the checkout dashboard first`, { status: 404 });
 
   const signed = store.clientSecret && url.searchParams.has("hmac") && verifyShopifyHmac(url, store.clientSecret);

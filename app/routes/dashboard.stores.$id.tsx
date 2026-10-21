@@ -18,6 +18,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 const TITLES: Record<string, { title: string; description: string }> = {
   ads: { title: "Ads", description: "Meta ad spend, cost per order, ROAS and recharges." },
+  inbox: { title: "WhatsApp inbox", description: "Chats with customers who got an order message from your store." },
   payments: { title: "Payment methods", description: "Prepaid, COD and Partial COD: on/off, discount or fee, coupons and when each shows." },
   discounts: { title: "Discounts", description: "Product discounts by payment method and checkout recommendations." },
   coupons: { title: "Coupons", description: "Codes customers can apply at checkout." },

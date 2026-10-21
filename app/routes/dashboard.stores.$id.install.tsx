@@ -67,7 +67,7 @@ export default function Setup() {
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {store.hasClient ? (
-              <a href={`/shopify/install?shop=${encodeURIComponent(store.shopDomain)}`} className="btn-primary">{store.hasToken ? "Reconnect Shopify" : "Connect with Shopify"}</a>
+              <a href={`/shopify/install?shop=${encodeURIComponent(store.shopDomain)}&store=${store.id}`} className="btn-primary">{store.hasToken ? "Reconnect Shopify" : "Connect with Shopify"}</a>
             ) : (
               <Link to="../settings" relative="path" className="btn-primary">Add Client ID and secret</Link>
             )}

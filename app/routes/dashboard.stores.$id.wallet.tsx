@@ -125,7 +125,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         const num = (k: string) => (s(k) === "" ? null : Number(s(k)));
         const pct = num("saleFeePct");
         if (pct != null) o.saleFeeBps = Math.round(pct * 100);
-        for (const k of ["otp", "waConfirm", "waTracking", "waPromo"]) { const v = num(k); if (v != null) o[k] = Math.round(v * 100); }
+        for (const k of ["otp", "waConfirm", "waTracking", "waPromo", "waReply", "waFollowup"]) { const v = num(k); if (v != null) o[k] = Math.round(v * 100); }
         if (Object.values(o).some((v) => !Number.isFinite(v) || v < 0)) return fail("Rates must be 0 or more");
         await db.update(wallets).set({ rates: Object.keys(o).length ? o : null, updatedAt: new Date() }).where(eq(wallets.id, w.id));
         return json({ ok: Object.keys(o).length ? "Special rates saved for this store" : "This store now uses the default rate card", error: null, field: intent });
@@ -204,6 +204,8 @@ export default function WalletPage() {
               ["WhatsApp order confirmation", `${rupees(d.rates.waConfirm)} per message`, null],
               ["WhatsApp courier tracking", `${rupees(d.rates.waTracking)} per message`, null],
               ["WhatsApp promotional", `${rupees(d.rates.waPromo)} per message`, null],
+              ["WhatsApp inbox reply (within 24 h)", `${rupees(d.rates.waReply ?? 7)} per reply`, null],
+              ["WhatsApp inbox follow-up (after 24 h)", `${rupees(d.rates.waFollowup ?? 150)} per message`, null],
             ].map(([k, v, h]) => (
               <li key={k} className="flex items-start justify-between gap-3 px-5 py-3">
                 <div><p className="font-medium">{k}</p>{h && <p className="text-xs text-ink-faint">{h}</p>}</div>
@@ -473,6 +475,8 @@ function AdminPanel({ d }: { d: D }) {
             ["waConfirm", "WA confirmation (₹)", o.waConfirm != null ? o.waConfirm / 100 : "", def.waConfirm / 100],
             ["waTracking", "WA tracking (₹)", o.waTracking != null ? o.waTracking / 100 : "", def.waTracking / 100],
             ["waPromo", "WA promotional (₹)", o.waPromo != null ? o.waPromo / 100 : "", def.waPromo / 100],
+            ["waReply", "Inbox reply (₹)", o.waReply != null ? o.waReply / 100 : "", (def.waReply ?? 7) / 100],
+            ["waFollowup", "Inbox follow-up (₹)", o.waFollowup != null ? o.waFollowup / 100 : "", (def.waFollowup ?? 150) / 100],
           ].map(([name, label, val, ph]) => (
             <label key={name as string} className="flex items-center justify-between gap-3 text-sm">
               <span className="text-ink-soft">{label}</span>

@@ -137,7 +137,7 @@ export async function canUse(storeId: number, type: UsageType) {
  */
 export async function chargeUsage(storeId: number, type: UsageType, refId: string, note?: string) {
   const w = await getWallet(storeId);
-  const rate = (await ratesFor(w))[USAGE_RATE_KEY[type]];
+  const rate = (await ratesFor(w))[USAGE_RATE_KEY[type]] ?? 0;
   if (rate <= 0) return null;
   return postTransaction({ walletId: w.id, type, amountPaise: -rate, refType: "message", refId, note });
 }

@@ -1,4 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { recordInbound, updateStatus } from "~/lib/inbox.server";
 import { handleWhatsappReply, messaging, verifyMetaSignature } from "~/lib/rto.server";
 
 /**
@@ -14,7 +15,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return new Response("Forbidden", { status: 403 });
 }
 
-type Payload = { entry?: { changes?: { field?: string; value?: { messages?: Parameters<typeof handleWhatsappReply>[0][] } }[] }[] };
+type Payload = { entry?: { changes?: { field?: string; value?: {
+  messages?: (Parameters<typeof handleWhatsappReply>[0] & Parameters<typeof recordInbound>[0])[];
+  contacts?: { wa_id?: string; profile?: { name?: string } }[];
+  statuses?: { id?: string; status?: string }[];
+} }[] }[] };
 
 export async function action({ request }: ActionFunctionArgs) {
   const raw = await request.text();
@@ -28,7 +33,12 @@ export async function action({ request }: ActionFunctionArgs) {
   try { data = JSON.parse(raw) as Payload; } catch { return new Response("ok"); }
   for (const e of data.entry ?? []) {
     for (const c of e.changes ?? []) {
+      for (const st of c.value?.statuses ?? []) {
+        try { await updateStatus(st.id, st.status); } catch (err) { console.error("[whatsapp] status:", err instanceof Error ? err.message : err); }
+      }
       for (const msg of c.value?.messages ?? []) {
+        const name = c.value?.contacts?.find((x) => x.wa_id === msg.from)?.profile?.name;
+        try { await recordInbound(msg, name); } catch (err) { console.error("[inbox] inbound:", err instanceof Error ? err.message : err); }
         try { await handleWhatsappReply(msg); } catch (err) { console.error("[whatsapp] reply:", err instanceof Error ? err.message : err); }
       }
     }

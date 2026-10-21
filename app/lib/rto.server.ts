@@ -6,6 +6,7 @@ import { env } from "./env.server";
 import { formatINR } from "./pricing";
 import { chargeUsage, getPlatform, getWallet } from "./wallet.server";
 import { cancelShopifyOrder, tagShopifyOrder } from "./shopify.server";
+import { logOutbound } from "./inbox.server";
 
 // ---------------- providers (platform level; Growpefy pays them and bills the wallet) ----------------
 
@@ -25,6 +26,7 @@ export async function messaging(): Promise<MessagingSettings> {
     waButtons: m.waButtons ?? false,
     waVerifyToken: m.waVerifyToken || process.env.WA_VERIFY_TOKEN || undefined,
     waAppSecret: m.waAppSecret || process.env.WA_APP_SECRET || undefined,
+    waFollowupTemplate: m.waFollowupTemplate || process.env.WA_FOLLOWUP_TEMPLATE || undefined,
   };
 }
 /**
@@ -270,7 +272,13 @@ export async function sendOrderConfirmation(store: Store, order: Order) {
       return;
     }
     await db.update(orders).set({ waMessageId: body.messages[0].id, confirmStatus: m.waButtons ? "sent" : null }).where(eq(orders.id, order.id));
-    await chargeUsage(store.id, "wa_confirm", `order:${order.id}`, `Order confirmation · ${order.shopifyOrderName ?? order.id.slice(0, 10)}`);
+    const tx = await chargeUsage(store.id, "wa_confirm", `order:${order.id}`, `Order confirmation · ${order.shopifyOrderName ?? order.id.slice(0, 10)}`);
+    const pay = order.paymentMethod === "cod" ? "Cash on Delivery" : order.paymentMethod === "partial" ? "Partial COD" : "Paid online";
+    await logOutbound(store.id, phone, {
+      kind: "template", orderId: order.id, waMessageId: body.messages[0].id, chargedPaise: tx ? Math.abs(tx.entry.amountPaise) : 0,
+      name: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
+      body: `Order confirmation · ${order.shopifyOrderName ?? order.id} · ${formatINR(order.total)} · ${pay}${m.waButtons ? "\n[✅ Confirm order]  [❌ Cancel order]" : ""}`,
+    }).catch((e) => console.error("[inbox] log:", e));
   } catch (e) {
     console.error(`[whatsapp] order ${order.id}:`, e instanceof Error ? e.message : e);
   }
@@ -295,14 +303,17 @@ export function verifyMetaSignature(raw: string, header: string | null, appSecre
   return got.length === expected.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
 }
 
-async function sendWhatsappText(m: MessagingSettings, to: string, text: string) {
+async function sendWhatsappText(m: MessagingSettings, to: string, text: string, log?: { storeId: number; orderId: string }) {
   try {
-    await fetch(`https://graph.facebook.com/v21.0/${m.waPhoneNumberId}/messages`, {
+    const res = await fetch(`https://graph.facebook.com/v21.0/${m.waPhoneNumberId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${m.waToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text } }),
       signal: AbortSignal.timeout(10_000),
     });
+    const j = (await res.json().catch(() => ({}))) as { messages?: { id: string }[] };
+    // Automatic answer to a button tap: free (inside the customer's 24-hour window), shown in the inbox
+    if (log && j.messages?.length) await logOutbound(log.storeId, to.replace(/^91/, ""), { kind: "auto", body: text, waMessageId: j.messages[0].id, orderId: log.orderId, sentBy: "Growpefy (automatic)" });
   } catch (e) {
     console.error("[whatsapp] reply:", e instanceof Error ? e.message : e);
   }
@@ -345,7 +356,7 @@ export async function handleWhatsappReply(msg: WaMessage) {
   const ref = row.shopifyOrderName ?? row.id;
   if (row.confirmStatus === status) return { handled: true as const, status, repeat: true };
   if (row.confirmStatus === "cancelled" && action === "confirm") {
-    await sendWhatsappText(m, `91${row.customer.phone}`, `Order ${ref} was already cancelled. Please contact ${store.name} if you'd like to place it again.`);
+    await sendWhatsappText(m, `91${row.customer.phone}`, `Order ${ref} was already cancelled. Please contact ${store.name} if you'd like to place it again.`, { storeId: store.id, orderId: row.id });
     return { handled: true as const, status: "cancelled" };
   }
 
@@ -360,6 +371,6 @@ export async function handleWhatsappReply(msg: WaMessage) {
   }
   await sendWhatsappText(m, `91${row.customer.phone}`, action === "confirm"
     ? `Thank you! Your order ${ref} is confirmed ✅ We'll share tracking details once it ships.`
-    : `Your order ${ref} has been cancelled.${row.paymentMethod !== "cod" ? ` ${store.name} will contact you about the refund.` : ""} If this was a mistake, please contact ${store.name}.`);
+    : `Your order ${ref} has been cancelled.${row.paymentMethod !== "cod" ? ` ${store.name} will contact you about the refund.` : ""} If this was a mistake, please contact ${store.name}.`, { storeId: store.id, orderId: row.id });
   return { handled: true as const, status };
 }
