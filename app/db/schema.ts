@@ -55,6 +55,41 @@ export const ownerOtps = pgTable(
   (t) => [index("owner_otps_target_idx").on(t.target, t.createdAt)],
 );
 
+/** WhatsApp inbox: one conversation per store + customer number. Only numbers Growpefy messaged for an order. */
+export const waConversations = pgTable(
+  "wa_conversations",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    phone: text("phone").notNull(), // 10 digits
+    name: text("name").notNull().default(""),
+    lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }), // last customer message: opens the 24-hour window
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    unread: integer("unread").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("wa_conv_store_phone_idx").on(t.storeId, t.phone), index("wa_conv_phone_idx").on(t.phone, t.lastMessageAt)],
+);
+
+export const waMessages = pgTable(
+  "wa_messages",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id").notNull().references(() => waConversations.id, { onDelete: "cascade" }),
+    storeId: integer("store_id").notNull(),
+    direction: text("direction").notNull(), // in | out
+    kind: text("kind").notNull(), // template | text | button | auto | followup | media
+    body: text("body").notNull(),
+    waMessageId: text("wa_message_id"),
+    status: text("status"), // sent | delivered | read | failed
+    orderId: text("order_id"),
+    sentBy: text("sent_by"),
+    chargedPaise: integer("charged_paise").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("wa_msg_conv_idx").on(t.conversationId, t.createdAt), index("wa_msg_wamid_idx").on(t.waMessageId)],
+);
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 /** KYC documents (PAN card, GST certificate…) uploaded by store owners. Kept in the database, max 5 MB each. */
@@ -136,6 +171,7 @@ export const stores = pgTable("stores", {
   payuKey: text("payu_key"),
   payuSalt: text("payu_salt"),
   payuMode: text("payu_mode").notNull().default("test"), // test | live
+  payuViaStorefront: boolean("payu_via_storefront").notNull().default(false), // open PayU from the store's own website (Shopify App Proxy)
   // Meta (Facebook) ads
   metaAdAccountId: text("meta_ad_account_id"), // digits only, without act_
   metaAccessToken: text("meta_access_token"), // System User token: ads_read (+ ads_management for CAPI)
@@ -505,7 +541,7 @@ export const metaRecharges = pgTable(
 // ---------------- Wallet (platform billing) ----------------
 
 /** Charges in paise; saleFeeBps is basis points of the order total (100 = 1%). */
-export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; waTracking: number; waPromo: number };
+export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; waTracking: number; waPromo: number; waReply?: number; waFollowup?: number };
 export type MessagingSettings = {
   msg91AuthKey?: string; msg91TemplateId?: string;
   // MSG91 OTP Widget (works without DLT): widget ID + token auth, verified server-side with the auth key
@@ -514,6 +550,7 @@ export type MessagingSettings = {
   waButtons?: boolean; // template has "Confirm order" / "Cancel order" quick-reply buttons
   waVerifyToken?: string; // webhook verify token (Meta → Configuration → Webhook)
   waAppSecret?: string; // Meta app secret, to check webhook signatures
+  waFollowupTemplate?: string; // template the inbox sends after the 24-hour window: {{1}} customer name, {{2}} store
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 

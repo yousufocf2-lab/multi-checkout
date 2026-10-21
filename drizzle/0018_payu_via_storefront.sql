@@ -1,0 +1,1 @@
+ALTER TABLE "stores" ADD COLUMN "payu_via_storefront" boolean DEFAULT false NOT NULL;

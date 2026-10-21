@@ -1,12 +1,10 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { and, eq, isNotNull } from "drizzle-orm";
 import { useEffect, useRef } from "react";
-import { bankOffers, db } from "~/db.server";
 import { ensureStoreHost, storeBaseUrl } from "~/lib/urls.server";
 import { getOrderWithStore } from "~/lib/orders.server";
-import { buildPayuParams, payuEndpoint } from "~/lib/payu.server";
+import { payUrl, payuForm } from "~/lib/payu-flow.server";
 import { formatINR } from "~/lib/pricing";
 import { BrandLoader } from "~/components/Brand";
 import { payNowPaise } from "~/lib/payment-methods";
@@ -19,17 +17,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { order, store } = row;
   ensureStoreHost(request, store);
   if (order.status !== "pending_payment") return redirect(`/order/${order.id}`);
+  // Payments sent from the store's own website (registered with PayU)
+  if (store.payuViaStorefront) return redirect(payUrl(store, order.id));
 
-  const offers = await db
-    .select({ key: bankOffers.payuOfferKey })
-    .from(bankOffers)
-    .where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true), isNotNull(bankOffers.payuOfferKey)));
-
-  const fields = buildPayuParams(store, order, {
-    callbackUrl: `${storeBaseUrl(store)}/payu/callback`,
-    offerKeys: offers.map((o) => o.key!).filter(Boolean),
-  });
-  return json({ action: payuEndpoint(store), fields, store: { name: store.name, logoUrl: store.logoUrl, color: store.primaryColor }, amount: payNowPaise(order), rest: order.paymentMethod === "partial" ? order.total - payNowPaise(order) : 0 });
+  const { action, fields } = await payuForm(store, order, `${storeBaseUrl(store)}/payu/callback`);
+  return json({ action, fields, store: { name: store.name, logoUrl: store.logoUrl, color: store.primaryColor }, amount: payNowPaise(order), rest: order.paymentMethod === "partial" ? order.total - payNowPaise(order) : 0 });
 }
 
 function rgb(hex: string) {

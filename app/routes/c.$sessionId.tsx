@@ -28,6 +28,7 @@ import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost } from "~/lib/urls.server";
+import { payUrl } from "~/lib/payu-flow.server";
 import { legacyMethod, methodShows, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -324,7 +325,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await finalizeOrder(store, order, { status: "cod_placed" });
     return redirect(`/order/${order.id}`);
   }
-  return redirect(`/pay/${order.id}`);
+  return redirect(payUrl(store, order.id));
 }
 
 // ======================= UI =======================

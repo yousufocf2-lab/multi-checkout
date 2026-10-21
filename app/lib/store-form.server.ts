@@ -5,7 +5,7 @@ export type StoreInput = Pick<
   Store,
   | "name" | "slug" | "shopDomain" | "storefrontUrl" | "checkoutDomain" | "active"
   | "adminToken" | "clientId" | "clientSecret" | "apiVersion"
-  | "payuKey" | "payuSalt" | "payuMode"
+  | "payuKey" | "payuSalt" | "payuMode" | "payuViaStorefront"
   | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
   | "metaAdAccountId" | "metaAccessToken" | "metaPixelId" | "metaCapiToken" | "metaApiVersion" | "metaFireCodPurchase"
   | "supportPhone"
@@ -33,6 +33,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuKey: s("payuKey") || null,
     payuSalt: secret("payuSalt", existing?.payuSalt),
     payuMode: s("payuMode") === "live" ? "live" : "test",
+    payuViaStorefront: on("payuViaStorefront"),
     // COD on/off now lives in Payment methods; new stores start with COD on
     codEnabled: existing?.codEnabled ?? true,
     // COD wait time and repeat-COD rules now live in the RTO Suite page

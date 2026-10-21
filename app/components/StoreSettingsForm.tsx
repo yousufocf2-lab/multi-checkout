@@ -4,7 +4,7 @@ import { Section, SelectField, SubmitButton, TextField, Toggle } from "./ui";
 export type StoreFormValues = {
   name?: string; slug?: string; shopDomain?: string; storefrontUrl?: string; checkoutDomain?: string | null; active?: boolean;
   clientId?: string | null; apiVersion?: string; hasAdminToken?: boolean; hasClientSecret?: boolean;
-  payuKey?: string | null; payuMode?: string; hasPayuSalt?: boolean;
+  payuKey?: string | null; payuMode?: string; hasPayuSalt?: boolean; payuViaStorefront?: boolean;
   codEnabled?: boolean; codCooldownHours?: number; codBlockAfterPrepaid?: boolean;
   metaAdAccountId?: string | null; metaPixelId?: string | null; metaApiVersion?: string; metaFireCodPurchase?: boolean;
   hasMetaToken?: boolean; hasCapiToken?: boolean;
@@ -51,6 +51,11 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         <div className="grid gap-4 sm:grid-cols-3">
           <TextField label="PayU merchant key" name="payuKey" defaultValue={v.payuKey ?? ""} autoComplete="off" />
           <TextField label="PayU salt" name="payuSalt" type="password" autoComplete="new-password" hint={saved(v.hasPayuSalt)} />
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-rule p-3 sm:col-span-2">
+            <input type="checkbox" name="payuViaStorefront" defaultChecked={v.payuViaStorefront} className="mt-0.5 h-4 w-4" />
+            <span className="text-sm"><b>Open PayU from the store's own website</b>
+              <span className="block text-xs text-ink-faint">For PayU accounts that only allow your main website. Payments start from {v.storefrontUrl ? v.storefrontUrl.replace(/^https?:\/\//, "") : "your store"}/apps/growpefy/… Needs App Proxy in your Shopify app (subpath prefix <b>apps</b>, subpath <b>growpefy</b>, proxy URL <b>https://growpefy.com/proxy</b>).{v.storefrontUrl && <> <a href={`${v.storefrontUrl.replace(/\/+$/, "")}/apps/growpefy/ping`} target="_blank" rel="noreferrer" className="font-medium text-pine underline">Test App Proxy</a></>}</span></span>
+          </label>
           <SelectField label="Mode" name="payuMode" defaultValue={v.payuMode ?? "test"}>
             <option value="test">Test (no real money)</option>
             <option value="live">Live</option>

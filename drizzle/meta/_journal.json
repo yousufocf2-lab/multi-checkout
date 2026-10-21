@@ -120,6 +120,20 @@
       "when": 1792528916919,
       "tag": "0016_wa_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792534447672,
+      "tag": "0017_wa_inbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792561975877,
+      "tag": "0018_payu_via_storefront",
+      "breakpoints": true
     }
   ]
 }
