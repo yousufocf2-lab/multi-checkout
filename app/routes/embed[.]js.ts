@@ -57,17 +57,49 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return el.closest('[name="checkout"],a[href$="/checkout"],a[href*="/checkout?"],button[onclick*="checkout"],.cart__checkout-button,.cart__checkout,#checkout,[data-cx-checkout]');
   }
 
-  document.addEventListener("click",function(e){
-    var t=e.target;
-    var buy=t&&t.closest&&t.closest(".shopify-payment-button__button,.shopify-payment-button button,[data-cx-buy-now]");
-    if(buy){
-      var f=buy.closest("form")||document.querySelector('form[action*="/cart/add"]');
-      var id=f&&(f.querySelector('[name="id"]')||{}).value;
-      var q=f&&(f.querySelector('[name="quantity"]')||{}).value;
-      if(id){e.preventDefault();e.stopImmediatePropagation();buyNow(id,q);return;}
+  // Buy-now buttons: classic themes (.shopify-payment-button) and newer themes like Horizon,
+  // where Shopify renders <shopify-buy-it-now-button> / <shopify-accelerated-checkout> web components.
+  var BUY_SEL=".shopify-payment-button__button,.shopify-payment-button button,shopify-buy-it-now-button,shopify-accelerated-checkout,shopify-accelerated-checkout-cart,.shopify-payment-button,[data-cx-buy-now]";
+  function findBuy(e){
+    var path=(e.composedPath&&e.composedPath())||[e.target];
+    for(var i=0;i<path.length;i++){var n=path[i];
+      if(n&&n.nodeType===1&&n.matches&&n.matches(BUY_SEL)){
+        // Light-DOM ancestor (the shadow host) so we can find the product form
+        var host=n; while(host.getRootNode&&host.getRootNode()!==document&&host.getRootNode().host)host=host.getRootNode().host;
+        return host.closest(BUY_SEL)||host;
+      }}
+    return null;
+  }
+  function productForm(el){
+    var f=el.closest("form");
+    if(f&&f.querySelector('[name="id"]'))return f;
+    var fid=el.getAttribute&&el.getAttribute("form"); if(fid&&document.getElementById(fid))return document.getElementById(fid);
+    var wrap=el.closest("product-form-component,product-info,.product-information,.product,section");
+    f=wrap&&wrap.querySelector('form[action*="/cart/add"]');
+    return f||document.querySelector('form[action*="/cart/add"]');
+  }
+  function onBuy(e){
+    var buy=findBuy(e); if(!buy)return false;
+    if(buy.closest&&buy.closest("cart-drawer,cart-drawer-component,.cart-drawer,#cart-drawer,[data-cart],form[action*='/cart']:not([action*='/cart/add'])")){
+      e.preventDefault();e.stopImmediatePropagation();go();return true; // wallet buttons in the cart
     }
-    if(isCheckoutEl(t)){e.preventDefault();e.stopImmediatePropagation();go();}
+    var f=productForm(buy);
+    var id=f&&(f.querySelector('[name="id"]')||{}).value;
+    var q=f&&(f.querySelector('[name="quantity"]')||{}).value;
+    if(!id){var qi=document.querySelector('input[name="quantity"]'); id=(new URL(location.href).searchParams.get("variant"))||null; q=q||(qi&&qi.value);}
+    e.preventDefault();e.stopImmediatePropagation();
+    if(id)buyNow(id,q); else go();
+    return true;
+  }
+
+  // pointerdown too: some Shopify buttons act on press, before "click"
+  document.addEventListener("click",function(e){
+    if(onBuy(e))return;
+    if(isCheckoutEl(e.target)){e.preventDefault();e.stopImmediatePropagation();go();}
   },true);
+  ["pointerdown","mousedown","touchstart"].forEach(function(ev){
+    document.addEventListener(ev,function(e){if(findBuy(e)){e.stopImmediatePropagation();}},{capture:true,passive:true});
+  });
 
   document.addEventListener("submit",function(e){
     var f=e.target, s=e.submitter;
