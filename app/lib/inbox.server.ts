@@ -7,7 +7,7 @@
 //    free text (₹0.07 from the wallet). After that: the follow-up template only (₹1.50).
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, waConversations, waMessages, type Store } from "~/db.server";
-import { messaging, waReady } from "./rto.server";
+import { messaging, waApproved, waReady } from "./rto.server";
 import { chargeUsage } from "./wallet.server";
 
 export const WINDOW_MS = 24 * 3600_000;
@@ -99,6 +99,8 @@ export async function storeConversation(storeId: number, id: number) {
   return c ?? null;
 }
 
+const NOT_VERIFIED = "WhatsApp messages are off until Growpefy verifies your store. Send your details from WhatsApp settings.";
+
 type SendResult = { ok: true } | { ok: false; error: string };
 
 async function postToMeta(body: Record<string, unknown>) {
@@ -118,6 +120,7 @@ async function postToMeta(body: Record<string, unknown>) {
 export async function sendReply(store: Store, convId: number, text: string, by: string): Promise<SendResult> {
   const conv = await storeConversation(store.id, convId);
   if (!conv) return { ok: false, error: "Conversation not found" };
+  if (!waApproved(store)) return { ok: false, error: NOT_VERIFIED };
   const body = text.trim().slice(0, 1000);
   if (!body) return { ok: false, error: "Type a message" };
   if (!conv.lastInboundAt) return { ok: false, error: "You can reply once the customer messages you." };
@@ -134,6 +137,7 @@ export async function sendReply(store: Store, convId: number, text: string, by: 
 export async function sendFollowup(store: Store, convId: number, by: string): Promise<SendResult> {
   const conv = await storeConversation(store.id, convId);
   if (!conv) return { ok: false, error: "Conversation not found" };
+  if (!waApproved(store)) return { ok: false, error: NOT_VERIFIED };
   if (!conv.lastInboundAt) return { ok: false, error: "You can message once the customer has replied at least once." };
   if (windowOpen(conv.lastInboundAt)) return { ok: false, error: "The chat is open. Just type your reply." };
   const m = await messaging();

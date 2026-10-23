@@ -280,7 +280,7 @@ function RechargeCard({ d }: { d: D }) {
 
 function UsageCard({ usage }: { usage: D["usage"] }) {
   const pick = (t: string) => usage.find((u) => u.type === t) ?? { count: 0, amount: 0 };
-  const items: [TxType, string][] = [["sale_fee", "orders"], ["otp", "OTPs"], ["wa_confirm", "messages"], ["wa_tracking", "messages"], ["wa_promo", "messages"]];
+  const items: [TxType, string][] = [["sale_fee", "orders"], ["otp", "OTPs"], ["wa_confirm", "messages"], ["wa_tracking", "messages"], ["wa_promo", "messages"], ["wa_recovery", "messages"]];
   const reversed = pick("refund_reversal");
   return (
     <section className="panel">
@@ -288,7 +288,7 @@ function UsageCard({ usage }: { usage: D["usage"] }) {
         <h2 className="text-[15px] font-semibold">Usage this month</h2>
         {reversed.count > 0 && <span className="text-xs text-good">{reversed.count} fee{reversed.count === 1 ? "" : "s"} reversed · +{rupees(reversed.amount)}</span>}
       </div>
-      <dl className="grid grid-cols-2 gap-px bg-rule sm:grid-cols-5">
+      <dl className="grid grid-cols-2 gap-px bg-rule sm:grid-cols-3">
         {items.map(([t, unit]) => {
           const u = pick(t);
           return (

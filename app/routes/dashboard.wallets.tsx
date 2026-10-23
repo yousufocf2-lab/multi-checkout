@@ -15,6 +15,7 @@ import { TX_LABELS, mergeRates, rupees, type TxType } from "~/lib/wallet";
 import { getPlatform, platformPayu, rechargeSummary, stateOf, usageSummary, walletsFor } from "~/lib/wallet.server";
 import { testPayu } from "~/lib/payu.server";
 import { messaging, otpMode } from "~/lib/rto.server";
+import { recoveryBase } from "~/lib/recovery.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
@@ -52,12 +53,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
         otpTest: m.msg91AuthKey === "test" || (otpMode(m) === "widget" && m.msg91WidgetId === "test"),
         waPhoneNumberId: p.messaging?.waPhoneNumberId ?? "", hasWaToken: Boolean(p.messaging?.waToken),
         waTemplate: p.messaging?.waTemplate ?? "", waLang: p.messaging?.waLang ?? "en",
-        waButtons: Boolean(p.messaging?.waButtons), waVerifyToken: p.messaging?.waVerifyToken ?? "", waFollowupTemplate: p.messaging?.waFollowupTemplate ?? "", hasWaAppSecret: Boolean(p.messaging?.waAppSecret),
+        waButtons: Boolean(p.messaging?.waButtons), waVerifyToken: p.messaging?.waVerifyToken ?? "", waFollowupTemplate: p.messaging?.waFollowupTemplate ?? "", waRecoveryTemplate: p.messaging?.waRecoveryTemplate ?? "", hasWaAppSecret: Boolean(p.messaging?.waAppSecret),
         webhookUrl: `${(process.env.APP_URL ?? "").replace(/\/+$/, "")}/webhooks/whatsapp`,
       },
       payuFromEnv: !p.payuKey && Boolean(process.env.PLATFORM_PAYU_KEY), payuReady: Boolean(creds.payuKey && creds.payuSalt),
     },
     appUrl: (process.env.APP_URL ?? "").replace(/\/+$/, ""),
+    recoveryLinkBase: recoveryBase(),
   });
 }
 
@@ -72,7 +74,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (intent === "rates") {
     const r = {
       saleFeeBps: Math.round(Number(s("saleFeePct")) * 100), otp: money(fd.get("otp")), waConfirm: money(fd.get("waConfirm")),
-      waTracking: money(fd.get("waTracking")), waPromo: money(fd.get("waPromo")), waReply: money(fd.get("waReply")), waFollowup: money(fd.get("waFollowup")),
+      waTracking: money(fd.get("waTracking")), waPromo: money(fd.get("waPromo")), waReply: money(fd.get("waReply")), waFollowup: money(fd.get("waFollowup")), waRecovery: money(fd.get("waRecovery")),
     };
     if (Object.values(r).some((v) => !Number.isFinite(v) || v < 0)) return json({ ok: null, error: "Rates must be 0 or more" }, { status: 400 });
     const min = money(fd.get("minRecharge"));
@@ -109,6 +111,7 @@ export async function action({ request }: ActionFunctionArgs) {
         waVerifyToken: s("waVerifyToken") || m.waVerifyToken || crypto.randomBytes(16).toString("hex"),
         waAppSecret: s("waAppSecret") || m.waAppSecret,
         waFollowupTemplate: s("waFollowupTemplate"),
+        waRecoveryTemplate: s("waRecoveryTemplate"),
       },
       updatedAt: new Date(),
     }).where(eq(platformSettings.id, 1));
@@ -237,6 +240,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
             <Field label="WA promotional (₹)" name="waPromo" value={s.rates.waPromo / 100} />
             <Field label="Inbox reply, within 24 h (₹)" name="waReply" value={(s.rates.waReply ?? 7) / 100} />
             <Field label="Inbox follow-up, after 24 h (₹)" name="waFollowup" value={(s.rates.waFollowup ?? 150) / 100} />
+            <Field label="Abandoned cart message (₹)" name="waRecovery" value={(s.rates.waRecovery ?? 250) / 100} />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Minimum recharge (₹, before GST)" name="minRecharge" value={s.minRecharge / 100} />
@@ -321,6 +325,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
               <Field label="Order confirmation template name" name="waTemplate" value={s.msg.waTemplate} hint="Approved utility template with 5 body variables: name, store, order no., amount, payment" />
               <Field label="Template language code" name="waLang" value={s.msg.waLang} hint="e.g. en, en_US, hi" />
               <Field label="Inbox follow-up template name" name="waFollowupTemplate" value={s.msg.waFollowupTemplate} hint="Sent from the inbox after 24 h. Body variables: {{1}} customer name, {{2}} store name" />
+              <Field label="Abandoned cart template name" name="waRecoveryTemplate" value={s.msg.waRecoveryTemplate} hint={`Marketing template. Body: {{1}} customer name, {{2}} store name, {{3}} items. URL button: ${d.recoveryLinkBase}/r/{{1}}`} />
               <label className="flex cursor-pointer items-start gap-2.5 sm:col-span-2">
                 <input type="checkbox" name="waButtons" defaultChecked={s.msg.waButtons} className="mt-0.5 h-4 w-4" />
                 <span className="text-sm"><b>Template has Confirm / Cancel buttons</b><span className="block text-xs text-ink-faint">Quick-reply button 1 = Confirm order, button 2 = Cancel order. Replies mark the order and tag it in Shopify.</span></span>

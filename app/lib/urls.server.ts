@@ -1,9 +1,42 @@
 import type { Store } from "~/db/schema";
 import { env } from "./env.server";
 
-/** Public base URL for a store's checkout: its own domain if set, else the app URL. */
-export function storeBaseUrl(store: Pick<Store, "checkoutDomain">) {
-  return store.checkoutDomain ? `https://${store.checkoutDomain}` : env.appUrl;
+/**
+ * Shared checkout domain (env CHECKOUT_DOMAIN, e.g. checkout.growpefy.com).
+ * Every store gets its own subdomain on it automatically: vyros.checkout.growpefy.com.
+ * Needs one wildcard domain (*.checkout.growpefy.com) on Railway + DNS.
+ */
+export function checkoutRoot() {
+  const v = (process.env.CHECKOUT_DOMAIN ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "");
+  return v || null;
+}
+
+const LABEL_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** vyros → vyros.checkout.growpefy.com (null when CHECKOUT_DOMAIN isn't set or the slug can't be a hostname). */
+export function storeSubdomain(slug: string | null | undefined) {
+  const root = checkoutRoot();
+  const s = String(slug ?? "").toLowerCase();
+  return root && LABEL_RE.test(s) ? `${s}.${root}` : null;
+}
+
+/** The slug in a request to <slug>.<CHECKOUT_DOMAIN>, if it is one. */
+export function slugFromHost(host: string) {
+  const root = checkoutRoot();
+  if (!root || !host.endsWith(`.${root}`)) return null;
+  const s = host.slice(0, -(root.length + 1));
+  return LABEL_RE.test(s) ? s : null;
+}
+
+/** The host a store's checkout lives on: its own domain if set, else its subdomain. */
+export function storeHost(store: Pick<Store, "checkoutDomain" | "slug">) {
+  return store.checkoutDomain || storeSubdomain(store.slug);
+}
+
+/** Public base URL for a store's checkout: its own domain, else its subdomain, else the app URL. */
+export function storeBaseUrl(store: Pick<Store, "checkoutDomain" | "slug">) {
+  const host = storeHost(store);
+  return host ? `https://${host}` : env.appUrl;
 }
 
 /** Hostname the request came in on (Railway sets x-forwarded-host). */
@@ -33,10 +66,30 @@ export function cleanDomain(v: string) {
   return HOST_RE.test(d) ? d : null;
 }
 
-/** Customer pages must be served on the store's own checkout domain (PayU website match + trust). */
-export function ensureStoreHost(request: Request, store: Pick<Store, "checkoutDomain">) {
-  if (!store.checkoutDomain) return;
+/**
+ * Customer pages are served on the store's own host (its domain or its subdomain).
+ * Both the store's own domain and its subdomain are accepted; anything else redirects.
+ */
+export function ensureStoreHost(request: Request, store: Pick<Store, "checkoutDomain" | "slug">) {
+  const want = storeHost(store);
+  if (!want) return;
   const host = requestHost(request);
-  if (host === store.checkoutDomain || host === "localhost" || host === "127.0.0.1") return;
+  if (host === want || host === store.checkoutDomain || host === storeSubdomain(store.slug) || host === "localhost" || host === "127.0.0.1") return;
   throw new Response(null, { status: 302, headers: { Location: sameUrlOn(storeBaseUrl(store), request) } });
+}
+
+/**
+ * Who may show the checkout in a popup (iframe): the store's own website (any subdomain of it),
+ * its myshopify domain and Shopify's theme preview. Everyone else is blocked (no clickjacking).
+ */
+export function frameAncestors(store: Pick<Store, "storefrontUrl" | "shopDomain">) {
+  const out = new Set(["'self'", `https://${store.shopDomain}`, "https://*.shopifypreview.com"]);
+  try {
+    const u = new URL(store.storefrontUrl);
+    const h = u.hostname.toLowerCase().replace(/^www\./, "");
+    out.add(u.origin);
+    if (h) { out.add(`https://${h}`); out.add(`https://*.${h}`); }
+  } catch { /* bad storefront URL: only the defaults */ }
+  if (process.env.NODE_ENV !== "production") out.add("http://localhost:*");
+  return `frame-ancestors ${[...out].join(" ")}`;
 }

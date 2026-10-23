@@ -52,6 +52,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     otp: { on: store.otpEnabled, prepaid: store.otpPrepaid, cod: store.otpCod, timing: store.otpTiming === "start" ? "start" as const : "end" as const, ready: otpReady(m), price: rates.otp },
     usage,
     block: { on: store.blockEnabled, codOnly: store.blockCodOnly },
+    waVerified: store.waVerify?.status === "approved",
     confirm: { autoCancel: store.confirmAutoCancel, buttons: Boolean(m.waButtons), on: store.confirmEnabled, whatsapp: store.confirmWhatsapp, prepaid: store.confirmWaPrepaid, cod: store.confirmWaCod, ready: waReady(m), price: rates.waConfirm, orders: orderCount },
     list: list.map((r) => ({ id: r.id, kind: r.kind as BlockKind, value: r.value, label: showValue(r.kind as BlockKind, r.value), source: r.source, at: r.createdAt.toISOString() })),
     total: Number(total), page, kind, q,
@@ -469,6 +470,7 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
   return (
     <Form method="post" id="confirm" className="panel scroll-mt-6 space-y-4 p-5">
       <Head emoji="💬" title="Order confirmation" text="Confirm every order with the customer right after checkout, so fewer orders get refused at the door." on={on} setOn={setOn} name="confirmOn" />
+      {!d.waVerified && <Notice tone="warning">WhatsApp messages start after Growpefy verifies your store. <Link to={`/dashboard/stores/${d.storeId}/whatsapp`} className="font-medium underline">Send your stock video and documents →</Link></Notice>}
       {!d.confirm.ready && <Notice tone="warning">{d.isAdmin ? <>WhatsApp sending isn't set up yet. Add the WhatsApp Cloud API details in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "WhatsApp messages are being set up by Growpefy. Your settings are saved and messages start automatically once it's live."}</Notice>}
       <div className={`space-y-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>
         <Row name="waOn" checked={wa} onChange={setWa} title="WhatsApp confirmation" text="Order details on WhatsApp right after the order is placed."

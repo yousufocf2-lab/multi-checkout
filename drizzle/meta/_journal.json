@@ -141,6 +141,13 @@
       "when": 1792758471674,
       "tag": "0019_dropship",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792770156395,
+      "tag": "0020_wa_verify_popup",
+      "breakpoints": true
     }
   ]
 }

@@ -115,7 +115,7 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
   if (withPhone) where.push(sql`length(coalesce(${checkoutSessions.customer}->>'phone', '')) = 10`);
 
   const rows = await db
-    .select({ s: checkoutSessions, store: { id: stores.id, name: stores.name, checkoutDomain: stores.checkoutDomain } })
+    .select({ s: checkoutSessions, store: { id: stores.id, name: stores.name, slug: stores.slug, checkoutDomain: stores.checkoutDomain } })
     .from(checkoutSessions)
     .innerJoin(stores, eq(checkoutSessions.storeId, stores.id))
     .where(and(...where))

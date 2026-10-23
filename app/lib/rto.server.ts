@@ -27,6 +27,7 @@ export async function messaging(): Promise<MessagingSettings> {
     waVerifyToken: m.waVerifyToken || process.env.WA_VERIFY_TOKEN || undefined,
     waAppSecret: m.waAppSecret || process.env.WA_APP_SECRET || undefined,
     waFollowupTemplate: m.waFollowupTemplate || process.env.WA_FOLLOWUP_TEMPLATE || undefined,
+    waRecoveryTemplate: m.waRecoveryTemplate || process.env.WA_RECOVERY_TEMPLATE || undefined,
   };
 }
 /**
@@ -76,6 +77,9 @@ export async function verifyWidgetToken(token: string): Promise<string | null> {
     return null;
   }
 }
+/** Store verified by admin for messages from Growpefy's WhatsApp number. */
+export const waApproved = (store: Pick<Store, "waVerify">) => store.waVerify?.status === "approved";
+
 export const waReady = (m: MessagingSettings) => Boolean(m.waPhoneNumberId && m.waToken && m.waTemplate);
 /** "test" as the MSG91 key: no SMS is sent and the code is always 123456 (for trying the flow). */
 const otpTestMode = (m: MessagingSettings) => m.msg91AuthKey === "test";
@@ -232,6 +236,7 @@ export async function verifyOtp(sessionId: string, phone: string, code: string):
 export async function sendOrderConfirmation(store: Store, order: Order) {
   try {
     if (!store.confirmEnabled || !store.confirmWhatsapp) return;
+    if (!waApproved(store)) return; // Growpefy's WhatsApp only for verified stores
     if (!(order.paymentMethod === "prepaid" ? store.confirmWaPrepaid : store.confirmWaCod)) return;
     if (order.status !== "paid" && order.status !== "cod_placed") return;
     const phone = order.customer.phone;

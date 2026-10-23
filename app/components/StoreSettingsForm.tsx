@@ -8,7 +8,7 @@ export type StoreFormValues = {
   codEnabled?: boolean; codCooldownHours?: number; codBlockAfterPrepaid?: boolean;
   metaAdAccountId?: string | null; metaPixelId?: string | null; metaApiVersion?: string; metaFireCodPurchase?: boolean;
   hasMetaToken?: boolean; hasCapiToken?: boolean;
-  logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null;
+  logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null; popupCheckout?: boolean;
 };
 
 
@@ -25,13 +25,14 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
       <Section title="Store details" description="How this store is identified on your checkout.">
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Store name" name="name" defaultValue={v.name} error={errors.name} placeholder="Budverse" required />
-          <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="budverse" hint="Lowercase letters, numbers and dashes. Used in the theme script." required />
+          <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="budverse" hint="Lowercase letters, numbers and dashes. Used in the theme script and your checkout address." required />
           <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="budverse.myshopify.com" hint="Settings → Domains in Shopify admin" required />
           <TextField label="Store website" name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in" required />
           <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" hint="Shown on the checkout for help." />
-          <TextField label="Checkout domain" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.budverse.in" 
-            hint="Recommended. Customers and PayU see your own domain instead of the platform URL." />
+          <TextField label="Own checkout domain (optional)" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.budverse.in"
+            hint="Leave empty to use your free checkout address (store-id.checkout.growpefy.com). Nothing to set up." />
         </div>
+        <div className="mt-4 border-t border-rule pt-4"><Toggle name="popupCheckout" label="Open checkout as a popup" description="Checkout opens over your store, so customers never leave your website. On phones it fills the screen like a normal page. If it can't load, it opens as a page instead." defaultChecked={v.popupCheckout ?? true} /></div>
         {!isNew && <div className="mt-4 border-t border-rule pt-4"><Toggle name="active" label="Checkout is live" description="When off, the theme script stops opening this checkout." defaultChecked={v.active ?? true} /></div>}
         {isNew && <input type="hidden" name="active" value="on" />}
       </Section>

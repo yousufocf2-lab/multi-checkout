@@ -9,6 +9,9 @@ import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
 import { startShipmentWatcher } from "~/lib/logistics.server";
 import { dropshipAlertCount, startDropshipWatcher } from "~/lib/dropship.server";
+import { startRecoveryWatcher } from "~/lib/recovery.server";
+import { db, stores as storesTable } from "~/db.server";
+import { sql } from "drizzle-orm";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
@@ -20,6 +23,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startRechargeWatcher();
   startShipmentWatcher();
   startDropshipWatcher();
+  startRecoveryWatcher();
   const viewer = await requireViewer(request);
   // New owners finish the 3-step KYC before anything else
   if (needsKyc(viewer)) throw redirect("/onboarding");
@@ -36,8 +40,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (touched) headers.append("Set-Cookie", touched);
   const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
   const dropshipAlerts = viewer.role === "admin" ? await dropshipAlertCount().catch(() => 0) : 0;
+  const waPending = viewer.role === "admin"
+    ? await db.select({ n: sql<number>`count(*)::int` }).from(storesTable).where(sql`${storesTable.waVerify}->>'status' = 'submitted'`).then((r) => Number(r[0]?.n ?? 0)).catch(() => 0)
+    : 0;
   return json({
-    dropshipAlerts,
+    dropshipAlerts, waPending,
     viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
@@ -58,7 +65,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -105,6 +112,7 @@ export default function DashboardLayout() {
         </Group>
         <Group label="Sell more">
           <Item to={storeHref("inbox")} icon="orders" match={/\/inbox$|next=inbox/}>WhatsApp inbox</Item>
+          <Item to={storeHref("whatsapp")} icon="shield" match={/\/whatsapp$|next=whatsapp/}>WhatsApp settings</Item>
           <Item to={storeHref("payments")} icon="rupee" match={/\/payments$|next=payments/}>Payment methods</Item>
           <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/}>Discounts</Item>
           <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/}>Coupons</Item>
@@ -124,6 +132,13 @@ export default function DashboardLayout() {
             </span>
           </Item>
           {viewer.role === "admin" && <Item to="/dashboard/wallets" icon="rupee">All wallets</Item>}
+          {viewer.role === "admin" && (
+            <Item to="/dashboard/wa-verify" icon="shield">
+              <span className="flex flex-1 items-center justify-between gap-2">WhatsApp approvals
+                {waPending > 0 && <span className="num rounded-md bg-amber-400/20 px-1.5 py-px text-[11px] font-semibold text-amber-200">{waPending}</span>}
+              </span>
+            </Item>
+          )}
           {viewer.role === "admin" && (
             <Item to="/dashboard/dropship" icon="box">
               <span className="flex flex-1 items-center justify-between gap-2">Dropshipping

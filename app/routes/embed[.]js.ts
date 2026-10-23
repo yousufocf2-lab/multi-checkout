@@ -6,17 +6,19 @@ import { storeBaseUrl } from "~/lib/urls.server";
 /**
  * Storefront script. Add to theme.liquid before </body>:
  *   <script src="https://YOUR_APP/embed.js?store=STORE_SLUG" defer></script>
- * It redirects Shopify's checkout + Buy-now buttons to this checkout.
+ * It sends Shopify's checkout + Buy-now buttons to this checkout: as a popup over the store
+ * (full screen on phones, so it feels like a page), or as a normal page if popups are off or fail.
  */
 export async function loader({ request }: LoaderFunctionArgs) {
   const slug = (new URL(request.url).searchParams.get("store") ?? "").replace(/[^a-z0-9-]/gi, "");
   const [store] = slug
-    ? await db.select({ checkoutDomain: stores.checkoutDomain, logo: stores.logoUrl, color: stores.primaryColor, name: stores.name }).from(stores).where(eq(stores.slug, slug)).limit(1)
+    ? await db.select({ slug: stores.slug, checkoutDomain: stores.checkoutDomain, logo: stores.logoUrl, color: stores.primaryColor, name: stores.name, popup: stores.popupCheckout }).from(stores).where(eq(stores.slug, slug)).limit(1)
     : [];
-  const base = storeBaseUrl(store ?? { checkoutDomain: null });
+  const base = storeBaseUrl(store ?? { checkoutDomain: null, slug: "" });
   const js = `(function(){
-  var APP=${JSON.stringify(base)}, STORE=${JSON.stringify(slug)}, BRAND=${JSON.stringify({ logo: store?.logo ?? null, color: store?.color ?? "#111827", name: store?.name ?? "" })};
+  var APP=${JSON.stringify(base)}, STORE=${JSON.stringify(slug)}, BRAND=${JSON.stringify({ logo: store?.logo ?? null, color: store?.color ?? "#111827", name: store?.name ?? "" })}, POPUP=${JSON.stringify(store?.popup ?? true)};
   if(!STORE||window.__CX_LOADED)return; window.__CX_LOADED=true;
+  try{var pc=document.createElement("link");pc.rel="preconnect";pc.href=APP;document.head.appendChild(pc);}catch(e){}
   var root=(window.Shopify&&Shopify.routes&&Shopify.routes.root)||"/";
 
   // Clear the cart after a successful order (?cx_clear=1)
@@ -35,7 +37,46 @@ export async function loader({ request }: LoaderFunctionArgs) {
     var head=BRAND.logo?'<img src="'+esc(BRAND.logo)+'" alt="" style="height:34px;max-width:160px;object-fit:contain;margin:0 auto 22px;display:block">':(BRAND.name?'<div style="font-weight:600;font-size:18px;margin-bottom:22px">'+esc(BRAND.name)+'</div>':'');
     el.innerHTML='<div style="text-align:center;padding:24px">'+head+'<div style="width:180px;height:4px;border-radius:4px;background:#ECEEEA;overflow:hidden;margin:0 auto"><div class="cx-bar" style="width:45%;height:100%;border-radius:4px;background:'+esc(BRAND.color)+'"></div></div><div style="margin-top:18px;font-weight:600;font-size:15px">Opening secure checkout</div><div style="margin-top:4px;font-size:13px;color:#7A8494">This takes a second</div></div><style>.cx-bar{animation:cxbar 1.1s cubic-bezier(.4,0,.2,1) infinite}@keyframes cxbar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}@media (prefers-reduced-motion:reduce){.cx-bar{animation:none}}</style>';
     document.body.appendChild(el); requestAnimationFrame(function(){el.style.opacity="1"});}
-  window.addEventListener("pageshow",function(e){if(e.persisted){busy=false;overlay(false);}});
+  // ---- popup checkout: an iframe over the page; on phones it fills the screen like a normal page ----
+  var pop=null, frame=null, popTimer=null, scrollY0=0, popState=false;
+  function small(){return !!(window.matchMedia&&matchMedia("(max-width: 640px)").matches)}
+  function lock(on){var d=document.documentElement,b=document.body;
+    if(on){scrollY0=window.scrollY||0;d.style.overflow="hidden";b.style.overflow="hidden";b.style.position="fixed";b.style.top=(-scrollY0)+"px";b.style.left="0";b.style.right="0";b.style.width="100%";}
+    else{d.style.overflow="";b.style.overflow="";b.style.position="";b.style.top="";b.style.left="";b.style.right="";b.style.width="";window.scrollTo(0,scrollY0);}}
+  function closePop(fromHistory){
+    if(!pop)return; clearTimeout(popTimer); pop.remove(); pop=null; frame=null; lock(false); busy=false; overlay(false);
+    if(!fromHistory&&popState){popState=false;try{history.back()}catch(e){}}
+    popState=false;
+  }
+  function openPop(url){
+    var u; try{u=new URL(url);u.searchParams.set("embed","1")}catch(e){location.href=url;return}
+    var m=small();
+    pop=document.createElement("div"); pop.id="cx-pop"; pop.setAttribute("role","dialog"); pop.setAttribute("aria-modal","true"); pop.setAttribute("aria-label","Checkout");
+    pop.style.cssText="position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;"+(m?"background:#fff":"background:rgba(15,23,42,.55);padding:2vh 2vw");
+    var box=document.createElement("div");
+    box.style.cssText=m?"position:absolute;inset:0;background:#fff":"position:relative;width:min(1120px,100%);height:min(96vh,940px);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.35)";
+    frame=document.createElement("iframe"); frame.src=u.toString(); frame.title="Checkout";
+    frame.setAttribute("allow","payment; clipboard-write; otp-credentials; web-share");
+    frame.style.cssText="border:0;width:100%;height:100%;display:block;background:#fff";
+    box.appendChild(frame); pop.appendChild(box);
+    if(!m)pop.addEventListener("click",function(e){if(e.target===pop)closePop()});
+    document.body.appendChild(pop); lock(true);
+    try{history.pushState({cxPop:1},"");popState=true}catch(e){}
+    // the checkout didn't answer (blocked or very slow): open it as a normal page instead
+    popTimer=setTimeout(function(){if(pop&&!pop.__ready)location.href=url;},8000);
+  }
+  function okUrl(s,from){try{var n=new URL(s);var f=new URL(from);
+    return (n.protocol==="https:"||n.hostname==="localhost")&&(n.host===f.host||n.host===location.host)?n.toString():null}catch(e){return null}}
+  window.addEventListener("message",function(e){
+    if(!pop||!frame||e.source!==frame.contentWindow||!e.data||e.data.source!=="growpefy")return;
+    var t=e.data.type;
+    if(t==="ready"){pop.__ready=true;clearTimeout(popTimer);overlay(false);}
+    else if(t==="close"){closePop();}
+    else if(t==="navigate"){var to=okUrl(String(e.data.url||""),e.origin);if(to){overlay(true);location.href=to;}}
+  });
+  window.addEventListener("popstate",function(){if(pop){popState=false;closePop(true);}});
+  document.addEventListener("keydown",function(e){if(pop&&e.key==="Escape")closePop();});
+  window.addEventListener("pageshow",function(e){if(e.persisted){busy=false;overlay(false);if(pop)closePop(true);}});
 
   function go(items){
     if(busy)return; busy=true; overlay(true);
@@ -45,7 +86,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       if(!list.length){throw new Error("empty")}
       return fetch(APP+"/api/session",{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({store:STORE,items:list,fbp:ck("_fbp"),fbc:ck("_fbc")||fbcFromUrl(),url:location.href})});
     }).then(function(r){return r.json()}).then(function(d){
-      if(!d.url)throw new Error(d.error||"no url"); location.href=d.url;
+      if(!d.url)throw new Error(d.error||"no url");
+      if(POPUP)openPop(d.url); else location.href=d.url;
     }).catch(function(e){busy=false;overlay(false);
       if(String(e&&e.message)!=="empty")alert("We couldn\u2019t open checkout. Please try again.");});
   }

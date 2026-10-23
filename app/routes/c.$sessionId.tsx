@@ -1,4 +1,4 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { COURIER_LOGOS } from "~/lib/courier-catalog";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useFetcher, useLoaderData, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
@@ -28,7 +28,7 @@ import {
 import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
-import { ensureStoreHost } from "~/lib/urls.server";
+import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
 import { payUrl } from "~/lib/payu-flow.server";
 import { legacyMethod, methodShows, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
@@ -94,6 +94,14 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => [
   { name: "robots", content: "noindex" },
 ];
 
+// The checkout can open as a popup on the store's own website only
+export const headers: HeadersFunction = ({ loaderHeaders }) => {
+  const h = new Headers();
+  const csp = loaderHeaders.get("Content-Security-Policy");
+  if (csp) h.set("Content-Security-Policy", csp);
+  return h;
+};
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session, store } = await loadSession(params.sessionId!);
   ensureStoreHost(request, store);
@@ -154,7 +162,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       id: o.id, bankName: o.bankName, title: o.title, type: o.type === "flat" ? "flat" : "percent",
       value: o.value, maxDiscountRupees: o.maxDiscountRupees, minCartRupees: o.minCartRupees,
     })),
-  });
+  }, { headers: { "Content-Security-Policy": frameAncestors(store) } });
 }
 
 type FieldErrors = Partial<Record<keyof OrderCustomer | "form", string>>;
@@ -326,11 +334,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     .returning();
 
   await db.update(checkoutSessions).set({ customer, paymentAttempted: true, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
+  // In the popup, payment and the thank-you page open on the full page (the store's tab), not inside the popup
+  const embedded = fd.get("embed") === "1";
+  const abs = (to: string) => (/^https?:\/\//.test(to) ? to : `${storeBaseUrl(store)}${to}`);
   if (method === "cod") {
     await finalizeOrder(store, order, { status: "cod_placed" });
-    return redirect(`/order/${order.id}`);
+    return embedded ? json({ top: abs(`/order/${order.id}`) }) : redirect(`/order/${order.id}`);
   }
-  return redirect(payUrl(store, order.id));
+  return embedded ? json({ top: abs(payUrl(store, order.id)) }) : redirect(payUrl(store, order.id));
 }
 
 // ======================= UI =======================
@@ -350,6 +361,8 @@ export default function Checkout() {
   const couponFetcher = useFetcher<typeof action>();
   const codFetcher = useFetcher<Eligibility>();
   const steps = theme.layout === "steps";
+  const embedded = useEmbedded();
+  useEffect(() => { if (actionData && "top" in actionData && actionData.top) goTop(actionData.top); }, [actionData]);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [stepError, setStepError] = useState<Partial<Record<keyof OrderCustomer, string>>>({});
 
@@ -611,7 +624,7 @@ export default function Checkout() {
         <div className="mx-auto max-w-md px-4 py-20 text-center">
           <p className="text-xl font-semibold">Your cart is empty</p>
           <p className="mt-2 text-ink-soft">Add something you like and check out again.</p>
-          <a href={store.storefrontUrl} className="btn-primary mt-6">Continue shopping</a>
+          <a href={store.storefrontUrl} target="_top" onClick={closeIfEmbedded} className="btn-primary mt-6">Continue shopping</a>
         </div>
       </Shell>
     );
@@ -821,6 +834,7 @@ export default function Checkout() {
 
       <Form method="post" id="checkout-form" ref={formRef} onSubmit={onSubmit} noValidate={steps} className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-8 lg:py-8">
         <input type="hidden" name="intent" value="place" />
+        {embedded && <input type="hidden" name="embed" value="1" />}
         <input type="hidden" name="method" value={method} />
         <input type="hidden" name="couponCode" value={coupon?.code ?? ""} />
         {usingSaved && <input type="hidden" name="savedAddressId" value={savedId!} />}
@@ -939,8 +953,45 @@ function ContactLine({ phone, onChange }: { phone: string; onChange: () => void 
 
 // ---------- pieces ----------
 
+// ---------- popup (iframe) on the store's website ----------
+
+/** True when this checkout is open as a popup inside the store's page. */
+function useEmbedded() {
+  const [embedded, setEmbedded] = useState(false);
+  useEffect(() => {
+    let inFrame = false;
+    try { inFrame = window.self !== window.top; } catch { inFrame = true; }
+    setEmbedded(inFrame);
+  }, []);
+  return embedded;
+}
+
+const tellParent = (msg: Record<string, unknown>) => {
+  try { window.parent.postMessage({ source: "growpefy", ...msg }, "*"); } catch { /* not in a popup */ }
+};
+
+/** Leaves the popup: the store's page opens the URL in its own tab (payment, thank-you page). */
+function goTop(url: string) {
+  let inFrame = false;
+  try { inFrame = window.self !== window.top; } catch { inFrame = true; }
+  if (!inFrame) { window.location.href = url; return; }
+  tellParent({ type: "navigate", url });
+  // older store script that doesn't answer: try the top window, else open it here
+  setTimeout(() => { try { window.top!.location.href = url; } catch { window.location.href = url; } }, 1500);
+}
+
+function closeIfEmbedded(e: React.MouseEvent) {
+  let inFrame = false;
+  try { inFrame = window.self !== window.top; } catch { inFrame = true; }
+  if (!inFrame) return;
+  e.preventDefault();
+  tellParent({ type: "close" });
+}
+
 function Shell({ store, theme, children }: { store: LoaderData["store"]; theme: CheckoutTheme; children: React.ReactNode }) {
   const font = FONTS[theme.font];
+  const embedded = useEmbedded();
+  useEffect(() => { if (embedded) tellParent({ type: "ready" }); }, [embedded]);
   return (
     <div style={themeVars(theme, store.primaryColor) as React.CSSProperties} className="cx min-h-screen bg-paper pb-28 text-ink lg:pb-12">
       {font.google && <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`} />}
@@ -950,12 +1001,22 @@ function Shell({ store, theme, children }: { store: LoaderData["store"]; theme: 
       )}
       <header className="sticky top-0 z-20 border-b border-rule backdrop-blur" style={{ background: theme.headerBg, color: theme.headerText }}>
         <div className={`mx-auto flex max-w-6xl items-center px-4 py-3 ${theme.logoAlign === "center" ? "relative justify-center" : "justify-between"}`}>
-          <a href={store.storefrontUrl} className="flex min-w-0 items-center gap-2">
+          <a href={store.storefrontUrl} target="_top" onClick={closeIfEmbedded} className="flex min-w-0 items-center gap-2">
             {store.logoUrl
               ? <img src={store.logoUrl} alt={store.name} style={{ height: theme.logoHeight }} className="w-auto max-w-[200px] object-contain" />
               : <span className="truncate font-semibold" style={{ fontSize: Math.max(16, theme.logoHeight * 0.55) }}>{store.name}</span>}
           </a>
-          <span className={`flex items-center gap-1.5 text-xs font-medium opacity-75 ${theme.logoAlign === "center" ? "absolute right-4 hidden sm:flex" : ""}`}><LockIcon /> Secure checkout</span>
+          {embedded ? (
+            <span className={`flex items-center gap-3 ${theme.logoAlign === "center" ? "absolute right-3" : ""}`}>
+              <span className="hidden items-center gap-1.5 text-xs font-medium opacity-75 sm:flex"><LockIcon /> Secure checkout</span>
+              <button type="button" onClick={() => tellParent({ type: "close" })} aria-label="Close checkout"
+                className="-mr-1.5 flex h-9 w-9 items-center justify-center rounded-full opacity-80 transition hover:bg-black/5 hover:opacity-100">
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6 6 18" /></svg>
+              </button>
+            </span>
+          ) : (
+            <span className={`flex items-center gap-1.5 text-xs font-medium opacity-75 ${theme.logoAlign === "center" ? "absolute right-4 hidden sm:flex" : ""}`}><LockIcon /> Secure checkout</span>
+          )}
         </div>
       </header>
       {children}

@@ -1,5 +1,5 @@
 import type { Store } from "~/db/schema";
-import { appHost, cleanDomain } from "./urls.server";
+import { appHost, checkoutRoot, cleanDomain } from "./urls.server";
 
 export type StoreInput = Pick<
   Store,
@@ -8,7 +8,7 @@ export type StoreInput = Pick<
   | "payuKey" | "payuSalt" | "payuMode" | "payuViaStorefront"
   | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
   | "metaAdAccountId" | "metaAccessToken" | "metaPixelId" | "metaCapiToken" | "metaApiVersion" | "metaFireCodPurchase"
-  | "supportPhone"
+  | "supportPhone" | "popupCheckout"
 >;
 
 /** Parses + validates the store settings form. Blank secret fields keep the saved value. */
@@ -46,6 +46,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     metaApiVersion: /^v\d+\.\d+$/.test(s("metaApiVersion")) ? s("metaApiVersion") : "v23.0",
     metaFireCodPurchase: on("metaFireCodPurchase"),
     supportPhone: s("supportPhone") || null,
+    popupCheckout: on("popupCheckout"),
   };
 
   if (!data.name) errors.name = "Enter the store name";
@@ -54,6 +55,9 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://budverse.in";
   if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Enter only the domain, e.g. checkout.budverse.in";
   if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Use your store's own subdomain, not the platform domain";
+  const root = checkoutRoot();
+  if (data.checkoutDomain && root && (data.checkoutDomain === root || data.checkoutDomain.endsWith(`.${root}`))) errors.checkoutDomain = "Leave this empty to use your free checkout address. Only add a domain you own.";
+  if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
   if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
 
   return { data, errors };

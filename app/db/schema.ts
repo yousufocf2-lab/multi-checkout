@@ -179,12 +179,43 @@ export const stores = pgTable("stores", {
   metaCapiToken: text("meta_capi_token"), // optional; falls back to metaAccessToken
   metaApiVersion: text("meta_api_version").notNull().default("v23.0"),
   metaFireCodPurchase: boolean("meta_fire_cod_purchase").notNull().default(true),
+  // WhatsApp from Growpefy's number (order confirmation, inbox, abandoned cart) only after admin verifies the store
+  waVerify: jsonb("wa_verify").$type<WaVerify>().notNull().default({}),
+  // Abandoned checkout recovery on WhatsApp: store picks 1-2 messages and when they go
+  recovery: jsonb("recovery").$type<RecoverySettings>().notNull().default({}),
+  // Open checkout as a popup over the store (full screen on phones); falls back to a page redirect
+  popupCheckout: boolean("popup_checkout").notNull().default(true),
   // Dropshipping (super admin only, never shown to the store): Shipnex ships prepaid orders, the wallet pays
   dropshipEnabled: boolean("dropship_enabled").notNull().default(false),
   dropship: jsonb("dropship").$type<StoreDropship>().notNull().default({}),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type WaVerifyStatus = "requested" | "submitted" | "approved" | "rejected";
+/** Store verification for WhatsApp messages. No status = not started. */
+export type WaVerify = {
+  status?: WaVerifyStatus; videoUrl?: string; storeNote?: string; adminNote?: string;
+  submittedAt?: string; decidedAt?: string; decidedBy?: string;
+};
+/** Abandoned checkout WhatsApp: delays in minutes after the customer left (1 or 2 messages). */
+export type RecoverySettings = { on?: boolean; delays?: number[] };
+
+/** Files a store sends for verification (stock photos, invoices, licences…). */
+export const storeDocuments = pgTable(
+  "store_documents",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references((): AnyPgColumn => stores.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull().default("wa_verify"),
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    size: integer("size").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("store_documents_store_idx").on(t.storeId, t.purpose)],
+);
 
 /** Per-store dropshipping options. Prices are paise, keyed by the 9-character SKU. */
 export type StoreDropship = { rtoPaise?: number | null; prices?: Record<string, number>; enabledAt?: string };
@@ -427,6 +458,8 @@ export const checkoutSessions = pgTable("checkout_sessions", {
   cartValue: integer("cart_value"), // paise, selling price before discounts
   paymentAttempted: boolean("payment_attempted").notNull().default(false),
   addrLookups: integer("addr_lookups").notNull().default(0), // saved-address lookups (rate limit)
+  recoverySent: integer("recovery_sent").notNull().default(0), // abandoned-cart WhatsApp messages sent
+  recoveryAt: timestamp("recovery_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -586,7 +619,7 @@ export const metaRecharges = pgTable(
 // ---------------- Wallet (platform billing) ----------------
 
 /** Charges in paise; saleFeeBps is basis points of the order total (100 = 1%). */
-export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; waTracking: number; waPromo: number; waReply?: number; waFollowup?: number };
+export type WalletRates = { saleFeeBps: number; otp: number; waConfirm: number; waTracking: number; waPromo: number; waReply?: number; waFollowup?: number; waRecovery?: number };
 export type MessagingSettings = {
   msg91AuthKey?: string; msg91TemplateId?: string;
   // MSG91 OTP Widget (works without DLT): widget ID + token auth, verified server-side with the auth key
@@ -596,6 +629,7 @@ export type MessagingSettings = {
   waVerifyToken?: string; // webhook verify token (Meta → Configuration → Webhook)
   waAppSecret?: string; // Meta app secret, to check webhook signatures
   waFollowupTemplate?: string; // template the inbox sends after the 24-hour window: {{1}} customer name, {{2}} store
+  waRecoveryTemplate?: string; // abandoned cart: {{1}} customer name, {{2}} store, {{3}} items; URL button suffix = checkout id
 };
 export type DropshipZones = { A: number; B: number; C: number; D: number; E: number };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
@@ -692,3 +726,4 @@ export type BankOffer = typeof bankOffers.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type DropshipOrder = typeof dropshipOrders.$inferSelect;
 export type DropshipSku = typeof dropshipSkus.$inferSelect;
+export type StoreDocument = typeof storeDocuments.$inferSelect;

@@ -28,7 +28,7 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const [store] = await db
-    .select({ id: stores.id, checkoutDomain: stores.checkoutDomain })
+    .select({ id: stores.id, slug: stores.slug, checkoutDomain: stores.checkoutDomain })
     .from(stores)
     .where(and(eq(stores.slug, String(body.store ?? "")), eq(stores.active, true)))
     .limit(1);

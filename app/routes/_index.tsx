@@ -7,7 +7,8 @@ import { CtaBand, Gateways, LogisticsBand, Platforms, RateCard, SectionHead } fr
 import { SiteLayout, siteMeta } from "~/components/site/SiteLayout";
 import { db, stores } from "~/db.server";
 import { siteData } from "~/lib/site.server";
-import { isAppHost, requestHost } from "~/lib/urls.server";
+import { checkoutRoot, isAppHost, requestHost, slugFromHost } from "~/lib/urls.server";
+import { env } from "~/lib/env.server";
 import { rupees } from "~/lib/wallet";
 
 export const meta: MetaFunction = () =>
@@ -17,8 +18,12 @@ export const meta: MetaFunction = () =>
 /** Platform domain → website. A store's checkout domain → that store's storefront. */
 export async function loader({ request }: LoaderFunctionArgs) {
   if (!isAppHost(request)) {
-    const [store] = await db.select({ url: stores.storefrontUrl }).from(stores).where(eq(stores.checkoutDomain, requestHost(request))).limit(1);
+    const host = requestHost(request);
+    const slug = slugFromHost(host);
+    const [store] = await db.select({ url: stores.storefrontUrl }).from(stores).where(slug ? eq(stores.slug, slug) : eq(stores.checkoutDomain, host)).limit(1);
     if (store) throw redirect(store.url);
+    // the bare shared checkout domain (or an unknown store) → our website
+    if (slug || host === checkoutRoot()) throw redirect(env.appUrl);
   }
   return json(await siteData(request));
 }

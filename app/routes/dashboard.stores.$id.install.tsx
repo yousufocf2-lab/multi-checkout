@@ -76,18 +76,18 @@ export default function Setup() {
           {result("testShopify")}
         </Step>
 
-        <Step n={2} title="Use your own checkout domain" done={Boolean(store.checkoutDomain)}>
+        <Step n={2} title="Checkout address" done>
+          <p className="text-sm text-ink-soft">Your checkout opens on <b className="text-ink">{checkoutBase.replace(/^https:\/\//, "")}</b>. Nothing to set up.</p>
           {store.checkoutDomain ? (
-            <div className="space-y-2 text-sm text-ink-soft">
-              <p>Your checkout opens on <b className="text-ink">{store.checkoutDomain}</b>. Make sure these are done:</p>
+            <div className="mt-2 space-y-2 text-sm text-ink-soft">
+              <p>You use your own domain. Make sure these are done, or clear the domain in <Link to="../settings" relative="path" className="underline">Settings</Link> to use the free address:</p>
               <ul className="list-disc space-y-1 pl-5">
                 <li>Railway: Settings → Networking → Custom domain → add <b className="text-ink">{store.checkoutDomain}</b>.</li>
                 <li>Your DNS: add a <b className="text-ink">CNAME</b> record named <b className="text-ink">{store.checkoutDomain.split(".")[0]}</b> pointing to the target Railway shows.</li>
-                <li>PayU: register <b className="text-ink">https://{store.checkoutDomain}</b> as your website.</li>
               </ul>
             </div>
           ) : (
-            <p className="text-sm text-ink-soft">Right now checkout opens on the platform URL. Add a domain like <b>checkout.yourstore.com</b> in <Link to="../settings" relative="path" className="underline">Settings</Link> so customers and PayU see your brand.</p>
+            <p className="mt-1 text-xs text-ink-faint">Want your own domain like checkout.yourstore.com? Add it in <Link to="../settings" relative="path" className="underline">Settings</Link>.</p>
           )}
         </Step>
 
