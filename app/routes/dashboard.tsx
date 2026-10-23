@@ -8,6 +8,7 @@ import { IDLE_MS, needsKyc, requireViewer, touchSession, viewerStores } from "~/
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
 import { startShipmentWatcher } from "~/lib/logistics.server";
+import { dropshipAlertCount, startDropshipWatcher } from "~/lib/dropship.server";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
@@ -18,6 +19,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);
   startRechargeWatcher();
   startShipmentWatcher();
+  startDropshipWatcher();
   const viewer = await requireViewer(request);
   // New owners finish the 3-step KYC before anything else
   if (needsKyc(viewer)) throw redirect("/onboarding");
@@ -33,7 +35,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const touched = await touchSession(request);
   if (touched) headers.append("Set-Cookie", touched);
   const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
+  const dropshipAlerts = viewer.role === "admin" ? await dropshipAlertCount().catch(() => 0) : 0;
   return json({
+    dropshipAlerts,
     viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
@@ -54,7 +58,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -120,6 +124,13 @@ export default function DashboardLayout() {
             </span>
           </Item>
           {viewer.role === "admin" && <Item to="/dashboard/wallets" icon="rupee">All wallets</Item>}
+          {viewer.role === "admin" && (
+            <Item to="/dashboard/dropship" icon="box">
+              <span className="flex flex-1 items-center justify-between gap-2">Dropshipping
+                {dropshipAlerts > 0 && <span className="num rounded-md bg-red-400/20 px-1.5 py-px text-[11px] font-semibold text-red-200">{dropshipAlerts}</span>}
+              </span>
+            </Item>
+          )}
         </Group>
         <div>
           <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen}

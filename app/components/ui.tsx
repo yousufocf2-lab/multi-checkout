@@ -37,8 +37,28 @@ export function Field({ label, hint, error, className = "", children }: { label:
 export function TextField({ label, hint, error, wrap, ...rest }: { label: string; hint?: React.ReactNode; error?: string; wrap?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <Field label={label} hint={hint} error={error} className={wrap}>
-      <input className="input" aria-invalid={Boolean(error) || undefined} {...rest} />
+      {rest.type === "password"
+        ? <PasswordInput aria-invalid={Boolean(error) || undefined} {...rest} />
+        : <input className="input" aria-invalid={Boolean(error) || undefined} {...rest} />}
     </Field>
+  );
+}
+
+/** Password box with an eye button to show / hide what's typed. */
+export function PasswordInput({ className = "input", ...rest }: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative block">
+      <input {...rest} type={show ? "text" : "password"} className={`${className} pr-11`} />
+      <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show} title={show ? "Hide" : "Show"}
+        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-ink-faint transition hover:text-ink focus-visible:text-ink focus-visible:outline-none">
+        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          {show
+            ? <path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+            : <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>}
+        </svg>
+      </button>
+    </span>
   );
 }
 

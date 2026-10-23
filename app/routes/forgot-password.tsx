@@ -71,7 +71,6 @@ export default function ForgotPassword() {
   const data = useActionData<typeof action>();
   const [stage, setStage] = useState<Data["stage"]>(data?.stage ?? "start");
   const [mode, setMode] = useState<"phone" | "email">(data?.contact?.includes("@") ? "email" : "phone");
-  const [show, setShow] = useState(false);
   useEffect(() => { if (data?.stage) setStage(data.stage); }, [data]);
 
   return (
@@ -96,9 +95,8 @@ export default function ForgotPassword() {
           <input type="hidden" name="intent" value="save" />
           <input type="hidden" name="ticket" value={data?.ticket ?? ""} />
           {data?.error && <Notice tone="error">{data.error}</Notice>}
-          <TextField label="New password" name="password" type={show ? "text" : "password"} autoComplete="new-password" minLength={8} required autoFocus />
-          <TextField label="Confirm new password" name="confirm" type={show ? "text" : "password"} autoComplete="new-password" minLength={8} required />
-          <label className="flex items-center gap-2 text-sm text-ink-soft"><input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} className="h-4 w-4" />Show passwords</label>
+          <TextField label="New password" name="password" type="password" autoComplete="new-password" minLength={8} required autoFocus />
+          <TextField label="Confirm new password" name="confirm" type="password" autoComplete="new-password" minLength={8} required />
           <SubmitButton className="btn-primary w-full py-3" busyText="Saving">Save and log in</SubmitButton>
         </Form>
       )}

@@ -10,6 +10,7 @@ import { sendOrderConfirmation } from "./rto.server";
 import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
 import { saveOrderAddress } from "./addresses.server";
 import { payNowPaise } from "./payment-methods";
+import { chargeDropship, startDropshipWatcher } from "./dropship.server";
 
 export function newOrderId() {
   // Short, unique, PayU-safe txnid
@@ -64,6 +65,11 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
   void saveOrderAddress(updated);
   void trackPurchase(store, updated);
   const pushed = await pushToShopify(store, updated);
+  // Dropshipping stores (set by admin): prepaid orders pay product + shipping from the wallet
+  if (store.dropshipEnabled) {
+    await chargeDropship(store, pushed ?? updated);
+    startDropshipWatcher();
+  }
   // WhatsApp order confirmation (RTO Suite), after Shopify so it can quote the order number
   void sendOrderConfirmation(store, pushed ?? updated);
   return pushed;

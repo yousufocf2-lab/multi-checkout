@@ -4,7 +4,7 @@ import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-
 import { useEffect, useMemo, useState } from "react";
 import { CourierLogo } from "~/components/CourierLogo";
 import { Icon } from "~/components/Icons";
-import { Notice, Spinner, SubmitButton } from "~/components/ui";
+import { Notice, PasswordInput, Spinner, SubmitButton } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { COURIERS, type CourierInfo } from "~/lib/courier-catalog";
 import { env } from "~/lib/env.server";
@@ -294,7 +294,7 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
             {c.fields?.map((f) => (
               <label key={f.name} className="block">
                 <span className="mb-1 block text-xs font-medium">{f.label}{f.optional && <span className="font-normal text-ink-faint"> · optional</span>}</span>
-                <input name={f.name} type={f.type ?? "text"} className={`input h-10 text-sm ${f.name === "token" ? "font-mono text-[12px]" : ""}`}
+                <PwOrText name={f.name} type={f.type ?? "text"} className={`input h-10 text-sm ${f.name === "token" ? "font-mono text-[12px]" : ""}`}
                   placeholder={f.name === "password" && a ? "Leave empty to keep the saved password" : f.placeholder}
                   defaultValue={f.name === "label" ? a?.clientName ?? "" : ""}
                   autoComplete={f.type === "password" ? "new-password" : "off"} spellCheck={false} required={!f.optional && !(f.name === "password" && a)} />
@@ -325,4 +325,9 @@ function Copy({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
+}
+
+/** Password fields get the show / hide eye. */
+function PwOrText({ type, ...rest }: React.InputHTMLAttributes<HTMLInputElement>) {
+  return type === "password" ? <PasswordInput {...rest} /> : <input type={type} {...rest} />;
 }

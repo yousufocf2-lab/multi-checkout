@@ -6,7 +6,7 @@ import { asc, eq } from "drizzle-orm";
 import { useState } from "react";
 import { Icon, type IconName } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
-import { Notice, PageHeader, SubmitButton } from "~/components/ui";
+import { Notice, PageHeader, PasswordInput, SubmitButton } from "~/components/ui";
 import { db, platformSettings, stores, users, wallets } from "~/db.server";
 import { requireAdmin } from "~/lib/auth.server";
 import { addDays, resolveRange } from "~/lib/dates";
@@ -270,7 +270,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
           {s.payuFromEnv && <Notice>Using PLATFORM_PAYU_KEY / PLATFORM_PAYU_SALT from Railway variables. Saving here overrides them.</Notice>}
           <Form method="post" className="grid gap-4 sm:grid-cols-3">
             <Field label="Merchant key" name="payuKey" value={s.payuKey} />
-            <label className="block"><span className="label">Salt</span><input name="payuSalt" type="password" autoComplete="new-password" className="input" placeholder={s.hasSalt ? "Saved. Leave blank to keep it." : ""} /></label>
+            <label className="block"><span className="label">Salt</span><PasswordInput name="payuSalt" autoComplete="new-password" className="input" placeholder={s.hasSalt ? "Saved. Leave blank to keep it." : ""} /></label>
             <label className="block"><span className="label">Mode</span>
               <select name="payuMode" defaultValue={s.payuMode} className="input"><option value="test">Test</option><option value="live">Live</option></select></label>
             <div className="flex flex-wrap gap-2 sm:col-span-3">
@@ -301,7 +301,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
               <p className="mt-1 text-sm text-good">OTP is live via {s.msg.otpMode === "widget" ? "the MSG91 OTP Widget" : "your DLT template"}. Checkout OTP, phone login and saved addresses across all stores are on.</p>
             )}
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <label className="block"><span className="label">Auth key</span><input name="msg91AuthKey" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasMsg91Key ? "Saved. Leave blank to keep it." : "From MSG91 → API"} />
+              <label className="block"><span className="label">Auth key</span><PasswordInput name="msg91AuthKey" autoComplete="new-password" className="input" placeholder={s.msg.hasMsg91Key ? "Saved. Leave blank to keep it." : "From MSG91 → API"} />
                 <span className="hint">Type <code>test</code> to try the flow without sending SMS (code is always 123456).</span></label>
               <Field label="OTP template ID (DLT approved)" name="msg91TemplateId" value={s.msg.msg91TemplateId} />
               <Field label="Widget ID (OTP Widget, no DLT needed)" name="msg91WidgetId" value={s.msg.msg91WidgetId} />
@@ -317,7 +317,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
             <h3 className="font-semibold">WhatsApp (Meta Cloud API)</h3>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <Field label="Phone number ID" name="waPhoneNumberId" value={s.msg.waPhoneNumberId} />
-              <label className="block"><span className="label">Permanent access token</span><input name="waToken" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasWaToken ? "Saved. Leave blank to keep it." : "System user token with whatsapp_business_messaging"} /></label>
+              <label className="block"><span className="label">Permanent access token</span><PasswordInput name="waToken" autoComplete="new-password" className="input" placeholder={s.msg.hasWaToken ? "Saved. Leave blank to keep it." : "System user token with whatsapp_business_messaging"} /></label>
               <Field label="Order confirmation template name" name="waTemplate" value={s.msg.waTemplate} hint="Approved utility template with 5 body variables: name, store, order no., amount, payment" />
               <Field label="Template language code" name="waLang" value={s.msg.waLang} hint="e.g. en, en_US, hi" />
               <Field label="Inbox follow-up template name" name="waFollowupTemplate" value={s.msg.waFollowupTemplate} hint="Sent from the inbox after 24 h. Body variables: {{1}} customer name, {{2}} store name" />
@@ -332,7 +332,7 @@ function Settings({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> })
               <div className="mt-3 grid gap-4 sm:grid-cols-2">
                 <label className="block sm:col-span-2"><span className="label">Callback URL</span><input readOnly value={s.msg.webhookUrl} className="input num bg-surface" onFocus={(e) => e.currentTarget.select()} /></label>
                 <Field label="Verify token" name="waVerifyToken" value={s.msg.waVerifyToken} hint={s.msg.waVerifyToken ? "Paste this in Meta" : "Leave blank and save: one is made for you"} />
-                <label className="block"><span className="label">App secret</span><input name="waAppSecret" type="password" autoComplete="new-password" className="input" placeholder={s.msg.hasWaAppSecret ? "Saved. Leave blank to keep it." : "Meta app → App settings → Basic → App secret"} /><span className="hint">Needed to trust replies</span></label>
+                <label className="block"><span className="label">App secret</span><PasswordInput name="waAppSecret" autoComplete="new-password" className="input" placeholder={s.msg.hasWaAppSecret ? "Saved. Leave blank to keep it." : "Meta app → App settings → Basic → App secret"} /><span className="hint">Needed to trust replies</span></label>
               </div>
             </div>
           </div>

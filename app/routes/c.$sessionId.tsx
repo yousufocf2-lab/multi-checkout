@@ -20,6 +20,7 @@ import type { MaskedAddress } from "~/lib/addresses";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
+import { dropshipBlock } from "~/lib/dropship.server";
 import {
   bankOfferEstimate, computePricing, formatINR, lineOff, mixBlocksPayment, mixTitle,
   type BankOfferRule, type CouponRule, type PaymentMethod, type PricedLine, type StoreRule,
@@ -302,6 +303,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const p = withShipping(base, quoteShipping(shipRules, { state: customer.state, pincode: customer.pincode, method: legacyMethod(method), value: base.total }));
   const advance = method === "partial" ? partialAdvance(pm.partial, p.total) : null;
   if (method === "partial" && !advance) return json({ errors: { form: "Partial COD isn't available for this order. Choose another payment method." } as FieldErrors }, { status: 400 });
+
+  // Dropshipping stores stop taking orders once the wallet is past its limit
+  const dsBlock = await dropshipBlock(store, method, [...lines, ...freeLines], customer);
+  if (dsBlock) return json({ errors: { form: dsBlock } as FieldErrors }, { status: 400 });
 
   const [order] = await db
     .insert(orders)

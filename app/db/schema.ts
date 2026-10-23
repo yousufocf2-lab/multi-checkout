@@ -179,9 +179,54 @@ export const stores = pgTable("stores", {
   metaCapiToken: text("meta_capi_token"), // optional; falls back to metaAccessToken
   metaApiVersion: text("meta_api_version").notNull().default("v23.0"),
   metaFireCodPurchase: boolean("meta_fire_cod_purchase").notNull().default(true),
+  // Dropshipping (super admin only, never shown to the store): Shipnex ships prepaid orders, the wallet pays
+  dropshipEnabled: boolean("dropship_enabled").notNull().default(false),
+  dropship: jsonb("dropship").$type<StoreDropship>().notNull().default({}),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Per-store dropshipping options. Prices are paise, keyed by the 9-character SKU. */
+export type StoreDropship = { rtoPaise?: number | null; prices?: Record<string, number>; enabledAt?: string };
+
+/** Dropshipping price list (default for every store). Orders match on the first 9 characters of the SKU. */
+export const dropshipSkus = pgTable("dropship_skus", {
+  sku: text("sku").primaryKey(),
+  name: text("name").notNull(),
+  pricePaise: integer("price_paise").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type DropshipLine = { sku: string | null; title: string; quantity: number; unitPaise: number | null };
+
+/**
+ * One row per prepaid order on a dropshipping store.
+ * charged → fulfilled (marked in Shopify 8 h later) → rto; or cancelled (refund by timing).
+ */
+export const dropshipOrders = pgTable(
+  "dropship_orders",
+  {
+    orderId: text("order_id").primaryKey().references(() => orders.id, { onDelete: "cascade" }),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("charged"), // charged | fulfilled | cancelled | rto
+    zone: text("zone").notNull(), // A..E
+    lines: jsonb("lines").$type<DropshipLine[]>().notNull(),
+    productPaise: integer("product_paise").notNull(),
+    shippingPaise: integer("shipping_paise").notNull(),
+    rtoPaise: integer("rto_paise"),
+    refundPaise: integer("refund_paise").notNull().default(0),
+    missingSkus: jsonb("missing_skus").$type<string[]>().notNull().default([]),
+    alertSeen: boolean("alert_seen").notNull().default(false),
+    trackingNumber: text("tracking_number").unique(),
+    fulfilAfter: timestamp("fulfil_after", { withTimezone: true }).notNull(),
+    fulfilledAt: timestamp("fulfilled_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    rtoAt: timestamp("rto_at", { withTimezone: true }),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("dropship_orders_status_idx").on(t.status, t.fulfilAfter), index("dropship_orders_store_idx").on(t.storeId, t.createdAt)],
+);
 
 /** RTO Suite block list: one row per blocked phone / email / pincode / city / state / country (values normalised). */
 export const blockedCustomers = pgTable(
@@ -552,6 +597,7 @@ export type MessagingSettings = {
   waAppSecret?: string; // Meta app secret, to check webhook signatures
   waFollowupTemplate?: string; // template the inbox sends after the 24-hour window: {{1}} customer name, {{2}} store
 };
+export type DropshipZones = { A: number; B: number; C: number; D: number; E: number };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 
 /** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */
@@ -566,6 +612,7 @@ export const platformSettings = pgTable("platform_settings", {
   payuSalt: text("payu_salt"),
   payuMode: text("payu_mode").notNull().default("test"),
   messaging: jsonb("messaging").$type<MessagingSettings>().notNull().default({}),
+  dropshipZones: jsonb("dropship_zones").$type<Partial<DropshipZones>>().notNull().default({}), // paise per order
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -643,3 +690,5 @@ export type ShippingRate = typeof shippingRates.$inferSelect;
 export type Coupon = typeof coupons.$inferSelect;
 export type BankOffer = typeof bankOffers.$inferSelect;
 export type Order = typeof orders.$inferSelect;
+export type DropshipOrder = typeof dropshipOrders.$inferSelect;
+export type DropshipSku = typeof dropshipSkus.$inferSelect;

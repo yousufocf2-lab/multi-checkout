@@ -359,7 +359,7 @@ export async function fetchFulfillmentTracking(store: Store, orderGids: string[]
 
 // ---------- order updates (WhatsApp confirmation replies) ----------
 
-const orderGid = (id: string) => (id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`);
+export const orderGid = (id: string) => (id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`);
 
 /** Adds tags to a Shopify order. Never throws; returns an error message or null. */
 export async function tagShopifyOrder(store: Store, shopifyOrderId: string, tags: string[]) {
@@ -391,4 +391,52 @@ export async function cancelShopifyOrder(store: Store, shopifyOrderId: string, n
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
   }
+}
+
+// ---------- dropshipping ----------
+
+/** SKU of each variant (variant id → SKU, empty when the variant has none). */
+export async function fetchVariantSkus(store: Store, variantIds: string[]) {
+  const ids = [...new Set(variantIds.filter(Boolean))].slice(0, 100);
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+  const data = await adminGraphql<{ nodes: ({ id: string; sku: string | null } | null)[] }>(
+    store,
+    `query($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id sku } } }`,
+    { ids: ids.map((v) => (v.startsWith("gid://") ? v : `gid://shopify/ProductVariant/${v}`)) },
+  );
+  for (const n of data.nodes) if (n?.id) out.set(numId(n.id), (n.sku ?? "").trim());
+  return out;
+}
+
+export type FulfilResult = { ok: true; already: boolean } | { ok: false; cancelled?: boolean; error: string };
+
+/**
+ * Marks every open fulfillment order of a Shopify order as fulfilled with a tracking number.
+ * The customer gets no Shopify shipping email.
+ */
+export async function fulfilShopifyOrder(store: Store, shopifyOrderId: string, tracking: { number: string; company: string }): Promise<FulfilResult> {
+  type FO = { id: string; status: string };
+  const q = await adminGraphql<{ order: { cancelledAt: string | null; displayFulfillmentStatus: string; fulfillmentOrders: { nodes: FO[] } } | null }>(
+    store,
+    `query($id: ID!) { order(id: $id) { cancelledAt displayFulfillmentStatus fulfillmentOrders(first: 20) { nodes { id status } } } }`,
+    { id: orderGid(shopifyOrderId) },
+  );
+  const o = q.order;
+  if (!o) return { ok: false, error: "Order not found in Shopify" };
+  if (o.cancelledAt) return { ok: false, cancelled: true, error: "Order is cancelled in Shopify" };
+  const open = o.fulfillmentOrders.nodes.filter((f) => f.status === "OPEN" || f.status === "IN_PROGRESS");
+  if (!open.length) {
+    if (o.displayFulfillmentStatus === "FULFILLED") return { ok: true, already: true };
+    const held = o.fulfillmentOrders.nodes.find((f) => f.status === "ON_HOLD" || f.status === "SCHEDULED");
+    return { ok: false, error: held ? `Fulfillment is ${held.status.toLowerCase().replace("_", " ")} in Shopify` : "Nothing to fulfil in Shopify" };
+  }
+  const d = await adminGraphql<{ fulfillmentCreate: { fulfillment: { id: string } | null; userErrors: { message: string }[] } }>(
+    store,
+    `mutation($f: FulfillmentInput!) { fulfillmentCreate(fulfillment: $f) { fulfillment { id } userErrors { message } } }`,
+    { f: { lineItemsByFulfillmentOrder: open.map((f) => ({ fulfillmentOrderId: f.id })), notifyCustomer: false, trackingInfo: { number: tracking.number, company: tracking.company } } },
+  );
+  const err = d.fulfillmentCreate.userErrors[0]?.message;
+  if (err || !d.fulfillmentCreate.fulfillment) return { ok: false, error: err ?? "fulfillmentCreate failed" };
+  return { ok: true, already: false };
 }
