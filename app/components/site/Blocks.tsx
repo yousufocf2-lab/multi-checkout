@@ -9,7 +9,7 @@ import { rv } from "./SiteLayout";
 export function SectionHead({ eyebrow, title, text, align = "center", dark = false }: { eyebrow: string; title: string; text?: string; align?: "center" | "left"; dark?: boolean }) {
   return (
     <div className={align === "center" ? "mx-auto max-w-2xl text-center" : "max-w-2xl"} {...rv()}>
-      <p className={`text-xs font-semibold uppercase tracking-[.14em] ${dark ? "text-emerald-300" : "text-blue-600"}`}>{eyebrow}</p>
+      <p className={`text-xs font-semibold uppercase tracking-[.14em] ${dark ? "text-emerald-300" : "text-pine"}`}>{eyebrow}</p>
       <h2 className={`mt-3 text-3xl font-semibold tracking-tight sm:text-[40px] sm:leading-[1.1] ${dark ? "text-white" : ""}`}>{title}</h2>
       {text && <p className={`mt-4 text-[17px] leading-relaxed ${dark ? "text-slate-300" : "text-ink-soft"}`}>{text}</p>}
     </div>
@@ -19,8 +19,8 @@ export function SectionHead({ eyebrow, title, text, align = "center", dark = fal
 /** Rounded icon tile used on cards. */
 export function IconTile({ icon, tone = "blue", className = "" }: { icon: IconName; tone?: "blue" | "mint" | "amber" | "rose" | "violet" | "navy"; className?: string }) {
   const t = {
-    blue: "bg-blue-50 text-blue-700 ring-blue-100", mint: "bg-emerald-50 text-emerald-700 ring-emerald-100", amber: "bg-amber-50 text-amber-700 ring-amber-100",
-    rose: "bg-rose-50 text-rose-700 ring-rose-100", violet: "bg-violet-50 text-violet-700 ring-violet-100", navy: "bg-white/10 text-emerald-300 ring-white/10",
+    blue: "bg-pine-tint text-pine ring-emerald-100", mint: "bg-emerald-50 text-emerald-700 ring-emerald-100", amber: "bg-amber-50 text-amber-700 ring-amber-100",
+    rose: "bg-rose-50 text-rose-700 ring-rose-100", violet: "bg-teal-50 text-teal-700 ring-teal-100", navy: "bg-white/10 text-emerald-300 ring-white/10",
   }[tone];
   return <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-300 group-hover:scale-110 ${t} ${className}`}><Icon name={icon} className="h-5 w-5" /></span>;
 }
@@ -28,8 +28,8 @@ export function IconTile({ icon, tone = "blue", className = "" }: { icon: IconNa
 export function CtaBand({ loggedIn, title = "Ready to improve your checkout workflow?", text = "Explore Growpefy and see how the tools fit your store. Set up takes an afternoon, and our team helps you go live." }: { loggedIn: boolean; title?: string; text?: string }) {
   return (
     <section className="px-4 pb-20 sm:px-6">
-      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#0A1630] px-6 py-14 text-center text-white sm:px-12 sm:py-16" {...rv()}>
-        <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-blue-500/25 blur-3xl" />
+      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#0B1A16] px-6 py-14 text-center text-white sm:px-12 sm:py-16" {...rv()}>
+        <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-pine-tint0/25 blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-emerald-400/20 blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[.18] [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(60%_70%_at_50%_50%,#000,transparent)]" />
         <h2 className="relative text-3xl font-semibold tracking-tight sm:text-[40px] sm:leading-tight">{title}</h2>
@@ -57,7 +57,7 @@ export function RateCard({ rates }: { rates: Rates }) {
     <div className="overflow-hidden rounded-2xl border border-rule bg-white shadow-lift">
       {rows.map(([icon, l, v, n], i) => (
         <div key={l} className={`group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-paper/70 ${i ? "border-t border-rule" : ""}`}>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-paper text-ink-soft transition-colors group-hover:bg-blue-50 group-hover:text-blue-700"><Icon name={icon} className="h-4 w-4" /></span>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-paper text-ink-soft transition-colors group-hover:bg-pine-tint group-hover:text-pine-dark"><Icon name={icon} className="h-4 w-4" /></span>
           <div className="min-w-0 flex-1"><p className="font-medium">{l}</p><p className="text-xs text-ink-faint">{n}</p></div>
           <p className="num shrink-0 text-lg font-semibold">{v}</p>
         </div>
@@ -97,13 +97,13 @@ export function WalletDemo({ minRecharge }: { minRecharge: number }) {
   return (
     <div className="rounded-2xl border border-rule bg-white p-5 shadow-lift sm:p-6">
       <div className="flex items-center justify-between gap-3">
-        <p className="flex items-center gap-2 font-semibold"><Icon name="wallet" className="h-5 w-5 text-blue-600" />Top up your wallet</p>
+        <p className="flex items-center gap-2 font-semibold"><Icon name="wallet" className="h-5 w-5 text-pine" />Top up your wallet</p>
         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">GST invoice included</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Recharge amount">
         {amounts.map((a) => (
           <button key={a} type="button" role="radio" aria-checked={a === amt} onClick={() => setAmt(a)}
-            className={`num rounded-xl border px-3 py-2.5 text-sm font-semibold transition duration-200 hover:-translate-y-0.5 ${a === amt ? "border-blue-600 bg-blue-50 text-blue-800 shadow-[0_6px_16px_-10px_rgba(37,88,235,.8)]" : "border-rule-strong text-ink-soft hover:border-ink/40"}`}>
+            className={`num rounded-xl border px-3 py-2.5 text-sm font-semibold transition duration-200 hover:-translate-y-0.5 ${a === amt ? "border-pine bg-pine-tint text-pine-dark shadow-[0_6px_16px_-10px_rgba(11,93,75,.8)]" : "border-rule-strong text-ink-soft hover:border-ink/40"}`}>
             {rupees(a, 0)}
           </button>
         ))}
@@ -114,7 +114,7 @@ export function WalletDemo({ minRecharge }: { minRecharge: number }) {
         <div className="border-t border-dashed border-rule-strong" />
         <Row label="Total payable" value={rupees(cTotal)} strong />
       </dl>
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-3.5 text-white">
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-gradient-to-r from-pine to-[#0E7A62] px-4 py-3.5 text-white">
         <span className="flex items-center gap-2 text-sm font-medium"><Icon name="check" className="h-4 w-4" strokeWidth={2.4} />Added to your wallet</span>
         <span className="num text-xl font-semibold">{rupees(cCredit)}</span>
       </div>
@@ -145,7 +145,7 @@ export function Faq({ items }: { items: [string, string][] }) {
               <button type="button" onClick={() => setOpen(on ? null : i)} aria-expanded={on} aria-controls={`faq-${i}`}
                 className="group flex w-full items-center justify-between gap-4 px-5 py-5 text-left font-medium transition-colors hover:bg-paper/60 sm:px-6">
                 {q}
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition duration-200 ${on ? "rotate-45 border-blue-600 bg-blue-600 text-white" : "border-rule-strong text-ink-faint group-hover:border-ink/40 group-hover:text-ink"}`}><Icon name="plus" className="h-3.5 w-3.5" /></span>
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition duration-200 ${on ? "rotate-45 border-pine bg-pine text-white" : "border-rule-strong text-ink-faint group-hover:border-ink/40 group-hover:text-ink"}`}><Icon name="plus" className="h-3.5 w-3.5" /></span>
               </button>
             </h3>
             <div id={`faq-${i}`} className={`acc ${on ? "open" : ""}`} role="region">
@@ -196,7 +196,7 @@ export function GatewayFallback() {
               <svg aria-hidden className="absolute left-[22px] top-[46px] h-6 w-2" viewBox="0 0 2 24"><line x1="1" y1="0" x2="1" y2="24" stroke={s.state === "down" ? "#2DD496" : "rgba(255,255,255,.25)"} strokeWidth="2" className={s.state === "down" ? "flow" : ""} /></svg>
             )}
             <div className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 ${s.state === "ok" ? "border-emerald-400/50 bg-emerald-400/10" : s.state === "down" ? "border-white/10 bg-white/[.03]" : "border-dashed border-white/15"}`}>
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${s.state === "ok" ? "pulse bg-emerald-400 text-[#0A1630]" : s.state === "down" ? "bg-rose-400/15 text-rose-300" : "bg-white/10 text-slate-400"}`}>
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${s.state === "ok" ? "pulse bg-emerald-400 text-[#0B1A16]" : s.state === "down" ? "bg-rose-400/15 text-rose-300" : "bg-white/10 text-slate-400"}`}>
                 <Icon name={s.state === "ok" ? "check" : s.state === "down" ? "close" : "clock"} className="h-4 w-4" strokeWidth={2.2} />
               </span>
               <div className="min-w-0 flex-1">

@@ -31,10 +31,10 @@ export default function About() {
     <SiteLayout loggedIn={d.loggedIn} company={d.company}>
       {/* hero */}
       <section className="relative overflow-hidden">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_80%_0%,rgba(37,88,235,.12),transparent_70%),radial-gradient(40%_50%_at_0%_100%,rgba(45,212,150,.10),transparent_70%)]" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_80%_0%,rgba(11,93,75,.12),transparent_70%),radial-gradient(40%_50%_at_0%_100%,rgba(45,212,150,.10),transparent_70%)]" />
         <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pb-20 sm:pt-20">
-          <p className="text-xs font-semibold uppercase tracking-[.14em] text-blue-600">About Growpefy</p>
-          <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-tight sm:text-[56px] sm:leading-[1.05]">We build the order layer between <span className="text-blue-600">“Buy now”</span> and <span className="text-emerald-600">“Delivered”</span>.</h1>
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine">About Growpefy</p>
+          <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-tight sm:text-[56px] sm:leading-[1.05]">We build the order layer between <span className="text-pine">“Buy now”</span> and <span className="text-emerald-600">“Delivered”</span>.</h1>
           <p className="mt-6 max-w-2xl text-lg leading-relaxed text-ink-soft">Growpefy brings checkout customization, payment choices and COD risk controls together, so ecommerce teams can manage more of the order journey from one workspace.</p>
         </div>
       </section>
@@ -43,7 +43,7 @@ export default function About() {
       <section className="border-y border-rule bg-paper/70">
         <div className="mx-auto grid max-w-6xl gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[1fr_1.1fr]">
           <div {...rv()}>
-            <p className="text-xs font-semibold uppercase tracking-[.14em] text-blue-600">Our story</p>
+            <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine">Our story</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-[40px] sm:leading-[1.1]">Started by people who run online stores.</h2>
           </div>
           <div className="space-y-5 text-[17px] leading-relaxed text-ink-soft" {...rv(1)}>
@@ -59,23 +59,23 @@ export default function About() {
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
           <SectionHead eyebrow="What we build" title="One workspace for the whole order journey" />
           <ol className="relative mt-14 grid gap-4 md:grid-cols-5">
-            <div aria-hidden className="absolute left-[10%] right-[10%] top-6 hidden h-px bg-gradient-to-r from-blue-200 via-emerald-200 to-blue-200 md:block" />
+            <div aria-hidden className="absolute left-[10%] right-[10%] top-6 hidden h-px bg-gradient-to-r from-emerald-200 via-emerald-200 to-emerald-200 md:block" />
             {JOURNEY.map((j, i) => (
               <li key={j.title} className="group relative text-center" {...rv(i)}>
-                <span className="relative mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-rule bg-white text-blue-700 shadow-sm transition duration-300 group-hover:-translate-y-1 group-hover:border-blue-300 group-hover:bg-blue-600 group-hover:text-white group-hover:shadow-[0_10px_24px_-10px_rgba(37,88,235,.8)]"><Icon name={j.icon} className="h-5 w-5" /></span>
+                <span className="relative mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-rule bg-white text-pine shadow-sm transition duration-300 group-hover:-translate-y-1 group-hover:border-emerald-300 group-hover:bg-pine group-hover:text-white group-hover:shadow-[0_10px_24px_-10px_rgba(11,93,75,.8)]"><Icon name={j.icon} className="h-5 w-5" /></span>
                 <p className="mt-4 font-semibold">{j.title}</p>
                 <p className="mx-auto mt-1 max-w-[200px] text-sm leading-relaxed text-ink-soft">{j.text}</p>
               </li>
             ))}
           </ol>
-          <div className="mt-12 text-center" {...rv()}><Link to="/#platform" className="group inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-800">Explore the platform<Icon name="arrow" className="nudge h-4 w-4" /></Link></div>
+          <div className="mt-12 text-center" {...rv()}><Link to="/#platform" className="group inline-flex items-center gap-1.5 font-semibold text-pine hover:text-pine-dark">Explore the platform<Icon name="arrow" className="nudge h-4 w-4" /></Link></div>
         </div>
       </section>
 
       {/* values */}
-      <section className="bg-[#0A1630] text-white">
+      <section className="bg-[#0B1A16] text-white">
         <div className="relative mx-auto max-w-6xl overflow-hidden px-4 py-20 sm:px-6 sm:py-24">
-          <div aria-hidden className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-blue-500/20 blur-3xl" />
+          <div aria-hidden className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-pine-tint0/20 blur-3xl" />
           <SectionHead dark eyebrow="What we believe" title="The principles behind every feature" />
           <div className="relative mt-12 grid gap-4 sm:grid-cols-2">
             {VALUES.map((v, i) => (

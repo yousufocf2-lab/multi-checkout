@@ -65,21 +65,21 @@
 .legal strong { @apply font-semibold text-ink; }
 
 /* ================= Public website ================= */
-/* Navy text, one strong blue for actions, the logo's mint as accent. Scoped so the dashboard keeps its own colors. */
+/* Logo colors: dark green #0B5D4B for actions, mint #2DD496 as accent, near-black #0B1513 text. */
 .site {
-  --brand: 37 88 235;
-  --ink: 11 22 48;
-  --ink-soft: 72 86 110;
-  --ink-faint: 122 135 156;
-  --paper: 246 248 251;
-  --paper-sunk: 237 241 247;
+  --brand: 11 93 75;
+  --ink: 11 21 19;
+  --ink-soft: 70 85 80;
+  --ink-faint: 120 134 129;
+  --paper: 245 248 246;
+  --paper-sunk: 236 241 238;
   --surface: 255 255 255;
-  --rule: 227 232 240;
-  --rule-strong: 207 215 227;
+  --rule: 225 232 228;
+  --rule-strong: 205 214 209;
 }
 .site .btn { transition: transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .18s, background-color .18s, border-color .18s, color .18s; }
 .site .btn-primary { box-shadow: 0 1px 2px rgba(11,22,48,.14), inset 0 1px 0 rgba(255,255,255,.16); }
-.site .btn-primary:hover { filter: none; background-color: rgb(29 72 205); transform: translateY(-1px); box-shadow: 0 10px 22px -10px rgba(37,88,235,.65), inset 0 1px 0 rgba(255,255,255,.16); }
+.site .btn-primary:hover { filter: none; background-color: rgb(8 71 58); transform: translateY(-1px); box-shadow: 0 10px 22px -10px rgba(11,93,75,.65), inset 0 1px 0 rgba(255,255,255,.16); }
 .site .btn-secondary:hover { background-color: rgb(var(--surface)); border-color: rgb(var(--ink) / .35); transform: translateY(-1px); box-shadow: 0 8px 18px -12px rgba(11,22,48,.35); }
 .site .btn:active { transform: translateY(0); }
 .btn .nudge, .group:hover .nudge-parent .nudge { transition: transform .2s cubic-bezier(.2,.7,.2,1); }
@@ -92,10 +92,10 @@
 /* Spotlight cards: lift + a soft blue glow on the border that follows the pointer inside the card */
 .spot { position: relative; isolation: isolate; transition: transform .28s cubic-bezier(.2,.7,.2,1), box-shadow .28s, border-color .28s; }
 .spot::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none; opacity: 0; transition: opacity .3s;
-  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(37,88,235,.6), rgba(45,212,150,.35) 40%, transparent 65%);
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(45,212,150,.75), rgba(11,93,75,.45) 45%, transparent 65%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
 .spot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s; z-index: -1;
-  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(37,88,235,.06), transparent 60%); }
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(11,93,75,.06), transparent 60%); }
 .spot:hover { transform: translateY(-4px); box-shadow: 0 1px 2px rgba(11,22,48,.05), 0 22px 44px -22px rgba(11,22,48,.3); }
 .spot:hover::before, .spot:hover::after { opacity: 1; }
 .spot-dark::after { background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), rgba(45,212,150,.10), transparent 60%); }

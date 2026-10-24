@@ -38,9 +38,9 @@ export default function Pricing() {
   return (
     <SiteLayout loggedIn={d.loggedIn} company={d.company}>
       <section className="relative overflow-hidden border-b border-rule">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_50%_0%,rgba(37,88,235,.12),transparent_70%)]" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_50%_0%,rgba(11,93,75,.12),transparent_70%)]" />
         <div className="relative mx-auto max-w-3xl px-4 pb-14 pt-16 text-center sm:px-6 sm:pt-20">
-          <p className="text-xs font-semibold uppercase tracking-[.14em] text-blue-600">Pricing</p>
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine">Pricing</p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">Pay only when you sell.</h1>
           <p className="mx-auto mt-4 max-w-xl text-lg text-ink-soft">No setup fee. No monthly plan. Recharge a prepaid wallet and a small fee is deducted when an order is placed.</p>
         </div>
@@ -49,7 +49,7 @@ export default function Pricing() {
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[1.1fr_1fr]">
         <div>
           <h2 className="text-xl font-semibold">Rate card</h2>
-          <p className="mt-1 text-sm text-ink-soft">Same for every store. Volume pricing available, <Link to="/contact" className="font-medium text-blue-700 underline underline-offset-2">talk to us</Link>.</p>
+          <p className="mt-1 text-sm text-ink-soft">Same for every store. Volume pricing available, <Link to="/contact" className="font-medium text-pine underline underline-offset-2">talk to us</Link>.</p>
           <div className="mt-5"><RateCard rates={d.rates} /></div>
           <div className="mt-6" {...rv(1)}><WalletDemo minRecharge={min} /></div>
         </div>
@@ -82,7 +82,7 @@ function Calculator({ bps }: { bps: number }) {
   const [aov, setAov] = useState(1200);
   const fee = Math.round(orders * aov * bps) / 100; // paise
   return (
-    <div className="rounded-2xl border-2 border-blue-600/15 bg-gradient-to-b from-blue-50/70 to-white p-6">
+    <div className="rounded-2xl border-2 border-pine/15 bg-gradient-to-b from-emerald-50/70 to-white p-6">
       <h3 className="font-semibold">Estimate your monthly cost</h3>
       <div className="mt-5 space-y-5">
         <Slider label="Orders per month" value={orders} min={50} max={20000} step={50} onChange={setOrders} format={(v) => v.toLocaleString("en-IN")} />
@@ -90,7 +90,7 @@ function Calculator({ bps }: { bps: number }) {
       </div>
       <div className="mt-6 rounded-xl bg-white p-4 shadow-sm">
         <p className="text-sm text-ink-soft">Order fees per month</p>
-        <p className="num mt-1 text-3xl font-semibold text-blue-700">{rupees(fee, 0)}</p>
+        <p className="num mt-1 text-3xl font-semibold text-pine">{rupees(fee, 0)}</p>
         <p className="mt-1 text-xs text-ink-faint">{(bps / 100)}% of {rupees(orders * aov * 100, 0)} sales, plus GST. Messages extra, only if you use them.</p>
       </div>
     </div>

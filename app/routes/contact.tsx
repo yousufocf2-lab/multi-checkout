@@ -36,9 +36,9 @@ export default function Contact() {
   return (
     <SiteLayout loggedIn={d.loggedIn} company={d.company}>
       <section className="relative overflow-hidden border-b border-rule">
-        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_70%_at_20%_0%,rgba(37,88,235,.10),transparent_70%),radial-gradient(40%_60%_at_90%_10%,rgba(45,212,150,.10),transparent_70%)]" />
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_70%_at_20%_0%,rgba(11,93,75,.10),transparent_70%),radial-gradient(40%_60%_at_90%_10%,rgba(45,212,150,.10),transparent_70%)]" />
         <div className="relative mx-auto max-w-6xl px-4 pb-12 pt-14 sm:px-6 sm:pt-20">
-          <p className="text-xs font-semibold uppercase tracking-[.14em] text-blue-600">Contact us</p>
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine">Contact us</p>
           <h1 className="mt-3 max-w-2xl text-4xl font-semibold tracking-tight sm:text-[52px] sm:leading-[1.08]">Talk to a person, not a ticket queue.</h1>
           <p className="mt-4 max-w-xl text-lg text-ink-soft">Leave your number and what it's about. Someone from our team calls you back, usually within one working day.</p>
         </div>
@@ -60,7 +60,7 @@ export default function Contact() {
           ) : (
             <Form method="post" className="rounded-3xl border border-rule bg-white p-6 shadow-lift sm:p-8" noValidate {...rv()}>
               <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white shadow-[0_8px_20px_-10px_rgba(37,88,235,.9)]"><Icon name="phone" className="h-5 w-5" /></span>
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-pine text-white shadow-[0_8px_20px_-10px_rgba(11,93,75,.9)]"><Icon name="phone" className="h-5 w-5" /></span>
                 <div><h2 className="text-lg font-semibold">Request a callback</h2><p className="text-sm text-ink-soft">Takes 30 seconds. No spam, ever.</p></div>
               </div>
               {errors.form && <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{errors.form}</p>}
@@ -111,7 +111,7 @@ export default function Contact() {
 
         <aside className="space-y-4">
           <Card icon="mail" tone="blue" title="Email" i={1}>
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="group inline-flex items-center gap-1.5 text-[17px] font-semibold text-ink hover:text-blue-700">{SUPPORT_EMAIL}<Icon name="arrow" className="nudge h-4 w-4 text-ink-faint" /></a>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="group inline-flex items-center gap-1.5 text-[17px] font-semibold text-ink hover:text-pine-dark">{SUPPORT_EMAIL}<Icon name="arrow" className="nudge h-4 w-4 text-ink-faint" /></a>
             <p className="mt-1 text-sm text-ink-soft">Support, billing, partnerships. We reply within one working day.</p>
           </Card>
           {wa.length >= 10 && (
@@ -124,8 +124,8 @@ export default function Contact() {
             <p className="text-[17px] font-semibold">{SUPPORT_HOURS}</p>
             <p className="mt-1 text-sm text-ink-soft">Requests sent outside these hours are picked up the next working morning.</p>
           </Card>
-          <div className="relative overflow-hidden rounded-2xl bg-[#0A1630] p-6 text-white" {...rv(4)}>
-            <div aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-blue-500/30 blur-2xl" />
+          <div className="relative overflow-hidden rounded-2xl bg-[#0B1A16] p-6 text-white" {...rv(4)}>
+            <div aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-pine-tint0/30 blur-2xl" />
             <p className="relative flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-300"><Icon name="flag" className="h-3.5 w-3.5" />Already a Growpefy store?</p>
             <p className="relative mt-2 text-sm text-slate-300">Raise a complaint or ask for a callback from <span className="font-medium text-white">Help & support</span> in your dashboard. You can follow every reply there.</p>
             <Link to={d.loggedIn ? "/dashboard/support" : "/login?next=%2Fdashboard%2Fsupport"} className="group relative mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-white">Open Help & support<Icon name="arrow" className="nudge h-4 w-4" /></Link>
@@ -147,7 +147,7 @@ function Field({ label, optional, error, className = "", children }: { label: st
 }
 
 function Card({ icon, tone, title, i, children }: { icon: IconName; tone: "blue" | "mint" | "amber"; title: string; i: number; children: React.ReactNode }) {
-  const t = { blue: "bg-blue-50 text-blue-700", mint: "bg-emerald-50 text-emerald-700", amber: "bg-amber-50 text-amber-700" }[tone];
+  const t = { blue: "bg-pine-tint text-pine", mint: "bg-emerald-50 text-emerald-700", amber: "bg-amber-50 text-amber-700" }[tone];
   return (
     <div className="spot group rounded-2xl border border-rule bg-white p-6" {...rv(i)}>
       <div className="flex items-center gap-3">

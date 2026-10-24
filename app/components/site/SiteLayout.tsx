@@ -114,8 +114,8 @@ export function SiteLayout({ loggedIn, company, children }: { loggedIn: boolean;
 
       <main id="main">{children}</main>
 
-      <footer className="relative overflow-hidden bg-[#0A1630] text-slate-300">
-        <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 h-80 w-[48rem] -translate-x-1/2 rounded-full bg-blue-500/10 blur-3xl" />
+      <footer className="relative overflow-hidden bg-[#0B1A16] text-slate-300">
+        <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 h-80 w-[48rem] -translate-x-1/2 rounded-full bg-pine-tint0/10 blur-3xl" />
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div>
             <BrandLockup tone="light" className="h-8" />

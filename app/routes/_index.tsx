@@ -59,7 +59,7 @@ export default function Home() {
           <div>
             <SectionHead align="left" eyebrow="Wallet & pricing" title="Know exactly what you pay, before you pay." text="No monthly plan. Recharge a prepaid wallet and see the recharge amount, GST and total upfront. Fees come out only when orders are placed or messages are sent." />
             <div className="mt-8" {...rv(1)}><RateCard rates={d.rates} /></div>
-            <Link to="/pricing" className="group mt-6 inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-800" {...rv(2)}>See plans and usage charges<Icon name="arrow" className="nudge h-4 w-4" /></Link>
+            <Link to="/pricing" className="group mt-6 inline-flex items-center gap-1.5 font-semibold text-pine hover:text-pine-dark" {...rv(2)}>See plans and usage charges<Icon name="arrow" className="nudge h-4 w-4" /></Link>
           </div>
           <div className="lg:sticky lg:top-24" {...rv(1)}><WalletDemo minRecharge={d.minRecharge} /></div>
         </div>
@@ -71,7 +71,7 @@ export default function Home() {
         <div className="mx-auto max-w-3xl px-4 py-20 sm:px-6 sm:py-24">
           <SectionHead eyebrow="FAQs" title="Questions merchants ask us" />
           <div className="mt-10"><Faq items={FAQ} /></div>
-          <p className="mt-6 text-center text-sm text-ink-soft" {...rv()}>Still have a question? <Link to="/contact" className="font-semibold text-blue-700 underline-offset-2 hover:underline">Ask for a callback</Link>.</p>
+          <p className="mt-6 text-center text-sm text-ink-soft" {...rv()}>Still have a question? <Link to="/contact" className="font-semibold text-pine underline-offset-2 hover:underline">Ask for a callback</Link>.</p>
         </div>
       </section>
 
@@ -85,15 +85,15 @@ export default function Home() {
 function Hero({ loggedIn }: { loggedIn: boolean }) {
   return (
     <section className="relative overflow-hidden">
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_50%_at_85%_10%,rgba(37,88,235,.12),transparent_70%),radial-gradient(40%_40%_at_70%_80%,rgba(45,212,150,.12),transparent_70%)]" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_50%_at_85%_10%,rgba(11,93,75,.12),transparent_70%),radial-gradient(40%_40%_at_70%_80%,rgba(45,212,150,.12),transparent_70%)]" />
       <div aria-hidden className="pointer-events-none absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(11,22,48,.045)_1px,transparent_1px),linear-gradient(90deg,rgba(11,22,48,.045)_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(70%_60%_at_60%_30%,#000,transparent)]" />
       <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-16 pt-12 sm:px-6 sm:pt-20 lg:grid-cols-[1.02fr_1fr] lg:pb-24">
         <div>
-          <p className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[.12em] text-blue-800">
+          <p className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-pine-tint/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[.12em] text-pine-dark">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Checkout + COD risk, in one workspace
           </p>
           <h1 className="mt-5 text-[40px] font-semibold leading-[1.04] tracking-tight sm:text-[58px]">
-            Make every checkout decision <span className="relative whitespace-nowrap text-blue-600">work harder.<svg aria-hidden viewBox="0 0 300 12" className="absolute -bottom-1.5 left-0 h-2.5 w-full text-emerald-400" preserveAspectRatio="none"><path d="M2 9C60 3 140 2 298 7" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" /></svg></span>
+            Make every checkout decision <span className="relative whitespace-nowrap text-pine">work harder.<svg aria-hidden viewBox="0 0 300 12" className="absolute -bottom-1.5 left-0 h-2.5 w-full text-emerald-400" preserveAspectRatio="none"><path d="M2 9C60 3 140 2 298 7" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" /></svg></span>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
             Build a checkout that fits your store, offer smarter payment choices, and control COD risk, all from one platform.
@@ -106,7 +106,7 @@ function Hero({ loggedIn }: { loggedIn: boolean }) {
             <p className="text-xs font-medium text-ink-faint">Built for growing ecommerce brands</p>
             <ul className="mt-2.5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink-soft">
               {[["globe", "Live on Shopify"], ["rupee", `${GATEWAY_TILES.length} payment gateways`], ["shipping", `${API_COURIERS.length} courier APIs + Shopify tracking`]].map(([i, t]) => (
-                <li key={t} className="flex items-center gap-1.5"><Icon name={i as IconName} className="h-4 w-4 text-blue-600" />{t}</li>
+                <li key={t} className="flex items-center gap-1.5"><Icon name={i as IconName} className="h-4 w-4 text-pine" />{t}</li>
               ))}
             </ul>
           </div>
@@ -121,12 +121,12 @@ function Hero({ loggedIn }: { loggedIn: boolean }) {
 function HeroVisual() {
   return (
     <div className="relative mx-auto w-full max-w-[460px] pb-6 lg:max-w-none" aria-hidden>
-      <div className="absolute inset-x-6 bottom-0 top-10 rounded-[40px] bg-gradient-to-tr from-blue-200/40 via-transparent to-emerald-200/40 blur-2xl" />
+      <div className="absolute inset-x-6 bottom-0 top-10 rounded-[40px] bg-gradient-to-tr from-emerald-200/50 via-transparent to-emerald-200/40 blur-2xl" />
       {/* connector lines */}
       <svg className="absolute inset-0 hidden h-full w-full sm:block" viewBox="0 0 460 520" preserveAspectRatio="none">
-        <path d="M120 120 C 70 140, 60 170, 40 190" className="flow" fill="none" stroke="#2558EB" strokeOpacity=".35" strokeWidth="1.5" />
+        <path d="M120 120 C 70 140, 60 170, 40 190" className="flow" fill="none" stroke="#0B5D4B" strokeOpacity=".35" strokeWidth="1.5" />
         <path d="M340 300 C 390 300, 410 320, 425 340" className="flow" fill="none" stroke="#2DD496" strokeOpacity=".6" strokeWidth="1.5" />
-        <path d="M150 430 C 110 450, 90 460, 60 470" className="flow" fill="none" stroke="#2558EB" strokeOpacity=".35" strokeWidth="1.5" />
+        <path d="M150 430 C 110 450, 90 460, 60 470" className="flow" fill="none" stroke="#0B5D4B" strokeOpacity=".35" strokeWidth="1.5" />
       </svg>
 
       {/* checkout */}
@@ -137,7 +137,7 @@ function HeroVisual() {
             <span className="flex items-center gap-1 text-[10px] font-medium text-ink-faint"><Icon name="lock" className="h-3 w-3" />Secure checkout</span>
           </div>
           <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-rule bg-white p-2.5">
-            <span className="h-10 w-10 rounded-lg bg-gradient-to-br from-sky-100 to-blue-200" />
+            <span className="h-10 w-10 rounded-lg bg-gradient-to-br from-sky-100 to-emerald-200" />
             <span className="flex-1"><span className="block text-xs font-semibold">Wireless earbuds</span><span className="block text-[10px] text-ink-faint">Qty 1</span></span>
             <span className="num text-xs font-semibold">₹1,499</span>
           </div>
@@ -146,8 +146,8 @@ function HeroVisual() {
           </div>
           <p className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Payment</p>
           <div className="mt-1.5 space-y-1.5">
-            <div className="flex items-center justify-between rounded-xl border-2 border-blue-600 bg-white px-2.5 py-2 text-[11px]">
-              <span className="flex items-center gap-2 font-semibold"><span className="h-3.5 w-3.5 rounded-full border-4 border-blue-600" />Pay online · UPI, cards</span>
+            <div className="flex items-center justify-between rounded-xl border-2 border-pine bg-white px-2.5 py-2 text-[11px]">
+              <span className="flex items-center gap-2 font-semibold"><span className="h-3.5 w-3.5 rounded-full border-4 border-pine" />Pay online · UPI, cards</span>
               <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">₹50 OFF</span>
             </div>
             <div className="flex items-center justify-between rounded-xl border border-rule bg-white px-2.5 py-2 text-[11px] text-ink-soft">
@@ -157,13 +157,13 @@ function HeroVisual() {
               <span className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full border border-rule-strong" />Cash on Delivery</span>
             </div>
           </div>
-          <div className="mt-3 rounded-xl bg-blue-600 py-2.5 text-center text-[13px] font-semibold text-white">Pay ₹1,299</div>
+          <div className="mt-3 rounded-xl bg-pine py-2.5 text-center text-[13px] font-semibold text-white">Pay ₹1,299</div>
         </div>
       </div>
 
       {/* panel 1: payments & offers */}
       <div className="seq absolute -left-2 top-16 hidden w-[188px] rounded-2xl border border-rule bg-white/95 p-3 shadow-lift backdrop-blur sm:block lg:-left-12" style={{ "--d": "380ms" } as React.CSSProperties}>
-        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700"><Icon name="rupee" className="h-3 w-3" />Payments & offers</p>
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-pine"><Icon name="rupee" className="h-3 w-3" />Payments & offers</p>
         <ul className="mt-2 space-y-1.5 text-[11px]">
           {[["Primary", "Gateway A", true], ["Backup 1", "Gateway B", true], ["Prepaid discount", "₹50 off", true]].map(([l, v, on]) => (
             <li key={l as string} className="flex items-center justify-between gap-2"><span className="text-ink-soft">{l}</span><span className="flex items-center gap-1 font-semibold">{v}{on && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}</span></li>
@@ -180,9 +180,9 @@ function HeroVisual() {
 
       {/* panel 3: recovery & analytics */}
       <div className="seq absolute -left-1 bottom-0 hidden w-[210px] rounded-2xl border border-rule bg-white/95 p-3 shadow-lift backdrop-blur sm:block lg:-left-10" style={{ "--d": "860ms" } as React.CSSProperties}>
-        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-violet-700"><Icon name="trend" className="h-3 w-3" />Recovery & analytics</p>
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-teal-700"><Icon name="trend" className="h-3 w-3" />Recovery & analytics</p>
         <div className="mt-2 flex items-end gap-1" >
-          {[38, 52, 44, 66, 58, 74, 82].map((h, i) => <span key={i} className="w-full rounded-sm bg-gradient-to-t from-blue-600 to-blue-400" style={{ height: `${h * 0.42}px`, opacity: 0.45 + i * 0.08 }} />)}
+          {[38, 52, 44, 66, 58, 74, 82].map((h, i) => <span key={i} className="w-full rounded-sm bg-gradient-to-t from-pine to-emerald-400" style={{ height: `${h * 0.42}px`, opacity: 0.45 + i * 0.08 }} />)}
         </div>
         <p className="mt-2 flex items-center gap-1.5 text-[10px] text-ink-soft"><Icon name="chat" className="h-3 w-3 text-emerald-600" />Abandoned cart reminder sent</p>
       </div>
@@ -287,9 +287,9 @@ function Pillars() {
 function MiniCheckout() {
   return (
     <div aria-hidden className="absolute left-1/2 top-6 w-[220px] -translate-x-1/2 rounded-2xl border border-rule bg-white p-3 shadow-lift transition-transform duration-500 group-hover:-translate-y-1.5">
-      <div className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-2 py-1.5"><Icon name="phone" className="h-3.5 w-3.5 text-ink-faint" /><span className="num text-xs font-semibold">+91 98••• •••21</span><Icon name="check" className="ml-auto h-3.5 w-3.5 text-emerald-600" strokeWidth={2.4} /></div>
+      <div className="flex items-center gap-2 rounded-lg border-2 border-pine px-2 py-1.5"><Icon name="phone" className="h-3.5 w-3.5 text-ink-faint" /><span className="num text-xs font-semibold">+91 98••• •••21</span><Icon name="check" className="ml-auto h-3.5 w-3.5 text-emerald-600" strokeWidth={2.4} /></div>
       <div className="mt-2 rounded-lg bg-paper px-2 py-1.5 text-[10px] text-ink-soft"><span className="font-semibold text-ink">Home</span> · Sector 21, Gurugram</div>
-      <div className="mt-2 rounded-lg bg-blue-600 py-1.5 text-center text-[11px] font-semibold text-white">Continue</div>
+      <div className="mt-2 rounded-lg bg-pine py-1.5 text-center text-[11px] font-semibold text-white">Continue</div>
     </div>
   );
 }
@@ -307,9 +307,9 @@ function MiniChart() {
     <div aria-hidden className="absolute inset-x-6 top-6 rounded-2xl border border-rule bg-white p-3 shadow-lift transition-transform duration-500 group-hover:-translate-y-1.5">
       <div className="flex justify-between text-[10px] text-ink-faint"><span>Recovered checkouts</span><span className="font-semibold text-emerald-600">this week</span></div>
       <svg viewBox="0 0 200 60" className="mt-2 h-20 w-full">
-        <defs><linearGradient id="mc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#2558EB" stopOpacity=".25" /><stop offset="1" stopColor="#2558EB" stopOpacity="0" /></linearGradient></defs>
+        <defs><linearGradient id="mc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#0B5D4B" stopOpacity=".25" /><stop offset="1" stopColor="#0B5D4B" stopOpacity="0" /></linearGradient></defs>
         <path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 10 L200 60 L0 60Z" fill="url(#mc)" />
-        <path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 10" fill="none" stroke="#2558EB" strokeWidth="2" strokeLinejoin="round" />
+        <path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 10" fill="none" stroke="#0B5D4B" strokeWidth="2" strokeLinejoin="round" />
       </svg>
     </div>
   );
@@ -346,9 +346,9 @@ function Tour() {
   }, [i, auto]);
   const Pane = TOUR[i].pane;
   return (
-    <section id="how" className="scroll-mt-20 bg-[#0A1630] text-white">
+    <section id="how" className="scroll-mt-20 bg-[#0B1A16] text-white">
       <div className="relative mx-auto max-w-6xl overflow-hidden px-4 py-20 sm:px-6 sm:py-24">
-        <div aria-hidden className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-blue-500/20 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-pine-tint0/20 blur-3xl" />
         <SectionHead dark eyebrow="How it works" title="Live in an afternoon, in four steps" text="A guided setup in the dashboard walks you through each step. Our team can join you on a call." />
         <div ref={box} className="relative mt-12 grid gap-6 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
           <div role="tablist" aria-label="Setup steps" className="space-y-2">
@@ -358,7 +358,7 @@ function Tour() {
                 <button key={s.title} type="button" role="tab" aria-selected={on} aria-controls="tour-pane" onClick={() => setI(n)}
                   className={`group relative w-full overflow-hidden rounded-2xl border p-4 text-left transition duration-300 ${on ? "border-white/20 bg-white/[.07]" : "border-transparent hover:bg-white/[.04]"}`} {...rv(n)}>
                   <div className="flex items-start gap-4">
-                    <span className={`num flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition ${on ? "bg-emerald-400 text-[#0A1630]" : "bg-white/10 text-slate-300 group-hover:bg-white/15"}`}>{n + 1}</span>
+                    <span className={`num flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition ${on ? "bg-emerald-400 text-[#0B1A16]" : "bg-white/10 text-slate-300 group-hover:bg-white/15"}`}>{n + 1}</span>
                     <div className="min-w-0">
                       <p className={`font-semibold ${on ? "text-white" : "text-slate-300"}`}>{s.title}</p>
                       <p className={`mt-1 text-sm leading-relaxed transition-colors ${on ? "text-slate-300" : "text-slate-500"}`}>{s.text}</p>
@@ -395,7 +395,7 @@ function PaneConnect() {
       <p className="text-sm font-semibold">Connect your store</p>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
         {[["Shopify", true], ["WooCommerce", false], ["Custom site", false]].map(([n, live]) => (
-          <div key={n as string} className={`rounded-xl border p-3 ${live ? "border-blue-600 bg-blue-50" : "border-rule text-ink-faint"}`}><Icon name={live ? "bag" : "globe"} className="mx-auto h-5 w-5" /><p className="mt-1.5 font-semibold">{n}</p><p className="text-[10px]">{live ? "Live" : "Soon"}</p></div>
+          <div key={n as string} className={`rounded-xl border p-3 ${live ? "border-pine bg-pine-tint" : "border-rule text-ink-faint"}`}><Icon name={live ? "bag" : "globe"} className="mx-auto h-5 w-5" /><p className="mt-1.5 font-semibold">{n}</p><p className="text-[10px]">{live ? "Live" : "Soon"}</p></div>
         ))}
       </div>
       <div className="mt-3 rounded-lg border border-rule px-3 py-2 text-xs text-ink-soft">yourstore.myshopify.com</div>
@@ -414,7 +414,7 @@ function PaneGateways() {
             <div key={l as string} className="flex items-center gap-3 rounded-xl border border-rule px-3 py-2">
               <span className="w-16 text-[11px] font-semibold text-ink-faint">{l as string}</span>
               <span className="flex h-7 flex-1 items-center">{gw.logo ? <img src={gw.logo} alt={gw.name} className="h-5 w-auto" /> : <span className="text-sm font-bold">{gw.name}</span>}</span>
-              <span className="h-5 w-9 rounded-full bg-blue-600 p-0.5"><span className="ml-auto block h-4 w-4 rounded-full bg-white" /></span>
+              <span className="h-5 w-9 rounded-full bg-pine p-0.5"><span className="ml-auto block h-4 w-4 rounded-full bg-white" /></span>
             </div>
           );
         })}
@@ -430,7 +430,7 @@ function PaneRules() {
         {[["Ask for OTP before COD", true], ["Wait 24 hours between COD orders", true], ["Hide COD after 2 RTOs (courier data)", true], ["Block listed pincodes", false]].map(([t, on]) => (
           <div key={t as string} className="flex items-center justify-between gap-3 rounded-xl border border-rule px-3 py-2.5">
             <span className="font-medium">{t as string}</span>
-            <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition ${on ? "bg-blue-600" : "bg-rule-strong"}`}><span className={`block h-4 w-4 rounded-full bg-white ${on ? "ml-auto" : ""}`} /></span>
+            <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition ${on ? "bg-pine" : "bg-rule-strong"}`}><span className={`block h-4 w-4 rounded-full bg-white ${on ? "ml-auto" : ""}`} /></span>
           </div>
         ))}
       </div>
@@ -440,7 +440,7 @@ function PaneRules() {
 function PaneLive() {
   return (
     <Browser title="theme.liquid">
-      <pre className="overflow-x-auto rounded-lg bg-[#0A1630] p-3 text-[11px] leading-relaxed text-slate-300"><span className="text-slate-500">{"<!-- Growpefy checkout -->"}</span>{"\n"}<span className="text-emerald-300">{"<script"}</span> <span className="text-sky-300">src</span>=<span className="text-amber-200">"https://growpefy.com/embed.js"</span><span className="text-emerald-300">{"></script>"}</span></pre>
+      <pre className="overflow-x-auto rounded-lg bg-[#0B1A16] p-3 text-[11px] leading-relaxed text-slate-300"><span className="text-slate-500">{"<!-- Growpefy checkout -->"}</span>{"\n"}<span className="text-emerald-300">{"<script"}</span> <span className="text-sky-300">src</span>=<span className="text-amber-200">"https://growpefy.com/embed.js"</span><span className="text-emerald-300">{"></script>"}</span></pre>
       <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
         <span className="pulse flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><Icon name="check" className="h-4 w-4" strokeWidth={2.4} /></span>
         <div className="text-xs"><p className="font-semibold text-emerald-900">Checkout is live</p><p className="text-emerald-800">New orders appear in Shopify as usual</p></div>
@@ -487,7 +487,7 @@ function Integrations() {
         <SectionHead eyebrow="Integrations" title="Connect what you already use" text="Your own payment gateways, the couriers you ship with, and the platforms you sell and advertise on. Status shown honestly." />
 
         {/* gateways + fallback USP */}
-        <div className="relative mt-12 overflow-hidden rounded-3xl bg-[#0A1630] p-6 text-white sm:p-10" {...rv()}>
+        <div className="relative mt-12 overflow-hidden rounded-3xl bg-[#0B1A16] p-6 text-white sm:p-10" {...rv()}>
           <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-emerald-400/15 blur-3xl" />
           <div className="relative grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
             <div>
@@ -541,7 +541,7 @@ function Security() {
         <div className="mt-12 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
           {items.map(([icon, t, x], i) => (
             <div key={t} className="group flex gap-4" {...rv(i)}>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-rule bg-white text-blue-700 shadow-sm transition duration-300 group-hover:-translate-y-0.5 group-hover:border-blue-200 group-hover:bg-blue-50"><Icon name={icon} className="h-[18px] w-[18px]" /></span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-rule bg-white text-pine shadow-sm transition duration-300 group-hover:-translate-y-0.5 group-hover:border-emerald-200 group-hover:bg-pine-tint"><Icon name={icon} className="h-[18px] w-[18px]" /></span>
               <div><h3 className="font-semibold">{t}</h3><p className="mt-1 text-sm leading-relaxed text-ink-soft">{x}</p></div>
             </div>
           ))}
