@@ -1,11 +1,14 @@
 import type { Store } from "~/db/schema";
 import { appHost, checkoutRoot, cleanDomain } from "./urls.server";
+import type { StoreGateway } from "~/db/schema";
+import { MAX_GATEWAYS, gatewayById } from "./gateways/catalog";
+import { storeGateways } from "./gateways/index.server";
 
 export type StoreInput = Pick<
   Store,
   | "name" | "slug" | "shopDomain" | "storefrontUrl" | "checkoutDomain" | "active"
   | "adminToken" | "clientId" | "clientSecret" | "apiVersion"
-  | "payuKey" | "payuSalt" | "payuMode" | "payuViaStorefront"
+  | "payuKey" | "payuSalt" | "payuMode" | "payuViaStorefront" | "gateways"
   | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
   | "metaAdAccountId" | "metaAccessToken" | "metaPixelId" | "metaCapiToken" | "metaApiVersion" | "metaFireCodPurchase"
   | "supportPhone" | "popupCheckout"
@@ -30,9 +33,11 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     clientId: s("clientId") || null,
     clientSecret: secret("clientSecret", existing?.clientSecret),
     apiVersion: s("apiVersion") || "2025-07",
-    payuKey: s("payuKey") || null,
-    payuSalt: secret("payuSalt", existing?.payuSalt),
-    payuMode: s("payuMode") === "live" ? "live" : "test",
+    // filled in from the gateways below (PayU's keys are also kept in the old columns)
+    payuKey: null,
+    payuSalt: null,
+    payuMode: "test",
+    gateways: [],
     payuViaStorefront: on("payuViaStorefront"),
     // COD on/off now lives in Payment methods; new stores start with COD on
     codEnabled: existing?.codEnabled ?? true,
@@ -48,6 +53,31 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     supportPhone: s("supportPhone") || null,
     popupCheckout: on("popupCheckout"),
   };
+
+  // Payment gateways: up to 3, in the order shown (primary first). Blank secrets keep the saved value.
+  const count = Math.min(MAX_GATEWAYS, Math.max(0, Number(s("gwCount")) || 0));
+  const before = existing ? storeGateways(existing) : [];
+  const seen = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    const id = s(`gw${i}_id`);
+    const info = gatewayById(id);
+    if (!info || seen.has(id)) continue;
+    seen.add(id);
+    const old = before.find((g) => g.id === id);
+    const creds: Record<string, string> = {};
+    for (const f of info.fields) {
+      const v = s(`gw${i}_f_${f.name}`);
+      creds[f.name] = v || (f.secret ? old?.creds[f.name] ?? "" : "");
+    }
+    const g: StoreGateway = { id, mode: s(`gw${i}_mode`) === "live" ? "live" : "test", on: on(`gw${i}_on`), creds };
+    const missing = info.fields.filter((f) => !f.optional && !creds[f.name]).map((f) => f.label.toLowerCase());
+    if (g.on && missing.length) errors[`gw${i}`] = `${info.name}: enter the ${missing.join(", ")}`;
+    data.gateways.push(g);
+  }
+  const payuGw = data.gateways.find((g) => g.id === "payu");
+  data.payuKey = payuGw?.creds.key || null;
+  data.payuSalt = payuGw?.creds.salt || null;
+  data.payuMode = payuGw?.mode ?? "test";
 
   if (!data.name) errors.name = "Enter the store name";
   if (!data.slug) errors.slug = "Enter a short ID, e.g. budverse";

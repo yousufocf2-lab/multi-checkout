@@ -1,3 +1,6 @@
+import { gatewayName } from "~/lib/gateways/catalog";
+import { courierById } from "~/lib/courier-catalog";
+import { SHIP_STATUS_LABELS } from "~/lib/rto-shield";
 import { DownloadLink } from "./DownloadLink";
 import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
 import { Form, Link, useSearchParams, useSubmit } from "@remix-run/react";
@@ -16,7 +19,7 @@ export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
   shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
-  payuMihpayid: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
+  payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
 };
 
 const STATUS_TABS = [
@@ -195,6 +198,19 @@ function ConfirmTag({ s }: { s: string | null }) {
   return <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${v[0]}`} title="WhatsApp confirmation">{v[1]}</span>;
 }
 
+const SHIP_CHIP: Record<string, string> = {
+  in_transit: "bg-sky-50 text-sky-800", delivered: "bg-emerald-50 text-good", rto_transit: "bg-amber-50 text-amber-800",
+  rto: "bg-red-50 text-bad", returned: "bg-fuchsia-50 text-fuchsia-800", cancelled: "bg-paper-sunk text-ink-soft",
+};
+/** Shipment status once the order is fulfilled with an AWB. */
+function ShipTag({ o }: { o: OrderRow }) {
+  if (!o.awb && !o.shipStatus) return null;
+  const s = o.shipStatus ?? "in_transit";
+  const label = (SHIP_STATUS_LABELS as Record<string, string>)[s] ?? "Fulfilled";
+  const courier = o.courier ? courierById(o.courier)?.name ?? o.courier : null;
+  return <span title={[courier, o.awb ? `AWB ${o.awb}` : null].filter(Boolean).join(" · ")} className={`rounded-md px-2 py-0.5 text-xs font-medium ${SHIP_CHIP[s] ?? SHIP_CHIP.in_transit}`}>🚚 {label}</span>;
+}
+
 function RefundTag({ o }: { o: OrderRow }) {
   if (!o.refundStatus) return null;
   return <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-bad">{o.refundStatus === "full" ? "Refunded" : o.refundStatus === "partial" ? "Part refunded" : "Refund pending"}</span>;
@@ -207,7 +223,7 @@ function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
     <li className="panel overflow-hidden">
       <button type="button" className="flex w-full items-start gap-3 p-3.5 text-left" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
         <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-1.5"><span className="num text-sm font-semibold">{o.shopifyOrderName ?? o.id}</span><PaymentTag method={o.paymentMethod} status={o.status} /><ConfirmTag s={o.confirmStatus} /><RefundTag o={o} /></p>
+          <p className="flex flex-wrap items-center gap-1.5"><span className="num text-sm font-semibold">{o.shopifyOrderName ?? o.id}</span><PaymentTag method={o.paymentMethod} status={o.status} /><ConfirmTag s={o.confirmStatus} /><RefundTag o={o} /><ShipTag o={o} /></p>
           <p className="mt-1 truncate text-sm">{o.customer.firstName} {o.customer.lastName}<span className="text-ink-faint">, {o.customer.city}</span></p>
           <p className="truncate text-xs text-ink-faint">{showStore && `${o.storeName} · `}{when(o.createdAt)}</p>
         </div>
@@ -237,7 +253,7 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
           <p>{o.customer.firstName} {o.customer.lastName}</p>
           <p className="num text-xs text-ink-faint">{o.customer.phone}, {o.customer.city}</p>
         </td>
-        <td><div className="flex flex-wrap items-center gap-1.5"><PaymentTag method={o.paymentMethod} status={o.status} /><ConfirmTag s={o.confirmStatus} /><RefundTag o={o} /></div></td>
+        <td><div className="flex flex-wrap items-center gap-1.5"><PaymentTag method={o.paymentMethod} status={o.status} /><ConfirmTag s={o.confirmStatus} /><RefundTag o={o} /><ShipTag o={o} /></div></td>
         <td className="num text-right">
           <p className="font-medium">{inr(paid - o.refunded)}</p>
           <p className="text-xs text-ink-faint">{itemsLabel(o)}</p>
@@ -291,7 +307,7 @@ function OrderDetails({ o }: { o: OrderRow }) {
         <p className="text-xs font-medium text-ink-soft">Delivery address</p>
         <p className="text-ink-soft">{o.customer.firstName} {o.customer.lastName}, <a className="num underline" href={`tel:+91${o.customer.phone}`}>{o.customer.phone}</a></p>
         <p className="text-ink-soft">{o.customer.address1}{o.customer.address2 ? `, ${o.customer.address2}` : ""}, {o.customer.city}, {o.customer.state} {o.customer.pincode}</p>
-        {o.payuMihpayid && <p className="text-xs text-ink-faint">PayU ID {o.payuMihpayid}, checkout ID {o.id}</p>}
+        {(o.gatewayRef || o.payuMihpayid) && <p className="text-xs text-ink-faint">{gatewayName(o.gateway ?? "payu")} ID {o.gatewayRef ?? o.payuMihpayid}, checkout ID {o.id}</p>}
         {o.error && <p className="break-words text-xs text-bad">{o.error}</p>}
         <div className="flex flex-wrap gap-2 pt-1">
           {okStatus && !o.shopifyOrderId && (
@@ -300,7 +316,7 @@ function OrderDetails({ o }: { o: OrderRow }) {
           )}
           {o.paymentMethod !== "cod" && (
             <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
-              <SubmitButton intent="verify" className="btn-secondary px-3 py-1.5 text-xs" busyText="Checking">Check payment with PayU</SubmitButton></Form>
+              <SubmitButton intent="verify" className="btn-secondary px-3 py-1.5 text-xs" busyText="Checking">Check payment</SubmitButton></Form>
           )}
         </div>
       </div>

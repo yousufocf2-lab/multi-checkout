@@ -172,6 +172,8 @@ export const stores = pgTable("stores", {
   payuSalt: text("payu_salt"),
   payuMode: text("payu_mode").notNull().default("test"), // test | live
   payuViaStorefront: boolean("payu_via_storefront").notNull().default(false), // open PayU from the store's own website (Shopify App Proxy)
+  // Online payment gateways in priority order (max 3): primary, then backups. Secrets live in creds.
+  gateways: jsonb("gateways").$type<StoreGateway[]>().notNull().default([]),
   // Meta (Facebook) ads
   metaAdAccountId: text("meta_ad_account_id"), // digits only, without act_
   metaAccessToken: text("meta_access_token"), // System User token: ads_read (+ ads_management for CAPI)
@@ -216,6 +218,11 @@ export const storeDocuments = pgTable(
   },
   (t) => [index("store_documents_store_idx").on(t.storeId, t.purpose)],
 );
+
+/** One payment gateway connected to a store. */
+export type StoreGateway = { id: string; mode: "test" | "live"; on: boolean; creds: Record<string, string> };
+/** One try at paying an order (each try has its own transaction id at the gateway). */
+export type PayAttempt = { g: string; txn: string; ref?: string | null; at: string };
 
 /** Per-store dropshipping options. Prices are paise, keyed by the 9-character SKU. */
 export type StoreDropship = { rtoPaise?: number | null; prices?: Record<string, number>; enabledAt?: string };
@@ -277,7 +284,7 @@ export const blockedCustomers = pgTable(
 
 /** Courier accounts connected by a store (API token from the courier's own panel). */
 /** Courier login. Passwords are sealed (AES-GCM) before saving. Shopify-tracked couriers have no creds. */
-export type CourierCreds = { token?: string; clientName?: string; email?: string; password?: string; clientId?: string; username?: string; label?: string };
+export type CourierCreds = { token?: string; clientName?: string; email?: string; password?: string; clientId?: string; username?: string; label?: string; viaShopify?: boolean };
 export const courierAccounts = pgTable(
   "courier_accounts",
   {
@@ -567,7 +574,10 @@ export const orders = pgTable(
     payuRaw: jsonb("payu_raw").$type<Record<string, string>>(),
     shopifyOrderId: text("shopify_order_id"),
     shopifyOrderName: text("shopify_order_name"),
-    shopifyPushAt: timestamp("shopify_push_at", { withTimezone: true }), // set while an order is being created in Shopify (stops duplicates)
+    shopifyPushAt: timestamp("shopify_push_at", { withTimezone: true }),
+    gateway: text("gateway"), // payment gateway that took the money (payu, cashfree, razorpay…)
+    gatewayRef: text("gateway_ref"), // that gateway's payment / order id
+    payAttempts: jsonb("pay_attempts").$type<PayAttempt[]>().notNull().default([]), // set while an order is being created in Shopify (stops duplicates)
     error: text("error"),
     tracking: jsonb("tracking").$type<TrackingInfo>(),
     capiSentAt: timestamp("capi_sent_at", { withTimezone: true }),

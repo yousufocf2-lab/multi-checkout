@@ -2,7 +2,8 @@ import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { eq, or } from "drizzle-orm";
 import { db, orders, stores } from "~/db.server";
-import { logPaymentEvent, syncOrderWithPayu, syncRefunds } from "~/lib/orders.server";
+import { logPaymentEvent, syncRefunds } from "~/lib/orders.server";
+import { syncOrderPayment } from "~/lib/gateways/index.server";
 
 export const loader = () => json({ ok: true, hint: "PayU webhooks POST here" });
 
@@ -35,7 +36,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     if (isRefund && row.order.status === "paid") await syncRefunds(row.store, row.order, "webhook");
-    else await syncOrderWithPayu(row.store, row.order, "webhook");
+    else await syncOrderPayment(row.store, row.order, "webhook");
   } catch (e) {
     console.error("[payu webhook]", e instanceof Error ? e.message : e);
   }

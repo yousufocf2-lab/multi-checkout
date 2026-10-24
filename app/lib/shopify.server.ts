@@ -1,5 +1,6 @@
 import type { Order, Store } from "~/db/schema";
 import { rupeesToPaise, type PricedLine } from "./pricing";
+import { gatewayName } from "./gateways/catalog";
 
 // ---------- auth ----------
 
@@ -253,7 +254,7 @@ export async function createShopifyOrder(store: Store, order: Order) {
     billingAddress: address,
     financialStatus: isCod ? "PENDING" : isPartial ? "PARTIALLY_PAID" : "PAID",
     tags: ["Growpefy", isCod ? "COD" : isPartial ? "Partial COD" : "Prepaid", order.couponCode, order.items.some((l) => l.free) ? "FreeGift" : null].filter(Boolean),
-    note: `Checkout order ${order.id}${order.payuMihpayid ? `, PayU ${order.payuMihpayid}` : ""}${isPartial ? `. Partial COD: advance ₹${((order.amountPaid ?? order.advance ?? 0) / 100).toFixed(2)} paid online, collect ₹${((order.total - (order.advance ?? 0)) / 100).toFixed(2)} on delivery` : ""}`,
+    note: `Checkout order ${order.id}${order.gatewayRef || order.payuMihpayid ? `, ${gatewayName(order.gateway ?? "payu")} ${order.gatewayRef ?? order.payuMihpayid}` : ""}${isPartial ? `. Partial COD: advance ₹${((order.amountPaid ?? order.advance ?? 0) / 100).toFixed(2)} paid online, collect ₹${((order.total - (order.advance ?? 0)) / 100).toFixed(2)} on delivery` : ""}`,
     // Without a shipping line Shopify shows "Shipping not required" and fulfilment apps skip the order
     shippingLines: [
       {
@@ -276,7 +277,7 @@ export async function createShopifyOrder(store: Store, order: Order) {
       {
         kind: "SALE",
         status: "SUCCESS",
-        gateway: "PayU",
+        gateway: gatewayName(order.gateway ?? "payu"),
         amountSet: money(order.amountPaid ?? order.total),
       },
     ];

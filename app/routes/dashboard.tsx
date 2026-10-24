@@ -232,7 +232,7 @@ export default function DashboardLayout() {
 const BUSY_INTENTS: Record<string, string> = {
   saveStore: "Saving and connecting your store",
   testShopify: "Connecting to Shopify",
-  testPayu: "Checking PayU",
+  testGateways: "Checking payment gateways",
   testMeta: "Connecting to Meta ads",
   checkBalance: "Fetching your Meta balance",
 };

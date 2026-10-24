@@ -7,7 +7,8 @@ import { db, paymentEvents } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { env } from "~/lib/env.server";
 import { testMeta } from "~/lib/meta.server";
-import { testPayu } from "~/lib/payu.server";
+import { ADAPTERS, activeGateways } from "~/lib/gateways/index.server";
+import { SLOT_LABELS, gatewayById, gatewayName } from "~/lib/gateways/catalog";
 import { SHOPIFY_SCOPES } from "~/lib/scopes";
 import { testConnection } from "~/lib/shopify.server";
 import { storeBaseUrl } from "~/lib/urls.server";
@@ -21,8 +22,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     store: {
       id: s.id, slug: s.slug, shopDomain: s.shopDomain, checkoutDomain: s.checkoutDomain,
       hasToken: Boolean(s.adminToken), hasClient: Boolean(s.clientId && s.clientSecret),
-      payuReady: Boolean(s.payuKey && s.payuSalt), payuMode: s.payuMode, metaReady: Boolean(s.metaAdAccountId && s.metaAccessToken),
+      metaReady: Boolean(s.metaAdAccountId && s.metaAccessToken),
     },
+    gateways: activeGateways(s).map((g, i) => ({ id: g.id, name: gatewayName(g.id), mode: g.mode, slot: SLOT_LABELS[i], webhook: Boolean(gatewayById(g.id)?.webhook) })),
     appUrl: env.appUrl,
     checkoutBase: storeBaseUrl(s),
   });
@@ -36,7 +38,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     catch (e) { return json({ intent, ok: null, error: e instanceof Error ? e.message : String(e) }); }
   };
   if (intent === "testShopify") return run(async () => { const s = await testConnection(store); return `Connected to ${s.name} (${s.currencyCode})`; });
-  if (intent === "testPayu") return run(() => testPayu(store));
+  if (intent === "testGateways") return run(async () => {
+    const list = activeGateways(store);
+    if (!list.length) throw new Error("No payment gateway is connected. Add one in Settings.");
+    const lines = await Promise.all(list.map(async (g, i) => {
+      try { return `${SLOT_LABELS[i]} · ${await ADAPTERS[g.id].test(g)}`; } catch (e) { return `${SLOT_LABELS[i]} · ${gatewayName(g.id)}: ${e instanceof Error ? e.message : String(e)}`; }
+    }));
+    return lines.join(" | ");
+  });
   if (intent === "testMeta") return run(async () => {
     const r = await testMeta(store);
     return `Connected to ${r.account.name} (${r.account.status}, balance ₹${r.account.balance.toLocaleString("en-IN")})${r.pixel ? `. Pixel: ${r.pixel}` : ". No pixel set"}`;
@@ -45,10 +54,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function Setup() {
-  const { store, appUrl, checkoutBase, lastHook } = useLoaderData<typeof loader>();
+  const { store, appUrl, checkoutBase, lastHook, gateways } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const [params] = useSearchParams();
-  const snippet = `<script src="${checkoutBase}/embed.js?store=${store.slug}" defer></script>`;
+  // Always the platform domain: it works even while a store's own checkout domain is being set up
+  const snippet = `<script src="${appUrl}/embed.js?store=${store.slug}" defer></script>`;
   const result = (intent: string) =>
     res?.intent === intent ? <div className="mt-3"><Notice tone={res.ok ? "success" : "error"}>{res.ok ?? res.error}</Notice></div> : null;
 
@@ -91,28 +101,33 @@ export default function Setup() {
           )}
         </Step>
 
-        <Step n={3} title="Test payments" done={store.payuReady}>
-          <p className="text-sm text-ink-soft">{store.payuReady ? `PayU is in ${store.payuMode} mode.` : "Add your PayU key and salt in Settings."} Place one online and one COD test order before going live.</p>
+        <Step n={3} title="Payment gateways" done={gateways.length > 0}>
+          {gateways.length ? (
+            <ul className="space-y-1 text-sm text-ink-soft">
+              {gateways.map((g) => <li key={g.id}><b className="text-ink">{g.slot}:</b> {g.name} <span className="text-xs">({g.mode === "live" ? "Live" : "Test mode"})</span></li>)}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-soft">Add your payment gateway in <Link to="../settings" relative="path" className="underline">Settings</Link>. You can add up to 3: if the first has a problem, the next one takes over.</p>
+          )}
+          <p className="mt-2 text-sm text-ink-soft">Place one online and one COD test order before going live.</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Form method="post"><SubmitButton intent="testPayu" className="btn-secondary" busyText="Testing" disabled={!store.payuReady}>Test PayU</SubmitButton></Form>
+            <Form method="post"><SubmitButton intent="testGateways" className="btn-secondary" busyText="Testing" disabled={!gateways.length}>Test gateways</SubmitButton></Form>
             <Form method="post"><SubmitButton intent="testMeta" className="btn-secondary" busyText="Testing" disabled={!store.metaReady}>Test Meta ads</SubmitButton></Form>
           </div>
-          {result("testPayu")}
+          {result("testGateways")}
           {result("testMeta")}
         </Step>
 
-        <Step n={4} title="Connect PayU webhooks" done={Boolean(lastHook)}>
+        <Step n={4} title="Payment webhooks" done={Boolean(lastHook)}>
           <p className="text-sm text-ink-soft">
-            Webhooks let PayU tell us about a payment even if the customer closes the browser before coming back, and about refunds.
-            We always re-check each event with PayU before changing an order.
+            Webhooks tell us about a payment even if the customer closes the browser before coming back.
+            We always re-check each event with the gateway before changing an order.
           </p>
-          <div className="mt-3"><CopyField label="Webhook URL" value={`${checkoutBase}/payu/webhook`} /></div>
-          <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-ink-soft">
-            <li>PayU dashboard → Developers (or Settings) → Webhooks.</li>
-            <li>Add this URL for <b className="text-ink">Payment success</b>, <b className="text-ink">Payment failure</b> and <b className="text-ink">Refund</b>.</li>
-            <li>Save, then place a test order. The status below updates when the first webhook arrives.</li>
-          </ol>
-          <p className="mt-3 text-xs text-ink-faint">If you can't find Webhooks in your dashboard, ask PayU support to set this URL for your merchant key.</p>
+          <div className="mt-3 space-y-3">
+            {gateways.filter((g) => g.webhook).map((g) => <CopyField key={g.id} label={`${g.name} webhook URL`} value={`${appUrl}/pg/${g.id}/webhook`} />)}
+            {!gateways.some((g) => g.webhook) && <p className="text-sm text-ink-faint">Your gateways don't need a webhook.</p>}
+          </div>
+          <p className="mt-3 text-xs text-ink-faint">In each gateway's dashboard, open Webhooks (or Notifications) and add the URL for payment success and failure.</p>
           <p className="mt-2 text-sm">{lastHook
             ? <>Last webhook received {new Date(lastHook.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} ({lastHook.kind}{lastHook.status ? `, ${lastHook.status}` : ""}).</>
             : <span className="text-ink-faint">No webhook received yet.</span>}</p>

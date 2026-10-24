@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
 import { useEffect, useMemo, useState } from "react";
 import { CourierLogo } from "~/components/CourierLogo";
 import { Icon } from "~/components/Icons";
@@ -8,7 +8,8 @@ import { Notice, PasswordInput, Spinner, SubmitButton } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { COURIERS, type CourierInfo } from "~/lib/courier-catalog";
 import { env } from "~/lib/env.server";
-import { connectCourier, courierAccountsFor, disconnectCourier, shipmentSummary, shipmentsByCourier, syncStoreShipments } from "~/lib/logistics.server";
+import { connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, shipmentsByCourier, syncStoreShipments } from "~/lib/logistics.server";
+import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
 import { SHIP_STATUS_LABELS, type ShipStatus } from "~/lib/rto-shield";
 
 const maskEmail = (e?: string) => (e ? e.replace(/^(.{2})[^@]*/, "$1•••") : null);
@@ -16,20 +17,31 @@ const maskEmail = (e?: string) => (e ? e.replace(/^(.{2})[^@]*/, "$1•••") 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
-  const [accounts, summary, perCourier] = await Promise.all([courierAccountsFor(store.id), shipmentSummary(store.id), shipmentsByCourier(store.id)]);
+  const url = new URL(request.url);
+  const filter = (SHIP_FILTERS as readonly string[]).includes(url.searchParams.get("ship") ?? "") ? (url.searchParams.get("ship") as ShipFilter) : "all";
+  const days = url.searchParams.get("days") === "30" ? 30 : 90;
+  const q = url.searchParams.get("q") ?? "";
+  const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+  const [accounts, summary, perCourier, performance, list] = await Promise.all([
+    courierAccountsFor(store.id), shipmentSummary(store.id), shipmentsByCourier(store.id),
+    courierPerformance(store.id, days), shipmentList(store.id, { filter, q, page, days }),
+  ]);
   return json({
     storeId: store.id,
     shopify: Boolean(store.adminToken || (store.clientId && store.clientSecret)),
     hookUrl: `${env.appUrl}/api/shipnex/${store.id}`,
     accounts: accounts.map((a) => ({
       courier: a.courier, status: a.status, lastError: a.lastError,
-      who: a.courier === "shipnex" ? null : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
+      viaShopify: Boolean(a.creds.viaShopify),
+      who: a.courier === "shipnex" ? null : a.creds.viaShopify ? "Tracked from Shopify" : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
       clientName: a.creds.clientName ?? a.creds.label ?? null,
       secret: a.courier === "shipnex" ? a.creds.token ?? null : null,
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
     })),
     summary,
     perCourier,
+    performance, days,
+    shipments: { filter, q, page, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString() })) },
   });
 }
 
@@ -43,7 +55,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const name = COURIERS.find((c) => c.id === courier)?.name ?? "Courier";
   if (intent === "connect") {
     const get = (k: string) => String(fd.get(k) ?? "");
-    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label") });
+    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode") });
     if (!r.ok) return json<R>({ ok: null, error: r.error, courier }, { status: 400 });
     return json<R>({ ok: "connected", error: null, courier });
   }
@@ -149,6 +161,9 @@ export default function Logistics() {
         </section>
       )}
 
+      {mine.length > 0 && <Performance d={d} />}
+      {mine.length > 0 && <Shipments d={d} />}
+
       <section className="panel p-5">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
@@ -217,9 +232,9 @@ function CourierTile({ c, a, onClick }: { c: CourierInfo; a?: Acc; onClick: () =
 }
 
 function ConnectedCard({ c, a, n, hookUrl, onManage }: { c: CourierInfo; a: Acc; n: number; hookUrl: string; onManage: () => void }) {
-  const tag = KIND_TAG[c.kind];
+  const tag = a.viaShopify ? KIND_TAG.shopify : KIND_TAG[c.kind];
   return (
-    <div className={`rounded-2xl border p-3.5 ${a.status === "connected" ? "border-rule" : "border-red-200 bg-red-50/40"}`}>
+    <div className={`min-w-0 rounded-2xl border p-3.5 ${a.status === "connected" ? "border-rule" : "border-red-200 bg-red-50/40"}`}>
       <div className="flex items-center gap-3">
         <CourierLogo c={c} size={40} />
         <div className="min-w-0 flex-1">
@@ -234,7 +249,7 @@ function ConnectedCard({ c, a, n, hookUrl, onManage }: { c: CourierInfo; a: Acc;
       {a.lastError && <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-bad">{a.lastError}</p>}
       {c.kind === "push" && <p className="mt-2 truncate rounded-lg bg-paper px-2.5 py-1.5 font-mono text-[10px] text-ink-soft">{hookUrl}</p>}
       <div className="mt-3 flex items-center gap-1.5">
-        <button type="button" onClick={onManage} className="btn-secondary h-8 flex-1 px-2 text-xs">{c.kind === "api" ? "Update login" : "Details"}</button>
+        <button type="button" onClick={onManage} className="btn-secondary h-8 flex-1 px-2 text-xs">{c.kind === "api" ? (a.viaShopify ? "Add API login" : "Update login") : "Details"}</button>
         <Form method="post" onSubmit={(e) => { if (!window.confirm(`Disconnect ${c.name}? Tracking for its shipments stops.`)) e.preventDefault(); }}>
           <input type="hidden" name="courier" value={c.id} />
           <button name="intent" value="disconnect" className="btn-quiet h-8 px-2 text-xs text-bad">Disconnect</button>
@@ -308,6 +323,21 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
             )}
             <p className="flex items-center gap-1.5 text-[11px] text-ink-faint"><Icon name="shield" className="h-3.5 w-3.5" />{c.kind === "api" ? "Passwords are encrypted. Used only to read tracking." : "Read-only. Disconnect any time."}</p>
           </Form>
+          {c.kind === "api" && (
+            <Form method="post" className="rounded-2xl border border-dashed border-rule-strong p-3.5 sm:col-span-2">
+              <input type="hidden" name="courier" value={c.id} />
+              <input type="hidden" name="mode" value="shopify" />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">Don't want to share an API {c.fields?.some((f) => f.name === "token") ? "token" : "login"}?</p>
+                  <p className="text-xs text-ink-soft">Just turn {c.name} on. We read each order's AWB and delivery status from Shopify, the way your {c.name} app updates it. Updates come a little slower than the live API.</p>
+                </div>
+                <button type="submit" name="intent" value="connect" className="btn-secondary shrink-0 px-4 py-2 text-sm" disabled={busy}>
+                  {a?.viaShopify ? "On · tracked from Shopify" : "Turn on without API"}
+                </button>
+              </div>
+            </Form>
+          )}
         </div>
       </div>
     </div>
@@ -330,4 +360,151 @@ function Copy({ label, value }: { label: string; value: string }) {
 /** Password fields get the show / hide eye. */
 function PwOrText({ type, ...rest }: React.InputHTMLAttributes<HTMLInputElement>) {
   return type === "password" ? <PasswordInput {...rest} /> : <input type={type} {...rest} />;
+}
+
+const STATUS_DOT: Record<string, string> = { in_transit: "bg-sky-500", delivered: "bg-emerald-500", rto_transit: "bg-amber-500", rto: "bg-red-500", returned: "bg-fuchsia-500", cancelled: "bg-slate-400" };
+const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
+
+function Performance({ d }: { d: D }) {
+  const [sp, setSp] = useSearchParams();
+  const all = d.performance.reduce((a, r) => ({ total: a.total + r.total, delivered: a.delivered + r.delivered, rto: a.rto + r.rto, transit: a.transit + r.transit }), { total: 0, delivered: 0, rto: 0, transit: 0 });
+  const done = all.delivered + all.rto;
+  const setDays = (v: string) => { const n = new URLSearchParams(sp); n.set("days", v); setSp(n, { preventScrollReset: true }); };
+  return (
+    <section className="panel p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[15px] font-semibold">Delivery performance</h2>
+          <p className="text-xs text-ink-soft">Delivered and RTO out of shipments that reached a result. In-transit shipments aren't counted yet.</p>
+        </div>
+        <div className="inline-flex rounded-lg border border-rule-strong bg-surface p-0.5" role="tablist">
+          {["30", "90"].map((v) => (
+            <button key={v} type="button" role="tab" aria-selected={String(d.days) === v} onClick={() => setDays(v)}
+              className={`rounded-md px-3 py-1 text-sm ${String(d.days) === v ? "bg-ink font-medium text-white" : "text-ink-soft"}`}>{v} days</button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Kpi label="Delivered" value={`${pct(all.delivered, done)}%`} sub={`${all.delivered} orders`} tone="text-good" />
+        <Kpi label="RTO" value={`${pct(all.rto, done)}%`} sub={`${all.rto} orders`} tone="text-bad" />
+        <Kpi label="In transit" value={String(all.transit)} sub="on the way" />
+        <Kpi label="Shipped" value={String(all.total)} sub={`last ${d.days} days`} />
+      </div>
+      {d.performance.length > 0 && (
+        <div className="mt-4 overflow-x-auto">
+          <table className="table min-w-[560px]">
+            <thead><tr><th>Courier</th><th className="text-right">Shipped</th><th className="text-right">Delivered</th><th className="text-right">RTO</th><th className="text-right">In transit</th><th className="w-[28%]">Delivery rate</th></tr></thead>
+            <tbody>
+              {d.performance.map((r) => {
+                const c = COURIERS.find((x) => x.id === r.courier);
+                const rate = pct(r.delivered, r.delivered + r.rto);
+                return (
+                  <tr key={r.courier}>
+                    <td><span className="flex items-center gap-2">{c && <CourierLogo c={c} size={24} />}<span className="font-medium">{c?.name ?? r.courier}</span></span></td>
+                    <td className="num text-right">{r.total}</td>
+                    <td className="num text-right text-good">{r.delivered}</td>
+                    <td className="num text-right text-bad">{r.rto}</td>
+                    <td className="num text-right">{r.transit}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-red-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.delivered + r.rto ? rate : 0}%` }} /></div>
+                        <span className="num w-10 text-right text-xs font-semibold">{r.delivered + r.rto ? `${rate}%` : "–"}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Kpi({ label, value, sub, tone = "" }: { label: string; value: string; sub: string; tone?: string }) {
+  return (
+    <div className="rounded-xl border border-rule px-3.5 py-3">
+      <p className="text-[11px] font-medium text-ink-soft">{label}</p>
+      <p className={`num mt-0.5 text-2xl font-semibold ${tone}`}>{value}</p>
+      <p className="text-[11px] text-ink-faint">{sub}</p>
+    </div>
+  );
+}
+
+const FILTER_LABEL: Record<string, string> = { all: "All", in_transit: "In transit", delivered: "Delivered", rto_transit: "RTO in transit", rto: "RTO", returned: "Returned" };
+
+function Shipments({ d }: { d: D }) {
+  const [sp, setSp] = useSearchParams();
+  const sh = d.shipments;
+  const go = (patch: Record<string, string | null>) => {
+    const n = new URLSearchParams(sp);
+    for (const [k, v] of Object.entries(patch)) { if (v == null || v === "") n.delete(k); else n.set(k, v); }
+    setSp(n, { preventScrollReset: true });
+  };
+  return (
+    <section className="panel" id="shipments">
+      <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-4">
+        <h2 className="mr-auto text-[15px] font-semibold">Shipments</h2>
+        <form onSubmit={(e) => { e.preventDefault(); go({ q: String(new FormData(e.currentTarget).get("q") ?? ""), page: null }); }} className="flex items-center gap-2">
+          <input name="q" defaultValue={sh.q} placeholder="Order, AWB or phone" className="input h-9 w-48 text-sm" />
+          <button className="btn-secondary h-9 px-3 text-sm">Search</button>
+        </form>
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto px-5 py-3">
+        {SHIP_FILTERS.map((f) => (
+          <button key={f} type="button" onClick={() => go({ ship: f === "all" ? null : f, page: null })}
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${sh.filter === f ? "border-ink bg-ink text-white" : "border-rule-strong text-ink-soft hover:border-ink"}`}>
+            {f !== "all" && <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[f]}`} />}{FILTER_LABEL[f]}{f !== "all" && d.summary[f as ShipStatus] ? <span className="num opacity-70">{d.summary[f as ShipStatus]}</span> : null}
+          </button>
+        ))}
+      </div>
+      {sh.rows.length === 0 ? (
+        <p className="px-5 pb-8 pt-4 text-center text-sm text-ink-faint">No shipments here.</p>
+      ) : (<>
+        <ul className="divide-y divide-rule border-t border-rule sm:hidden">
+          {sh.rows.map((r) => {
+            const c = COURIERS.find((x) => x.id === r.courier);
+            const st = (r.status ?? "in_transit") as ShipStatus;
+            return (
+              <li key={r.id} className="flex items-start gap-3 px-5 py-3">
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="flex justify-between gap-2 text-sm"><span className="num font-medium">{r.name ?? r.id}</span><span className="font-medium">{SHIP_STATUS_LABELS[st] ?? st}</span></p>
+                  <p className="truncate text-xs text-ink-soft">{r.customer.firstName} {r.customer.lastName} · {r.customer.city} · {r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</p>
+                  <p className="truncate text-[11px] text-ink-faint">{c?.name ?? r.courier} · <span className="font-mono">{r.awb}</span>{r.at ? ` · ${new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="hidden overflow-x-auto sm:block">
+          <table className="table min-w-[760px]">
+            <thead><tr><th>Order</th><th>Customer</th><th>Courier · AWB</th><th>Status</th><th>Updated</th></tr></thead>
+            <tbody>
+              {sh.rows.map((r) => {
+                const c = COURIERS.find((x) => x.id === r.courier);
+                const st = (r.status ?? "in_transit") as ShipStatus;
+                return (
+                  <tr key={r.id}>
+                    <td><span className="num font-medium">{r.name ?? r.id}</span><span className="block text-xs text-ink-faint">{r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} · ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</span></td>
+                    <td className="text-sm">{r.customer.firstName} {r.customer.lastName}<span className="block text-xs text-ink-faint">{r.customer.city} {r.customer.pincode}</span></td>
+                    <td className="text-sm">{c?.name ?? r.courier ?? "—"}<span className="block font-mono text-[11px] text-ink-faint">{r.awb}</span></td>
+                    <td><span className="inline-flex items-center gap-1.5 text-sm font-medium"><span className={`h-2 w-2 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span>{r.raw && <span className="block max-w-[220px] truncate text-[11px] text-ink-faint">{r.raw}</span>}</td>
+                    <td className="text-xs text-ink-soft">{r.at ? new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </>)}
+      {(sh.page > 1 || sh.hasMore) && (
+        <div className="flex justify-between border-t border-rule px-5 py-3 text-sm">
+          <button type="button" className="btn-quiet" disabled={sh.page <= 1} onClick={() => go({ page: String(sh.page - 1) })}>← Newer</button>
+          <button type="button" className="btn-quiet" disabled={!sh.hasMore} onClick={() => go({ page: String(sh.page + 1) })}>Older →</button>
+        </div>
+      )}
+    </section>
+  );
 }

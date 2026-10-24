@@ -5,7 +5,8 @@ import { eq } from "drizzle-orm";
 import { db, orders } from "~/db.server";
 import { Link, useLoaderData, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
-import { getOrderWithStore, syncOrderWithPayu } from "~/lib/orders.server";
+import { getOrderWithStore } from "~/lib/orders.server";
+import { activeGateways, payUrl, syncOrderPayment } from "~/lib/gateways/index.server";
 import { formatINR } from "~/lib/pricing";
 import { ensureStoreHost } from "~/lib/urls.server";
 import { MetaPixel } from "~/components/MetaPixel";
@@ -20,9 +21,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   let { order } = row;
   const { store } = row;
   ensureStoreHost(request, store);
-  // If the PayU redirect never arrived (closed browser, network), ask PayU directly — at most every 20s.
+  // If the gateway redirect never arrived (closed browser, network), ask the gateway directly — at most every 20s.
   if (order.status === "pending_payment" && Date.now() - order.createdAt.getTime() > 45_000 && Date.now() - order.updatedAt.getTime() > 20_000) {
-    try { order = await syncOrderWithPayu(store, order, "order-page"); } catch (e) { console.error("[order sync]", e instanceof Error ? e.message : e); }
+    try { order = await syncOrderPayment(store, order, "order-page"); } catch (e) { console.error("[order sync]", e instanceof Error ? e.message : e); }
     if (order.status === "pending_payment") await db.update(orders).set({ updatedAt: new Date() }).where(eq(orders.id, order.id));
   }
   let continueUrl = store.storefrontUrl;
@@ -50,6 +51,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       ? { id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0) }
       : null,
     plainStoreUrl: store.storefrontUrl,
+    // after a failed payment: pay again, on the next gateway when the store has backups
+    retryUrl: order.status === "failed" && (order.paymentMethod === "prepaid" || order.paymentMethod === "partial") ? payUrl(store, order.id, true) : null,
+    hasBackup: activeGateways(store).length > 1,
   });
 }
 
@@ -118,7 +122,8 @@ export default function OrderStatus() {
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-xl font-semibold text-bad" aria-hidden>!</div>
               <h1 className="mt-4 text-2xl font-semibold tracking-tight">Payment didn't go through</h1>
               <p className="mt-1 text-ink-soft">No order was placed. If money left your account, your bank will return it in 5 to 7 working days.</p>
-              {d.sessionId && <Link to={`/c/${d.sessionId}`} className="btn-primary mt-6 w-full py-3">Try again</Link>}
+              {d.retryUrl && <a href={d.retryUrl} className="btn-primary mt-6 w-full py-3">{d.hasBackup ? "Try another payment option" : "Pay again"}</a>}
+              {d.sessionId && <Link to={`/c/${d.sessionId}`} className={`${d.retryUrl ? "btn-secondary mt-3" : "btn-primary mt-6"} w-full py-3`}>{d.retryUrl ? "Change payment method" : "Try again"}</Link>}
               <a href={d.plainStoreUrl} className="btn-secondary mt-3 w-full py-3">Back to store</a>
             </>
           )}

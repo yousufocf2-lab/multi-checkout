@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, orders, paymentEvents, stores, type Order, type Store } from "~/db.server";
-import { fetchRefundedPaise, verifyPayment } from "./payu.server";
+import { fetchRefundedPaise } from "./payu.server";
 import { recordOrderForCod } from "./cod.server";
 import { incrementCouponUse } from "./coupons.server";
 import { sendCapiPurchase } from "./meta.server";
@@ -121,38 +121,6 @@ export async function logPaymentEvent(e: { storeId: number | null; orderId: stri
   } catch (err) {
     console.error("[payment_events]", err instanceof Error ? err.message : err);
   }
-}
-
-/**
- * Confirms a prepaid order's status with PayU (server to server) and updates it.
- * Used by webhooks, the order page and the dashboard "Check payment" button.
- */
-export async function syncOrderWithPayu(store: Store, order: Order, source: string): Promise<Order> {
-  if (order.paymentMethod !== "prepaid" && order.paymentMethod !== "partial") return order;
-  const v = await verifyPayment(store, order.id);
-  await logPaymentEvent({ storeId: store.id, orderId: order.id, source, kind: "payment", status: v.status, payload: v.raw });
-
-  if (v.status === "success" && (order.status === "pending_payment" || order.status === "failed")) {
-    if (v.amountPaise != null && v.amountPaise !== payNowPaise(order)) {
-      await db.update(orders).set({ error: `PayU amount ${v.amountPaise} doesn't match the amount due ${payNowPaise(order)}`, updatedAt: new Date() }).where(eq(orders.id, order.id));
-      return order;
-    }
-    const debited = v.netDebitPaise ?? payNowPaise(order);
-    return finalizeOrder(store, order, {
-      status: "paid",
-      payuMihpayid: v.mihpayid ?? order.payuMihpayid,
-      amountPaid: debited,
-      bankDiscount: Math.max(0, payNowPaise(order) - debited),
-      error: null,
-    });
-  }
-  if (v.status === "failure" && order.status === "pending_payment") {
-    const [u] = await db.update(orders).set({ status: "failed", error: "Payment failed (confirmed with PayU)", updatedAt: new Date() })
-      .where(and(eq(orders.id, order.id), eq(orders.status, "pending_payment"))).returning();
-    return u ?? order;
-  }
-  if (order.status === "paid" && source === "webhook") await syncRefunds(store, order, source);
-  return order;
 }
 
 /** Records refunds reported by PayU against a paid order. */

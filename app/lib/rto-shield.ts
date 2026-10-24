@@ -105,3 +105,7 @@ export function reasonText(reason: string) {
   if (reason.startsWith("history:")) return `${reason.split(":")[1]} RTO / returns`;
   return reason;
 }
+
+/** Filter tabs on the logistics page. */
+export const SHIP_FILTERS = ["all", "in_transit", "delivered", "rto_transit", "rto", "returned"] as const;
+export type ShipFilter = (typeof SHIP_FILTERS)[number];

@@ -20,7 +20,7 @@ export async function hasCourier(storeId: number) {
   return Number(r?.n ?? 0) > 0;
 }
 
-type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label", string>>;
+type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode", string>>;
 
 export async function connectCourier(store: Store, courierId: string, input: Input): Promise<{ ok: true } | { ok: false; error: string }> {
   const info = courierById(courierId);
@@ -29,7 +29,10 @@ export async function connectCourier(store: Store, courierId: string, input: Inp
   const [existing] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, info.id))).limit(1);
   let creds: CourierCreds = {};
 
-  if (info.kind === "api") {
+  if (info.kind === "api" && v("mode") === "shopify") {
+    // No API login: track this courier's AWBs from the status its app sends to Shopify
+    creds = { viaShopify: true };
+  } else if (info.kind === "api") {
     for (const f of info.fields ?? []) {
       if (!f.optional && !v(f.name) && !(f.name === "password" && existing?.creds.password)) return { ok: false, error: `Enter the ${f.label.toLowerCase()}` };
     }
@@ -162,7 +165,7 @@ export async function syncStoreShipments(store: Store, opts: { force?: boolean }
       opts.force ? undefined : or(isNull(orders.shipCheckedAt), lt(orders.shipCheckedAt, new Date(Date.now() - RECHECK_MS)))))
     .orderBy(asc(orders.shipCheckedAt)).limit(1000);
 
-  const apiAccounts = accounts.filter((a) => courierById(a.courier)?.kind === "api" && PROVIDERS[a.courier]);
+  const apiAccounts = accounts.filter((a) => courierById(a.courier)?.kind === "api" && PROVIDERS[a.courier] && !a.creds.viaShopify);
   // aggregators first: they can track AWBs of many couriers
   apiAccounts.sort((a, b) => Number(Boolean(courierById(b.courier)?.aggregator)) - Number(Boolean(courierById(a.courier)?.aggregator)));
 
@@ -268,6 +271,46 @@ export async function shipmentsByCourier(storeId: number) {
     .where(and(eq(orders.storeId, storeId), isNotNull(orders.courier), gt(orders.createdAt, new Date(Date.now() - LOOKBACK_DAYS * 86400_000))))
     .groupBy(orders.courier);
   return Object.fromEntries(rows.map((r) => [r.c, Number(r.n)])) as Record<string, number>;
+}
+
+/** Delivery performance per courier over the last `days`: shipments, delivered, RTO (incl. returned) and in transit. */
+export async function courierPerformance(storeId: number, days = 90) {
+  const rows = await db.select({ c: orders.courier, s: orders.shipStatus, n: count() }).from(orders)
+    .where(and(eq(orders.storeId, storeId), isNotNull(orders.shipStatus), gt(orders.createdAt, new Date(Date.now() - days * 86400_000))))
+    .groupBy(orders.courier, orders.shipStatus);
+  const by = new Map<string, { courier: string; total: number; delivered: number; rto: number; transit: number }>();
+  for (const r of rows) {
+    const key = r.c ?? "other";
+    const x = by.get(key) ?? { courier: key, total: 0, delivered: 0, rto: 0, transit: 0 };
+    const n = Number(r.n);
+    if (r.s === "cancelled") continue;
+    x.total += n;
+    if (r.s === "delivered") x.delivered += n;
+    else if (r.s === "rto" || r.s === "returned" || r.s === "rto_transit") x.rto += n;
+    else x.transit += n;
+    by.set(key, x);
+  }
+  return [...by.values()].sort((a, b) => b.total - a.total);
+}
+
+import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
+export { SHIP_FILTERS, type ShipFilter };
+
+/** Shipped orders for the logistics page, newest first, with a status filter and search (order / AWB / phone). */
+export async function shipmentList(storeId: number, opts: { filter: ShipFilter; q: string; page: number; days?: number }) {
+  const PAGE = 50;
+  const q = opts.q.trim().replace(/[%_]/g, "").slice(0, 40);
+  const where = and(
+    eq(orders.storeId, storeId), isNotNull(orders.awb),
+    gt(orders.createdAt, new Date(Date.now() - (opts.days ?? 90) * 86400_000)),
+    opts.filter !== "all" ? eq(orders.shipStatus, opts.filter) : undefined,
+    q ? or(sql`${orders.awb} ilike ${`%${q}%`}`, sql`${orders.shopifyOrderName} ilike ${`%${q}%`}`, sql`${orders.customer}->>'phone' like ${`%${q}%`}`) : undefined,
+  );
+  const rows = await db.select({
+    id: orders.id, name: orders.shopifyOrderName, customer: orders.customer, method: orders.paymentMethod, total: orders.total,
+    awb: orders.awb, courier: orders.courier, status: orders.shipStatus, raw: orders.shipStatusRaw, at: orders.shipStatusAt, createdAt: orders.createdAt,
+  }).from(orders).where(where).orderBy(sql`${orders.shipStatusAt} desc nulls last`, sql`${orders.createdAt} desc`).limit(PAGE + 1).offset((Math.max(1, opts.page) - 1) * PAGE);
+  return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE };
 }
 
 const SYNC_EVERY_MS = 60 * 60_000;

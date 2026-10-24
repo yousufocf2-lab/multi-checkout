@@ -66,7 +66,7 @@ export const DEFAULT_THEME: CheckoutTheme = {
   announcementText: "#FFFFFF",
   showEmail: true,
   showTrust: true,
-  trustText: "Payments are encrypted and processed by PayU",
+  trustText: "Payments are encrypted and processed by PayU", // "PayU" is swapped for the store's primary gateway at checkout
   prepaidButtonText: "Pay {amount}",
   codButtonText: "Place order, {amount}",
 };

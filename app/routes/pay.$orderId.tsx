@@ -1,53 +1,28 @@
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import { useEffect, useRef } from "react";
-import { ensureStoreHost, storeBaseUrl } from "~/lib/urls.server";
+// Hands the customer to the store's payment gateway (primary first; backups if it can't start).
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { redirect } from "@remix-run/node";
+import { db, orders } from "~/db.server";
+import { and, eq } from "drizzle-orm";
 import { getOrderWithStore } from "~/lib/orders.server";
-import { payUrl, payuForm } from "~/lib/payu-flow.server";
-import { formatINR } from "~/lib/pricing";
-import { BrandLoader } from "~/components/Brand";
-import { payNowPaise } from "~/lib/payment-methods";
-
-export const meta: MetaFunction = () => [{ title: "Opening secure payment" }, { name: "robots", content: "noindex" }];
+import { htmlResponse, payPage, payUrl, startPayment } from "~/lib/gateways/index.server";
+import { ensureStoreHost, storeBaseUrl } from "~/lib/urls.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const row = await getOrderWithStore(params.orderId!);
   if (!row) throw new Response("Order not found", { status: 404 });
-  const { order, store } = row;
+  let { order } = row;
+  const { store } = row;
   ensureStoreHost(request, store);
+  const retry = new URL(request.url).searchParams.get("retry") === "1";
+  // "Try again" after a failed payment opens the next gateway
+  if (order.status === "failed" && retry) {
+    const [u] = await db.update(orders).set({ status: "pending_payment", error: null, updatedAt: new Date() }).where(and(eq(orders.id, order.id), eq(orders.status, "failed"))).returning();
+    if (u) order = u;
+  }
   if (order.status !== "pending_payment") return redirect(`/order/${order.id}`);
-  // Payments sent from the store's own website (registered with PayU)
-  if (store.payuViaStorefront) return redirect(payUrl(store, order.id));
-
-  const { action, fields } = await payuForm(store, order, `${storeBaseUrl(store)}/payu/callback`);
-  return json({ action, fields, store: { name: store.name, logoUrl: store.logoUrl, color: store.primaryColor }, amount: payNowPaise(order), rest: order.paymentMethod === "partial" ? order.total - payNowPaise(order) : 0 });
-}
-
-function rgb(hex: string) {
-  const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  return m ? `${parseInt(m[1], 16)} ${parseInt(m[2], 16)} ${parseInt(m[3], 16)}` : "17 24 39";
-}
-
-export default function Pay() {
-  const { action, fields, store, amount, rest } = useLoaderData<typeof loader>();
-  const ref = useRef<HTMLFormElement>(null);
-  useEffect(() => { ref.current?.submit(); }, []);
-  return (
-    <main style={{ ["--brand" as string]: rgb(store.color) }} className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center" role="status" aria-live="polite">
-      {store.logoUrl ? <img src={store.logoUrl} alt={store.name} className="mb-6 h-9 w-auto max-w-[160px] object-contain" /> : <p className="mb-6 text-lg font-semibold">{store.name}</p>}
-      <BrandLoader className="h-16 w-16" label="Opening payment" />
-      <p className="mt-4 font-medium">Opening secure payment for {formatINR(amount)}</p>
-      {rest > 0 && <p className="mt-1 text-sm text-ink-soft">Advance now. The remaining {formatINR(rest)} is paid in cash on delivery.</p>}
-      <p className="mt-1 text-sm text-ink-soft">Don't close this page or press back.</p>
-      <form ref={ref} method="post" action={action} className="mt-8">
-        {Object.entries(fields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
-        <noscript><button className="btn-primary">Continue to payment</button></noscript>
-      </form>
-      <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-faint">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
-        Processed securely by PayU
-      </p>
-    </main>
-  );
+  // Payments started from the store's own website (gateways that check the website)
+  if (store.payuViaStorefront) return redirect(payUrl(store, order.id, retry));
+  const base = storeBaseUrl(store);
+  const out = await startPayment(store, order, base, { retry });
+  return htmlResponse(payPage(store, order, out, `${base}/c/${order.sessionId ?? ""}`));
 }

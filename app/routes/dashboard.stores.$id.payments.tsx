@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ProductPicker, parsePicked } from "~/components/ProductPicker";
 import { Notice, SubmitButton, Toggle } from "~/components/ui";
 import { db, stores } from "~/db.server";
+import { onlineReady } from "~/lib/gateways/index.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import {
   METHOD_LABEL, describeRule, resolvePaymentMethods,
@@ -16,7 +17,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   return json({
     storeId: store.id,
-    payuReady: Boolean(store.payuKey && store.payuSalt),
+    payuReady: onlineReady(store),
     methods: resolvePaymentMethods(store.paymentMethods, store),
   });
 }
@@ -61,10 +62,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const advanceValue = n(fd.get("advanceValue")) ?? 0;
     if (advanceValue <= 0) errors.advanceValue = "Enter how much the customer pays now";
     if (advanceType === "percent" && advanceValue >= 100) errors.advanceValue = "Must be less than 100%";
-    if (m.on && !(store.payuKey && store.payuSalt)) errors.form = "Partial COD needs online payment (PayU) connected in Store settings.";
+    if (m.on && !onlineReady(store)) errors.form = "Partial COD needs an online payment gateway connected in Store settings.";
     next = { ...m, advanceType, advanceValue };
   }
-  if (which === "prepaid" && m.on && !(store.payuKey && store.payuSalt)) errors.form = "Connect PayU in Store settings to take online payments.";
+  if (which === "prepaid" && m.on && !onlineReady(store)) errors.form = "Connect a payment gateway in Store settings to take online payments.";
   if (Object.keys(errors).length) return json({ ok: null, which, errors }, { status: 400 });
 
   const all = { ...current, [which]: next };
@@ -91,7 +92,7 @@ export default function PaymentMethods() {
   return (
     <div className="max-w-4xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
-      {!d.payuReady && <Notice tone="warning">Online payment isn't connected, so Prepaid and Partial COD won't show at checkout. Add PayU in Store settings.</Notice>}
+      {!d.payuReady && <Notice tone="warning">Online payment isn't connected, so Prepaid and Partial COD won't show at checkout. Add a payment gateway in Store settings.</Notice>}
       <p className="text-sm text-ink-soft">
         Turn each payment method on or off, give it a discount or a fee, and choose when it shows.
         Product discounts (in Discounts) still win for their products. Partial COD follows your COD rules in RTO Suite (wait time, blocks, OTP).

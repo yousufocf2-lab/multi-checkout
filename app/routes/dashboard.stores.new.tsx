@@ -37,7 +37,7 @@ export default function NewStore() {
   return (
     <div className="max-w-3xl">
       <Link to="/dashboard/stores" className="text-sm text-ink-soft hover:text-ink">Stores</Link>
-      <PageHeader title="Connect a store" description="Fill in what you have now. You can add PayU, Meta ads and branding later." />
+      <PageHeader title="Connect a store" description="Fill in what you have now. You can add payment gateways, Meta ads and branding later." />
       {data?.errors && <div className="mb-5"><Notice tone="error">Fix the highlighted fields to continue.</Notice></div>}
       <StoreSettingsForm errors={data?.errors} submitLabel="Save and continue" isNew />
     </div>

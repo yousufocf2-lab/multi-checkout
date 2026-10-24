@@ -157,9 +157,11 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
 
 import { json } from "@remix-run/node";
 import { requireStore, type Viewer } from "./auth.server";
-import { pushToShopify, syncOrderWithPayu } from "./orders.server";
+import { pushToShopify } from "./orders.server";
+import { syncOrderPayment } from "./gateways/index.server";
+import { gatewayName } from "./gateways/catalog";
 
-/** Row actions on the orders list: send to Shopify, check payment with PayU. */
+/** Row actions on the orders list: send to Shopify, check payment with the gateway. */
 export async function handleOrderAction(viewer: Viewer, fd: FormData) {
   const store = await requireStore(viewer, String(fd.get("storeId") ?? ""));
   const [o] = await db.select().from(orders).where(and(eq(orders.id, String(fd.get("orderId"))), eq(orders.storeId, store.id)));
@@ -172,11 +174,12 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
   }
   if (intent === "verify") {
     try {
-      const r = await syncOrderWithPayu(store, o, "dashboard");
-      const label = r.status === "paid" ? "PayU confirms this payment succeeded. The order is marked paid." : r.status === "failed" ? "PayU says this payment failed." : "PayU hasn't confirmed this payment yet.";
+      const r = await syncOrderPayment(store, o, "dashboard");
+      const by = gatewayName(r.gateway ?? o.gateway ?? "payu");
+      const label = r.status === "paid" ? `${by} confirms this payment succeeded. The order is marked paid.` : r.status === "failed" ? `${by} says this payment failed.` : `${by} hasn't confirmed this payment yet.`;
       return json({ ok: label, error: null });
     } catch (e) {
-      return json({ ok: null, error: e instanceof Error ? e.message : "Couldn't reach PayU" });
+      return json({ ok: null, error: e instanceof Error ? e.message : "Couldn't reach the payment gateway" });
     }
   }
   return json({ ok: null, error: "Unknown action" });

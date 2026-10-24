@@ -28,7 +28,7 @@ import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
-import { payUrl } from "~/lib/payu-flow.server";
+import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.server";
 import { legacyMethod, methodShows, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -112,7 +112,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   ]);
   const [shipping, gifts, otpPrepaid, otpCod] = await Promise.all([shippingRulesFor(store.id), freeGiftsFor(store, lines), otpRequired(store, "prepaid"), otpRequired(store, "cod")]);
   const pm = resolvePaymentMethods(store.paymentMethods, store);
-  const payuReady = Boolean(store.payuKey && store.payuSalt);
+  const payuReady = onlineReady(store);
   const slim = (m: PaymentMethodsSettings["prepaid"]) => ({ on: m.on, rules: m.rules.map((r) => ({ ...r, products: r.products.map((x) => ({ id: x.id, title: x.title })) })) });
   // Snapshot for abandoned-checkout reports
   await db.update(checkoutSessions).set({
@@ -141,7 +141,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       supportPhone: store.supportPhone, codEnabled: store.codEnabled, payuReady,
       pixelId: store.metaPixelId,
     },
-    theme: resolveTheme(store.theme),
+    theme: (() => {
+      const t = resolveTheme(store.theme);
+      const by = primaryGatewayName(store);
+      return { ...t, trustText: by && by !== "PayU" ? t.trustText.replace(/\bPayU\b/g, by) : !by ? t.trustText.replace(/ (?:and processed )?by PayU\b/, "") : t.trustText };
+    })(),
     otp: { prepaid: otpPrepaid, cod: otpCod, partial: otpCod, start: store.otpTiming === "start" && otpPrepaid && otpCod },
     // Which methods can show (rules are checked in the browser as the cart changes, and again on the server)
     pay: {
@@ -280,7 +284,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!customer.city) errors.city = "Enter your city";
   if (!INDIAN_STATES.some((s) => s.code === customer.state)) errors.state = "Select your state";
   if (!/^\d{6}$/.test(customer.pincode)) errors.pincode = "Enter a 6-digit pincode";
-  if (method !== "cod" && !(store.payuKey && store.payuSalt)) errors.form = "Online payment isn't available right now. Choose Cash on Delivery.";
+  if (method !== "cod" && !onlineReady(store)) errors.form = "Online payment isn't available right now. Choose Cash on Delivery.";
   if (!pm[method].on) errors.form = "This payment method isn't available. Choose another one.";
   if (method !== "prepaid" && !errors.phone && !errors.form) {
     const cod = await codEligibility(store, customer.phone, { partial: method === "partial" });
