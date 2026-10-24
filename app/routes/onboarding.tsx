@@ -20,6 +20,7 @@ import { clientIp } from "~/lib/orders.server";
 import { channelReady, ownerWidget, sendOwnerOtp, verifyOwnerOtp } from "~/lib/owner-otp.server";
 import { INDIAN_STATES } from "~/lib/states";
 import { getWallet } from "~/lib/wallet.server";
+import { fireLead, useAdsTag } from "~/components/site/AdsTag";
 
 export const meta: MetaFunction = () => [{ title: "Complete your KYC · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -210,6 +211,15 @@ type L = ReturnType<typeof useLoaderData<typeof loader>>;
 
 export default function Onboarding() {
   const d = useLoaderData<typeof loader>();
+  useAdsTag();
+  // just signed up: count the Google Ads lead once, then tidy the URL
+  useEffect(() => {
+    const u = new URL(window.location.href);
+    if (u.searchParams.get("welcome") !== "1") return;
+    fireLead("signup");
+    u.searchParams.delete("welcome");
+    window.history.replaceState(window.history.state, "", u.pathname + u.search);
+  }, []);
   const a = useActionData<typeof action>();
   const nav = useNavigation();
   const errors = (a && "errors" in a ? a.errors : {}) as KycErrors;

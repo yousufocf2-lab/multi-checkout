@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { Icon, type IconName } from "~/components/Icons";
 import { Spinner } from "~/components/ui";
 import { SiteLayout, crumbLd, rv, siteMeta } from "~/components/site/SiteLayout";
+import { fireLead } from "~/components/site/AdsTag";
 import { requireAppHost } from "~/lib/host.server";
 import { siteData } from "~/lib/site.server";
 import { CALL_TIMES, SUPPORT_EMAIL, SUPPORT_HOURS, WEBSITE_REASONS } from "~/lib/support";
@@ -30,7 +31,11 @@ export default function Contact() {
   const errors = (a && !a.ok ? a.errors : {}) as Record<string, string | undefined>;
   const done = a?.ok ? a : null;
   const top = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (done) top.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [done]);
+  useEffect(() => {
+    if (!done) return;
+    top.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    fireLead(`callback_${done.id ?? Date.now()}`); // Google Ads lead
+  }, [done]);
   const preset = WEBSITE_REASONS.some((r) => r.id === sp.get("reason")) ? sp.get("reason")! : "";
   const wa = d.company.phone.replace(/\D/g, "");
   return (

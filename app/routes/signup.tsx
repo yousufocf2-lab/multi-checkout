@@ -10,6 +10,7 @@ import { adminEmail, createOwner, findOwner, getViewer, signupOpen, startSession
 import { requireAppHost } from "~/lib/host.server";
 import { clientIp } from "~/lib/orders.server";
 import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
+import { useAdsTag } from "~/components/site/AdsTag";
 
 export const meta: MetaFunction = () => [{ title: "Create account · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -59,10 +60,11 @@ export async function action({ request }: ActionFunctionArgs) {
   const v = await verifyOwnerOtp(c, "signup", String(fd.get("code") ?? ""), String(fd.get("token") ?? "") || undefined);
   if (!v.ok) return json<Data>({ ...base, stage: "otp", shown: showContact(c), errors: { code: v.error }, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined }, { status: 400 });
   const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target });
-  return startSession(request, { user }, "/onboarding");
+  return startSession(request, { user }, "/onboarding?welcome=1");
 }
 
 export default function Signup() {
+  useAdsTag();
   const data = useActionData<typeof action>();
   const nav = useNavigation();
   const e = data?.errors ?? {};

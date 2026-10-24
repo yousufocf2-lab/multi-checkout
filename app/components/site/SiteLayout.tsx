@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { BrandLockup } from "~/components/Brand";
 import { Icon } from "~/components/Icons";
 import { SUPPORT_EMAIL, SUPPORT_HOURS } from "~/lib/support";
+import { useAdsTag } from "./AdsTag";
 
 export const SITE_URL = "https://growpefy.com";
 
@@ -124,6 +125,7 @@ export function SiteLayout({ loggedIn, company, children }: { loggedIn: boolean;
   const [scrolled, setScrolled] = useState(false);
   const loc = useLocation();
   useSiteMotion(loc.pathname);
+  useAdsTag();
   useEffect(() => setOpen(false), [loc.pathname, loc.hash]);
   useEffect(() => {
     const on = () => setScrolled(window.scrollY > 8);
