@@ -3,11 +3,11 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { Icon, type IconName } from "~/components/Icons";
 import { CtaBand, IconTile, SectionHead } from "~/components/site/Blocks";
-import { SiteLayout, rv, siteMeta } from "~/components/site/SiteLayout";
+import { SiteLayout, crumbLd, rv, siteMeta } from "~/components/site/SiteLayout";
 import { siteData } from "~/lib/site.server";
 import { SUPPORT_EMAIL } from "~/lib/support";
 
-export const meta: MetaFunction = () => siteMeta("About us · Growpefy", "Growpefy brings checkout customization, payment choices and COD risk controls together, so ecommerce teams can manage more of the order journey from one workspace.", "/about");
+export const meta: MetaFunction = () => siteMeta("About us · Growpefy", "Growpefy brings checkout customization, payment choices and COD risk controls together, so ecommerce teams can manage more of the order journey from one workspace.", "/about", { ld: [crumbLd("About us", "/about")] });
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
 
 const VALUES: { icon: IconName; tone: "blue" | "mint" | "amber" | "violet"; title: string; text: string }[] = [

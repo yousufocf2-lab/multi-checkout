@@ -4,11 +4,11 @@ import { Link, useLoaderData } from "@remix-run/react";
 import { useState } from "react";
 import { Icon } from "~/components/Icons";
 import { CtaBand, Faq, RateCard, WalletDemo } from "~/components/site/Blocks";
-import { SiteLayout, rv, siteMeta } from "~/components/site/SiteLayout";
+import { SiteLayout, crumbLd, faqLd, productLd, rv, siteMeta } from "~/components/site/SiteLayout";
 import { siteData } from "~/lib/site.server";
 import { rupees } from "~/lib/wallet";
 
-export const meta: MetaFunction = () => siteMeta("Pricing · Growpefy", "No monthly fee. Recharge a prepaid wallet and pay a small fee only on orders placed through your checkout. GST invoice on every recharge.", "/pricing");
+export const meta: MetaFunction = () => siteMeta("Pricing · Growpefy checkout · No monthly fee", "No setup fee or monthly plan. Recharge a prepaid wallet and pay a small fee only on orders placed through your checkout. See the rate card, GST and wallet credit before you pay.", "/pricing", { ld: [productLd, faqLd(BILLING_FAQ), crumbLd("Pricing", "/pricing")] });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
 

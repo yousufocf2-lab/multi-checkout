@@ -8,15 +8,18 @@ import { Icon, type IconName } from "~/components/Icons";
 import {
   API_COURIERS, CourierRow, CtaBand, Faq, GATEWAY_TILES, GatewayFallback, GatewayTile, IconTile, RateCard, SectionHead, StatusPill, WalletDemo,
 } from "~/components/site/Blocks";
-import { SiteLayout, rv, siteMeta } from "~/components/site/SiteLayout";
+import { SiteLayout, faqLd, productLd, rv, siteMeta, verifyMeta } from "~/components/site/SiteLayout";
 import { db, stores } from "~/db.server";
 import { env } from "~/lib/env.server";
 import { siteData } from "~/lib/site.server";
 import { checkoutRoot, isAppHost, requestHost, slugFromHost } from "~/lib/urls.server";
 
-export const meta: MetaFunction = () =>
-  siteMeta("Growpefy · Checkout & COD risk management for ecommerce brands",
-    "Customize your checkout, offer smarter payment options with up to three payment gateways, and set rules to manage COD risk, all from one workspace. Built for Indian Shopify and D2C brands.");
+export const meta: MetaFunction<typeof loader> = ({ data }) => [
+  ...siteMeta("Growpefy · Shopify checkout with COD & RTO control, multiple payment gateways",
+    "One-page checkout for Shopify stores in India: COD verification and RTO control, up to 3 payment gateways with automatic backup, prepaid offers, WhatsApp cart recovery and Meta + Google ads analytics. No monthly fee.",
+    "/", { ld: [productLd, faqLd(FAQ)] }),
+  ...verifyMeta(data?.verify),
+];
 
 /** Platform domain → website. A store's checkout domain → that store's storefront. */
 export async function loader({ request }: LoaderFunctionArgs) {

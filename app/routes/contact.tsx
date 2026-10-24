@@ -4,14 +4,14 @@ import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParam
 import { useEffect, useRef } from "react";
 import { Icon, type IconName } from "~/components/Icons";
 import { Spinner } from "~/components/ui";
-import { SiteLayout, rv, siteMeta } from "~/components/site/SiteLayout";
+import { SiteLayout, crumbLd, rv, siteMeta } from "~/components/site/SiteLayout";
 import { requireAppHost } from "~/lib/host.server";
 import { siteData } from "~/lib/site.server";
 import { CALL_TIMES, SUPPORT_EMAIL, SUPPORT_HOURS, WEBSITE_REASONS } from "~/lib/support";
 import { createCallback } from "~/lib/support.server";
 import { getViewer } from "~/lib/auth.server";
 
-export const meta: MetaFunction = () => siteMeta("Contact us · Request a callback · Growpefy", "Request a callback from the Growpefy team about sales, onboarding, your account, payments, RTO Suite or your wallet. Or write to support@growpefy.com.", "/contact");
+export const meta: MetaFunction = () => siteMeta("Contact us · Request a callback · Growpefy", "Request a callback from the Growpefy team about sales, onboarding, your account, payments, RTO Suite or your wallet. Or write to support@growpefy.com.", "/contact", { ld: [crumbLd("Contact", "/contact")] });
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
 
 export async function action({ request }: ActionFunctionArgs) {

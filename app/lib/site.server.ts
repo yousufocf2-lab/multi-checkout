@@ -19,6 +19,7 @@ export async function siteData(request: Request) {
       phone: b.phone || "",
     },
     rates: mergeRates(p.rates),
+    verify: { google: process.env.GOOGLE_SITE_VERIFICATION || null, bing: process.env.BING_SITE_VERIFICATION || null },
     minRecharge: p.minRechargePaise,
   };
 }

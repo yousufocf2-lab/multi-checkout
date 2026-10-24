@@ -6,18 +6,79 @@ import { SUPPORT_EMAIL, SUPPORT_HOURS } from "~/lib/support";
 
 export const SITE_URL = "https://growpefy.com";
 
-/** Meta tags for a public page. */
-export function siteMeta(title: string, description: string, path = "/") {
+type Ld = Record<string, unknown>;
+const ORG_ID = `${SITE_URL}/#organization`;
+
+/** Structured data every public page carries: who we are and the site itself. */
+export const BASE_LD: Ld[] = [
+  {
+    "@context": "https://schema.org", "@type": "Organization", "@id": ORG_ID,
+    name: "Growpefy", url: SITE_URL, logo: `${SITE_URL}/brand/growpefy-logo.png`,
+    email: "support@growpefy.com",
+    contactPoint: [{ "@type": "ContactPoint", contactType: "customer support", email: "support@growpefy.com", areaServed: "IN", availableLanguage: ["en", "hi"] }],
+  },
+  { "@context": "https://schema.org", "@type": "WebSite", "@id": `${SITE_URL}/#website`, name: "Growpefy", url: SITE_URL, publisher: { "@id": ORG_ID }, inLanguage: "en-IN" },
+];
+
+/** FAQ rich result data from [question, answer] pairs. */
+export const faqLd = (items: [string, string][]): Ld => ({
+  "@context": "https://schema.org", "@type": "FAQPage",
+  mainEntity: items.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
+});
+
+/** Breadcrumb trail: Home › page. */
+export const crumbLd = (name: string, path: string): Ld => ({
+  "@context": "https://schema.org", "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+    { "@type": "ListItem", position: 2, name, item: `${SITE_URL}${path}` },
+  ],
+});
+
+/** The product itself (homepage and pricing). */
+export const productLd: Ld = {
+  "@context": "https://schema.org", "@type": "SoftwareApplication", name: "Growpefy",
+  applicationCategory: "BusinessApplication", applicationSubCategory: "Ecommerce checkout",
+  operatingSystem: "Web", url: SITE_URL, image: `${SITE_URL}/brand/og-image.jpg`, publisher: { "@id": ORG_ID },
+  description: "One-page checkout for Shopify stores with COD and RTO controls, up to three payment gateways with automatic backup, offers, abandoned cart recovery and Meta and Google ads analytics.",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "INR", description: "No setup fee or monthly plan. Prepaid wallet with a small fee per order." },
+  featureList: [
+    "One-page checkout", "COD verification with OTP", "RTO Shield using courier history", "Up to 3 payment gateways with automatic backup",
+    "Prepaid discounts, partial COD, coupons and bank offers", "Abandoned checkout recovery on WhatsApp", "Meta and Google ads analytics", "Multi-store dashboard",
+  ],
+};
+
+/** Meta tags for a public page, plus JSON-LD structured data. */
+export function siteMeta(title: string, description: string, path = "/", opts: { ld?: Ld[]; image?: string; noindex?: boolean } = {}) {
+  const image = opts.image ?? `${SITE_URL}/brand/og-image.jpg`;
   return [
     { title },
     { name: "description", content: description },
+    ...(opts.noindex ? [{ name: "robots", content: "noindex, follow" }] : [{ name: "robots", content: "index, follow, max-image-preview:large" }]),
+    { property: "og:site_name", content: "Growpefy" },
+    { property: "og:locale", content: "en_IN" },
     { property: "og:title", content: title },
     { property: "og:description", content: description },
     { property: "og:type", content: "website" },
     { property: "og:url", content: `${SITE_URL}${path}` },
-    { property: "og:image", content: `${SITE_URL}/brand/growpefy-logo.png` },
-    { name: "twitter:card", content: "summary" },
+    { property: "og:image", content: image },
+    { property: "og:image:width", content: "1200" },
+    { property: "og:image:height", content: "630" },
+    { property: "og:image:alt", content: "Growpefy: checkout and COD risk management for ecommerce brands" },
+    { name: "twitter:card", content: "summary_large_image" },
+    { name: "twitter:title", content: title },
+    { name: "twitter:description", content: description },
+    { name: "twitter:image", content: image },
     { tagName: "link", rel: "canonical", href: `${SITE_URL}${path}` },
+    ...[...BASE_LD, ...(opts.ld ?? [])].map((d) => ({ "script:ld+json": d })),
+  ];
+}
+
+/** Search engine ownership tags (Google Search Console, Bing). Set in Railway; shown on the homepage only. */
+export function verifyMeta(v: { google?: string | null; bing?: string | null } | undefined) {
+  return [
+    ...(v?.google ? [{ name: "google-site-verification", content: v.google }] : []),
+    ...(v?.bing ? [{ name: "msvalidate.01", content: v.bing }] : []),
   ];
 }
 
