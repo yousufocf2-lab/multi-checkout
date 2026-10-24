@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { compactINR } from "~/lib/pricing";
 
-export type ChartBucket = { key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; adSpend: number | null };
+export type ChartBucket = { key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; adSpend: number | null; metaSpend?: number | null; googleSpend?: number | null };
 
-const C = { prepaid: "#2a78d6", cod: "#eb6834", ads: "#1baf7a", grid: "#E8EAE6", axis: "#7A8494", surface: "#FFFFFF" };
+const C = { prepaid: "#0B5D4B", cod: "#eb6834", ads: "#1baf7a", meta: "#0866FF", google: "#F2A900", grid: "#E8EAE6", axis: "#7A8494", surface: "#FFFFFF" };
+export const AD_COLORS = { meta: C.meta, google: C.google };
 
 function useWidth<T extends HTMLElement>(fallback = 320) {
   const ref = useRef<T>(null);
@@ -43,7 +44,7 @@ export function RevenueChart({ buckets, showAds }: { buckets: ChartBucket[]; sho
   const H = 260, m = { t: 12, r: 8, b: 28, l: 52 };
   const iw = width - m.l - m.r, ih = H - m.t - m.b;
   const n = Math.max(1, buckets.length);
-  const max = niceMax(Math.max(0, ...buckets.map((b) => Math.max(b.prepaid + b.cod, showAds ? b.adSpend ?? 0 : 0))));
+  const max = niceMax(Math.max(0, ...buckets.map((b) => Math.max(b.prepaid + b.cod, showAds ? Math.max(b.adSpend ?? 0, b.metaSpend ?? 0, b.googleSpend ?? 0) : 0))));
   const y = (v: number) => m.t + ih - (v / max) * ih;
   const band = iw / n;
   const barW = Math.max(2, Math.min(24, band * 0.62));
@@ -51,7 +52,12 @@ export function RevenueChart({ buckets, showAds }: { buckets: ChartBucket[]; sho
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(iw / 64))));
   const hasAds = showAds && buckets.some((b) => b.adSpend != null);
-  const linePts = hasAds ? buckets.map((b, i) => `${cx(i)},${y(b.adSpend ?? 0)}`).join(" ") : "";
+  // One line per ad platform (Meta blue, Google gold); stores with neither connected show no line
+  const lines = !hasAds ? [] : ([
+    ["meta", "Meta ad spend", C.meta, (b: ChartBucket) => b.metaSpend],
+    ["google", "Google ad spend", C.google, (b: ChartBucket) => b.googleSpend],
+  ] as const).filter(([, , , get]) => buckets.some((b) => get(b) != null));
+  const allLines = lines.length ? lines : hasAds ? ([["ads", "Ad spend", C.ads, (b: ChartBucket) => b.adSpend]] as const) : [];
   const empty = buckets.every((b) => b.prepaid + b.cod === 0 && !(b.adSpend ?? 0));
 
   const hb = hover != null ? buckets[hover] : null;
@@ -62,7 +68,7 @@ export function RevenueChart({ buckets, showAds }: { buckets: ChartBucket[]; sho
         <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
           <Legend color={C.prepaid} label="Prepaid revenue" />
           <Legend color={C.cod} label="COD revenue" />
-          {hasAds && <Legend color={C.ads} label="Ad spend" line />}
+          {allLines.map(([k, label, color]) => <Legend key={k} color={color} label={label} line />)}
         </ul>
         <button type="button" className="btn-quiet text-xs" onClick={() => setTable((t) => !t)} aria-pressed={table}>
           {table ? "Show chart" : "Show table"}
@@ -72,10 +78,10 @@ export function RevenueChart({ buckets, showAds }: { buckets: ChartBucket[]; sho
       {table ? (
         <div className="max-h-[300px] overflow-auto rounded-lg border border-rule">
           <table className="table num">
-            <thead><tr><th>Period</th><th>Prepaid</th><th>COD</th><th>Orders</th>{hasAds && <th>Ad spend</th>}</tr></thead>
+            <thead><tr><th>Period</th><th>Prepaid</th><th>COD</th><th>Orders</th>{allLines.map(([k, label]) => <th key={k}>{label}</th>)}</tr></thead>
             <tbody>
               {buckets.map((b) => (
-                <tr key={b.key}><td>{b.longLabel}</td><td>{rupees(b.prepaid)}</td><td>{rupees(b.cod)}</td><td>{b.orders}</td>{hasAds && <td>{b.adSpend == null ? "—" : rupees(b.adSpend)}</td>}</tr>
+                <tr key={b.key}><td>{b.longLabel}</td><td>{rupees(b.prepaid)}</td><td>{rupees(b.cod)}</td><td>{b.orders}</td>{allLines.map(([k, , , get]) => <td key={k}>{get(b) == null ? "—" : rupees(get(b)!)}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -105,14 +111,14 @@ export function RevenueChart({ buckets, showAds }: { buckets: ChartBucket[]; sho
                 </g>
               );
             })}
-            {hasAds && (
-              <>
-                <polyline points={linePts} fill="none" stroke={C.ads} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            {allLines.map(([k, , color, get]) => (
+              <g key={k}>
+                <polyline points={buckets.map((b, i) => `${cx(i)},${y(get(b) ?? 0)}`).join(" ")} fill="none" stroke={color} strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round" />
                 {n <= 31 && buckets.map((b, i) => (
-                  <circle key={b.key} cx={cx(i)} cy={y(b.adSpend ?? 0)} r={hover === i ? 5 : 3.5} fill={C.ads} stroke={C.surface} strokeWidth={2} />
+                  <circle key={b.key} cx={cx(i)} cy={y(get(b) ?? 0)} r={hover === i ? 5 : 3.25} fill={color} stroke={C.surface} strokeWidth={2} />
                 ))}
-              </>
-            )}
+              </g>
+            ))}
             <line x1={m.l} x2={width - m.r} y1={m.t + ih} y2={m.t + ih} stroke="#CDD2CB" strokeWidth={1} />
             {buckets.map((b, i) => (i % every === 0 ? (
               <text key={b.key} x={cx(i)} y={H - 8} textAnchor="middle" fontSize={11} fill={C.axis}>{b.label}</text>
@@ -134,7 +140,8 @@ export function RevenueChart({ buckets, showAds }: { buckets: ChartBucket[]; sho
               <div className="my-1.5 border-t border-rule" />
               <TipRow label="Revenue" value={rupees(hb.prepaid + hb.cod)} strong />
               <TipRow label="Orders" value={String(hb.orders)} />
-              {hasAds && <TipRow color={C.ads} label="Ad spend" value={hb.adSpend == null ? "—" : rupees(hb.adSpend)} />}
+              {allLines.map(([k, label, color, get]) => <TipRow key={k} color={color} label={label.replace(" ad spend", "")} value={get(hb) == null ? "—" : rupees(get(hb)!)} />)}
+              {allLines.length > 1 && hb.adSpend != null && <TipRow label="Total ad spend" value={rupees(hb.adSpend)} strong />}
             </div>
           )}
         </div>

@@ -61,7 +61,7 @@ export default function DashboardHome() {
         </div>
       </div>
       <OverviewView data={overview} leaders={leaders} showStoreColumn={!single}
-        adsHref={single ? `/dashboard/stores/${single.id}/settings#meta` : undefined} />
+        adsHref={single ? `/dashboard/stores/${single.id}/ads` : undefined} />
     </>
   );
 }

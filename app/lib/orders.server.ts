@@ -5,6 +5,7 @@ import { fetchRefundedPaise } from "./payu.server";
 import { recordOrderForCod } from "./cod.server";
 import { incrementCouponUse } from "./coupons.server";
 import { sendCapiPurchase } from "./meta.server";
+import { uploadPurchase } from "./google-ads.server";
 import { createShopifyOrder } from "./shopify.server";
 import { sendOrderConfirmation } from "./rto.server";
 import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
@@ -97,16 +98,26 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
   return pushed;
 }
 
-/** Fires the Meta CAPI Purchase once per order (never blocks the customer). */
+/** Sends the purchase to Meta (CAPI) and Google Ads (click conversion upload), once each per order. Never blocks the customer. */
 export async function trackPurchase(store: Store, order: Order) {
-  if (order.capiSentAt) return;
-  try {
-    if (await sendCapiPurchase(store, order)) {
-      await db.update(orders).set({ capiSentAt: new Date() }).where(eq(orders.id, order.id));
-    }
-  } catch (e) {
-    console.error(`[capi] order ${order.id}:`, e instanceof Error ? e.message : e);
-  }
+  await Promise.all([
+    (async () => {
+      if (order.capiSentAt) return;
+      try {
+        if (await sendCapiPurchase(store, order)) await db.update(orders).set({ capiSentAt: new Date() }).where(eq(orders.id, order.id));
+      } catch (e) {
+        console.error(`[capi] order ${order.id}:`, e instanceof Error ? e.message : e);
+      }
+    })(),
+    (async () => {
+      if (order.googleSentAt) return;
+      try {
+        if (await uploadPurchase(store, order)) await db.update(orders).set({ googleSentAt: new Date() }).where(eq(orders.id, order.id));
+      } catch (e) {
+        console.error(`[google-ads] order ${order.id}:`, e instanceof Error ? e.message : e);
+      }
+    })(),
+  ]);
 }
 
 /** Best-effort client IP behind Railway's proxy. */

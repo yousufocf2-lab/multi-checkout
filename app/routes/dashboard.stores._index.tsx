@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isAdmin: viewer.role === "admin",
     stores: list.map((s) => ({
       id: s.id, name: s.name, domain: s.checkoutDomain ?? s.shopDomain, active: s.active, logoUrl: s.logoUrl,
-      shopifyReady: Boolean(s.adminToken), payuReady: Boolean(s.payuKey && s.payuSalt), adsReady: Boolean(s.metaAdAccountId && s.metaAccessToken),
+      shopifyReady: Boolean(s.adminToken), payuReady: Boolean(s.payuKey && s.payuSalt), adsReady: Boolean((s.metaAdAccountId && s.metaAccessToken) || (s.googleRefreshToken && s.googleAdsCustomerId)),
       orders: by.get(s.id)?.count ?? 0, revenue: Number(by.get(s.id)?.revenue ?? 0) / 100,
       owner: s.ownerId ? ownerName.get(s.ownerId) ?? null : null,
     })),

@@ -176,6 +176,13 @@
       "when": 1792847942924,
       "tag": "0024_support",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792854781561,
+      "tag": "0025_google_ads",
+      "breakpoints": true
     }
   ]
 }

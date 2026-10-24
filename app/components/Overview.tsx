@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Overview as OverviewData } from "~/lib/stats.server";
 import { PRESETS, rangeLabel } from "~/lib/dates";
 import { compactINR } from "~/lib/pricing";
-import { RevenueChart, SplitBar } from "./charts";
+import { AD_COLORS, RevenueChart, SplitBar } from "./charts";
+import { AdIcon, AdLogo, PLATFORM_NAME } from "./AdLogos";
 import { Icon, type IconName } from "./Icons";
 import { CostTag, Notice, StatusBadge } from "./ui";
 
@@ -146,17 +147,21 @@ export function OverviewView({ data, showStoreColumn, adsHref, leaders }: { data
       {/* KPI tiles */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Tile icon="ads" tint="bg-emerald-50 text-emerald-700" label="Ad spend" value={hasAds ? inr(t.adSpend) : "Not connected"}
-          sub={hasAds && t.metaPurchases != null ? `${t.metaPurchases} purchases on Meta` : adsHref ? <Link className="underline" to={adsHref}>Connect ad account</Link> : "Connect Meta in settings"} />
+          sub={hasAds
+            ? <span className="inline-flex items-center gap-2">{t.metaSpend != null && <span className="inline-flex items-center gap-1"><AdIcon p="meta" className="h-3 w-auto" />{inr(t.metaSpend)}</span>}{t.googleSpend != null && <span className="inline-flex items-center gap-1"><AdIcon p="google" className="h-3 w-auto" />{inr(t.googleSpend)}</span>}</span>
+            : adsHref ? <Link className="underline" to={adsHref}>Connect Meta or Google ads</Link> : "Connect Meta or Google in settings"} />
         <Tile icon="trend" tint="bg-sky-50 text-sky-700" label="ROAS" value={t.roas == null ? "—" : `${t.roas.toFixed(2)}x`} sub="Revenue ÷ ad spend" />
         <Tile icon="target" tint="bg-violet-50 text-violet-700" label="Cost per order" value={inr(t.costPerOrder)} tag={<CostTag value={t.costPerOrder} />} sub="Ad spend ÷ orders" />
         <Tile icon="wallet" tint="bg-blue-50 text-blue-700" label="Prepaid share" value={prepaidShare == null ? "—" : `${prepaidShare}%`} sub={`${t.prepaidOrders} online · ${t.codOrders} COD`} />
       </div>
 
+      {hasAds && <AdsVersus a={data.ads} />}
+
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <section className="panel p-5">
           <h2 className="mb-4 text-[15px] font-semibold">Revenue over time</h2>
           <RevenueChart buckets={data.buckets} showAds={hasAds} />
-          {hasAds && data.granularity === "hour" && <p className="mt-2 text-xs text-ink-faint">Meta reports ad spend per day, so hourly view shows spend in the totals only.</p>}
+          {hasAds && data.granularity === "hour" && <p className="mt-2 text-xs text-ink-faint">Meta and Google report ad spend per day, so hourly view shows spend in the totals only.</p>}
         </section>
         <section className="panel p-5">
           <h2 className="mb-4 text-[15px] font-semibold">Payment method</h2>
@@ -276,6 +281,69 @@ function Leaderboard({ rows }: { rows: LeaderRow[] }) {
           </li>
         ))}
       </ol>
+    </section>
+  );
+}
+
+type Versus = Data["ads"];
+
+/** Meta vs Google: spend share, orders, cost per order, and which one is doing better. */
+export function AdsVersus({ a }: { a: Versus }) {
+  const both = a.meta.connected && a.google.connected;
+  const total = (a.meta.spend ?? 0) + (a.google.spend ?? 0);
+  const share = (v: number | null) => (total ? Math.round(((v ?? 0) / total) * 100) : 0);
+  const w = a.winner;
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-5 py-4">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+          <AdIcon p="meta" className="h-4 w-auto" /><span className="text-ink-faint">vs</span><AdIcon p="google" className="h-4 w-auto" />
+          <span className="ml-1">Meta vs Google</span>
+        </h2>
+        {both && (w ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-good">
+            <Icon name="trend" className="h-3.5 w-3.5" />{PLATFORM_NAME[w]} is doing better · {a.reason}
+          </span>
+        ) : <span className="rounded-full bg-paper-sunk px-3 py-1 text-xs font-medium text-ink-soft">{a.reason}</span>)}
+      </div>
+      {both && total > 0 && (
+        <div className="px-5 pt-4">
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-paper-sunk" role="img" aria-label={`Spend share: Meta ${share(a.meta.spend)}%, Google ${share(a.google.spend)}%`}>
+            <div style={{ width: `${share(a.meta.spend)}%`, background: AD_COLORS.meta }} />
+            <div style={{ width: `${share(a.google.spend)}%`, background: AD_COLORS.google }} />
+          </div>
+          <p className="mt-1.5 flex justify-between text-[11px] text-ink-faint"><span>Meta {share(a.meta.spend)}% of spend</span><span>Google {share(a.google.spend)}% of spend</span></p>
+        </div>
+      )}
+      <div className="grid gap-px bg-rule sm:grid-cols-2">
+        {([a.meta, a.google] as const).map((p) => (
+          <div key={p.platform} className={`bg-surface px-5 py-4 ${w === p.platform ? "relative" : ""}`}>
+            <div className="flex items-center justify-between gap-2">
+              <AdLogo p={p.platform} className="h-5 w-auto" />
+              {w === p.platform && <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Better</span>}
+            </div>
+            {!p.connected ? (
+              <p className="mt-4 text-sm text-ink-faint">Not connected. Connect it in store settings to compare.</p>
+            ) : (
+              <dl className="mt-4 grid grid-cols-3 gap-3">
+                <div><dt className="text-[11px] text-ink-soft">Spend</dt><dd className="num mt-0.5 text-lg font-semibold">{inr(p.spend)}</dd></div>
+                <div>
+                  <dt className="text-[11px] text-ink-soft">{p.basis === "checkout" ? "Orders from clicks" : "Purchases reported"}</dt>
+                  <dd className="num mt-0.5 text-lg font-semibold">{p.basis === "checkout" ? p.clickOrders : p.reported == null ? "—" : Math.round(p.reported)}</dd>
+                </div>
+                <div><dt className="text-[11px] text-ink-soft">Cost per order</dt><dd className="num mt-0.5 flex items-center gap-1.5 text-lg font-semibold">{inr(p.cpo)}<CostTag value={p.cpo} /></dd></div>
+              </dl>
+            )}
+            {p.connected && p.clickOrders > 0 && p.basis !== "checkout" && <p className="mt-2 text-[11px] text-ink-faint">{p.clickOrders} checkout orders came from {PLATFORM_NAME[p.platform]} clicks</p>}
+            {p.connected && p.basis === "checkout" && p.roas != null && <p className="mt-2 text-[11px] text-ink-faint">ROAS {p.roas.toFixed(2)}x on {inr(p.clickRevenue)} from these orders</p>}
+          </div>
+        ))}
+      </div>
+      <p className="border-t border-rule px-5 py-2.5 text-[11px] text-ink-faint">
+        {a.basis === "checkout"
+          ? "Compared on real checkout orders from each platform's ad clicks (an order clicked from both counts for both)."
+          : "Compared on purchases each platform reports. Once both bring checkout orders from ad clicks, we compare on those instead."}
+      </p>
     </section>
   );
 }

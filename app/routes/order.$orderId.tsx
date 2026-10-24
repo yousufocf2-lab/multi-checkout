@@ -10,6 +10,7 @@ import { activeGateways, payUrl, syncOrderPayment } from "~/lib/gateways/index.s
 import { formatINR } from "~/lib/pricing";
 import { ensureStoreHost } from "~/lib/urls.server";
 import { MetaPixel } from "~/components/MetaPixel";
+import { GoogleTag } from "~/components/GoogleTag";
 import { BrandLoader, PoweredBy } from "~/components/Brand";
 import { purchaseValue, shouldTrackPurchase } from "~/lib/meta.server";
 
@@ -50,6 +51,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     pixel: shouldTrackPurchase(store, order)
       ? { id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0) }
       : null,
+    gtag: store.googleTagId && store.googleTagLabel && (order.status === "paid" || (order.status === "cod_placed" && store.googleFireCod))
+      ? { id: store.googleTagId, label: store.googleTagLabel, value: purchaseValue(order) }
+      : null,
     plainStoreUrl: store.storefrontUrl,
     // after a failed payment: pay again, on the next gateway when the store has backups
     retryUrl: order.status === "failed" && (order.paymentMethod === "prepaid" || order.paymentMethod === "partial") ? payUrl(store, order.id, true) : null,
@@ -88,6 +92,7 @@ export default function OrderStatus() {
                 <MetaPixel pixelId={d.pixel.id} event="Purchase" eventId={d.id} onceKey={`purchase_${d.id}`}
                   data={{ currency: "INR", value: d.pixel.value, content_ids: d.pixel.items, content_type: "product", num_items: d.pixel.count }} />
               )}
+              {d.gtag && <GoogleTag tagId={d.gtag.id} label={d.gtag.label} value={d.gtag.value} orderId={d.id} />}
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-xl text-good" aria-hidden>✓</div>
               <h1 className="mt-4 text-2xl font-semibold tracking-tight">Thank you, {d.name}</h1>
               <p className="mt-1 text-ink-soft">Your order is confirmed{d.shopifyName ? ` as ${d.shopifyName}` : ""}. We'll send updates to your phone.</p>

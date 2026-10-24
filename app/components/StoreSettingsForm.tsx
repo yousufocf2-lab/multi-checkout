@@ -9,6 +9,7 @@ export type StoreFormValues = {
   codEnabled?: boolean; codCooldownHours?: number; codBlockAfterPrepaid?: boolean;
   metaAdAccountId?: string | null; metaPixelId?: string | null; metaApiVersion?: string; metaFireCodPurchase?: boolean;
   hasMetaToken?: boolean; hasCapiToken?: boolean;
+  id?: number; googleConnected?: boolean; googleAdsCustomerId?: string | null; googleConversionActionName?: string | null; googleTagId?: string | null;
   logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null; popupCheckout?: boolean;
 };
 
@@ -78,6 +79,20 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
           {v.hasMetaToken && <Toggle name="clearMetaToken" label="Remove saved Meta token" />}
         </div>
       </Section>
+
+      {!isNew && v.id && (
+        <Section id="google" title="Google Ads" description="Spend, conversions and campaigns from Google Ads next to Meta, and purchases sent back to Google.">
+          <div className="flex flex-wrap items-center gap-3">
+            <img src="/brand/ads/google-ads.png" alt="Google Ads" className="h-7 w-auto" />
+            <p className="min-w-0 flex-1 text-sm text-ink-soft">
+              {v.googleConnected && v.googleAdsCustomerId
+                ? <>Connected to ad account <b className="num text-ink">{v.googleAdsCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}</b>{v.googleConversionActionName ? <> · purchases go to “{v.googleConversionActionName}”</> : " · purchase uploads off"}{v.googleTagId ? <> · tag {v.googleTagId}</> : ""}</>
+                : v.googleConnected ? "Signed in. Pick the ad account to finish." : "Not connected."}
+            </p>
+            <a href={`/dashboard/stores/${v.id}/ads?ch=google`} className="btn-secondary">{v.googleConnected ? "Manage Google Ads" : "Connect Google Ads"}</a>
+          </div>
+        </Section>
+      )}
 
       {!isNew && <p className="text-sm text-ink-soft">Logo, brand color and the checkout's look are under <b>Settings → Checkout design</b>.</p>}
       <div className="sticky bottom-16 -mx-4 flex justify-end border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-5 lg:bottom-0">

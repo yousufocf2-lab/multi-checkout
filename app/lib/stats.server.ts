@@ -2,11 +2,12 @@ import { and, desc, gte, inArray, lt, sql } from "drizzle-orm";
 import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, type Store } from "~/db.server";
 import { addDays, bucketKeys, bucketLabel, granularityFor, type Granularity, type Range } from "./dates";
-import { fetchSpend } from "./meta.server";
+import { clickOrders, compare, metaReady, spendFor, totalOf } from "./ads.server";
+import { googleReady } from "./google-ads.server";
 
 const OK = ["paid", "cod_placed"];
 
-export type Bucket = { key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; adSpend: number | null };
+export type Bucket = { key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; adSpend: number | null; metaSpend: number | null; googleSpend: number | null };
 
 export type Overview = {
   range: Range;
@@ -30,7 +31,11 @@ export type Overview = {
     roas: number | null;
     costPerOrder: number | null;
     metaPurchases: number | null;
+    metaSpend: number | null; // null = Meta not connected on any store in scope
+    googleSpend: number | null;
+    googlePurchases: number | null;
   };
+  ads: ReturnType<typeof compare>;
   previous: { revenue: number; orders: number } | null;
   buckets: Bucket[];
   topProducts: { title: string; image: string | null; quantity: number; revenue: number }[];
@@ -130,17 +135,33 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     db.select({ v: sql<string>`coalesce(sum(${orders.refunded}), 0)` }).from(orders).where(and(idsFilter, inRange(orders.createdAt))),
   ]);
 
-  // Ad spend from every store with an ad account
-  const adStores = storeList.filter((s) => s.metaAdAccountId && s.metaAccessToken);
-  const spends = await Promise.all(adStores.map((s) => fetchSpend(s, { since: range.since, until: range.until }, granularity)));
-  const adErrors = spends.map((sp, i) => (sp.error ? { store: adStores[i].name, error: sp.error } : null)).filter(Boolean) as Overview["adErrors"];
-  const okSpends = spends.filter((s) => !s.error);
-  const adSpend = adStores.length ? okSpends.reduce((n, s) => n + s.spend, 0) : null;
-  const metaPurchases = adStores.length ? okSpends.reduce((n, s) => n + s.purchases, 0) : null;
+  // Ad spend from every connected platform (Meta, Google) of every store
+  const spends = await spendFor(storeList.filter((st) => metaReady(st) || googleReady(st)), { since: range.since, until: range.until }, granularity);
+  const adErrors: Overview["adErrors"] = [];
+  for (const sp of spends) {
+    if (sp.meta?.error) adErrors.push({ store: `${sp.store.name} (Meta)`, error: sp.meta.error });
+    if (sp.google?.error) adErrors.push({ store: `${sp.store.name} (Google)`, error: sp.google.error });
+  }
+  const sumOf = (pick: "meta" | "google", f: "spend" | "purchases") => {
+    const list = spends.map((x) => x[pick]).filter((x) => x && !x.error);
+    return spends.some((x) => x[pick]) ? list.reduce((a, x) => a + x![f], 0) : null;
+  };
+  const metaSpend = sumOf("meta", "spend"), googleSpend = sumOf("google", "spend");
+  const metaPurchases = sumOf("meta", "purchases"), googlePurchases = sumOf("google", "purchases");
+  const adSpend = spends.length ? spends.reduce((a, x) => a + (totalOf(x) ?? 0), 0) : null;
+  const clicks = await clickOrders(ids, from, to);
+  const ads = compare({
+    meta: { connected: metaSpend != null, spend: metaSpend, reported: metaPurchases, clickOrders: clicks.meta.orders, clickRevenue: clicks.meta.revenue },
+    google: { connected: googleSpend != null, spend: googleSpend, reported: googlePurchases, clickOrders: clicks.google.orders, clickRevenue: clicks.google.revenue },
+  });
+  const adStores = spends;
 
   const keys = bucketKeys(range, granularity);
   const map = new Map<string, Bucket>(
-    keys.map((k) => [k, { key: k, label: bucketLabel(k, granularity), longLabel: bucketLabel(k, granularity, true), prepaid: 0, cod: 0, orders: 0, adSpend: adStores.length && granularity !== "hour" ? 0 : null }]),
+    keys.map((k) => [k, { key: k, label: bucketLabel(k, granularity), longLabel: bucketLabel(k, granularity, true), prepaid: 0, cod: 0, orders: 0,
+      adSpend: adStores.length && granularity !== "hour" ? 0 : null,
+      metaSpend: metaSpend != null && granularity !== "hour" ? 0 : null,
+      googleSpend: googleSpend != null && granularity !== "hour" ? 0 : null }]),
   );
 
   const totals = { revenue: 0, orders: 0, prepaidOrders: 0, codOrders: 0, prepaidRevenue: 0, codRevenue: 0, discounts: 0 };
@@ -155,9 +176,15 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     if (b) b.orders += r.count;
   }
   if (granularity !== "hour") {
-    for (const sp of okSpends) for (const [k, v] of Object.entries(sp.series)) {
-      const b = map.get(k);
-      if (b) b.adSpend = (b.adSpend ?? 0) + v;
+    for (const sp of spends) for (const pf of ["meta", "google"] as const) {
+      const x = sp[pf];
+      if (!x || x.error) continue;
+      for (const [k, v] of Object.entries(x.series)) {
+        const b = map.get(k);
+        if (!b) continue;
+        b.adSpend = (b.adSpend ?? 0) + v;
+        if (pf === "meta") b.metaSpend = (b.metaSpend ?? 0) + v; else b.googleSpend = (b.googleSpend ?? 0) + v;
+      }
     }
   }
 
@@ -179,8 +206,9 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       adSpend,
       roas: adSpend ? totals.revenue / adSpend : null,
       costPerOrder: adSpend != null && totals.orders ? adSpend / totals.orders : null,
-      metaPurchases,
+      metaPurchases, metaSpend, googleSpend, googlePurchases,
     },
+    ads,
     previous: prev ? { revenue: Number(prev[0]?.revenue ?? 0) / 100, orders: prev[0]?.n ?? 0 } : null,
     buckets: [...map.values()],
     topProducts: (top as unknown as { title: string; image: string | null; quantity: number; revenue: string }[]).map((t) => ({
@@ -221,8 +249,8 @@ export async function loadLeaderboard(storeList: Store[], range: Range) {
     const r = by.get(s.id);
     const revenue = Number(r?.revenue ?? 0) / 100;
     const n = r?.n ?? 0;
-    const sp = s.metaAdAccountId && s.metaAccessToken ? await fetchSpend(s, { since: range.since, until: range.until }, g) : null;
-    const adSpend = sp && !sp.error ? sp.spend : null;
+    const [sp] = metaReady(s) || googleReady(s) ? await spendFor([s], { since: range.since, until: range.until }, g) : [null];
+    const adSpend = sp ? totalOf(sp) : null;
     return {
       id: s.id, name: s.name, revenue, orders: n,
       prepaidShare: n ? Math.round(((r?.prepaid ?? 0) / n) * 100) : null,

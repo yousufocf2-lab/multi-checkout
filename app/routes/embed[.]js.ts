@@ -28,6 +28,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   function ck(n){var m=document.cookie.match(new RegExp("(?:^|; )"+n+"=([^;]*)"));return m?decodeURIComponent(m[1]):null;}
   function fbcFromUrl(){try{var id=new URL(location.href).searchParams.get("fbclid");return id?"fb.1."+Date.now()+"."+id:null}catch(e){return null}}
+  // Google Ads click IDs: from the landing URL (kept 90 days, since Buy Now is often on a later page) or Google's own _gcl_aw cookie
+  function gclick(){var o={},k,u;try{u=new URL(location.href).searchParams;
+    ["gclid","gbraid","wbraid"].forEach(function(n){var v=u.get(n);if(v){o[n]=v;}});
+    if(o.gclid||o.gbraid||o.wbraid){try{localStorage.setItem("cx_gclk",JSON.stringify({v:o,t:Date.now()}));}catch(e){}}
+    else{try{k=JSON.parse(localStorage.getItem("cx_gclk")||"null");if(k&&Date.now()-k.t<7776e6)o=k.v;}catch(e){}}
+    if(!o.gclid){var aw=ck("_gcl_aw");if(aw){var p=aw.split(".");if(p.length>=3)o.gclid=p.slice(2).join(".");}}
+  }catch(e){}return o}
+  gclick();
   var busy=false;
   function esc(t){return String(t).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
   function overlay(on){var id="cx-overlay",el=document.getElementById(id);
@@ -84,7 +92,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return (c.items||[]).map(function(i){return {variantId:String(i.variant_id),quantity:i.quantity}});});
     p.then(function(list){
       if(!list.length){throw new Error("empty")}
-      return fetch(APP+"/api/session",{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({store:STORE,items:list,fbp:ck("_fbp"),fbc:ck("_fbc")||fbcFromUrl(),url:location.href})});
+      return fetch(APP+"/api/session",{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(Object.assign({store:STORE,items:list,fbp:ck("_fbp"),fbc:ck("_fbc")||fbcFromUrl(),url:location.href},gclick()))});
     }).then(function(r){return r.json()}).then(function(d){
       if(!d.url)throw new Error(d.error||"no url");
       if(POPUP)openPop(d.url); else location.href=d.url;

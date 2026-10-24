@@ -20,7 +20,7 @@ export const loader = () => reply({ error: "POST only" }, 405);
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-  let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown };
+  let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown; gclid?: unknown; gbraid?: unknown; wbraid?: unknown };
   try {
     body = JSON.parse(await request.text());
   } catch {
@@ -52,12 +52,20 @@ export async function action({ request }: ActionFunctionArgs) {
     tracking: {
       fbp: clip(body.fbp),
       fbc: clip(body.fbc),
+      gclid: clickId(body.gclid),
+      gbraid: clickId(body.gbraid),
+      wbraid: clickId(body.wbraid),
       sourceUrl: clip(body.url, 500),
       ip: clientIp(request),
       ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined,
     },
   });
   return reply({ url: `${storeBaseUrl(store)}/c/${id}` });
+}
+
+/** Google click IDs are URL-safe tokens; anything else is ignored. */
+function clickId(v: unknown) {
+  return typeof v === "string" && /^[\w-]{10,200}$/.test(v) ? v : undefined;
 }
 
 function clip(v: unknown, max = 200) {

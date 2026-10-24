@@ -181,6 +181,16 @@ export const stores = pgTable("stores", {
   metaCapiToken: text("meta_capi_token"), // optional; falls back to metaAccessToken
   metaApiVersion: text("meta_api_version").notNull().default("v23.0"),
   metaFireCodPurchase: boolean("meta_fire_cod_purchase").notNull().default(true),
+  // Google Ads: connected with "Connect Google" (OAuth). Refresh token never leaves the server.
+  googleAdsCustomerId: text("google_ads_customer_id"), // digits only, e.g. 1234567890
+  googleLoginCustomerId: text("google_login_customer_id"), // manager (MCC) account the store reaches it through, if any
+  googleRefreshToken: text("google_refresh_token"),
+  googleAccountEmail: text("google_account_email"), // the Google login that connected it
+  googleConversionAction: text("google_conversion_action"), // customers/{id}/conversionActions/{id}: server-side purchase uploads
+  googleConversionActionName: text("google_conversion_action_name"),
+  googleTagId: text("google_tag_id"), // AW-123456789: browser purchase tag on the thank-you page
+  googleTagLabel: text("google_tag_label"),
+  googleFireCod: boolean("google_fire_cod").notNull().default(true),
   // WhatsApp from Growpefy's number (order confirmation, inbox, abandoned cart) only after admin verifies the store
   waVerify: jsonb("wa_verify").$type<WaVerify>().notNull().default({}),
   // Abandoned checkout recovery on WhatsApp: store picks 1-2 messages and when they go
@@ -508,6 +518,9 @@ export const paymentEvents = pgTable(
 export type TrackingInfo = {
   fbp?: string;
   fbc?: string;
+  gclid?: string; // Google Ads click IDs (gbraid / wbraid on iOS)
+  gbraid?: string;
+  wbraid?: string;
   ip?: string;
   ua?: string;
   sourceUrl?: string;
@@ -581,6 +594,7 @@ export const orders = pgTable(
     error: text("error"),
     tracking: jsonb("tracking").$type<TrackingInfo>(),
     capiSentAt: timestamp("capi_sent_at", { withTimezone: true }),
+    googleSentAt: timestamp("google_sent_at", { withTimezone: true }), // purchase uploaded to Google Ads
     saveAddress: boolean("save_address").notNull().default(false), // customer agreed to save the address for next time
     // Shipment (from the connected courier)
     awb: text("awb"),

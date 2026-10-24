@@ -8,6 +8,9 @@ import { resolveRange } from "~/lib/dates";
 import { lastSnapshot, withGst } from "~/lib/recharges.server";
 import { dashboardScope } from "~/lib/selection.server";
 import { earliestDate, loadLeaderboard } from "~/lib/stats.server";
+import { adsReady, metaReady } from "~/lib/ads.server";
+import { googleReady } from "~/lib/google-ads.server";
+import { AdIcon } from "~/components/AdLogos";
 
 /** Ads across stores. With one store in focus, goes straight to that store's Ads page. */
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -16,12 +19,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   if (scope.length === 1) return redirect(`/dashboard/stores/${scope[0].id}/ads${new URL(request.url).search}`);
   const range = resolveRange(new URL(request.url).searchParams, await earliestDate(scope));
   const rows = scope.length > 1 ? await loadLeaderboard(scope, range) : [];
-  const withAds = new Set(scope.filter((s) => s.metaAdAccountId && s.metaAccessToken).map((s) => s.id));
-  const snaps = await Promise.all(rows.map((r) => (withAds.has(r.id) ? lastSnapshot(r.id) : Promise.resolve(null))));
+  const withAds = new Set(scope.filter(adsReady).map((s) => s.id));
+  const withMeta = new Set(scope.filter(metaReady).map((s) => s.id));
+  const withGoogle = new Set(scope.filter(googleReady).map((s) => s.id));
+  const snaps = await Promise.all(rows.map((r) => (withMeta.has(r.id) ? lastSnapshot(r.id) : Promise.resolve(null))));
   return json({
     range,
     rows: rows.map((r, i) => ({
-      ...r, connected: withAds.has(r.id),
+      ...r, connected: withAds.has(r.id), meta: withMeta.has(r.id), google: withGoogle.has(r.id),
       balance: snaps[i] ? snaps[i]!.availablePaise / 100 : null,
       invested: snaps[i] ? withGst((snaps[i]!.availablePaise + snaps[i]!.spentPaise) / 100) : null,
     })),
@@ -38,7 +43,7 @@ export default function AdsAll() {
   const cpo = ordersN ? spend / ordersN : null;
   return (
     <>
-      <PageHeader title="Ads" description="Meta ad performance for every store. Pick a store for campaigns and recharges." actions={<RangePicker current={range} align="right" />} />
+      <PageHeader title="Ads" description="Meta and Google ad performance for every store. Pick a store for campaigns, Meta vs Google and recharges." actions={<RangePicker current={range} align="right" />} />
       {rows.length === 0 ? (
         <EmptyState title="No stores yet" action={<Link to="/dashboard/stores/new" className="btn-primary">Connect a store</Link>} />
       ) : (
@@ -51,11 +56,12 @@ export default function AdsAll() {
           </div>
           <div className="panel overflow-x-auto">
             <table className="table num min-w-[760px]">
-              <thead><tr><th>Store</th><th className="text-right">Ad spend</th><th className="text-right">Orders</th><th className="text-right">Cost per order</th><th className="text-right">ROAS</th><th className="text-right">Balance</th><th className="text-right">Total invested</th></tr></thead>
+              <thead><tr><th>Store</th><th>Platforms</th><th className="text-right">Ad spend</th><th className="text-right">Orders</th><th className="text-right">Cost per order</th><th className="text-right">ROAS</th><th className="text-right">Balance</th><th className="text-right">Total invested</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td><Link to={`/dashboard/stores/${r.id}/ads`} className="font-medium hover:underline">{r.name}</Link></td>
+                    <td><span className="flex items-center gap-1.5">{r.meta && <AdIcon p="meta" className="h-3.5 w-auto" />}{r.google && <AdIcon p="google" className="h-3.5 w-auto" />}{!r.connected && <span className="text-xs text-ink-faint">—</span>}</span></td>
                     {r.connected ? (
                       <>
                         <td className="text-right">{inr(r.adSpend)}</td>
@@ -66,14 +72,14 @@ export default function AdsAll() {
                         <td className="text-right">{inr(r.invested)}</td>
                       </>
                     ) : (
-                      <td colSpan={6} className="text-right text-xs text-ink-faint"><Link to={`/dashboard/stores/${r.id}/settings#meta`} className="underline">Connect Meta ads</Link></td>
+                      <td colSpan={6} className="text-right text-xs text-ink-faint"><Link to={`/dashboard/stores/${r.id}/ads`} className="underline">Connect Meta or Google ads</Link></td>
                     )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-ink-faint">Total invested = (lifetime spend + balance) + 18% GST, from the latest balance check. Cost tags: under ₹35 excellent, ₹35–59 good, ₹60–99 average, ₹100+ poor.</p>
+          <p className="mt-3 text-xs text-ink-faint">Ad spend adds up Meta and Google. Balance and total invested are Meta only: (lifetime spend + balance) + 18% GST, from the latest balance check. Cost tags: under ₹35 excellent, ₹35–59 good, ₹60–99 average, ₹100+ poor.</p>
         </>
       )}
     </>
