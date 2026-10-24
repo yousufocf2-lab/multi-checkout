@@ -2,7 +2,7 @@ import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { callbackRequests, db, stores, supportMessages, supportTickets, users } from "~/db.server";
 import type { Viewer } from "./auth.server";
 import { clientIp } from "./orders.server";
-import { CALL_TIMES, CALLBACK_REASONS, CALLBACK_STATUS, TICKET_CATEGORIES, TICKET_STATUS, type TicketStatus } from "./support";
+import { CALL_TIMES, CALLBACK_REASONS, CALLBACK_STATUS, WEBSITE_REASONS, TICKET_CATEGORIES, TICKET_STATUS, type TicketStatus } from "./support";
 
 const clean = (v: FormDataEntryValue | null, max: number) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const cleanBody = (v: FormDataEntryValue | null, max: number) => String(v ?? "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, max);
@@ -25,7 +25,8 @@ export async function createCallback(request: Request, form: FormData, from: { s
   if (name.length < 2) errors.name = "Enter your name";
   if (!ph) errors.phone = "Enter a valid 10-digit mobile number";
   if (email && !EMAIL.test(email)) errors.email = "Enter a valid email or leave it empty";
-  if (!CALLBACK_REASONS.some((r) => r.id === reason)) errors.reason = "Choose what you need help with";
+  const allowed: readonly { id: string }[] = from.source === "website" ? WEBSITE_REASONS : CALLBACK_REASONS;
+  if (!allowed.some((r) => r.id === reason)) errors.reason = "Choose what you need help with";
   if (Object.keys(errors).length) return { ok: false, errors };
 
   const ip = clientIp(request);

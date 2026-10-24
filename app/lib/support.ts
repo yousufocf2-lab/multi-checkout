@@ -17,8 +17,20 @@ export const CALLBACK_REASONS = [
   { id: "other", label: "Something else" },
 ] as const;
 
+/** Simple reasons for visitors on the website (they haven't signed up yet). */
+export const WEBSITE_REASONS = [
+  { id: "sales", label: "I want to start using Growpefy" },
+  { id: "demo", label: "Book a demo" },
+  { id: "pricing", label: "Pricing & charges" },
+  { id: "how_it_works", label: "How Growpefy works for my store" },
+  { id: "partnership", label: "Partnership" },
+  { id: "existing", label: "I'm already a customer" },
+  { id: "other", label: "Something else" },
+] as const;
+
 export type CallbackReason = (typeof CALLBACK_REASONS)[number]["id"];
-export const reasonLabel = (id: string | null | undefined) => CALLBACK_REASONS.find((r) => r.id === id)?.label ?? (id || "Other");
+export const reasonLabel = (id: string | null | undefined) =>
+  CALLBACK_REASONS.find((r) => r.id === id)?.label ?? WEBSITE_REASONS.find((r) => r.id === id)?.label ?? (id || "Other");
 
 export const CALL_TIMES = [
   { id: "anytime", label: "Any time (10 am – 7 pm)" },

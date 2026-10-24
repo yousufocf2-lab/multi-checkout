@@ -7,7 +7,7 @@ import { Spinner } from "~/components/ui";
 import { SiteLayout, rv, siteMeta } from "~/components/site/SiteLayout";
 import { requireAppHost } from "~/lib/host.server";
 import { siteData } from "~/lib/site.server";
-import { CALL_TIMES, CALLBACK_REASONS, SUPPORT_EMAIL, SUPPORT_HOURS } from "~/lib/support";
+import { CALL_TIMES, SUPPORT_EMAIL, SUPPORT_HOURS, WEBSITE_REASONS } from "~/lib/support";
 import { createCallback } from "~/lib/support.server";
 import { getViewer } from "~/lib/auth.server";
 
@@ -31,7 +31,7 @@ export default function Contact() {
   const done = a?.ok ? a : null;
   const top = useRef<HTMLDivElement>(null);
   useEffect(() => { if (done) top.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [done]);
-  const preset = CALLBACK_REASONS.some((r) => r.id === sp.get("reason")) ? sp.get("reason")! : "";
+  const preset = WEBSITE_REASONS.some((r) => r.id === sp.get("reason")) ? sp.get("reason")! : "";
   const wa = d.company.phone.replace(/\D/g, "");
   return (
     <SiteLayout loggedIn={d.loggedIn} company={d.company}>
@@ -80,11 +80,11 @@ export default function Contact() {
                 <Field label="Email" optional error={errors.email} className="sm:col-span-2">
                   <input name="email" type="email" className="input py-3" autoComplete="email" maxLength={120} aria-invalid={Boolean(errors.email) || undefined} />
                 </Field>
-                <Field label="What do you need help with?" error={errors.reason}>
+                <Field label="How can we help?" error={errors.reason}>
                   <span className="relative block">
                     <select name="reason" className="input appearance-none py-3 pr-10" defaultValue={preset} required aria-invalid={Boolean(errors.reason) || undefined}>
                       <option value="" disabled>Choose a reason</option>
-                      {CALLBACK_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                      {WEBSITE_REASONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
                     </select>
                     <Icon name="chevron" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
                   </span>
@@ -98,7 +98,7 @@ export default function Contact() {
                   </span>
                 </Field>
                 <Field label="Anything we should know?" optional className="sm:col-span-2">
-                  <textarea name="message" rows={4} className="input" maxLength={1000} placeholder="Your store website, number of orders a month, or the problem you're facing." />
+                  <textarea name="message" rows={4} className="input" maxLength={1000} placeholder="Your store website and roughly how many orders you get a month." />
                 </Field>
               </div>
               <button type="submit" className="btn-primary mt-6 w-full py-3.5 text-[15px]" disabled={busy}>
