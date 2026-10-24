@@ -208,7 +208,7 @@ function ShipTag({ o }: { o: OrderRow }) {
   const s = o.shipStatus ?? "in_transit";
   const label = (SHIP_STATUS_LABELS as Record<string, string>)[s] ?? "Fulfilled";
   const courier = o.courier ? courierById(o.courier)?.name ?? o.courier : null;
-  return <span title={[courier, o.awb ? `AWB ${o.awb}` : null].filter(Boolean).join(" · ")} className={`rounded-md px-2 py-0.5 text-xs font-medium ${SHIP_CHIP[s] ?? SHIP_CHIP.in_transit}`}>🚚 {label}</span>;
+  return <span title={[courier, o.awb ? `AWB ${o.awb}` : null].filter(Boolean).join(" · ")} className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${SHIP_CHIP[s] ?? SHIP_CHIP.in_transit}`}><Icon name="shipping" className="h-3.5 w-3.5" />{label}</span>;
 }
 
 function RefundTag({ o }: { o: OrderRow }) {

@@ -721,7 +721,65 @@ export const walletRecharges = pgTable(
   (t) => [index("wallet_recharges_wallet_idx").on(t.walletId, t.createdAt)],
 );
 
+/** "Call me back" requests from the website contact page and the store dashboard. */
+export const callbackRequests = pgTable(
+  "callback_requests",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull().default("website"), // website | dashboard
+    name: text("name").notNull(),
+    phone: text("phone").notNull(), // 10 digits
+    email: text("email"),
+    reason: text("reason").notNull(), // see lib/support.ts
+    message: text("message"),
+    preferredTime: text("preferred_time"), // anytime | morning | afternoon | evening
+    storeId: integer("store_id").references(() => stores.id, { onDelete: "set null" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("new"), // new | contacted | closed
+    adminNote: text("admin_note"),
+    ip: text("ip"),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("callback_requests_status_idx").on(t.status, t.createdAt), index("callback_requests_ip_idx").on(t.ip, t.createdAt)],
+);
+
+/** Complaints raised by store owners from the dashboard. */
+export const supportTickets = pgTable(
+  "support_tickets",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+    storeId: integer("store_id").references(() => stores.id, { onDelete: "set null" }),
+    category: text("category").notNull(),
+    subject: text("subject").notNull(),
+    status: text("status").notNull().default("open"), // open | in_progress | resolved | closed
+    lastBy: text("last_by").notNull().default("owner"), // owner | admin: who wrote the latest message
+    ownerSeenAt: timestamp("owner_seen_at", { withTimezone: true }),
+    adminSeenAt: timestamp("admin_seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("support_tickets_user_idx").on(t.userId, t.updatedAt), index("support_tickets_status_idx").on(t.status, t.updatedAt)],
+);
+
+export const supportMessages = pgTable(
+  "support_messages",
+  {
+    id: serial("id").primaryKey(),
+    ticketId: integer("ticket_id").notNull().references(() => supportTickets.id, { onDelete: "cascade" }),
+    by: text("by").notNull(), // owner | admin
+    authorName: text("author_name").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("support_messages_ticket_idx").on(t.ticketId, t.createdAt)],
+);
+
 export type Store = typeof stores.$inferSelect;
+export type CallbackRequest = typeof callbackRequests.$inferSelect;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+export type SupportMessage = typeof supportMessages.$inferSelect;
 export type CourierAccount = typeof courierAccounts.$inferSelect;
 export type CustomerAddress = typeof customerAddresses.$inferSelect;
 export type BlockedCustomer = typeof blockedCustomers.$inferSelect;

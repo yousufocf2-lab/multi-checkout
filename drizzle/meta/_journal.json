@@ -169,6 +169,13 @@
       "when": 1792831988769,
       "tag": "0023_payment_gateways",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792847942924,
+      "tag": "0024_support",
+      "breakpoints": true
     }
   ]
 }

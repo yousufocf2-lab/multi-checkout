@@ -1,6 +1,6 @@
 import { SITE_URL } from "~/components/site/SiteLayout";
 
-const PAGES = ["/", "/pricing", "/contact", "/terms", "/privacy", "/refund-policy", "/shipping-policy", "/signup", "/login"];
+const PAGES = ["/", "/pricing", "/about", "/contact", "/terms", "/privacy", "/refund-policy", "/shipping-policy", "/signup", "/login"];
 
 export const loader = () =>
   new Response(

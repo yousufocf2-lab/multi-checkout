@@ -15,6 +15,7 @@ import { sql } from "drizzle-orm";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
+import { supportBadge } from "~/lib/support.server";
 
 export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -43,8 +44,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const waPending = viewer.role === "admin"
     ? await db.select({ n: sql<number>`count(*)::int` }).from(storesTable).where(sql`${storesTable.waVerify}->>'status' = 'submitted'`).then((r) => Number(r[0]?.n ?? 0)).catch(() => 0)
     : 0;
+  const support = await supportBadge(viewer).catch(() => 0);
   return json({
-    dropshipAlerts, waPending,
+    dropshipAlerts, waPending, support,
     viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
@@ -65,7 +67,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -167,6 +169,13 @@ export default function DashboardLayout() {
         </div>
       </div>
 
+      <div className="border-t border-night-line px-3 py-2">
+        <Item to="/dashboard/support" icon="help">
+          <span className="flex flex-1 items-center justify-between gap-2">{viewer.role === "admin" ? "Support inbox" : "Help & support"}
+            {support > 0 && <span className="num rounded-md bg-emerald-400/20 px-1.5 py-px text-[11px] font-semibold text-emerald-200">{support}</span>}
+          </span>
+        </Item>
+      </div>
       <div className="flex items-center gap-3 border-t border-night-line px-4 py-3.5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-semibold text-white">{viewer.name.slice(0, 1).toUpperCase()}</span>
         <div className="min-w-0 flex-1">
