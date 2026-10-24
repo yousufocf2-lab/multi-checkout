@@ -1,0 +1,1 @@
+ALTER TABLE "customer_addresses" ADD COLUMN "label" text DEFAULT 'home' NOT NULL;

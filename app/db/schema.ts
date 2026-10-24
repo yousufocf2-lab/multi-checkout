@@ -322,6 +322,7 @@ export const customerAddresses = pgTable(
     city: text("city").notNull(),
     state: text("state").notNull(), // province code
     pincode: text("pincode").notNull(),
+    label: text("label").notNull().default("home"), // home | work
     sourceStoreId: integer("source_store_id").references(() => stores.id, { onDelete: "set null" }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -515,6 +516,7 @@ export type OrderCustomer = {
   city: string;
   state: string; // Shopify province code, e.g. UP
   pincode: string;
+  label?: "home" | "work"; // "Save address as"
 };
 
 export type OrderLine = {
@@ -565,6 +567,7 @@ export const orders = pgTable(
     payuRaw: jsonb("payu_raw").$type<Record<string, string>>(),
     shopifyOrderId: text("shopify_order_id"),
     shopifyOrderName: text("shopify_order_name"),
+    shopifyPushAt: timestamp("shopify_push_at", { withTimezone: true }), // set while an order is being created in Shopify (stops duplicates)
     error: text("error"),
     tracking: jsonb("tracking").$type<TrackingInfo>(),
     capiSentAt: timestamp("capi_sent_at", { withTimezone: true }),

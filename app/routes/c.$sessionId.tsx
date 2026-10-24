@@ -1,5 +1,4 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { COURIER_LOGOS } from "~/lib/courier-catalog";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useFetcher, useLoaderData, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
@@ -252,7 +251,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const customer: OrderCustomer = {
     firstName: str("firstName"), lastName: str("lastName"), phone: normalizePhone(str("phone")), email: str("email"),
     address1: str("address1"), address2: str("address2"), city: str("city"), state: str("state"), pincode: str("pincode").replace(/\D/g, ""),
+    label: str("label") === "work" ? "work" : "home",
   };
+  // One "Full name" box: first word is the first name, the rest the last name
+  if (!customer.lastName && /\s/.test(customer.firstName)) {
+    const [first, ...rest] = customer.firstName.split(/\s+/);
+    customer.firstName = first; customer.lastName = rest.join(" ");
+  }
   const method: PaymentMethod = str("method") === "cod" ? "cod" : str("method") === "partial" ? "partial" : "prepaid";
   const pm = resolvePaymentMethods(store.paymentMethods, store);
 
@@ -268,7 +273,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const errors: FieldErrors = {};
-  if (!customer.firstName) errors.firstName = "Enter your first name";
+  if (!customer.firstName) errors.firstName = "Enter your full name";
   if (!/^[6-9]\d{9}$/.test(customer.phone)) errors.phone = "Enter a valid 10-digit mobile number";
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = "Enter a valid email address";
   if (customer.address1.length < 5) errors.address1 = "Enter your house number and street";
@@ -346,7 +351,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
 // ======================= UI =======================
 
-const EMPTY: OrderCustomer = { firstName: "", lastName: "", phone: "", email: "", address1: "", address2: "", city: "", state: "", pincode: "" };
+const EMPTY: OrderCustomer = { firstName: "", lastName: "", phone: "", email: "", address1: "", address2: "", city: "", state: "", pincode: "", label: "home" };
 const LS_KEY = "cx_customer_v1";
 const CUSTOMER_KEYS = Object.keys(EMPTY) as (keyof OrderCustomer)[];
 
@@ -381,12 +386,15 @@ export default function Checkout() {
   }, []);
   useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(c)); } catch { /* storage unavailable */ } }, [c]);
 
+  const [couponsOpen, setCouponsOpen] = useState(false);
+  const [celebrate, setCelebrate] = useState(0);
   useEffect(() => {
     const d = couponFetcher.data as { coupon?: CouponRule; error?: string } | undefined;
     if (!d) return;
-    if (d.coupon) { setCoupon(d.coupon); setCouponError(null); setCouponInput(d.coupon.code); }
+    if (d.coupon) { setCoupon(d.coupon); setCouponError(null); setCouponInput(d.coupon.code); setCouponsOpen(false); setCelebrate(Date.now()); }
     else if (d.error) setCouponError(d.error);
   }, [couponFetcher.data]);
+  useEffect(() => { if (!celebrate) return; const t = setTimeout(() => setCelebrate(0), 2200); return () => clearTimeout(t); }, [celebrate]);
 
   // COD rules for this phone number
   const phoneOk = /^[6-9]\d{9}$/.test(c.phone);
@@ -456,6 +464,22 @@ export default function Checkout() {
   };
   const [saveAddr, setSaveAddr] = useState(true);
 
+  // One "Full name" box (split into first / last name for Shopify)
+  const [fullName, setFullName] = useState("");
+  useEffect(() => {
+    const n = `${c.firstName} ${c.lastName}`.trim();
+    setFullName((cur) => (cur.trim().replace(/\s+/g, " ") === n ? cur : n));
+  }, [c.firstName, c.lastName]);
+  const setName = (v: string) => {
+    setFullName(v);
+    if (stepError.firstName) setStepError((x) => ({ ...x, firstName: undefined }));
+    const t = v.trim().replace(/\s+/g, " ");
+    const i = t.indexOf(" ");
+    setC((prev) => ({ ...prev, firstName: i < 0 ? t : t.slice(0, i), lastName: i < 0 ? "" : t.slice(i + 1) }));
+  };
+  // New customer in the 3-page checkout: ask the PIN code first, then the full form
+  const [pinFirst, setPinFirst] = useState(true);
+
   // Save what the customer has typed (for abandoned checkout recovery)
   const draftFetcher = useFetcher();
   useEffect(() => {
@@ -486,6 +510,8 @@ export default function Checkout() {
       .catch(() => setPinStatus("unknown"));
     return () => ctrl.abort();
   }, [c.pincode]);
+
+  useEffect(() => { if (pinFirst && /^\d{6}$/.test(c.pincode) && (pinStatus === "ok" || pinStatus === "unknown")) setPinFirst(false); }, [pinFirst, c.pincode, pinStatus]);
 
   const priced = (m: PaymentMethod) => {
     const base = computePricing(lines, rule, m, coupon);
@@ -529,6 +555,7 @@ export default function Checkout() {
   const otpFor = useRef<OtpPurpose>("order");
   const usingSaved = addrMode === "saved" && savedId != null && saved.some((a) => a.id === savedId);
   const needsOtp = (otp[method] || usingSaved) && verifiedPhone.current !== c.phone;
+  const showPinFirst = steps && step === 2 && !usingSaved && pinFirst && !(/^\d{6}$/.test(c.pincode) && c.city.trim());
   const askOtp = (why: OtpPurpose) => { otpFor.current = why; setOtpOpen(true); };
   useEffect(() => { if (actionData && "needOtp" in actionData && actionData.needOtp) askOtp("order"); }, [actionData]);
   // 1-page checkout with OTP at the start: ask as soon as a valid number is typed
@@ -549,8 +576,9 @@ export default function Checkout() {
   const afterContact = () => {
     if (lookupPending) { waitingForLookup.current = true; return; }
     const list = addrFetcher.data?.addresses ?? [];
-    const willUseSaved = usingSaved || (autoSaved && list.length > 0 && !choseManual.current && !c.address1.trim());
-    // Saved address: skip the address page
+    // Saved address (from any Growpefy store): pick it and skip the address page. It stays behind an OTP at the end.
+    const willUseSaved = usingSaved || (list.length > 0 && !choseManual.current);
+    if (willUseSaved && !usingSaved && list[0]) pickSaved(list[0]);
     setStep(willUseSaved || addressComplete(c) ? 3 : 2);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -567,8 +595,14 @@ export default function Checkout() {
   };
   const continueFromAddress = () => {
     if (usingSaved) { setStepError({}); setStep(3); return; }
+    if (showPinFirst) {
+      if (!/^\d{6}$/.test(c.pincode)) { setStepError({ pincode: "Enter your 6-digit PIN code" }); return; }
+      setStepError({}); setPinFirst(false); return;
+    }
     const e: Partial<Record<keyof OrderCustomer, string>> = {};
-    if (!c.firstName.trim()) e.firstName = "Enter your first name";
+    if (!phoneOk) e.phone = "Enter a valid 10-digit mobile number";
+    if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) e.email = "Enter a valid email address";
+    if (!c.firstName.trim()) e.firstName = "Enter your full name";
     if (!/^\d{6}$/.test(c.pincode)) e.pincode = "Enter a 6-digit pincode";
     if (!c.city.trim()) e.city = "Enter your city";
     if (c.address1.trim().length < 5) e.address1 = "Enter your house number and street";
@@ -581,8 +615,8 @@ export default function Checkout() {
   useEffect(() => {
     if (!steps || !actionData || !("errors" in actionData)) return;
     const e = actionData.errors as FieldErrors;
-    if (e.phone || e.email) setStep(1);
-    else if (e.firstName || e.address1 || e.city || e.state || e.pincode) setStep(2);
+    if (e.phone && !e.firstName) setStep(1);
+    else if (e.email || e.firstName || e.address1 || e.city || e.state || e.pincode) { setPinFirst(false); setStep(2); }
   }, [actionData, steps]);
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -632,32 +666,59 @@ export default function Checkout() {
 
   const phoneField = (
     <Field label="Mobile number" error={fieldError("phone")} className="col-span-2">
-      <div className="flex">
-        <span className="flex items-center rounded-l-lg border border-r-0 border-rule-strong bg-paper px-3 text-[15px] text-ink-soft">+91</span>
-        <input name={nm("phone")} inputMode="numeric" autoComplete="tel-national" maxLength={10} required className="input rounded-l-none" autoFocus={steps && step === 1}
-          placeholder="10-digit mobile number" value={c.phone} onChange={set("phone")} aria-invalid={Boolean(fieldError("phone")) || undefined}
-          onKeyDown={(e) => { if (steps && e.key === "Enter") { e.preventDefault(); continueFromContact(); } }} />
-      </div>
+      <PhoneBox name={nm("phone")} value={c.phone} onChange={set("phone")} valid={phoneOk} invalid={Boolean(fieldError("phone"))} autoFocus={steps && step === 1}
+        onEnter={steps ? () => continueFromContact() : undefined} />
     </Field>
   );
   const emailField = theme.showEmail && (
-    <Field label="Email (optional, for order updates)" error={fieldError("email")} className="col-span-2"><input name={nm("email")} type="email" autoComplete="email" className="input" value={c.email} onChange={set("email")} /></Field>
+    <Field label="Email (optional)" error={fieldError("email")} className="col-span-2">
+      <input name={nm("email")} type="email" autoComplete="email" className="input" placeholder="For order updates" value={c.email} onChange={set("email")} />
+    </Field>
+  );
+  const labelChips = (
+    <div className="col-span-2">
+      <span className="label">Save address as</span>
+      <div className="flex gap-2" role="radiogroup" aria-label="Save address as">
+        {(["home", "work"] as const).map((v) => {
+          const on = (c.label ?? "home") === v;
+          return (
+            <label key={v} className={`flex cursor-pointer items-center gap-2.5 rounded-full border px-4 py-2 text-sm transition ${on ? "border-brand bg-brand/5 font-medium text-ink ring-1 ring-brand" : "border-rule-strong text-ink-soft hover:border-brand/50"}`}>
+              <input type="radio" name={nm("label")} value={v} checked={on} onChange={() => setC((prev) => ({ ...prev, label: v }))} className="sr-only" />
+              {v === "home" ? <HomeIcon /> : <WorkIcon />}
+              {v === "home" ? "Home" : "Work"}
+              <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${on ? "border-brand" : "border-rule-strong"}`}>{on && <span className="h-2 w-2 rounded-full bg-brand" />}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+  const nameField = (
+    <Field label="Full name" error={fieldError("firstName")} className="col-span-2">
+      <input autoComplete="name" required className="input" placeholder="First and last name" value={fullName} onChange={(e) => setName(e.target.value)} aria-invalid={Boolean(fieldError("firstName")) || undefined} />
+      {!steps && <><input type="hidden" name="firstName" value={c.firstName} /><input type="hidden" name="lastName" value={c.lastName} /></>}
+    </Field>
+  );
+  const pinField = (
+    <Field label="PIN code" error={fieldError("pincode")}>
+      <div className="relative">
+        <input name={nm("pincode")} inputMode="numeric" autoComplete="postal-code" maxLength={6} required className="input pr-9" value={c.pincode} onChange={set("pincode")} />
+        {pinStatus === "loading" && <span className="absolute right-3 top-3 text-ink-faint"><Spinner /></span>}
+        {pinStatus === "ok" && <span className="absolute right-3 top-2.5 text-good" aria-label="PIN code found">✓</span>}
+      </div>
+    </Field>
   );
   const addressFields = (email: React.ReactNode) => usingSaved ? (
     <>{email}<SavedAddresses className="col-span-2" list={saved} selected={savedId!} showAll={showAll} setShowAll={setShowAll}
       onPick={pickSaved} onEdit={editSaved} onAddNew={addNew} revealing={revealFetcher.state !== "idle"} /></>
   ) : (
     <>
-      <Field label="First name" error={fieldError("firstName")}><input name={nm("firstName")} autoComplete="given-name" required className="input" value={c.firstName} onChange={set("firstName")} /></Field>
-      <Field label="Last name"><input name={nm("lastName")} autoComplete="family-name" className="input" value={c.lastName} onChange={set("lastName")} /></Field>
+      <p className="col-span-2 -mb-1 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Contact information</p>
+      {nameField}
       {email}
-      <Field label="Pincode" error={fieldError("pincode")}>
-        <div className="relative">
-          <input name={nm("pincode")} inputMode="numeric" autoComplete="postal-code" maxLength={6} required className="input pr-9" value={c.pincode} onChange={set("pincode")} />
-          {pinStatus === "loading" && <span className="absolute right-3 top-3 text-ink-faint"><Spinner /></span>}
-          {pinStatus === "ok" && <span className="absolute right-3 top-2.5 text-good" aria-label="Pincode found">✓</span>}
-        </div>
-      </Field>
+      {phoneField}
+      <p className="col-span-2 -mb-1 mt-2 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Delivery address</p>
+      {pinField}
       <Field label="City" error={fieldError("city")}><input name={nm("city")} autoComplete="address-level2" required className="input" value={c.city} onChange={set("city")} /></Field>
       <Field label="House number, building, street" error={fieldError("address1")} className="col-span-2"><input name={nm("address1")} autoComplete="address-line1" required className="input" value={c.address1} onChange={set("address1")} /></Field>
       <Field label="Area, landmark (optional)" className="col-span-2"><input name={nm("address2")} autoComplete="address-line2" className="input" value={c.address2} onChange={set("address2")} /></Field>
@@ -667,6 +728,7 @@ export default function Checkout() {
           {INDIAN_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
         </select>
       </Field>
+      {labelChips}
       {saved.length > 0 && (
         <button type="button" className="col-span-2 -mt-1 text-left text-sm font-medium text-brand" onClick={() => pickSaved(saved[0])}>← Use a saved address ({saved.length})</button>
       )}
@@ -678,51 +740,65 @@ export default function Checkout() {
   );
 
   const offersCard = (
-    <Card title="Offers">
+    <Card title="Offers" className="relative overflow-hidden">
+      {celebrate > 0 && <Confetti key={celebrate} />}
       {coupon ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-emerald-900">{coupon.code} applied</p>
-            <p className="text-xs text-emerald-800">{p.couponApplied ? `You save ${formatINR(p.couponDiscount)} more` : p.couponMessage}</p>
-            {p.couponApplied && p.couponMessage && <p className="text-xs text-emerald-800">{p.couponMessage}</p>}
+        <div key={coupon.code} className="cx-pop flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"><CheckIcon /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-emerald-900">'{coupon.code}' applied</p>
+              <p className="text-xs text-emerald-800">{p.couponApplied ? <>You save <b className="num">{formatINR(p.couponDiscount)}</b> more</> : p.couponMessage}</p>
+              {p.couponApplied && p.couponMessage && <p className="text-xs text-emerald-800">{p.couponMessage}</p>}
+            </div>
           </div>
-          <button type="button" className="text-sm font-medium text-bad" onClick={() => { setCoupon(null); setCouponInput(""); }}>Remove</button>
+          <button type="button" className="shrink-0 text-sm font-medium text-bad" onClick={() => { setCoupon(null); setCouponInput(""); }}>Remove</button>
         </div>
       ) : (
-        <div className="flex gap-2">
-          <input className="input uppercase" placeholder="Enter coupon code" value={couponInput} aria-label="Coupon code"
-            onChange={(e) => setCouponInput(e.target.value)}
+        <div className={`flex h-[52px] items-center rounded-2xl border bg-surface pl-3.5 pr-1.5 transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 ${couponError ? "border-red-300" : "border-rule-strong"}`}>
+          <span className="text-ink-faint"><TagIcon /></span>
+          <input className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[15px] font-medium uppercase tracking-wide outline-none placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-faint"
+            placeholder="Enter coupon code" value={couponInput} aria-label="Coupon code" autoComplete="off"
+            onChange={(e) => { setCouponInput(e.target.value); if (couponError) setCouponError(null); }}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyCode(couponInput); } }} />
-          <button type="button" className="btn-primary shrink-0 px-5" disabled={!couponInput.trim() || couponFetcher.state !== "idle"} onClick={() => applyCode(couponInput)}>
+          <button type="button" className="btn-primary h-10 shrink-0 rounded-xl px-5 text-sm" disabled={!couponInput.trim() || couponFetcher.state !== "idle"} onClick={() => applyCode(couponInput)}>
             {couponFetcher.state !== "idle" ? <Spinner /> : "Apply"}
           </button>
         </div>
       )}
       {couponError && <p className="mt-2 text-xs font-medium text-bad" role="alert">{couponError}</p>}
-
       {coupons.length > 0 && (
-        <ul className="mt-4 space-y-2">
-          {coupons.map((cp) => {
-            const preview = computePricing(lines, rule, method, cp);
-            const active = coupon?.code === cp.code;
-            return (
-              <li key={cp.code} className={`flex items-center justify-between gap-3 rounded-lg border border-dashed px-3.5 py-3 ${active ? "border-emerald-400 bg-emerald-50" : "border-rule-strong"}`}>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold tracking-wide">{cp.code}</p>
-                  <p className="text-xs text-ink-soft">
-                    {cp.description || (cp.type === "percent" ? `${cp.value}% off` : `${formatINR(cp.value * 100)} off`)}
-                    {cp.paymentRestriction !== "any" && (cp.paymentRestriction === "prepaid" ? ", online payment only" : ", COD only")}
-                  </p>
-                  {preview.couponApplied ? <p className="text-xs font-medium text-good">Save {formatINR(preview.couponDiscount)} more</p>
-                    : preview.couponMessage && <p className="text-xs text-ink-faint">{preview.couponMessage}</p>}
-                </div>
-                <button type="button" disabled={active} onClick={() => applyCode(cp.code)} className="shrink-0 text-sm font-semibold text-brand disabled:text-good">
-                  {active ? "Applied" : "Apply"}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <span className="text-brand"><CouponIcon /></span>
+          <span className="text-ink-soft"><b className="num font-semibold text-ink">{coupons.length}</b> {coupons.length === 1 ? "coupon" : "coupons"} available</span>
+          <button type="button" className="ml-auto font-semibold text-brand hover:underline" onClick={() => setCouponsOpen(true)}>View all</button>
+        </div>
+      )}
+      {couponsOpen && (
+        <CouponSheet onClose={() => setCouponsOpen(false)}>
+          <ul className="space-y-2.5">
+            {coupons.map((cp) => {
+              const preview = computePricing(lines, rule, method, cp);
+              const active = coupon?.code === cp.code;
+              return (
+                <li key={cp.code} className={`flex items-center justify-between gap-3 rounded-2xl border border-dashed px-4 py-3.5 ${active ? "border-emerald-400 bg-emerald-50" : "border-rule-strong"}`}>
+                  <div className="min-w-0">
+                    <p className="inline-flex items-center gap-1.5 rounded-md bg-brand/10 px-2 py-0.5 text-sm font-bold tracking-wider text-brand">{cp.code}</p>
+                    <p className="mt-1 text-xs text-ink-soft">
+                      {cp.description || (cp.type === "percent" ? `${cp.value}% off` : `${formatINR(cp.value * 100)} off`)}
+                      {cp.paymentRestriction !== "any" && (cp.paymentRestriction === "prepaid" ? ", online payment only" : ", COD only")}
+                    </p>
+                    {preview.couponApplied ? <p className="text-xs font-semibold text-good">Save {formatINR(preview.couponDiscount)} on this order</p>
+                      : preview.couponMessage && <p className="text-xs text-ink-faint">{preview.couponMessage}</p>}
+                  </div>
+                  <button type="button" disabled={active || couponFetcher.state !== "idle"} onClick={() => applyCode(cp.code)} className="btn-primary h-9 shrink-0 rounded-xl px-4 text-sm disabled:bg-emerald-600">
+                    {active ? "Applied" : "Apply"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </CouponSheet>
       )}
 
       {offers.length > 0 && (
@@ -785,16 +861,33 @@ export default function Checkout() {
   const stepContent = (
     <>
       {step === 1 && (
-        <Card title="Mobile number">
-          <div className="grid grid-cols-2 gap-3">{phoneField}{emailField}</div>
-          <p className="mt-3 text-xs text-ink-faint">{otp.start ? "We'll send a one-time code to confirm your number." : "We'll use this for order and delivery updates."}</p>
+        <Card title="Enter your mobile number">
+          <PhoneBox value={c.phone} onChange={set("phone")} valid={phoneOk} invalid={Boolean(fieldError("phone"))} autoFocus onEnter={() => continueFromContact()} />
+          {fieldError("phone") && <p className="error-text mt-1.5">{fieldError("phone")}</p>}
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />{otp.start ? "We'll send a one-time code to confirm your number." : "For order and delivery updates. We never share your number."}</p>
           <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromContact(); }}>Continue</button>
         </Card>
       )}
-      {step === 2 && (
-        <Card title="Delivery address">
-          <ContactLine phone={c.phone} onChange={() => setStep(1)} />
-          <div className="grid grid-cols-2 gap-3">{addressFields(null)}</div>
+      {step === 2 && showPinFirst && (
+        <Card title="Where should we deliver?">
+          <label className="block">
+            <span className="label">PIN code</span>
+            <div className={`flex h-14 items-center rounded-2xl border-2 bg-surface px-4 transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 ${fieldError("pincode") ? "border-red-300" : "border-rule-strong"}`}>
+              <span className="text-ink-faint"><PinIcon /></span>
+              <input inputMode="numeric" autoComplete="postal-code" maxLength={6} autoFocus className="num h-full min-w-0 flex-1 bg-transparent px-3 text-lg font-semibold tracking-[0.3em] outline-none placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-ink-faint"
+                placeholder="6-digit PIN code" value={c.pincode} onChange={set("pincode")} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); continueFromAddress(); } }} />
+              {pinStatus === "loading" && <span className="text-ink-faint"><Spinner /></span>}
+            </div>
+            {fieldError("pincode") && <span className="error-text">{fieldError("pincode")}</span>}
+          </label>
+          <p className="mt-3 text-xs text-ink-faint">We'll fill in your city and state.</p>
+          <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromAddress(); }}>Continue</button>
+        </Card>
+      )}
+      {step === 2 && !showPinFirst && (
+        <Card title={usingSaved ? "Delivery address" : "Your details"}>
+          {usingSaved && <ContactLine phone={c.phone} onChange={() => setStep(1)} />}
+          <div className="grid grid-cols-2 gap-3">{addressFields(usingSaved ? null : emailField)}</div>
           <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromAddress(); }}>Continue to payment</button>
         </Card>
       )}
@@ -838,7 +931,7 @@ export default function Checkout() {
         <input type="hidden" name="method" value={method} />
         <input type="hidden" name="couponCode" value={coupon?.code ?? ""} />
         {usingSaved && <input type="hidden" name="savedAddressId" value={savedId!} />}
-        {steps && CUSTOMER_KEYS.map((k) => <input key={k} type="hidden" name={k} value={c[k]} />)}
+        {steps && CUSTOMER_KEYS.map((k) => <input key={k} type="hidden" name={k} value={c[k] ?? ""} />)}
         {steps && saveAddr && !usingSaved && <input type="hidden" name="saveAddress" value="on" />}
 
         <div className="space-y-4">
@@ -855,7 +948,7 @@ export default function Checkout() {
               case "address": return (
                 <Card key={key} title="Delivery details">
                   <div className="grid grid-cols-2 gap-3">
-                    {phoneField}
+                    {usingSaved && phoneField}
                     {addressFields(emailField)}
                   </div>
                 </Card>
@@ -875,7 +968,7 @@ export default function Checkout() {
               {orderItems}
               <div className="mt-4 border-t border-rule pt-4">{priceDetails}</div>
               {steps && step < 3 ? (
-                <button key="aside-continue" type="button" className="btn-primary mt-5 w-full py-3.5 text-base" onClick={continueStep}>{step === 1 ? "Continue" : "Continue to payment"}</button>
+                <button key="aside-continue" type="button" className="btn-primary mt-5 w-full py-3.5 text-base" onClick={continueStep}>{step === 1 || showPinFirst ? "Continue" : "Continue to payment"}</button>
               ) : (
                 <button key="aside-submit" type="submit" className="btn-primary mt-5 w-full py-3.5 text-base" disabled={placing || noMethod}>
                   {placing ? <><Spinner /> {redirectingToPay ? "Opening secure payment" : "Placing your order"}</> : payLabel}
@@ -995,7 +1088,7 @@ function Shell({ store, theme, children }: { store: LoaderData["store"]; theme: 
   return (
     <div style={themeVars(theme, store.primaryColor) as React.CSSProperties} className="cx min-h-screen bg-paper pb-28 text-ink lg:pb-12">
       {font.google && <link rel="stylesheet" href={`https://fonts.googleapis.com/css2?family=${font.google}&display=swap`} />}
-      <style>{`html{font-size:${FONT_SCALE[theme.fontScale]}px;background:${theme.bgColor}}`}</style>
+      <style>{`html{font-size:${FONT_SCALE[theme.fontScale]}px;background:${theme.bgColor}}${CX_MOTION}`}</style>
       {theme.announcement && (
         <div className="px-4 py-2 text-center text-[13px] font-medium" style={{ background: theme.announcementBg, color: theme.announcementText }}>{theme.announcement}</div>
       )}
@@ -1279,22 +1372,9 @@ function Field({ label, error, className = "", children }: { label: string; erro
 function Trust({ phone, text, className = "" }: { phone: string | null; text: string | null; className?: string }) {
   return (
     <div className={`space-y-1 text-center text-xs text-ink-faint ${className}`}>
-      <CourierStrip />
       {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
       <p className="pt-1"><PoweredBy /></p>
-    </div>
-  );
-}
-
-/** "Delivered by" row of courier logos. */
-function CourierStrip() {
-  return (
-    <div className="pb-2">
-      <p className="text-[10px] font-medium uppercase tracking-wider">Delivered by trusted couriers</p>
-      <div className="mt-1.5 flex items-center justify-center gap-1.5">
-        {COURIER_LOGOS.map((c) => <img key={c.id} src={c.logo} alt={c.name} title={c.name} width={28} height={28} loading="lazy" className="h-7 w-7 rounded-full bg-white object-contain" />)}
-      </div>
     </div>
   );
 }
@@ -1373,7 +1453,7 @@ function SavedAddresses({ list, selected, showAll, setShowAll, onPick, onEdit, o
       <div className="flex items-start gap-3">
         <span aria-hidden className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${active ? "border-brand" : "border-rule-strong"}`}>{active && <span className="h-2 w-2 rounded-full bg-brand" />}</span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">{a.name}</p>
+          <p className="flex items-center gap-2 font-semibold">{a.name}<span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-soft">{a.label === "work" ? "Work" : "Home"}</span></p>
           <p className="mt-0.5 break-words text-ink-soft">{a.line}</p>
           <p className="text-ink-soft">{a.city}, {stateName(a.state)} – <span className="num">{a.pincode}</span></p>
         </div>
@@ -1414,6 +1494,90 @@ function PaymentOverlay({ name, logo }: { name: string; logo: string | null }) {
     </div>
   );
 }
+
+// ---------- checkout motion (respects reduced-motion via the global rule) ----------
+const CX_MOTION = `
+@keyframes cxpop{0%{transform:scale(.9);opacity:0}60%{transform:scale(1.03);opacity:1}100%{transform:scale(1)}}
+.cx-pop{animation:cxpop .45s cubic-bezier(.2,.8,.2,1) both}
+@keyframes cxtick{0%{transform:scale(0)}70%{transform:scale(1.25)}100%{transform:scale(1)}}
+.cx-tick{animation:cxtick .35s ease-out both}
+@keyframes cxconf{0%{transform:translate(0,0) rotate(0);opacity:1}100%{transform:translate(var(--x),var(--y)) rotate(var(--r));opacity:0}}
+.cx-conf i{position:absolute;left:50%;top:34px;width:7px;height:11px;border-radius:2px;animation:cxconf 1.1s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes cxsheet{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.cx-sheet{animation:cxsheet .25s ease-out both}
+`;
+
+/** Little burst of confetti when a coupon is applied. */
+function Confetti() {
+  const colors = ["#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#8b5cf6", "#ec4899"];
+  const bits = Array.from({ length: 22 }, (_, i) => {
+    const a = (i / 22) * Math.PI * 2;
+    const d = 70 + (i % 5) * 18;
+    return { x: Math.cos(a) * d * 1.6, y: Math.sin(a) * d - 30, r: (i * 47) % 360, c: colors[i % colors.length], delay: (i % 4) * 25 };
+  });
+  return (
+    <div className="cx-conf pointer-events-none absolute inset-0" aria-hidden>
+      {bits.map((b, i) => <i key={i} style={{ background: b.c, animationDelay: `${b.delay}ms`, ["--x" as string]: `${b.x}px`, ["--y" as string]: `${b.y}px`, ["--r" as string]: `${b.r}deg` }} />)}
+    </div>
+  );
+}
+
+/** Bottom sheet on phones, centred dialog on desktop. */
+function CouponSheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", k);
+    const o = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", k); document.body.style.overflow = o; };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="Available coupons">
+      <div className="cx-sheet max-h-[80vh] w-full overflow-y-auto rounded-t-3xl bg-surface p-5 pb-8 shadow-2xl sm:max-w-md sm:rounded-3xl sm:pb-5" onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-rule-strong sm:hidden" aria-hidden />
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-base font-semibold">Available coupons</p>
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-paper-sunk">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Big mobile-number box: +91 with a flag, large digits, a tick when the number is valid. */
+function PhoneBox({ name, value, onChange, valid, invalid, autoFocus, onEnter }: {
+  name?: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; valid: boolean; invalid?: boolean; autoFocus?: boolean; onEnter?: () => void;
+}) {
+  return (
+    <div className={`flex h-14 items-center rounded-2xl border-2 bg-surface transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 ${invalid ? "border-red-300" : valid ? "border-emerald-400" : "border-rule-strong"}`}>
+      <span className="flex items-center gap-2 pl-4 pr-3 text-[16px] font-semibold">
+        <svg viewBox="0 0 30 20" className="h-[14px] w-[21px] overflow-hidden rounded-[3px] shadow-sm" aria-hidden>
+          <rect width="30" height="20" fill="#fff" /><rect width="30" height="6.67" fill="#FF9933" /><rect y="13.33" width="30" height="6.67" fill="#138808" />
+          <circle cx="15" cy="10" r="2.6" fill="none" stroke="#000080" strokeWidth=".8" />
+        </svg>
+        +91
+      </span>
+      <span className="h-6 w-px bg-rule-strong" aria-hidden />
+      <input name={name} type="tel" inputMode="numeric" autoComplete="tel-national" maxLength={10} required autoFocus={autoFocus}
+        className="num h-full min-w-0 flex-1 bg-transparent px-3 text-[18px] font-semibold tracking-[0.12em] outline-none placeholder:text-[15px] placeholder:font-normal placeholder:tracking-normal placeholder:text-ink-faint"
+        placeholder="Mobile number" value={value} onChange={onChange} aria-label="Mobile number" aria-invalid={invalid || undefined}
+        onKeyDown={(e) => { if (onEnter && e.key === "Enter") { e.preventDefault(); onEnter(); } }} />
+      {valid && <span className="cx-tick mr-4 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"><CheckIcon small /></span>}
+    </div>
+  );
+}
+
+const ico = (d: React.ReactNode, size = 18) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{d}</svg>
+);
+function CheckIcon({ small }: { small?: boolean }) { return ico(<path d="m5 12.5 4.5 4.5L19 7.5" />, small ? 14 : 18); }
+function HomeIcon() { return ico(<><path d="M3 11 12 4l9 7" /><path d="M5 10v10h14V10" /></>, 16); }
+function WorkIcon() { return ico(<><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>, 16); }
+function TagIcon() { return ico(<><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></>); }
+function CouponIcon() { return ico(<><path d="M3 8a2 2 0 0 0 0 4 2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z" /><path d="M14 6v12" strokeDasharray="2 2" /></>, 16); }
+function PinIcon() { return ico(<><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>, 20); }
 
 function LockIcon() {
   return (

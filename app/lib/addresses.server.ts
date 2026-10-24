@@ -12,6 +12,7 @@ export function toMasked(a: CustomerAddress): MaskedAddress {
     city: a.city,
     state: a.state,
     pincode: a.pincode,
+    label: a.label === "work" ? "work" : "home",
   };
 }
 
@@ -38,11 +39,12 @@ export async function saveOrderAddress(order: Order) {
     const values = {
       phone: c.phone, addrKey: key, firstName: c.firstName.slice(0, 80), lastName: (c.lastName ?? "").slice(0, 80), email: (c.email ?? "").slice(0, 160),
       address1: c.address1.slice(0, 300), address2: (c.address2 ?? "").slice(0, 300), city: c.city.slice(0, 80), state: c.state.slice(0, 4), pincode: c.pincode,
+      label: c.label === "work" ? "work" : "home",
       sourceStoreId: order.storeId, lastUsedAt: new Date(),
     };
     await db.insert(customerAddresses).values(values).onConflictDoUpdate({
       target: [customerAddresses.phone, customerAddresses.addrKey],
-      set: { firstName: values.firstName, lastName: values.lastName, email: sql`coalesce(nullif(${values.email}, ''), ${customerAddresses.email})`, address1: values.address1, address2: values.address2, city: values.city, state: values.state, lastUsedAt: values.lastUsedAt },
+      set: { firstName: values.firstName, lastName: values.lastName, email: sql`coalesce(nullif(${values.email}, ''), ${customerAddresses.email})`, address1: values.address1, address2: values.address2, city: values.city, state: values.state, label: values.label, lastUsedAt: values.lastUsedAt },
     });
     // Keep only the latest few per phone
     await db.execute(sql`delete from customer_addresses where phone = ${c.phone} and id not in (select id from customer_addresses where phone = ${c.phone} order by last_used_at desc limit ${MAX_PER_PHONE})`);

@@ -7,6 +7,7 @@ export type MaskedAddress = {
   city: string;
   state: string; // province code (full, needed for shipping and COD rules)
   pincode: string; // full (needed for shipping rules)
+  label: "home" | "work";
 };
 
 /** Masks the second half of each longer word: "Green Park Apartments" → "Gre** Pa** Apart*****". Short words stay. */

@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "shopify_push_at" timestamp with time zone;

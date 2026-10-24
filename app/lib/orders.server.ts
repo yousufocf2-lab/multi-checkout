@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, orders, paymentEvents, stores, type Order, type Store } from "~/db.server";
 import { fetchRefundedPaise, verifyPayment } from "./payu.server";
@@ -27,14 +27,28 @@ export async function getOrderWithStore(id: string) {
   return row ?? null;
 }
 
-/** Pushes the order to Shopify. Errors are saved on the order (retry from admin). */
+/**
+ * Pushes the order to Shopify once. Errors are saved on the order (retry from admin).
+ * A short lock (shopify_push_at) makes sure two requests at the same moment can't both create it.
+ */
 export async function pushToShopify(store: Store, order: Order) {
   if (order.shopifyOrderId) return order;
+  const [claimed] = await db.update(orders).set({ shopifyPushAt: new Date() })
+    .where(and(
+      eq(orders.id, order.id),
+      isNull(orders.shopifyOrderId),
+      or(isNull(orders.shopifyPushAt), lt(orders.shopifyPushAt, new Date(Date.now() - 2 * 60_000))),
+    )).returning();
+  if (!claimed) {
+    // someone else is creating it (or already did)
+    const [current] = await db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return current ?? order;
+  }
   try {
-    const created = await createShopifyOrder(store, order);
+    const created = await createShopifyOrder(store, claimed);
     const [updated] = await db
       .update(orders)
-      .set({ shopifyOrderId: created.id, shopifyOrderName: created.name, error: null, updatedAt: new Date() })
+      .set({ shopifyOrderId: created.id, shopifyOrderName: created.name, error: null, shopifyPushAt: null, updatedAt: new Date() })
       .where(eq(orders.id, order.id))
       .returning();
     return updated;
@@ -43,20 +57,28 @@ export async function pushToShopify(store: Store, order: Order) {
     console.error(`[shopify] order ${order.id} failed:`, msg);
     const [updated] = await db
       .update(orders)
-      .set({ error: msg.slice(0, 2000), updatedAt: new Date() })
+      .set({ error: msg.slice(0, 2000), shopifyPushAt: null, updatedAt: new Date() })
       .where(eq(orders.id, order.id))
       .returning();
     return updated;
   }
 }
 
+/** Statuses an order can be finalised from. */
+const OPEN_STATUSES = ["pending_payment", "failed", "cod_placing"];
+
 /** Marks a successful order (paid / COD placed), counts coupon use, creates it in Shopify. */
 export async function finalizeOrder(store: Store, order: Order, patch: Partial<Order>) {
+  // Only one caller wins: PayU's return, its webhook and the order page can all arrive in the same second
   const [updated] = await db
     .update(orders)
     .set({ ...patch, updatedAt: new Date() })
-    .where(eq(orders.id, order.id))
+    .where(and(eq(orders.id, order.id), inArray(orders.status, OPEN_STATUSES)))
     .returning();
+  if (!updated) {
+    const [current] = await db.select().from(orders).where(eq(orders.id, order.id)).limit(1);
+    return current ?? order;
+  }
   await incrementCouponUse(store.id, updated.couponCode);
   await recordOrderForCod(store.id, updated.customer.phone, updated.paymentMethod === "prepaid" ? "prepaid" : "cod");
   // Platform sale fee from the store's wallet (idempotent per order; never blocks the customer)
@@ -125,8 +147,9 @@ export async function syncOrderWithPayu(store: Store, order: Order, source: stri
     });
   }
   if (v.status === "failure" && order.status === "pending_payment") {
-    const [u] = await db.update(orders).set({ status: "failed", error: "Payment failed (confirmed with PayU)", updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
-    return u;
+    const [u] = await db.update(orders).set({ status: "failed", error: "Payment failed (confirmed with PayU)", updatedAt: new Date() })
+      .where(and(eq(orders.id, order.id), eq(orders.status, "pending_payment"))).returning();
+    return u ?? order;
   }
   if (order.status === "paid" && source === "webhook") await syncRefunds(store, order, source);
   return order;

@@ -43,7 +43,7 @@ export async function handlePayuReturn(f: Record<string, string>, source: string
       status: "failed", payuRaw: f, payuMihpayid: f.mihpayid ?? null,
       error: !hashOk ? "PayU hash mismatch" : !amountOk ? "Amount mismatch" : f.error_Message || f.field9 || f.status,
       updatedAt: new Date(),
-    }).where(eq(orders.id, order.id));
+    }).where(and(eq(orders.id, order.id), eq(orders.status, "pending_payment"))); // never overwrite a paid order
     return order.id;
   }
   // Bank offer: PayU debits less than `amount` when an offer_key was availed
