@@ -111,6 +111,7 @@ export default function DashboardLayout() {
           <Item to="/dashboard/orders" icon="orders">Orders</Item>
           <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>
           {stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
+          {viewer.role === "admin" && <Item to="/dashboard/marketing" icon="trend">Growpefy marketing</Item>}
         </Group>
         <Group label="Sell more">
           <Item to={storeHref("inbox")} icon="orders" match={/\/inbox$|next=inbox/}>WhatsApp inbox</Item>

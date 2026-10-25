@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { db, stores, users, type Store, type User } from "~/db.server";
 import { env } from "./env.server";
+import type { Attribution } from "./attribution";
 import { kycIncomplete } from "./kyc";
 
 const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -151,7 +152,7 @@ export async function findOwner(channel: "phone" | "email", target: string) {
 }
 
 /** OTP signup: brand name + mobile or email. Password is optional (null). KYC comes next. */
-export async function createOwner(input: { brandName: string; channel: "phone" | "email"; target: string }) {
+export async function createOwner(input: { brandName: string; channel: "phone" | "email"; target: string; attribution?: Attribution | null }) {
   const [u] = await db
     .insert(users)
     .values({
@@ -165,6 +166,7 @@ export async function createOwner(input: { brandName: string; channel: "phone" |
         ...(input.channel === "email" ? { email: input.target } : { phone: input.target, whatsapp: input.target }),
       },
       kycStatus: "pending",
+      attribution: input.attribution ?? null,
     })
     .returning();
   return u;

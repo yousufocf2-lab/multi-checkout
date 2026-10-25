@@ -1,5 +1,6 @@
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { callbackRequests, db, stores, supportMessages, supportTickets, users } from "~/db.server";
+import { readAttribution } from "./attribution";
 import type { Viewer } from "./auth.server";
 import { clientIp } from "./orders.server";
 import { CALL_TIMES, CALLBACK_REASONS, CALLBACK_STATUS, WEBSITE_REASONS, TICKET_CATEGORIES, TICKET_STATUS, type TicketStatus } from "./support";
@@ -52,13 +53,14 @@ export async function createCallback(request: Request, form: FormData, from: { s
     source: from.source, name, phone: ph!, email: email || null, reason, message: message || null,
     preferredTime: CALL_TIMES.some((t) => t.id === time) ? time : "anytime",
     storeId, userId: v?.role === "owner" ? v.userId : null, ip,
+    attribution: from.source === "website" ? readAttribution(request) : null,
   };
   if (open) {
     // keep details from the first request when the new one leaves them blank
-    const { email: em, message: msg, storeId: sid, userId: uid, ...rest } = values;
+    const { email: em, message: msg, storeId: sid, userId: uid, attribution: at, ...rest } = values;
     await db.update(callbackRequests).set({
       ...rest, createdAt: new Date(),
-      ...(em ? { email: em } : {}), ...(msg ? { message: msg } : {}), ...(sid ? { storeId: sid } : {}), ...(uid ? { userId: uid } : {}),
+      ...(em ? { email: em } : {}), ...(msg ? { message: msg } : {}), ...(sid ? { storeId: sid } : {}), ...(uid ? { userId: uid } : {}), ...(at ? { attribution: at } : {}),
     }).where(eq(callbackRequests.id, open.id));
     return { ok: true, id: open.id, message: "We already have your request and updated it. Our team will call you soon." };
   }
@@ -74,7 +76,7 @@ export async function listCallbacks(opts: { status?: string; userId?: number; li
   return db.select({
     id: callbackRequests.id, source: callbackRequests.source, name: callbackRequests.name, phone: callbackRequests.phone, email: callbackRequests.email,
     reason: callbackRequests.reason, message: callbackRequests.message, preferredTime: callbackRequests.preferredTime, status: callbackRequests.status,
-    adminNote: callbackRequests.adminNote, createdAt: callbackRequests.createdAt, handledAt: callbackRequests.handledAt, storeName: stores.name,
+    adminNote: callbackRequests.adminNote, channel: sql<string | null>`${callbackRequests.attribution}->>'channel'`, createdAt: callbackRequests.createdAt, handledAt: callbackRequests.handledAt, storeName: stores.name,
   }).from(callbackRequests).leftJoin(stores, eq(stores.id, callbackRequests.storeId)).where(where)
     .orderBy(sql`case ${callbackRequests.status} when 'new' then 0 when 'contacted' then 1 else 2 end`, desc(callbackRequests.createdAt)).limit(opts.limit ?? 100);
 }

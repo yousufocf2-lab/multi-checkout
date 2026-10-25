@@ -1,6 +1,7 @@
 // Growpefy's own Google Ads tag (for promoting Growpefy). Loaded only on the public website, signup and onboarding.
 // Not secret: the tag ID and label are visible in any page's source.
 import { useEffect } from "react";
+import { captureVisit } from "~/lib/attribution";
 
 export const ADS_TAG_ID = "AW-18535106225";
 const LEAD_LABEL = "yKdYCNK1nagdELGNnYZF"; // "Submit lead form" conversion
@@ -25,9 +26,9 @@ function load() {
   if (!w.__gpAdsTag) { window.gtag!("config", ADS_TAG_ID); w.__gpAdsTag = true; }
 }
 
-/** Loads the tag (also keeps the ad click ID so a later signup counts for the ad). */
+/** Loads the tag and remembers where this visitor came from (shown to the admin under Marketing). */
 export function useAdsTag() {
-  useEffect(() => { load(); }, []);
+  useEffect(() => { captureVisit(); load(); }, []);
 }
 
 /** Counts one lead (signup or callback). `key` makes sure the same lead is counted once per browser. */

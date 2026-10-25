@@ -18,6 +18,7 @@ import { sql } from "drizzle-orm";
 import type { CheckoutTheme } from "~/lib/theme";
 import type { KycData, KycStatus } from "~/lib/kyc";
 import type { RtoShieldSettings, ShipStatus } from "~/lib/rto-shield";
+import type { Attribution } from "~/lib/attribution";
 
 /** A product reference saved with rules / coupons / upsells (for display + matching). */
 export type ProductRef = { id: string; title: string; image: string | null };
@@ -34,6 +35,7 @@ export const users = pgTable("users", {
   kycStatus: text("kyc_status").$type<KycStatus>().notNull().default("pending"),
   kycSubmittedAt: timestamp("kyc_submitted_at", { withTimezone: true }),
   active: boolean("active").notNull().default(true),
+  attribution: jsonb("attribution").$type<Attribution>(), // where the signup came from (Growpefy's own marketing)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -659,6 +661,17 @@ export type MessagingSettings = {
   waRecoveryTemplate?: string; // abandoned cart: {{1}} customer name, {{2}} store, {{3}} items; URL button suffix = checkout id
 };
 export type DropshipZones = { A: number; B: number; C: number; D: number; E: number };
+/** Growpefy's own ad accounts (Super admin → Marketing). Tokens never leave the server. */
+export type MarketingSettings = {
+  metaAdAccountId?: string;
+  metaAccessToken?: string;
+  metaAccountName?: string;
+  googleRefreshToken?: string;
+  googleEmail?: string;
+  googleCustomerId?: string;
+  googleLoginCustomerId?: string | null;
+  googleAccountName?: string;
+};
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 
 /** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */
@@ -674,6 +687,7 @@ export const platformSettings = pgTable("platform_settings", {
   payuMode: text("payu_mode").notNull().default("test"),
   messaging: jsonb("messaging").$type<MessagingSettings>().notNull().default({}),
   dropshipZones: jsonb("dropship_zones").$type<Partial<DropshipZones>>().notNull().default({}), // paise per order
+  marketing: jsonb("marketing").$type<MarketingSettings>().notNull().default({}),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -752,6 +766,7 @@ export const callbackRequests = pgTable(
     status: text("status").notNull().default("new"), // new | contacted | closed
     adminNote: text("admin_note"),
     ip: text("ip"),
+    attribution: jsonb("attribution").$type<Attribution>(), // website requests: where the visitor came from
     handledAt: timestamp("handled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

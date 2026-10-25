@@ -1,4 +1,5 @@
 // Help & support. Store owners: request a callback or raise a complaint. Super admin: callbacks + complaints inbox.
+import { channelLabel } from "~/lib/attribution";
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
@@ -333,7 +334,7 @@ function CallbackCard({ c }: { c: D["callbacks"][number] }) {
           <p className="flex flex-wrap items-center gap-2 font-semibold">
             {c.name}
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CB_CHIP[c.status] ?? CB_CHIP.new}`}>{CALLBACK_STATUS[c.status as keyof typeof CALLBACK_STATUS] ?? c.status}</span>
-            <span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[11px] font-medium text-ink-soft">{c.source === "website" ? "Website" : c.storeName ? `Dashboard · ${c.storeName}` : "Dashboard"}</span>
+            <span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[11px] font-medium text-ink-soft">{c.source === "website" ? (c.channel ? `Website · ${channelLabel(c.channel)}` : "Website") : c.storeName ? `Dashboard · ${c.storeName}` : "Dashboard"}</span>
           </p>
           <p className="mt-1 text-sm"><span className="font-medium">{reasonLabel(c.reason)}</span><span className="text-ink-faint"> · {callTimeLabel(c.preferredTime)} · {when(c.createdAt)}</span></p>
           {c.message && <p className="mt-2 whitespace-pre-line rounded-lg bg-paper px-3 py-2 text-sm text-ink-soft">{c.message}</p>}
