@@ -6,7 +6,7 @@ export const CALLBACK_REASONS = [
   { id: "account", label: "Account & login" },
   { id: "checkout", label: "Checkout not opening / not working" },
   { id: "payments", label: "Payment gateway & settlements" },
-  { id: "orders", label: "Orders & Shopify sync" },
+  { id: "orders", label: "Orders & store sync" },
   { id: "rto", label: "RTO Suite & RTO Shield" },
   { id: "logistics", label: "Couriers & logistics" },
   { id: "wallet", label: "Wallet, recharge & GST invoice" },

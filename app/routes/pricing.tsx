@@ -13,14 +13,14 @@ export const meta: MetaFunction = () => siteMeta("Pricing Â· Growpefy checkout Â
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
 
 const INCLUDED = [
-  "Unlimited stores on one login (Shopify now, WooCommerce and custom sites soon)",
+  "Unlimited stores on one login: Shopify and WooCommerce",
   "Fast one-page checkout with your branding",
   "Up to 3 payment gateways with automatic backup",
   "Prepaid discounts, partial COD, coupons and bank offers",
   "Free gifts at checkout",
   "RTO Suite: OTP, COD wait time, block lists, WhatsApp confirmation",
   "Courier tracking, delivery performance and RTO Shield",
-  "Meta ads ROAS and cost per order",
+  "Meta and Google Ads: spend, ROAS, cost per order and which one works better",
   "Orders, abandoned checkouts and CSV exports",
   "Help & support with callbacks and tracked complaints",
 ];

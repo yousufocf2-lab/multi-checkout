@@ -41,7 +41,7 @@ export const productLd: Ld = {
   "@context": "https://schema.org", "@type": "SoftwareApplication", name: "Growpefy",
   applicationCategory: "BusinessApplication", applicationSubCategory: "Ecommerce checkout",
   operatingSystem: "Web", url: SITE_URL, image: `${SITE_URL}/brand/og-image.jpg`, publisher: { "@id": ORG_ID },
-  description: "One-page checkout for Shopify stores with COD and RTO controls, up to three payment gateways with automatic backup, offers, abandoned cart recovery and Meta and Google ads analytics.",
+  description: "One-page checkout for Shopify and WooCommerce stores with COD and RTO controls, up to three payment gateways with automatic backup, offers, abandoned cart recovery and Meta and Google ads analytics.",
   offers: { "@type": "Offer", price: "0", priceCurrency: "INR", description: "No setup fee or monthly plan. Prepaid wallet with a small fee per order." },
   featureList: [
     "One-page checkout", "COD verification with OTP", "RTO Shield using courier history", "Up to 3 payment gateways with automatic backup",

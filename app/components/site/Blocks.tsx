@@ -223,7 +223,7 @@ export function CourierRow() {
           <CourierLogo c={c} size={28} />{c.name}
         </span>
       ))}
-      <span className="flex items-center rounded-full bg-paper px-3 text-sm text-ink-soft">+ {SHOPIFY_COURIERS.length} more tracked from Shopify</span>
+      <span className="flex items-center rounded-full bg-paper px-3 text-sm text-ink-soft">+ {SHOPIFY_COURIERS.length} more tracked from your store orders</span>
     </div>
   );
 }
@@ -234,4 +234,18 @@ export function StatusPill({ live }: { live: boolean }) {
       <span className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-500" : "bg-amber-500"}`} />{live ? "Live" : "Coming soon"}
     </span>
   );
+}
+
+/** Brand logos for the platforms we work with (official files, shown as-is). Shopify always before WooCommerce. */
+export const BRAND_LOGOS = {
+  shopify: { src: "/brand/platforms/shopify.png", alt: "Shopify", ratio: 550 / 160 },
+  woocommerce: { src: "/brand/platforms/woocommerce.png", alt: "WooCommerce", ratio: 432 / 87 },
+  meta: { src: "/brand/ads/meta.png", alt: "Meta", ratio: 413 / 96 },
+  google: { src: "/brand/ads/google-ads.png", alt: "Google Ads", ratio: 256 / 96 },
+} as const;
+export type BrandKey = keyof typeof BRAND_LOGOS;
+
+export function BrandLogo({ id, h = 24, className = "" }: { id: BrandKey; h?: number; className?: string }) {
+  const b = BRAND_LOGOS[id];
+  return <img src={b.src} alt={b.alt} height={h} width={Math.round(h * b.ratio)} loading="lazy" style={{ height: h, width: "auto" }} className={`inline-block ${className}`} />;
 }

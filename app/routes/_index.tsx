@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { CourierLogo } from "~/components/CourierLogo";
 import { Icon, type IconName } from "~/components/Icons";
 import {
-  API_COURIERS, CourierRow, CtaBand, Faq, GATEWAY_TILES, GatewayFallback, GatewayTile, IconTile, RateCard, SectionHead, StatusPill, WalletDemo,
+  API_COURIERS, BrandLogo, CourierRow, CtaBand, Faq, GATEWAY_TILES, GatewayFallback, GatewayTile, IconTile, RateCard, SectionHead, StatusPill, WalletDemo,
 } from "~/components/site/Blocks";
 import { SiteLayout, faqLd, productLd, rv, siteMeta, verifyMeta } from "~/components/site/SiteLayout";
 import { db, stores } from "~/db.server";
@@ -15,8 +15,8 @@ import { siteData } from "~/lib/site.server";
 import { checkoutRoot, isAppHost, requestHost, slugFromHost } from "~/lib/urls.server";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [
-  ...siteMeta("Growpefy · Shopify checkout with COD & RTO control, multiple payment gateways",
-    "One-page checkout for Shopify stores in India: COD verification and RTO control, up to 3 payment gateways with automatic backup, prepaid offers, WhatsApp cart recovery and Meta + Google ads analytics. No monthly fee.",
+  ...siteMeta("Growpefy · Shopify & WooCommerce checkout with COD & RTO control",
+    "One-page checkout for Shopify and WooCommerce stores in India: COD verification and RTO control, up to 3 payment gateways with automatic backup, prepaid offers, WhatsApp cart recovery and Meta + Google Ads analytics. No monthly fee.",
     "/", { ld: [productLd, faqLd(FAQ)] }),
   ...verifyMeta(data?.verify),
 ];
@@ -34,8 +34,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
 }
 
 const FAQ: [string, string][] = [
-  ["How long does setup take?", "Most Shopify stores go live in an afternoon: connect the store, add your payment gateway keys, set your COD and offer rules, then add one script to your theme. Our team can help you through it on a call."],
-  ["Which platforms are supported?", "Shopify is live today: Checkout and Buy Now open Growpefy, and every order is created back in Shopify. WooCommerce and custom-built websites are coming soon."],
+  ["How long does setup take?", "Most stores go live in an afternoon: connect the store, add your payment gateway keys and set your COD and offer rules. On Shopify you add one script to your theme; on WooCommerce you install our plugin. Our team can help you through it on a call."],
+  ["Which platforms are supported?", "Shopify and WooCommerce are both live. On Shopify, Checkout and Buy Now open Growpefy; on WooCommerce, our plugin sends the Checkout page to Growpefy. Every order is created back in your store with items, discounts and stock. Custom-built websites are coming soon."],
+  ["Can I see my Meta and Google ads in Growpefy?", "Yes. Connect Meta Ads and Google Ads to see spend, cost per order and ROAS next to your real checkout orders, and which platform is working better. Purchases are sent back to Meta (Conversions API) and Google Ads so both can optimise."],
   ["Which payment gateways can I connect?", "PayU, Razorpay, Cashfree Payments, PhonePe, Paytm, Easebuzz and CCAvenue, using your own merchant account so money settles straight to your bank. You can connect up to three and choose the order: if the primary can't take a payment, the next one is used."],
   ["What does Growpefy charge?", "There's no monthly plan or setup fee. You recharge a prepaid wallet and a small fee is deducted per order placed through the checkout. OTPs and WhatsApp messages are charged only when sent. The full rate card is on the pricing page."],
   ["How do wallet credits and GST work?", "You pay the recharge amount plus 18% GST, and the full recharge amount is added to your wallet. Every recharge comes with a GST tax invoice you can download from the dashboard."],
@@ -55,6 +56,7 @@ export default function Home() {
       <Tour />
       <UseCases />
       <Integrations />
+      <AdsBand />
 
       {/* Wallet & pricing */}
       <section className="border-y border-rule bg-paper/70">
@@ -108,10 +110,15 @@ function Hero({ loggedIn }: { loggedIn: boolean }) {
           <div className="mt-8 border-t border-rule pt-5">
             <p className="text-xs font-medium text-ink-faint">Built for growing ecommerce brands</p>
             <ul className="mt-2.5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink-soft">
-              {[["globe", "Live on Shopify"], ["rupee", `${GATEWAY_TILES.length} payment gateways`], ["shipping", `${API_COURIERS.length} courier APIs + Shopify tracking`]].map(([i, t]) => (
+              {[["rupee", `${GATEWAY_TILES.length} payment gateways`], ["shipping", `${API_COURIERS.length} courier APIs`], ["ads", "Meta + Google Ads analytics"]].map(([i, t]) => (
                 <li key={t} className="flex items-center gap-1.5"><Icon name={i as IconName} className="h-4 w-4 text-pine" />{t}</li>
               ))}
             </ul>
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <span className="text-xs font-medium text-ink-faint">Live on</span>
+              <BrandLogo id="shopify" h={26} />
+              <BrandLogo id="woocommerce" h={20} />
+            </div>
           </div>
         </div>
         <HeroVisual />
@@ -202,10 +209,12 @@ function ProofStrip() {
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <p className="text-center text-xs font-semibold uppercase tracking-[.14em] text-ink-faint" {...rv()}>Works with the tools you already use</p>
         <div className="mt-5 flex flex-wrap items-center justify-center gap-x-8 gap-y-4" {...rv(1)}>
-          <span className="logo-mute flex items-center gap-2 text-[15px] font-bold text-[#5E8E3E]"><Icon name="bag" className="h-5 w-5" />Shopify</span>
+          <span className="logo-mute"><BrandLogo id="shopify" h={28} /></span>
+          <span className="logo-mute"><BrandLogo id="woocommerce" h={22} /></span>
+          <span className="logo-mute"><BrandLogo id="meta" h={22} /></span>
+          <span className="logo-mute"><BrandLogo id="google" h={26} /></span>
           {GATEWAY_TILES.filter((g) => g.logo).map((g) => <img key={g.id} src={g.logo} alt={g.name} loading="lazy" className="logo-mute h-6 w-auto" />)}
           {API_COURIERS.slice(0, 3).map((c) => <span key={c.id} className="logo-mute flex items-center gap-2 text-sm font-semibold"><CourierLogo c={c} size={26} />{c.name}</span>)}
-          <span className="logo-mute flex items-center gap-2 text-sm font-semibold text-[#0866FF]"><Icon name="ads" className="h-5 w-5" />Meta Ads</span>
           <span className="logo-mute flex items-center gap-2 text-sm font-semibold text-[#128C7E]"><Icon name="chat" className="h-5 w-5" />WhatsApp</span>
         </div>
       </div>
@@ -321,10 +330,10 @@ function MiniChart() {
 // ---------------- 05 Walkthrough ----------------
 
 const TOUR: { icon: IconName; title: string; text: string; pane: () => JSX.Element }[] = [
-  { icon: "stores", title: "Connect your store", text: "Sign up and connect Shopify. Products, prices and stock stay where they are.", pane: PaneConnect },
+  { icon: "stores", title: "Connect your store", text: "Sign up and connect Shopify or WooCommerce. Products, prices and stock stay where they are.", pane: PaneConnect },
   { icon: "rupee", title: "Add payments & gateways", text: "Add up to three gateways in priority order and set prepaid discounts and COD charges.", pane: PaneGateways },
   { icon: "shield", title: "Set COD & offer rules", text: "OTP, block lists, courier-based COD rules, coupons, bank offers and free gifts.", pane: PaneRules },
-  { icon: "zap", title: "Go live", text: "Add one script to your theme. Checkout and Buy Now open Growpefy, orders land back in Shopify.", pane: PaneLive },
+  { icon: "zap", title: "Go live", text: "Shopify: add one script to your theme. WooCommerce: install our plugin. Checkout opens Growpefy and orders land back in your store.", pane: PaneLive },
 ];
 const STEP_MS = 6000;
 
@@ -397,12 +406,12 @@ function PaneConnect() {
     <Browser title="growpefy.com/dashboard/stores/new">
       <p className="text-sm font-semibold">Connect your store</p>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-        {[["Shopify", true], ["WooCommerce", false], ["Custom site", false]].map(([n, live]) => (
-          <div key={n as string} className={`rounded-xl border p-3 ${live ? "border-pine bg-pine-tint" : "border-rule text-ink-faint"}`}><Icon name={live ? "bag" : "globe"} className="mx-auto h-5 w-5" /><p className="mt-1.5 font-semibold">{n}</p><p className="text-[10px]">{live ? "Live" : "Soon"}</p></div>
-        ))}
+        <div className="flex flex-col items-center justify-center rounded-xl border border-pine bg-pine-tint p-3"><span className="flex h-6 items-center"><BrandLogo id="shopify" h={18} /></span><p className="mt-1.5 text-[10px] font-semibold text-pine">Live</p></div>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-pine bg-pine-tint p-3"><span className="flex h-6 items-center"><BrandLogo id="woocommerce" h={13} /></span><p className="mt-1.5 text-[10px] font-semibold text-pine">Live</p></div>
+        <div className="rounded-xl border border-rule p-3 text-ink-faint"><Icon name="globe" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Custom site</p><p className="text-[10px]">Soon</p></div>
       </div>
-      <div className="mt-3 rounded-lg border border-rule px-3 py-2 text-xs text-ink-soft">yourstore.myshopify.com</div>
-      <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"><Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />Products and stock synced from Shopify</div>
+      <div className="mt-3 rounded-lg border border-rule px-3 py-2 text-xs text-ink-soft">yourstore.myshopify.com · or your WordPress site</div>
+      <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"><Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />Products and stock read live from your store</div>
     </Browser>
   );
 }
@@ -446,7 +455,7 @@ function PaneLive() {
       <pre className="overflow-x-auto rounded-lg bg-[#0B1A16] p-3 text-[11px] leading-relaxed text-slate-300"><span className="text-slate-500">{"<!-- Growpefy checkout -->"}</span>{"\n"}<span className="text-emerald-300">{"<script"}</span> <span className="text-sky-300">src</span>=<span className="text-amber-200">"https://growpefy.com/embed.js"</span><span className="text-emerald-300">{"></script>"}</span></pre>
       <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
         <span className="pulse flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white"><Icon name="check" className="h-4 w-4" strokeWidth={2.4} /></span>
-        <div className="text-xs"><p className="font-semibold text-emerald-900">Checkout is live</p><p className="text-emerald-800">New orders appear in Shopify as usual</p></div>
+        <div className="text-xs"><p className="font-semibold text-emerald-900">Checkout is live</p><p className="text-emerald-800">New orders appear in Shopify or WooCommerce as usual</p></div>
       </div>
     </Browser>
   );
@@ -456,7 +465,7 @@ function PaneLive() {
 
 function UseCases() {
   const items: [IconName, string, string][] = [
-    ["sparkle", "New Shopify store", "Launch with a polished checkout, prepaid offers and OTP from day one, without stitching apps together."],
+    ["sparkle", "New Shopify or WooCommerce store", "Launch with a polished checkout, prepaid offers and OTP from day one, without stitching apps together."],
     ["shield", "High-COD store", "Keep COD open for genuine buyers while OTP, block lists and courier history filter out repeat refusers."],
     ["stores", "Multi-store operator", "Run several stores from one login with one view of orders, wallets and ad performance."],
     ["trend", "Growing D2C brand", "Add backup gateways, recover abandoned checkouts and see cost per order as you scale ad spend."],
@@ -507,19 +516,74 @@ function Integrations() {
         </div>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-          <div className="spot group rounded-2xl border border-rule bg-white p-6" {...rv(1)}>
-            <div className="flex items-center gap-3"><IconTile icon="shipping" tone="mint" /><div><h3 className="font-semibold">Couriers</h3><p className="text-sm text-ink-soft">Live API tracking or read from Shopify, no API needed</p></div></div>
+          <div className="spot group min-w-0 rounded-2xl border border-rule bg-white p-6" {...rv(1)}>
+            <div className="flex items-center gap-3"><IconTile icon="shipping" tone="mint" /><div><h3 className="font-semibold">Couriers</h3><p className="text-sm text-ink-soft">Live API tracking, or read from your store orders with no API</p></div></div>
             <div className="mt-5"><CourierRow /></div>
             <p className="mt-4 text-xs text-ink-faint">Delivered and RTO rates per courier, shipment filters, and delivery history feeding RTO Shield.</p>
           </div>
-          <div className="spot group rounded-2xl border border-rule bg-white p-6" {...rv(2)}>
+          <div className="spot group min-w-0 rounded-2xl border border-rule bg-white p-6" {...rv(2)}>
             <div className="flex items-center gap-3"><IconTile icon="plug" tone="violet" /><div><h3 className="font-semibold">Platforms & marketing</h3><p className="text-sm text-ink-soft">Where you sell and advertise</p></div></div>
             <ul className="mt-5 divide-y divide-rule text-sm">
-              {([["Shopify", true], ["Meta Ads analytics", true], ["WhatsApp messages & recovery", true], ["WooCommerce", false], ["Custom websites", false]] as const).map(([n, live]) => (
+              {([["shopify", "Store platform", 22], ["woocommerce", "Store platform", 16], ["meta", "Ads, Pixel & Conversions API", 18], ["google", "Ads & conversion uploads", 22]] as const).map(([id, what, h]) => (
+                <li key={id} className="flex items-center justify-between gap-3 py-2.5"><span className="flex min-w-0 items-center gap-3"><span className="flex w-[104px] shrink-0 items-center"><BrandLogo id={id} h={h} /></span><span className="truncate text-xs text-ink-soft">{what}</span></span><StatusPill live /></li>
+              ))}
+              {([["WhatsApp messages & recovery", true], ["Custom websites", false]] as const).map(([n, live]) => (
                 <li key={n} className="flex items-center justify-between gap-3 py-2.5"><span className="font-medium">{n}</span><StatusPill live={live} /></li>
               ))}
             </ul>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------- 08 Ads ----------------
+
+/** Meta + Google Ads in one place: spend, cost per order, which one works better. */
+function AdsBand() {
+  const points: [IconName, string, string][] = [
+    ["ads", "Both ad accounts, one view", "Spend, ROAS and cost per order from Meta and Google Ads next to your real checkout orders."],
+    ["trend", "See which one works", "Growpefy compares cost per order and tells you whether Meta or Google is doing better."],
+    ["send", "Purchases sent back", "Orders go to Meta (Pixel + Conversions API) and Google Ads, including COD, so both optimise for buyers."],
+  ];
+  return (
+    <section className="border-t border-rule bg-gradient-to-b from-paper/70 to-white">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[1fr_1.05fr]">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine" {...rv()}>Ads analytics</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-[40px] sm:leading-[1.1]" {...rv(1)}>Know which ads actually bring orders.</h2>
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3" {...rv(1)}><BrandLogo id="meta" h={26} /><BrandLogo id="google" h={32} /></div>
+          <ul className="mt-8 space-y-5">
+            {points.map(([icon, t, x], i) => (
+              <li key={t} className="flex gap-4" {...rv(i + 2)}>
+                <IconTile icon={icon} tone={(["blue", "mint", "violet"] as const)[i]} />
+                <div><p className="font-semibold">{t}</p><p className="mt-1 text-sm leading-relaxed text-ink-soft">{x}</p></div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="spot rounded-3xl border border-rule bg-white p-5 shadow-lift sm:p-7" {...rv(2)}>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">Meta vs Google · Last 30 days</p>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-good"><Icon name="trend" className="h-3.5 w-3.5" />Google is 22% cheaper per order</span>
+          </div>
+          <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-paper-sunk"><div className="w-[58%] bg-[#0866FF]" /><div className="w-[42%] bg-[#F2A900]" /></div>
+          <p className="mt-1.5 flex justify-between text-[11px] text-ink-faint"><span>Meta 58% of spend</span><span>Google 42% of spend</span></p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            {([["meta", 22, "₹58,400", "412", "₹142", "3.4x", false], ["google", 28, "₹42,300", "382", "₹111", "4.1x", true]] as const).map(([id, h, spend, orders, cpo, roas, better]) => (
+              <div key={id} className={`rounded-2xl border p-4 ${better ? "border-emerald-200 bg-emerald-50/40" : "border-rule"}`}>
+                <div className="flex h-8 items-center justify-between gap-2"><BrandLogo id={id} h={h} />{better && <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Better</span>}</div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 text-sm">
+                  <div><dt className="text-[11px] text-ink-soft">Spend</dt><dd className="num font-semibold">{spend}</dd></div>
+                  <div><dt className="text-[11px] text-ink-soft">Orders</dt><dd className="num font-semibold">{orders}</dd></div>
+                  <div><dt className="text-[11px] text-ink-soft">Cost / order</dt><dd className="num font-semibold">{cpo}</dd></div>
+                  <div><dt className="text-[11px] text-ink-soft">ROAS</dt><dd className="num font-semibold">{roas}</dd></div>
+                </dl>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[11px] text-ink-faint">Sample numbers for illustration.</p>
         </div>
       </div>
     </section>
@@ -533,7 +597,7 @@ function Security() {
     ["rupee", "Your money, your gateway", "Customers pay into your own gateway account. Settlements go straight to your bank."],
     ["lock", "Keys stay on the server", "Gateway and courier keys are stored server-side and never sent to the browser."],
     ["check", "Payments verified server-side", "Every payment is confirmed with the gateway before an order is marked paid."],
-    ["layers", "No duplicate orders", "Each paid checkout creates exactly one order in Shopify, even if confirmations arrive twice."],
+    ["layers", "No duplicate orders", "Each paid checkout creates exactly one order in your store, even if confirmations arrive twice."],
     ["shield", "Saved addresses behind OTP", "Returning customers see their saved address only after verifying their mobile number."],
     ["help", "People you can reach", "Request a callback or raise a complaint from your dashboard and track every reply."],
   ];
