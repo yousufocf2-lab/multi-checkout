@@ -1,7 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { requireStore, requireViewer } from "~/lib/auth.server";
-import { searchProducts } from "~/lib/shopify.server";
+import { searchProducts, storeConnected } from "~/lib/platform.server";
 
 /** JSON product search for the dashboard product picker. */
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -11,6 +11,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const items = await searchProducts(store, q);
     return json({ products: items.map((p) => ({ id: p.id, title: p.title, image: p.image })) });
   } catch (e) {
-    return json({ products: [], error: store.adminToken ? (e instanceof Error ? e.message : "Search failed") : "Connect Shopify first (Setup tab)" });
+    return json({ products: [], error: storeConnected(store) ? (e instanceof Error ? e.message : "Search failed") : "Connect your store first (Setup tab)" });
   }
 }

@@ -4,22 +4,22 @@ import { Spinner } from "./ui";
 import { codeLength, widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "./msg91-widget";
 
 /** Mobile / Email switch with one input. Submits as "contact". */
-export function ContactInput({ mode, setMode, defaultValue, error }: { mode: "phone" | "email"; setMode: (m: "phone" | "email") => void; defaultValue?: string; error?: string }) {
+export function ContactInput({ mode, setMode, defaultValue, error, phoneOnly }: { mode: "phone" | "email"; setMode: (m: "phone" | "email") => void; defaultValue?: string; error?: string; phoneOnly?: boolean }) {
   const [value, setValue] = useState(defaultValue && (defaultValue.includes("@") ? mode === "email" : mode === "phone") ? defaultValue : "");
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="label mb-0">{mode === "phone" ? "Mobile number" : "Email"}</span>
-        <div className="flex rounded-lg bg-paper-sunk p-0.5 text-xs font-medium" role="tablist" aria-label="Sign in with">
+        {!phoneOnly && <div className="flex rounded-lg bg-paper-sunk p-0.5 text-xs font-medium" role="tablist" aria-label="Sign in with">
           {(["phone", "email"] as const).map((m) => (
             <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => { setMode(m); setValue(""); }}
               className={`rounded-md px-3 py-1 transition ${mode === m ? "bg-surface text-ink shadow-sm" : "text-ink-soft hover:text-ink"}`}>
               {m === "phone" ? "Mobile" : "Email"}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
-      {mode === "phone" ? (
+      {mode === "phone" || phoneOnly ? (
         <div className="flex">
           <span className="flex items-center rounded-l-lg border border-r-0 border-rule-strong bg-paper px-3 text-[15px] text-ink-soft">+91</span>
           <input name="contact" inputMode="numeric" autoComplete="tel-national" maxLength={10} className="input rounded-l-none" placeholder="10-digit mobile number"

@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     isAdmin: viewer.role === "admin",
     stores: list.map((s) => ({
       id: s.id, name: s.name, domain: s.checkoutDomain ?? s.shopDomain, active: s.active, logoUrl: s.logoUrl,
-      shopifyReady: Boolean(s.adminToken), payuReady: Boolean(s.payuKey && s.payuSalt), adsReady: Boolean((s.metaAdAccountId && s.metaAccessToken) || (s.googleRefreshToken && s.googleAdsCustomerId)),
+      shopifyReady: s.platform === "woocommerce" ? Boolean(s.wooSecret) : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : "Shopify", payuReady: Boolean(s.payuKey && s.payuSalt), adsReady: Boolean((s.metaAdAccountId && s.metaAccessToken) || (s.googleRefreshToken && s.googleAdsCustomerId)),
       orders: by.get(s.id)?.count ?? 0, revenue: Number(by.get(s.id)?.revenue ?? 0) / 100,
       owner: s.ownerId ? ownerName.get(s.ownerId) ?? null : null,
     })),
@@ -50,7 +50,7 @@ export default function StoresList() {
   return (
     <>
       <PageHeader title={picking ? "Choose a store" : "All stores"}
-        description={picking ? `Pick the store whose ${SECTIONS[next]} you want to manage. You can switch any time from the store menu.` : "Every Shopify store connected to your checkout."}
+        description={picking ? `Pick the store whose ${SECTIONS[next]} you want to manage. You can switch any time from the store menu.` : "Every Shopify and WooCommerce store connected to your checkout."}
         actions={!picking && <Link to="/dashboard/stores/new" className="btn-primary"><Icon name="plus" className="h-4 w-4" />Connect a store</Link>} />
       {stores.length === 0 ? (
         <EmptyState title="No stores connected" action={<Link to="/dashboard/stores/new" className="btn-primary">Connect a store</Link>}>
@@ -71,7 +71,7 @@ export default function StoresList() {
                 <StatusBadge status={s.active ? "live" : "off"} />
               </Link>
               <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
-                <Check ok={s.shopifyReady} label="Shopify" /><Check ok={s.payuReady} label="PayU" /><Check ok={s.adsReady} label="Meta ads" />
+                <Check ok={s.shopifyReady} label={s.platform} /><Check ok={s.payuReady} label="PayU" /><Check ok={s.adsReady} label="Meta ads" />
               </div>
               <dl className="num mt-4 grid grid-cols-2 gap-3 border-t border-rule pt-3 text-sm">
                 <div><dt className="text-xs text-ink-faint">Orders</dt><dd className="font-semibold">{s.orders.toLocaleString("en-IN")}</dd></div>

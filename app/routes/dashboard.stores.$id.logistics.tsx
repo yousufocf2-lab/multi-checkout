@@ -1,4 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { platformName, storeConnected } from "~/lib/platform.server";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
 import { useEffect, useMemo, useState } from "react";
@@ -28,12 +29,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   ]);
   return json({
     storeId: store.id,
-    shopify: Boolean(store.adminToken || (store.clientId && store.clientSecret)),
+    shopify: storeConnected(store),
+    platform: platformName(store),
     hookUrl: `${env.appUrl}/api/shipnex/${store.id}`,
     accounts: accounts.map((a) => ({
       courier: a.courier, status: a.status, lastError: a.lastError,
       viaShopify: Boolean(a.creds.viaShopify),
-      who: a.courier === "shipnex" ? null : a.creds.viaShopify ? "Tracked from Shopify" : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
+      who: a.courier === "shipnex" ? null : a.creds.viaShopify ? `Tracked from ${platformName(store)}` : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
       clientName: a.creds.clientName ?? a.creds.label ?? null,
       secret: a.courier === "shipnex" ? a.creds.token ?? null : null,
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
@@ -92,13 +94,13 @@ const TILES: { s: ShipStatus; dot: string }[] = [
 
 const KIND_TAG: Record<CourierInfo["kind"], { t: string; cls: string }> = {
   api: { t: "Live API", cls: "bg-emerald-50 text-emerald-700" },
-  shopify: { t: "Via Shopify", cls: "bg-sky-50 text-sky-700" },
+  shopify: { t: "Via store orders", cls: "bg-sky-50 text-sky-700" },
   push: { t: "Live push", cls: "bg-violet-50 text-violet-700" },
 };
 
 const GROUPS: { key: string; title: string; text: string; test: (c: CourierInfo) => boolean }[] = [
   { key: "api", title: "Live API", text: "We log in to the courier and read every scan.", test: (c) => c.kind === "api" },
-  { key: "shopify", title: "Tracked from Shopify", text: "No login needed. We read the delivery status your courier app sends to Shopify.", test: (c) => c.kind === "shopify" && c.id !== "other" },
+  { key: "shopify", title: "Tracked from your store", text: "No login needed. We read the delivery status your courier app adds to your Shopify or WooCommerce orders.", test: (c) => c.kind === "shopify" && c.id !== "other" },
   { key: "more", title: "Other & Shipnex", text: "Not in the list? Add it as Other. Shipping with Shipnex? It pushes updates to us live.", test: (c) => c.id === "other" || c.kind === "push" },
 ];
 
@@ -125,14 +127,14 @@ export default function Logistics() {
           <CourierLogo c={justConnected} size={40} />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">{justConnected.name} connected. RTO Shield is unlocked 🛡️</p>
-            <p className="text-xs text-ink-soft">{justConnected.kind === "push" ? "Share the webhook link below with Shipnex." : "We pick up AWBs from your Shopify orders and refresh them every hour."}</p>
+            <p className="text-xs text-ink-soft">{justConnected.kind === "push" ? "Share the webhook link below with Shipnex." : `We pick up AWBs from your ${d.platform} orders and refresh them every hour.`}</p>
           </div>
           <Link to={`/dashboard/stores/${d.storeId}/rto-shield`} className="btn-primary text-sm">Set up RTO Shield →</Link>
         </div>
       )}
       {r?.ok && r.ok !== "connected" && <Notice tone="success">{r.ok}</Notice>}
       {r?.error && !r.courier && <Notice tone="error">{r.error}</Notice>}
-      {!d.shopify && <Notice tone="warning">Connect Shopify first (Settings → Store settings). We read AWB numbers from your Shopify order fulfillments.</Notice>}
+      {!d.shopify && <Notice tone="warning">Connect {d.platform} first (Setup). We read AWB numbers from your {d.platform} orders.</Notice>}
 
       {mine.length > 0 && (
         <section className="panel p-5">
@@ -330,10 +332,10 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">Don't want to share an API {c.fields?.some((f) => f.name === "token") ? "token" : "login"}?</p>
-                  <p className="text-xs text-ink-soft">Just turn {c.name} on. We read each order's AWB and delivery status from Shopify, the way your {c.name} app updates it. Updates come a little slower than the live API.</p>
+                  <p className="text-xs text-ink-soft">Just turn {c.name} on. We read each order's AWB and delivery status from your store orders, the way your {c.name} app updates them. Updates come a little slower than the live API.</p>
                 </div>
                 <button type="submit" name="intent" value="connect" className="btn-secondary shrink-0 px-4 py-2 text-sm" disabled={busy}>
-                  {a?.viaShopify ? "On · tracked from Shopify" : "Turn on without API"}
+                  {a?.viaShopify ? "On · tracked from store orders" : "Turn on without API"}
                 </button>
               </div>
             </Form>

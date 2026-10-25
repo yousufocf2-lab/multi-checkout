@@ -30,7 +30,7 @@ const STATUS_TABS = [
 const METHODS = [{ id: "", label: "All payments" }, { id: "prepaid", label: "Prepaid" }, { id: "cod", label: "COD" }, { id: "partial", label: "Partial COD" }];
 const TAGS = [
   { id: "", label: "Any" }, { id: "coupon", label: "Coupon used" }, { id: "bank", label: "Bank offer used" },
-  { id: "refunded", label: "Refunded" }, { id: "not_synced", label: "Not in Shopify" },
+  { id: "refunded", label: "Refunded" }, { id: "not_synced", label: "Not in store" },
   { id: "paid_shipping", label: "Paid delivery" }, { id: "free_shipping", label: "Free delivery" },
 ];
 
@@ -173,7 +173,7 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
           <ul className="space-y-2.5 sm:hidden">{orders.map((o) => <OrderCard key={o.id} o={o} showStore={showStore} />)}</ul>
           <div className="panel hidden overflow-x-auto sm:block">
             <table className="table min-w-[880px]">
-              <thead><tr><th>Order</th>{showStore && <th>Store</th>}<th>Customer</th><th>Payment</th><th className="text-right">Amount</th><th>Shopify</th><th /></tr></thead>
+              <thead><tr><th>Order</th>{showStore && <th>Store</th>}<th>Customer</th><th>Payment</th><th className="text-right">Amount</th><th>Store order</th><th /></tr></thead>
               <tbody>{orders.map((o) => <OrderRowView key={o.id} o={o} showStore={showStore} />)}</tbody>
             </table>
           </div>
@@ -312,7 +312,7 @@ function OrderDetails({ o }: { o: OrderRow }) {
         <div className="flex flex-wrap gap-2 pt-1">
           {okStatus && !o.shopifyOrderId && (
             <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
-              <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to Shopify</SubmitButton></Form>
+              <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to store</SubmitButton></Form>
           )}
           {o.paymentMethod !== "cod" && (
             <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />

@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db, freeOffers, type FreeOffer, type Store } from "~/db.server";
 import type { PaymentMethod, PricedLine } from "./pricing";
-import { fetchUpsellProducts } from "./shopify.server";
+import { fetchUpsellProducts } from "./platform.server";
 
 export type FreeLine = PricedLine & { free: true; offer: string };
 export type OfferHint = { offer: string; need: number; gifts: string };
@@ -26,7 +26,7 @@ const allows = (o: FreeOffer, m: PaymentMethod) => o.paymentRestriction === "any
 export async function freeGiftsFor(store: Store, paid: PricedLine[], offers?: FreeOffer[]) {
   const list = offers ?? (await activeOffers(store.id));
   const empty = { prepaid: [] as FreeLine[], cod: [] as FreeLine[], hints: [] as OfferHint[] };
-  if (!list.length || !paid.length || !store.adminToken) return empty;
+  if (!list.length || !paid.length || !(store.platform === "woocommerce" ? store.wooSecret : store.adminToken)) return empty;
 
   const won = list
     .map((o) => {

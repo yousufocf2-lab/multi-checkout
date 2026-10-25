@@ -24,7 +24,7 @@ import {
   bankOfferEstimate, computePricing, formatINR, lineOff, mixBlocksPayment, mixTitle,
   type BankOfferRule, type CouponRule, type PaymentMethod, type PricedLine, type StoreRule,
 } from "~/lib/pricing";
-import { fetchLines, fetchUpsellProducts } from "~/lib/shopify.server";
+import { fetchLines, fetchUpsellProducts } from "~/lib/platform.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
@@ -122,7 +122,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }).where(eq(checkoutSessions.id, session.id));
 
   let upsell: { productId: string; title: string; image: string | null; variants: { id: string; title: string; pricePaise: number; comparePaise: number | null }[] }[] = [];
-  if (store.upsellEnabled && store.adminToken) {
+  if (store.upsellEnabled && (store.platform === "woocommerce" ? store.wooSecret : store.adminToken)) {
     const inCart = new Set(lines.map((l) => l.productId));
     try {
       const products = await fetchUpsellProducts(store, store.upsellProducts.map((p) => p.id));

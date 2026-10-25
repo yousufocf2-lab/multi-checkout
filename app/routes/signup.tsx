@@ -6,7 +6,7 @@ import { BusyOverlay } from "~/components/Brand";
 import { AuthShell } from "~/components/AuthShell";
 import { ContactInput, OtpStep } from "~/components/OtpAuth";
 import { Notice, SubmitButton, TextField } from "~/components/ui";
-import { adminEmail, createOwner, findOwner, getViewer, signupOpen, startSession } from "~/lib/auth.server";
+import { createOwner, findOwner, getViewer, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { clientIp } from "~/lib/orders.server";
 import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
@@ -46,8 +46,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
   const errors: Data["errors"] = {};
   if (brand.length < 2) errors.brand = "Enter your brand name";
-  if (!c) errors.contact = rawContact.includes("@") ? "Enter a valid email address" : "Enter a valid 10-digit mobile number";
-  else if (c.channel === "email" && c.target === adminEmail()) errors.contact = "Use a different email";
+  // New accounts always confirm a mobile number with an OTP (stops sign-ups with made-up numbers)
+  if (!c || c.channel !== "phone") errors.contact = "Enter a valid 10-digit mobile number";
   else if (await findOwner(c.channel, c.target)) errors.contact = `An account with this ${c.channel === "phone" ? "number" : "email"} already exists. Log in instead.`;
   if (Object.keys(errors).length || !c) return json<Data>({ ...base, errors }, { status: 400 });
 
@@ -69,7 +69,7 @@ export default function Signup() {
   const data = useActionData<typeof action>();
   const nav = useNavigation();
   const e = data?.errors ?? {};
-  const [mode, setMode] = useState<"phone" | "email">(data?.contact?.includes("@") ? "email" : "phone");
+  const [mode, setMode] = useState<"phone" | "email">("phone");
   const [stage, setStage] = useState<"start" | "otp">(data?.stage ?? "start");
   useEffect(() => { if (data?.stage) setStage(data.stage); }, [data]);
   const verifying = nav.state !== "idle" && nav.formData?.get("intent") === "verify";
@@ -87,7 +87,8 @@ export default function Signup() {
             <input type="hidden" name="intent" value="send" />
             {e.form && <Notice tone="error">{e.form}</Notice>}
             <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
-            <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} error={e.contact} />
+            <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} error={e.contact} phoneOnly />
+            <p className="-mt-2 text-xs text-ink-faint">We'll send a one-time code to confirm it. You can add your email in the next step.</p>
             <SubmitButton className="btn-primary w-full py-3" busyText="Sending code">Get OTP</SubmitButton>
             <p className="text-center text-xs text-ink-faint">By continuing you agree to our <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy" className="underline">Privacy policy</Link>.</p>
           </Form>

@@ -155,3 +155,26 @@ export function touchSummary(t: Touch | undefined) {
   if (t.t) bits.push(`“${t.t}”`);
   return bits.join(" · ");
 }
+
+/** Broad buckets for filters: which ad platform, free (organic) traffic, or direct. */
+export type SourceGroup = "google" | "meta" | "other_ads" | "organic" | "other" | "direct" | "untracked";
+export const SOURCE_GROUPS: { id: SourceGroup; label: string }[] = [
+  { id: "google", label: "Google Ads" },
+  { id: "meta", label: "Meta Ads" },
+  { id: "organic", label: "Organic" },
+  { id: "direct", label: "Direct" },
+  { id: "other", label: "WhatsApp / email / other" },
+  { id: "other_ads", label: "Other ads" },
+  { id: "untracked", label: "Before tracking" },
+];
+export function sourceGroup(c: string | null | undefined): SourceGroup {
+  switch (c) {
+    case "google_ads": return "google";
+    case "meta_ads": return "meta";
+    case "other_ads": return "other_ads";
+    case "google_search": case "other_search": case "social": case "referral": return "organic";
+    case "whatsapp": case "email": case "campaign": return "other";
+    case "direct": return "direct";
+    default: return "untracked";
+  }
+}

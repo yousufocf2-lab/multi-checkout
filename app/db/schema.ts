@@ -116,7 +116,8 @@ export const stores = pgTable("stores", {
   ownerId: integer("owner_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
-  shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com
+  platform: text("platform").$type<"shopify" | "woocommerce">().notNull().default("shopify"),
+  shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com (WooCommerce: the site's host)
   storefrontUrl: text("storefront_url").notNull(), // https://brand.com
   checkoutDomain: text("checkout_domain").unique(), // e.g. checkout.brand.com (CNAME -> Railway)
   // Shopify auth: either a static Admin API token (shpat_...) or client id + secret
@@ -124,6 +125,8 @@ export const stores = pgTable("stores", {
   clientId: text("client_id"),
   clientSecret: text("client_secret"),
   apiVersion: text("api_version").notNull().default("2025-07"),
+  // WooCommerce: shared secret for the Growpefy plugin (signs every request both ways)
+  wooSecret: text("woo_secret"),
   // Branding
   logoUrl: text("logo_url"),
   primaryColor: text("primary_color").notNull().default("#111827"),
@@ -767,6 +770,7 @@ export const callbackRequests = pgTable(
     adminNote: text("admin_note"),
     ip: text("ip"),
     attribution: jsonb("attribution").$type<Attribution>(), // website requests: where the visitor came from
+    phoneVerified: boolean("phone_verified").notNull().default(false), // mobile confirmed with an OTP
     handledAt: timestamp("handled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

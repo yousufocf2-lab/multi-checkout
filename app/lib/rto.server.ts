@@ -5,7 +5,7 @@ import { BLOCK_KINDS, normValue, type BlockKind } from "./blocklist";
 import { env } from "./env.server";
 import { formatINR } from "./pricing";
 import { chargeUsage, getPlatform, getWallet } from "./wallet.server";
-import { cancelShopifyOrder, tagShopifyOrder } from "./shopify.server";
+import { cancelStoreOrder, tagStoreOrder } from "./platform.server";
 import { logOutbound } from "./inbox.server";
 
 // ---------------- providers (platform level; Growpefy pays them and bills the wallet) ----------------
@@ -367,10 +367,10 @@ export async function handleWhatsappReply(msg: WaMessage) {
 
   await db.update(orders).set({ confirmStatus: status, confirmAt: new Date(), updatedAt: new Date() }).where(eq(orders.id, row.id));
   if (row.shopifyOrderId) {
-    const err = await tagShopifyOrder(store, row.shopifyOrderId, [action === "confirm" ? "WA Confirmed" : "WA Cancelled"]);
+    const err = await tagStoreOrder(store, row.shopifyOrderId, [action === "confirm" ? "WA Confirmed" : "WA Cancelled"]);
     if (err) console.error(`[whatsapp] tag ${row.id}:`, err);
     if (action === "cancel" && store.confirmAutoCancel && row.paymentMethod === "cod") {
-      const cErr = await cancelShopifyOrder(store, row.shopifyOrderId, "Cancelled by the customer on WhatsApp (Growpefy)");
+      const cErr = await cancelStoreOrder(store, row.shopifyOrderId, "Cancelled by the customer on WhatsApp (Growpefy)");
       if (cErr) console.error(`[whatsapp] cancel ${row.id}:`, cErr);
     }
   }

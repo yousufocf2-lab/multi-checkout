@@ -3,10 +3,11 @@ import { appHost, checkoutRoot, cleanDomain } from "./urls.server";
 import type { StoreGateway } from "~/db/schema";
 import { MAX_GATEWAYS, gatewayById } from "./gateways/catalog";
 import { storeGateways } from "./gateways/index.server";
+import { newWooSecret } from "./woo.server";
 
 export type StoreInput = Pick<
   Store,
-  | "name" | "slug" | "shopDomain" | "storefrontUrl" | "checkoutDomain" | "active"
+  | "name" | "slug" | "platform" | "shopDomain" | "storefrontUrl" | "checkoutDomain" | "active" | "wooSecret"
   | "adminToken" | "clientId" | "clientSecret" | "apiVersion"
   | "payuKey" | "payuSalt" | "payuMode" | "payuViaStorefront" | "gateways"
   | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
@@ -20,13 +21,19 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   const secret = (k: string, old: string | null | undefined) => s(k) || old || null;
   const on = (k: string) => fd.get(k) === "on";
   const errors: Record<string, string> = {};
-
+  // the platform is picked once, when the store is connected
+  const platform: Store["platform"] = existing ? existing.platform : s("platform") === "woocommerce" ? "woocommerce" : "shopify";
+  const woo = platform === "woocommerce";
+  const site = s("storefrontUrl").replace(/\/+$/, "");
 
   const data: StoreInput = {
     name: s("name"),
+    platform,
+    // WooCommerce: a fresh secret on connect (or when asked); the plugin signs every request with it
+    wooSecret: woo ? (on("rotateWooSecret") || !existing?.wooSecret ? newWooSecret() : existing.wooSecret) : existing?.wooSecret ?? null,
     slug: s("slug").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""),
-    shopDomain: s("shopDomain").replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase(),
-    storefrontUrl: s("storefrontUrl").replace(/\/+$/, ""),
+    shopDomain: (woo ? site : s("shopDomain")).replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase(),
+    storefrontUrl: site,
     checkoutDomain: s("checkoutDomain") ? cleanDomain(s("checkoutDomain")) : null,
     active: on("active"),
     adminToken: on("clearAdminToken") ? null : secret("adminToken", existing?.adminToken),
@@ -38,7 +45,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuSalt: null,
     payuMode: "test",
     gateways: [],
-    payuViaStorefront: on("payuViaStorefront"),
+    payuViaStorefront: woo ? false : on("payuViaStorefront"),
     // COD on/off now lives in Payment methods; new stores start with COD on
     codEnabled: existing?.codEnabled ?? true,
     // COD wait time and repeat-COD rules now live in the RTO Suite page
@@ -81,14 +88,15 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
 
   if (!data.name) errors.name = "Enter the store name";
   if (!data.slug) errors.slug = "Enter a short ID, e.g. budverse";
-  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
+  if (!woo && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
+  if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://budverse.in";
   if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://budverse.in";
   if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Enter only the domain, e.g. checkout.budverse.in";
   if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Use your store's own subdomain, not the platform domain";
   const root = checkoutRoot();
   if (data.checkoutDomain && root && (data.checkoutDomain === root || data.checkoutDomain.endsWith(`.${root}`))) errors.checkoutDomain = "Leave this empty to use your free checkout address. Only add a domain you own.";
   if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
-  if (!data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
+  if (!woo && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
 
   return { data, errors };
 }

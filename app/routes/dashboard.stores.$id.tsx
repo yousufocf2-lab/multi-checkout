@@ -13,7 +13,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const s = await requireStore(viewer, params.id);
   const w = await getWallet(s.id);
   const locked = viewer.role !== "admin" && (stateOf(w) === "locked" || w.status === "suspended");
-  return json({ locked, balance: w.balancePaise, store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: Boolean(s.adminToken) } });
+  return json({ locked, balance: w.balancePaise, store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : "Shopify" } });
 }
 
 const TITLES: Record<string, { title: string; description: string }> = {
@@ -25,13 +25,13 @@ const TITLES: Record<string, { title: string; description: string }> = {
   offers: { title: "Bank offers", description: "Card and bank offers shown at checkout (applied by PayU's offer engine)." },
   gifts: { title: "Free gifts & deals", description: "Mix & Match, Buy 1 get 1, Buy 2 get 1 and other free gift offers." },
   shipping: { title: "Shipping", description: "Delivery charges by location, order value and payment method." },
-  settings: { title: "Store settings", description: "Shopify, payment gateways and Meta ads for this store." },
+  settings: { title: "Store settings", description: "Store connection, payment gateways and Meta ads for this store." },
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout." },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation." },
   logistics: { title: "Logistics", description: "Connect one or more couriers to track shipments and unlock RTO Shield. Optional." },
   "rto-shield": { title: "RTO Shield", description: "Block COD or orders based on a customer's delivery history." },
   wallet: { title: "Wallet", description: "Prepaid balance for sale fees, OTP and WhatsApp messages." },
-  install: { title: "Setup", description: "Connect Shopify, payments, webhooks and your theme." },
+  install: { title: "Setup", description: "Connect your store, payments, webhooks and the checkout button." },
 };
 
 /** Pages an owner can't open while the wallet is past its negative limit. Checkout itself never stops. */
@@ -54,7 +54,7 @@ export default function StoreLayout() {
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-soft">
               <span className="font-medium text-ink">{store.name}</span>
               <StatusBadge status={store.active ? "live" : "off"} />
-              {!store.connected && <StatusBadge status="pending_payment" label="Shopify not connected" />}
+              {!store.connected && <StatusBadge status="pending_payment" label={`${store.platform} not connected`} />}
               <span className="hidden truncate text-ink-faint sm:inline">{t.description}</span>
             </p>
           </div>

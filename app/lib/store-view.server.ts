@@ -5,7 +5,7 @@ import { storeGateways } from "./gateways/index.server";
 /** Store fields safe to send to the browser (secrets replaced by "saved" flags; admin-only fields left out). */
 export function storeForClient(s: Store) {
   // dropshipping is admin-only and must never reach the store owner's browser
-  const { adminToken, clientSecret, payuSalt, metaAccessToken, metaCapiToken, googleRefreshToken, dropshipEnabled: _d, dropship: _ds, gateways: _g, ...safe } = s;
+  const { adminToken, clientSecret, wooSecret, payuSalt, metaAccessToken, metaCapiToken, googleRefreshToken, dropshipEnabled: _d, dropship: _ds, gateways: _g, ...safe } = s;
   // Gateways: public fields as they are, secrets only as "saved"
   const gatewayViews = storeGateways(s).map((g) => {
     const info = gatewayById(g.id);
@@ -22,6 +22,7 @@ export function storeForClient(s: Store) {
     createdAt: s.createdAt.toISOString(),
     hasAdminToken: Boolean(adminToken),
     hasClientSecret: Boolean(clientSecret),
+    hasWooSecret: Boolean(wooSecret),
     hasPayuSalt: Boolean(payuSalt),
     gatewayViews,
     webhookBase: (process.env.APP_URL ?? "").replace(/\/+$/, ""),

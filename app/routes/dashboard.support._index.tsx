@@ -1,5 +1,5 @@
-// Help & support. Store owners: request a callback or raise a complaint. Super admin: callbacks + complaints inbox.
-import { channelLabel } from "~/lib/attribution";
+// Help & support. Store owners: request a callback or raise a complaint.
+// Super admin: Leads (website callbacks + signups, with their source), store callbacks, complaints.
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
@@ -12,12 +12,17 @@ import {
   CALL_TIMES, CALLBACK_REASONS, CALLBACK_STATUS, SUPPORT_EMAIL, SUPPORT_HOURS, TICKET_CATEGORIES, TICKET_CHIP, TICKET_STATUS,
   callTimeLabel, reasonLabel,
 } from "~/lib/support";
-import { createCallback, createTicket, listCallbacks, listTickets, ownerContactFor, updateCallback } from "~/lib/support.server";
+import { CHANNELS, SOURCE_GROUPS, channelLabel, sourceGroup, touchSummary, type Channel } from "~/lib/attribution";
+import { createCallback, createTicket, listCallbacks, listSignupLeads, listTickets, ownerContactFor, updateCallback } from "~/lib/support.server";
 
 export const meta: MetaFunction = () => [{ title: "Help & support · Growpefy" }, { name: "robots", content: "noindex" }];
 
 type CbRow = Awaited<ReturnType<typeof listCallbacks>>[number];
-const cbOut = (c: CbRow) => ({ ...c, createdAt: c.createdAt.toISOString(), handledAt: c.handledAt?.toISOString() ?? null });
+const cbOut = ({ attribution: at, ...c }: CbRow) => ({
+  ...c, createdAt: c.createdAt.toISOString(), handledAt: c.handledAt?.toISOString() ?? null,
+  via: touchSummary(at?.last ?? at?.first), landing: (at?.last ?? at?.first)?.lp ?? null,
+  firstVia: at?.first && at?.last && at.first.at !== at.last.at ? touchSummary(at.first) : null,
+});
 type StoreOpt = { id: number; name: string };
 
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -25,19 +30,32 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const iso = <T extends { createdAt: Date }>(r: T) => ({ ...r, createdAt: r.createdAt.toISOString() });
   if (v.role === "admin") {
-    const tab = url.searchParams.get("tab") === "complaints" ? "complaints" : "callbacks";
+    const t = url.searchParams.get("tab");
+    const tab = t === "complaints" ? "complaints" : t === "store" ? "store" : "leads";
+    const lk = url.searchParams.get("lk") === "signups" ? "signups" : "callbacks";
+    const src = url.searchParams.get("src") ?? "all";
     const cbStatus = url.searchParams.get("cb") ?? "new";
     const tkStatus = url.searchParams.get("tk") ?? "active";
-    const [callbacks, tickets, newCount, activeTickets] = await Promise.all([
-      tab === "callbacks" ? listCallbacks({ status: cbStatus }) : Promise.resolve([]),
+    const [callbacks, signups, tickets, newLeads, newStore, activeTickets] = await Promise.all([
+      tab === "leads" && lk === "callbacks" ? listCallbacks({ status: cbStatus, source: "website", limit: 300 })
+        : tab === "store" ? listCallbacks({ status: cbStatus, source: "dashboard" }) : Promise.resolve([]),
+      tab === "leads" && lk === "signups" ? listSignupLeads(200) : Promise.resolve([]),
       tab === "complaints" ? listTickets(v, { status: tkStatus }) : Promise.resolve([]),
-      listCallbacks({ status: "new", limit: 500 }).then((r) => r.length),
-      listTickets(v, { status: "active" }).then((r) => r.filter((t) => t.lastBy === "owner").length),
+      listCallbacks({ status: "new", source: "website", limit: 500 }).then((r) => r.length),
+      listCallbacks({ status: "new", source: "dashboard", limit: 500 }).then((r) => r.length),
+      listTickets(v, { status: "active" }).then((r) => r.filter((x) => x.lastBy === "owner").length),
     ]);
+    const bySrc = <T extends { channel?: string | null }>(rows: T[]) => (tab === "leads" && src !== "all" ? rows.filter((r) => sourceGroup(r.channel) === src) : rows);
+    const signupRows = signups.map((u) => ({
+      id: u.id, name: u.name, phone: u.phone, email: u.email, verified: u.signupWith === "phone", kycStatus: u.kycStatus, stores: Number(u.stores),
+      channel: u.attribution?.channel ?? null, via: touchSummary(u.attribution?.last ?? u.attribution?.first), landing: (u.attribution?.last ?? u.attribution?.first)?.lp ?? null,
+      createdAt: u.createdAt.toISOString(),
+    }));
     return json({
-      admin: true as const, tab, cbStatus, tkStatus, newCount, activeTickets,
-      callbacks: callbacks.map(cbOut),
-      tickets: tickets.map((t) => ({ ...iso(t), updatedAt: t.updatedAt.toISOString(), unread: t.lastBy === "owner" && (!t.adminSeenAt || t.adminSeenAt < t.updatedAt) })),
+      admin: true as const, tab, lk, src, cbStatus, tkStatus, newCount: newLeads, newStore, activeTickets,
+      callbacks: bySrc(callbacks.map(cbOut)),
+      signups: bySrc(signupRows),
+      tickets: tickets.map((x) => ({ ...iso(x), updatedAt: x.updatedAt.toISOString(), unread: x.lastBy === "owner" && (!x.adminSeenAt || x.adminSeenAt < x.updatedAt) })),
       me: null as { name: string; phone: string; email: string } | null, stores: [] as StoreOpt[], selected: null as number | null, myCallbacks: [] as ReturnType<typeof cbOut>[],
     });
   }
@@ -45,7 +63,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ownerContactFor(v.userId), viewerStores(v), listTickets(v), listCallbacks({ userId: v.userId, limit: 5 }), selectedStore(request),
   ]);
   return json({
-    admin: false as const, tab: "", cbStatus: "", tkStatus: "", newCount: 0, activeTickets: 0, callbacks: [] as ReturnType<typeof cbOut>[],
+    admin: false as const, tab: "", lk: "", src: "", cbStatus: "", tkStatus: "", newCount: 0, newStore: 0, activeTickets: 0, callbacks: [] as ReturnType<typeof cbOut>[],
+    signups: [] as { id: number; name: string; phone: string | null; email: string | null; verified: boolean; kycStatus: string; stores: number; channel: string | null; via: string; landing: string | null; createdAt: string }[],
     me: { name: me?.name ?? v.name, phone: me?.phone ?? "", email: me?.email ?? "" },
     stores: list.map((s): StoreOpt => ({ id: s.id, name: s.name })), selected: selected ?? null,
     tickets: tickets.map((t) => ({ ...iso(t), updatedAt: t.updatedAt.toISOString(), unread: t.lastBy === "admin" && (!t.ownerSeenAt || t.ownerSeenAt < t.updatedAt) })),
@@ -57,7 +76,12 @@ export async function action({ request }: ActionFunctionArgs) {
   const v = await requireViewer(request);
   const fd = await request.formData();
   const intent = String(fd.get("intent") ?? "");
-  if (intent === "callback") return json({ intent, ...(await createCallback(request, fd, { source: "dashboard", viewer: v })) });
+  if (intent === "callback") {
+    // the owner's own login number was confirmed with an OTP at signup
+    const mine = v.role === "owner" ? (await ownerContactFor(v.userId))?.phone : null;
+    const verified = Boolean(mine && String(fd.get("phone") ?? "").replace(/\D/g, "").endsWith(mine));
+    return json({ intent, ...(await createCallback(request, fd, { source: "dashboard", viewer: v, verified })) });
+  }
   if (intent === "complaint") {
     if (v.role !== "owner") return json({ intent, ok: false as const, errors: { form: "Only store owners raise complaints" } as Record<string, string> });
     return json({ intent, ...(await createTicket(v, fd)) });
@@ -280,21 +304,49 @@ function TicketRow({ t, admin = false }: { t: D["tickets"][number]; admin?: bool
 function AdminInbox({ d }: { d: D }) {
   const [sp, setSp] = useSearchParams();
   const go = (patch: Record<string, string | null>) => { const n = new URLSearchParams(sp); for (const [k, v] of Object.entries(patch)) { if (v == null) n.delete(k); else n.set(k, v); } setSp(n, { preventScrollReset: true }); };
+  const tabs = [["leads", "Leads", d.newCount], ["store", "Store callbacks", d.newStore], ["complaints", "Complaints", d.activeTickets]] as const;
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="Support inbox" description="Callback requests from the website and dashboards, and complaints raised by stores." />
-      <div className="mb-4 flex gap-1 border-b border-rule">
-        {([["callbacks", "Callbacks", d.newCount], ["complaints", "Complaints", d.activeTickets]] as const).map(([id, label, n]) => (
-          <button key={id} type="button" onClick={() => go({ tab: id === "callbacks" ? null : id })}
-            className={`-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition ${d.tab === id ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>
+      <PageHeader title="Support inbox" description="Sales leads from the website, callback requests from stores, and complaints." />
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-rule">
+        {tabs.map(([id, label, n]) => (
+          <button key={id} type="button" onClick={() => go({ tab: id === "leads" ? null : id, cb: null, src: null, lk: null })}
+            className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition ${d.tab === id ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>
             {label}{n > 0 && <span className="num rounded-full bg-pine px-1.5 text-[11px] font-semibold text-white">{n}</span>}
           </button>
         ))}
       </div>
-      {d.tab === "callbacks" ? (
+      {d.tab === "leads" ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-1 rounded-lg bg-paper-sunk p-1 text-xs font-medium">
+              {([["callbacks", "Callback requests"], ["signups", "Signups"]] as const).map(([k, l]) => (
+                <button key={k} type="button" onClick={() => go({ lk: k === "callbacks" ? null : k })} className={`rounded-md px-3 py-1.5 ${d.lk === k ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"}`}>{l}</button>
+              ))}
+            </div>
+            <Link to="/dashboard/marketing" className="text-xs font-medium text-pine hover:underline">See ad spend and cost per lead</Link>
+          </div>
+          <div className="mb-1 flex flex-wrap items-center gap-x-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Source</div>
+          <Filters value={d.src} options={[["all", "All sources"], ...SOURCE_GROUPS.map((g) => [g.id, g.label] as const)]} onPick={(v) => go({ src: v === "all" ? null : v })} />
+          {d.lk === "callbacks" ? (
+            <>
+              <Filters value={d.cbStatus} options={[["new", "New"], ["contacted", "Contacted"], ["closed", "Closed"], ["all", "All"]]} onPick={(v) => go({ cb: v === "new" ? null : v })} />
+              {d.callbacks.length === 0 ? <p className="panel px-5 py-10 text-center text-sm text-ink-faint">No leads here.</p> : (
+                <ul className="space-y-3">{d.callbacks.map((c) => <CallbackCard key={c.id} c={c} lead />)}</ul>
+              )}
+            </>
+          ) : (
+            <section className="panel overflow-hidden">
+              {d.signups.length === 0 ? <p className="px-5 py-10 text-center text-sm text-ink-faint">No signups here.</p> : (
+                <ul className="divide-y divide-rule">{d.signups.map((u) => <SignupRow key={u.id} u={u} />)}</ul>
+              )}
+            </section>
+          )}
+        </>
+      ) : d.tab === "store" ? (
         <>
           <Filters value={d.cbStatus} options={[["new", "New"], ["contacted", "Contacted"], ["closed", "Closed"], ["all", "All"]]} onPick={(v) => go({ cb: v === "new" ? null : v })} />
-          {d.callbacks.length === 0 ? <p className="panel px-5 py-10 text-center text-sm text-ink-faint">No callback requests here.</p> : (
+          {d.callbacks.length === 0 ? <p className="panel px-5 py-10 text-center text-sm text-ink-faint">No callback requests from stores.</p> : (
             <ul className="space-y-3">{d.callbacks.map((c) => <CallbackCard key={c.id} c={c} />)}</ul>
           )}
         </>
@@ -312,6 +364,40 @@ function AdminInbox({ d }: { d: D }) {
   );
 }
 
+/** Source chip: colour of the channel, "Paid" for ad platforms. */
+function SourceChip({ channel }: { channel: string | null }) {
+  const c = CHANNELS[(channel ?? "untracked") as Channel | "untracked"] ?? CHANNELS.untracked;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-rule bg-white px-2 py-0.5 text-[11px] font-semibold text-ink">
+      <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />{c.label}{c.paid && <span className="rounded bg-amber-50 px-1 text-[9px] font-bold uppercase text-amber-800">Paid</span>}
+    </span>
+  );
+}
+
+function Verified({ yes }: { yes: boolean }) {
+  return yes
+    ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-good"><Icon name="check" className="h-3 w-3" />Number verified</span>
+    : <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"><Icon name="alert" className="h-3 w-3" />Not verified</span>;
+}
+
+function SignupRow({ u }: { u: D["signups"][number] }) {
+  const kyc: Record<string, string> = { pending: "KYC pending", submitted: "KYC submitted", approved: "KYC approved", rejected: "KYC rejected" };
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-50 text-sky-700"><Icon name="users" className="h-4 w-4" /></span>
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">{u.name}<Verified yes={u.verified} /><span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[11px] font-medium text-ink-soft">{kyc[u.kycStatus] ?? u.kycStatus}{u.stores ? ` · ${u.stores} store${u.stores === 1 ? "" : "s"}` : ""}</span></p>
+        <p className="mt-0.5 truncate text-xs text-ink-soft">{[u.phone ? `+91 ${u.phone}` : null, u.email].filter(Boolean).join(" · ")} · {when(u.createdAt)}</p>
+      </div>
+      <div className="min-w-0 text-right">
+        <SourceChip channel={u.channel} />
+        {u.via && <p className="mt-0.5 max-w-[280px] truncate text-[11px] text-ink-faint" title={u.via}>{u.via}{u.landing ? ` · landed on ${u.landing}` : ""}</p>}
+      </div>
+      {u.phone && <a href={`tel:+91${u.phone}`} className="btn-quiet h-8 px-2.5 text-xs"><Icon name="phone" className="h-3.5 w-3.5" />Call</a>}
+    </li>
+  );
+}
+
 function Filters({ value, options, onPick }: { value: string; options: (readonly [string, string])[]; onPick: (v: string) => void }) {
   return (
     <div className="mb-4 flex gap-1.5 overflow-x-auto">
@@ -323,7 +409,7 @@ function Filters({ value, options, onPick }: { value: string; options: (readonly
   );
 }
 
-function CallbackCard({ c }: { c: D["callbacks"][number] }) {
+function CallbackCard({ c, lead }: { c: D["callbacks"][number]; lead?: boolean }) {
   const nav = useNavigation();
   const busy = nav.state === "submitting" && nav.formData?.get("id") === String(c.id);
   const [status, setStatus] = useState(c.status);
@@ -334,8 +420,15 @@ function CallbackCard({ c }: { c: D["callbacks"][number] }) {
           <p className="flex flex-wrap items-center gap-2 font-semibold">
             {c.name}
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CB_CHIP[c.status] ?? CB_CHIP.new}`}>{CALLBACK_STATUS[c.status as keyof typeof CALLBACK_STATUS] ?? c.status}</span>
-            <span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[11px] font-medium text-ink-soft">{c.source === "website" ? (c.channel ? `Website · ${channelLabel(c.channel)}` : "Website") : c.storeName ? `Dashboard · ${c.storeName}` : "Dashboard"}</span>
+            {lead ? <SourceChip channel={c.channel} /> : <span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[11px] font-medium text-ink-soft">{c.source === "website" ? (c.channel ? `Website · ${channelLabel(c.channel)}` : "Website") : c.storeName ? `Dashboard · ${c.storeName}` : "Dashboard"}</span>}
+            <Verified yes={c.phoneVerified} />
           </p>
+          {lead && (c.via || c.landing) && (
+            <p className="mt-1 text-xs text-ink-faint">
+              {c.via && <>Came from <span className="font-medium text-ink-soft">{c.via}</span></>}{c.landing ? <>{c.via ? " · " : ""}landed on <span className="font-medium text-ink-soft">{c.landing}</span></> : null}
+              {c.firstVia && <> · first visit: {c.firstVia}</>}
+            </p>
+          )}
           <p className="mt-1 text-sm"><span className="font-medium">{reasonLabel(c.reason)}</span><span className="text-ink-faint"> · {callTimeLabel(c.preferredTime)} · {when(c.createdAt)}</span></p>
           {c.message && <p className="mt-2 whitespace-pre-line rounded-lg bg-paper px-3 py-2 text-sm text-ink-soft">{c.message}</p>}
         </div>

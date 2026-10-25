@@ -489,7 +489,7 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
               : <>Confirm / Cancel buttons aren't switched on in Messaging yet, so customers only get the order details.</>}
             <label className="mt-2 flex cursor-pointer items-start gap-2">
               <input type="checkbox" name="autoCancel" defaultChecked={d.confirm.autoCancel} className="mt-0.5 h-4 w-4" />
-              <span><b className="text-ink">Cancel COD orders in Shopify</b> when the customer taps Cancel (items go back to stock). Prepaid and Partial COD orders are only tagged, since they need a refund.</span>
+              <span><b className="text-ink">Cancel COD orders in your store</b> when the customer taps Cancel (items go back to stock). Prepaid and Partial COD orders are only tagged, since they need a refund.</span>
             </label>
           </div>
         )}

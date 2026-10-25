@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { checkoutSessions, db, stores } from "~/db.server";
 import { storeBaseUrl } from "~/lib/urls.server";
 import { clientIp } from "~/lib/orders.server";
+import { wooVerify } from "~/lib/woo.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -20,19 +21,24 @@ export const loader = () => reply({ error: "POST only" }, 405);
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-  let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown; gclid?: unknown; gbraid?: unknown; wbraid?: unknown };
+  let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown; gclid?: unknown; gbraid?: unknown; wbraid?: unknown; ip?: unknown; ua?: unknown };
+  const raw = await request.text();
   try {
-    body = JSON.parse(await request.text());
+    body = JSON.parse(raw);
   } catch {
     return reply({ error: "bad json" }, 400);
   }
 
   const [store] = await db
-    .select({ id: stores.id, slug: stores.slug, checkoutDomain: stores.checkoutDomain })
+    .select({ id: stores.id, slug: stores.slug, checkoutDomain: stores.checkoutDomain, platform: stores.platform, wooSecret: stores.wooSecret })
     .from(stores)
     .where(and(eq(stores.slug, String(body.store ?? "")), eq(stores.active, true)))
     .limit(1);
   if (!store) return reply({ error: "store not found" }, 404);
+  // WooCommerce: the plugin calls us from the server and signs the request, so we can trust the shopper's IP / browser it sends
+  const signed = store.platform === "woocommerce" && wooVerify(store.wooSecret, request.headers.get("x-growpefy-time"), request.headers.get("x-growpefy-signature"), raw);
+  const ip = signed && typeof body.ip === "string" && /^[\d.:a-fA-F]{3,45}$/.test(body.ip) ? body.ip : clientIp(request);
+  const ua = signed ? clip(body.ua, 500) : request.headers.get("user-agent")?.slice(0, 500) ?? undefined;
 
   // Merge duplicates, validate shape
   const merged = new Map<string, number>();
@@ -56,11 +62,11 @@ export async function action({ request }: ActionFunctionArgs) {
       gbraid: clickId(body.gbraid),
       wbraid: clickId(body.wbraid),
       sourceUrl: clip(body.url, 500),
-      ip: clientIp(request),
-      ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined,
+      ip,
+      ua,
     },
   });
-  return reply({ url: `${storeBaseUrl(store)}/c/${id}` });
+  return reply({ url: `${storeBaseUrl(store)}/c/${id}`, id });
 }
 
 /** Google click IDs are URL-safe tokens; anything else is ignored. */

@@ -6,7 +6,7 @@ import { env } from "./env.server";
 import { messaging, otpMode, otpReady, verifyWidgetToken, widgetPublic } from "./rto.server";
 
 export type Channel = "phone" | "email";
-export type Purpose = "signup" | "login" | "reset" | "verify";
+export type Purpose = "signup" | "login" | "reset" | "verify" | "callback";
 
 const TTL_MS = 10 * 60_000;
 const RESEND_AFTER_MS = 30_000;
@@ -78,7 +78,7 @@ async function sendEmail(to: string, code: string) {
 
 export async function sendOwnerOtp(c: { channel: Channel; target: string }, purpose: Purpose, ip?: string): Promise<{ ok: true; resendIn: number } | { ok: false; error: string; resendIn?: number }> {
   if (!(await channelReady(c.channel))) {
-    return { ok: false, error: c.channel === "phone" ? "SMS codes aren't available right now. Use your email instead." : "Email codes aren't available right now. Use your mobile number instead." };
+    return { ok: false, error: c.channel === "phone" ? "SMS codes aren't available right now. Please try again in a few minutes." : "Email codes aren't available right now. Use your mobile number instead." };
   }
   const hourAgo = new Date(Date.now() - 3600_000);
   const recent = await db.select({ createdAt: ownerOtps.createdAt }).from(ownerOtps)

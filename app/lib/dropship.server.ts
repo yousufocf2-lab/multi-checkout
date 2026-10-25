@@ -11,7 +11,7 @@ import {
   type DropshipLine, type DropshipOrder, type Order, type OrderCustomer, type Store,
 } from "~/db.server";
 import { FULFIL_AFTER_HOURS, PRODUCT_REFUND_HOURS, cancelRefund, skuKey, zoneFor, zoneRates, type Zone } from "./dropship";
-import { fetchFulfillmentTracking, fetchVariantSkus, fulfilShopifyOrder, orderGid } from "./shopify.server";
+import { fetchFulfillmentTracking, fetchVariantSkus, fulfilStoreOrder, orderGid } from "./platform.server";
 import { getPlatform, getWallet, postTransaction } from "./wallet.server";
 
 const TRACKING_COMPANY = "Shipnex";
@@ -168,7 +168,7 @@ export async function fulfilDropship(row: DropshipOrder) {
   }
   if (!tracking) return null;
   try {
-    const r = await fulfilShopifyOrder(hit.store, hit.order.shopifyOrderId, { number: tracking, company: TRACKING_COMPANY });
+    const r = await fulfilStoreOrder(hit.store, hit.order.shopifyOrderId, { number: tracking, company: TRACKING_COMPANY });
     if (r.ok) {
       const [u] = await db.update(dropshipOrders).set({ status: "fulfilled", fulfilledAt: new Date(), error: null })
         .where(and(eq(dropshipOrders.orderId, row.orderId), eq(dropshipOrders.status, "charged"))).returning();

@@ -6,7 +6,7 @@ import { StoreSettingsForm } from "~/components/StoreSettingsForm";
 import { Notice, Section, SelectField, SubmitButton } from "~/components/ui";
 import { db, stores, users } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
-import { clearTokenCache } from "~/lib/shopify.server";
+import { clearTokenCache } from "~/lib/platform.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 import { storeForClient } from "~/lib/store-view.server";
 

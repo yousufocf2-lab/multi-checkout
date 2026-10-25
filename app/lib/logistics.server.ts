@@ -6,7 +6,7 @@ import { COURIERS, courierById, type CourierInfo } from "./courier-catalog";
 import { CourierAuthError, mapStatusText, parseDate, seal, type TrackResult } from "./couriers/common.server";
 import { PROVIDERS } from "./couriers/providers.server";
 import type { ShipStatus } from "./rto-shield";
-import { fetchFulfillmentTracking, type OrderTracking } from "./shopify.server";
+import { fetchFulfillmentTracking, storeConnected, type OrderTracking } from "./platform.server";
 
 export { COURIERS };
 
@@ -120,7 +120,7 @@ async function saveStatus(o: Watch, r: TrackResult | null, courier?: string) {
 export async function syncStoreShipments(store: Store, opts: { force?: boolean } = {}) {
   const accounts = (await courierAccountsFor(store.id)).filter((a) => a.status === "connected" || opts.force);
   if (!accounts.length) return { linked: 0, updated: 0 };
-  const shopify = Boolean(store.adminToken || (store.clientId && store.clientSecret));
+  const shopify = storeConnected(store); // Shopify or WooCommerce
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86400_000);
   const errors = new Map<number, { msg: string; auth: boolean }>();
   let linked = 0, updated = 0;

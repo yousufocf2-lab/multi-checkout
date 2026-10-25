@@ -12,33 +12,48 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export type FormResult = { ok: true; message: string; id?: number } | { ok: false; errors: Record<string, string> };
 
-/** "Call me back" from the website or dashboard. Website requests are limited per IP. */
-export async function createCallback(request: Request, form: FormData, from: { source: "website" | "dashboard"; viewer?: Viewer | null }): Promise<FormResult> {
+/** Checks a callback form without saving it (website: also the per-IP limit). Returns the 10-digit phone. */
+export async function checkCallback(request: Request, form: FormData, source: "website" | "dashboard"): Promise<{ ok: true; phone: string; bot?: boolean } | { ok: false; errors: Record<string, string> }> {
   // bots fill hidden fields
-  if (clean(form.get("company_site"), 50)) return { ok: true, message: "Thanks! We'll call you back soon." };
+  if (clean(form.get("company_site"), 50)) return { ok: true, phone: "", bot: true };
   const errors: Record<string, string> = {};
   const name = clean(form.get("name"), 80);
   const ph = phone10(clean(form.get("phone"), 20));
   const email = clean(form.get("email"), 120).toLowerCase();
   const reason = clean(form.get("reason"), 30);
-  const time = clean(form.get("time"), 20);
-  const message = cleanBody(form.get("message"), 1000);
   if (name.length < 2) errors.name = "Enter your name";
   if (!ph) errors.phone = "Enter a valid 10-digit mobile number";
   if (email && !EMAIL.test(email)) errors.email = "Enter a valid email or leave it empty";
-  const allowed: readonly { id: string }[] = from.source === "website" ? WEBSITE_REASONS : CALLBACK_REASONS;
+  const allowed: readonly { id: string }[] = source === "website" ? WEBSITE_REASONS : CALLBACK_REASONS;
   if (!allowed.some((r) => r.id === reason)) errors.reason = "Choose what you need help with";
   if (Object.keys(errors).length) return { ok: false, errors };
-
   const ip = clientIp(request);
-  if (from.source === "website" && ip) {
+  if (source === "website" && ip) {
     const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(callbackRequests)
       .where(and(eq(callbackRequests.ip, ip), gt(callbackRequests.createdAt, new Date(Date.now() - 3600_000))));
     if (Number(r?.n ?? 0) >= 5) return { ok: false, errors: { form: "You've sent a few requests already. We'll call you soon, or write to us by email." } };
   }
+  return { ok: true, phone: ph! };
+}
+
+/**
+ * "Call me back" from the website or dashboard. Website requests are limited per IP.
+ * `verified`: the mobile number was confirmed with an OTP (website) or belongs to the logged-in owner.
+ */
+export async function createCallback(request: Request, form: FormData, from: { source: "website" | "dashboard"; viewer?: Viewer | null; verified?: boolean }): Promise<FormResult> {
+  const check = await checkCallback(request, form, from.source);
+  if (!check.ok) return check;
+  if (check.bot) return { ok: true, message: "Thanks! We'll call you back soon." };
+  const ph = check.phone;
+  const name = clean(form.get("name"), 80);
+  const email = clean(form.get("email"), 120).toLowerCase();
+  const reason = clean(form.get("reason"), 30);
+  const time = clean(form.get("time"), 20);
+  const message = cleanBody(form.get("message"), 1000);
+  const ip = clientIp(request);
   // one open request per number is enough: update it instead of adding duplicates
   const [open] = await db.select({ id: callbackRequests.id }).from(callbackRequests)
-    .where(and(eq(callbackRequests.phone, ph!), eq(callbackRequests.status, "new"), gt(callbackRequests.createdAt, new Date(Date.now() - 24 * 3600_000)))).limit(1);
+    .where(and(eq(callbackRequests.phone, ph), eq(callbackRequests.status, "new"), gt(callbackRequests.createdAt, new Date(Date.now() - 24 * 3600_000)))).limit(1);
 
   let storeId: number | null = null;
   const v = from.viewer;
@@ -50,17 +65,18 @@ export async function createCallback(request: Request, form: FormData, from: { s
     }
   }
   const values = {
-    source: from.source, name, phone: ph!, email: email || null, reason, message: message || null,
+    source: from.source, name, phone: ph, email: email || null, reason, message: message || null,
     preferredTime: CALL_TIMES.some((t) => t.id === time) ? time : "anytime",
     storeId, userId: v?.role === "owner" ? v.userId : null, ip,
     attribution: from.source === "website" ? readAttribution(request) : null,
+    phoneVerified: Boolean(from.verified),
   };
   if (open) {
     // keep details from the first request when the new one leaves them blank
-    const { email: em, message: msg, storeId: sid, userId: uid, attribution: at, ...rest } = values;
+    const { email: em, message: msg, storeId: sid, userId: uid, attribution: at, phoneVerified: pv, ...rest } = values;
     await db.update(callbackRequests).set({
       ...rest, createdAt: new Date(),
-      ...(em ? { email: em } : {}), ...(msg ? { message: msg } : {}), ...(sid ? { storeId: sid } : {}), ...(uid ? { userId: uid } : {}), ...(at ? { attribution: at } : {}),
+      ...(em ? { email: em } : {}), ...(msg ? { message: msg } : {}), ...(sid ? { storeId: sid } : {}), ...(uid ? { userId: uid } : {}), ...(at ? { attribution: at } : {}), ...(pv ? { phoneVerified: true } : {}),
     }).where(eq(callbackRequests.id, open.id));
     return { ok: true, id: open.id, message: "We already have your request and updated it. Our team will call you soon." };
   }
@@ -68,15 +84,16 @@ export async function createCallback(request: Request, form: FormData, from: { s
   return { ok: true, id: row.id, message: "Request received. Our team will call you back within one working day." };
 }
 
-export async function listCallbacks(opts: { status?: string; userId?: number; limit?: number }) {
+export async function listCallbacks(opts: { status?: string; userId?: number; limit?: number; source?: "website" | "dashboard" }) {
   const where = and(
     opts.status && opts.status !== "all" ? eq(callbackRequests.status, opts.status) : undefined,
     opts.userId ? eq(callbackRequests.userId, opts.userId) : undefined,
+    opts.source ? eq(callbackRequests.source, opts.source) : undefined,
   );
   return db.select({
     id: callbackRequests.id, source: callbackRequests.source, name: callbackRequests.name, phone: callbackRequests.phone, email: callbackRequests.email,
     reason: callbackRequests.reason, message: callbackRequests.message, preferredTime: callbackRequests.preferredTime, status: callbackRequests.status,
-    adminNote: callbackRequests.adminNote, channel: sql<string | null>`${callbackRequests.attribution}->>'channel'`, createdAt: callbackRequests.createdAt, handledAt: callbackRequests.handledAt, storeName: stores.name,
+    adminNote: callbackRequests.adminNote, channel: sql<string | null>`${callbackRequests.attribution}->>'channel'`, attribution: callbackRequests.attribution, phoneVerified: callbackRequests.phoneVerified, createdAt: callbackRequests.createdAt, handledAt: callbackRequests.handledAt, storeName: stores.name,
   }).from(callbackRequests).leftJoin(stores, eq(stores.id, callbackRequests.storeId)).where(where)
     .orderBy(sql`case ${callbackRequests.status} when 'new' then 0 when 'contacted' then 1 else 2 end`, desc(callbackRequests.createdAt)).limit(opts.limit ?? 100);
 }
@@ -184,4 +201,13 @@ export async function supportBadge(v: Viewer) {
 export async function ownerContactFor(userId: number) {
   const [u] = await db.select({ name: users.name, phone: users.phone, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
   return u ?? null;
+}
+
+/** New store-owner signups for the admin Leads tab, newest first, with where they came from. */
+export async function listSignupLeads(limit = 100) {
+  return db.select({
+    id: users.id, name: users.name, phone: users.phone, email: users.email, signupWith: users.signupWith,
+    kycStatus: users.kycStatus, attribution: users.attribution, createdAt: users.createdAt,
+    stores: sql<number>`(select count(*)::int from ${stores} where ${stores.ownerId} = ${users.id})`,
+  }).from(users).orderBy(desc(users.createdAt)).limit(limit);
 }

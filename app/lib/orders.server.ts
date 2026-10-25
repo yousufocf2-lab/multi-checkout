@@ -6,7 +6,7 @@ import { recordOrderForCod } from "./cod.server";
 import { incrementCouponUse } from "./coupons.server";
 import { sendCapiPurchase } from "./meta.server";
 import { uploadPurchase } from "./google-ads.server";
-import { createShopifyOrder } from "./shopify.server";
+import { createStoreOrder } from "./platform.server";
 import { sendOrderConfirmation } from "./rto.server";
 import { chargeSaleFee, reverseSaleFee } from "./wallet.server";
 import { saveOrderAddress } from "./addresses.server";
@@ -46,7 +46,7 @@ export async function pushToShopify(store: Store, order: Order) {
     return current ?? order;
   }
   try {
-    const created = await createShopifyOrder(store, claimed);
+    const created = await createStoreOrder(store, claimed);
     const [updated] = await db
       .update(orders)
       .set({ shopifyOrderId: created.id, shopifyOrderName: created.name, error: null, shopifyPushAt: null, updatedAt: new Date() })
