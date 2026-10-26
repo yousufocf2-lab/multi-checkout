@@ -13,6 +13,7 @@ import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } 
 import { useAdsTag } from "~/components/site/AdsTag";
 import { readAttribution } from "~/lib/attribution";
 import { SignupQuestions } from "~/components/SignupQuestions";
+import { startWelcomeWatcher, welcomeNow } from "~/lib/welcome.server";
 import { parseProfile } from "~/lib/clients";
 import type { SignupProfile } from "~/db/schema";
 
@@ -69,6 +70,8 @@ export async function action({ request }: ActionFunctionArgs) {
   const v = await verifyOwnerOtp(c, "signup", String(fd.get("code") ?? ""), String(fd.get("token") ?? "") || undefined);
   if (!v.ok) return json<Data>({ ...base, stage: "otp", shown: showContact(c), errors: { code: v.error }, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined }, { status: 400 });
   const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target, attribution: readAttribution(request), signup: profile });
+  startWelcomeWatcher();
+  welcomeNow(); // welcome WhatsApp + email, if switched on
   return startSession(request, { user }, "/onboarding?welcome=1");
 }
 

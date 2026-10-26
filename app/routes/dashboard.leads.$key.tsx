@@ -10,6 +10,8 @@ import { requireAdmin } from "~/lib/auth.server";
 import { DEMO_MINUTES, KIND_LABEL, LEAD_STATUSES, demoLabel, parseLeadKey, slotsClash } from "~/lib/leads";
 import { bookedSlots, getLead, updateLead } from "~/lib/leads.server";
 import { listClients } from "~/lib/clients.server";
+import { messagesFor } from "~/lib/welcome.server";
+import { MSG_LABEL, STATUS_LABEL } from "~/lib/welcome";
 import { STEPS } from "~/lib/clients";
 
 export const meta: MetaFunction = () => [{ title: "Lead · Growpefy" }];
@@ -25,6 +27,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     booked: await bookedSlots(params.key),
     // How far this person has got with Growpefy (signup → KYC → store → live → order → recharge)
     progress: lead.owner ? (await listClients(lead.owner.id))[0] ?? null : null,
+    welcome: (await messagesFor(lead.phone, lead.email)).map((m) => ({ id: m.id, msg: m.msg, channel: m.channel, status: m.status, error: m.error, at: (m.sentAt ?? m.createdAt).toISOString() })),
   });
 }
 
@@ -54,7 +57,7 @@ const toLocal = (iso: string | null | undefined) => {
 };
 
 export default function Lead() {
-  const { lead: l, booked, key, progress } = useLoaderData<typeof loader>();
+  const { lead: l, booked, key, progress, welcome } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
   const [status, setStatus] = useState(l.crm?.status ?? "new");
@@ -153,6 +156,25 @@ export default function Lead() {
             </Form>
           </section>
 
+          {welcome.length > 0 && (
+            <section className="panel p-5">
+              <h2 className="text-sm font-semibold">Welcome messages</h2>
+              <ul className="mt-2 space-y-1.5">
+                {welcome.map((m) => {
+                  const st = STATUS_LABEL[m.status] ?? STATUS_LABEL.queued;
+                  return (
+                    <li key={m.id} className="flex flex-wrap items-center gap-2 text-sm">
+                      <Icon name={m.channel === "whatsapp" ? "chat" : "mail"} className="h-4 w-4 text-ink-soft" />
+                      <span>{MSG_LABEL[m.msg as "lead" | "signup"]} · {m.channel === "whatsapp" ? "WhatsApp" : "Email"}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.tone}`}>{st.label}</span>
+                      <span className="ml-auto text-[11px] text-ink-faint">{when(m.at)}</span>
+                      {m.error && m.status !== "sent" && <p className="w-full pl-6 text-xs text-bad">{m.error}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
           <section className="panel">
             <h2 className="border-b border-rule px-5 py-3 text-sm font-semibold">History</h2>
             {notes.length === 0 ? <p className="px-5 py-6 text-sm text-ink-faint">Nothing yet. Call the lead and log what happened.</p> : (

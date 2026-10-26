@@ -10,6 +10,7 @@ import { startRechargeWatcher } from "~/lib/recharges.server";
 import { startShipmentWatcher } from "~/lib/logistics.server";
 import { dropshipAlertCount, startDropshipWatcher } from "~/lib/dropship.server";
 import { startRecoveryWatcher } from "~/lib/recovery.server";
+import { startWelcomeWatcher } from "~/lib/welcome.server";
 import { db, stores as storesTable } from "~/db.server";
 import { sql } from "drizzle-orm";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
@@ -27,6 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startShipmentWatcher();
   startDropshipWatcher();
   startRecoveryWatcher();
+  startWelcomeWatcher();
   const viewer = await requireViewer(request);
   // New owners finish the 3-step KYC before anything else
   if (needsKyc(viewer)) throw redirect("/onboarding");

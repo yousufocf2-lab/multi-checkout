@@ -5,6 +5,7 @@ import { checkoutSessions, db, stores } from "~/db.server";
 import { storeBaseUrl } from "~/lib/urls.server";
 import { clientIp } from "~/lib/orders.server";
 import { wooVerify } from "~/lib/woo.server";
+import { startWelcomeWatcher } from "~/lib/welcome.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +21,7 @@ export const loader = () => reply({ error: "POST only" }, 405);
 /** Storefront -> creates a checkout session and returns its URL. */
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  startWelcomeWatcher(); // keeps lead welcomes going even when nobody has the dashboard open
 
   let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown; gclid?: unknown; gbraid?: unknown; wbraid?: unknown; ip?: unknown; ua?: unknown };
   const raw = await request.text();

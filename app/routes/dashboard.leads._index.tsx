@@ -52,7 +52,10 @@ export default function Leads() {
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader title="Leads" description="Every sales lead in one place: Meta lead forms, website callbacks and signups."
-        actions={<Form method="post"><SubmitButton className="btn-secondary" busyText="Checking Meta"><Icon name="refresh" className="h-4 w-4" />Get new Meta leads</SubmitButton></Form>} />
+        actions={<>
+          <Link to="/dashboard/leads/welcome" className="btn-secondary"><Icon name="send" className="h-4 w-4" />Welcome messages</Link>
+          <Form method="post"><SubmitButton className="btn-secondary" busyText="Checking Meta"><Icon name="refresh" className="h-4 w-4" />Get new Meta leads</SubmitButton></Form>
+        </>} />
 
       <div className="space-y-5">
         {a?.message && <Notice tone={a.ok ? "success" : "error"}>{a.message}</Notice>}

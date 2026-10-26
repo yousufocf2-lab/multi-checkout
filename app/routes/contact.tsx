@@ -14,6 +14,7 @@ import { siteData } from "~/lib/site.server";
 import { CALL_TIMES, SUPPORT_EMAIL, SUPPORT_HOURS, WEBSITE_REASONS } from "~/lib/support";
 import { checkCallback, createCallback } from "~/lib/support.server";
 import { getViewer } from "~/lib/auth.server";
+import { startWelcomeWatcher, welcomeNow } from "~/lib/welcome.server";
 
 export const meta: MetaFunction = () => siteMeta("Contact us · Request a callback · Growpefy", "Request a callback from the Growpefy team about sales, onboarding, your account, payments, RTO Suite or your wallet. Or write to support@growpefy.com.", "/contact", { ld: [crumbLd("Contact", "/contact")] });
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
@@ -47,6 +48,8 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!v.ok) return json<Result>({ ok: false, stage: "otp", fields, widget, phone: check.phone, errors: { code: v.error } }, { status: 400 });
   const r = await createCallback(request, fd, { source: "website", viewer: await getViewer(request), verified: true });
   if (!r.ok) return json<Result>({ ok: false, stage: "form", errors: r.errors, fields }, { status: 400 });
+  startWelcomeWatcher();
+  welcomeNow(); // welcome WhatsApp + email, if switched on
   return json<Result>({ ok: true, stage: "done", message: r.message, id: r.id });
 }
 

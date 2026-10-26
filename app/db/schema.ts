@@ -711,6 +711,15 @@ export type MarketingSettings = {
   googleAccountName?: string;
   metaPageId?: string; // Page whose Instant Form leads show under Leads
   metaPageName?: string;
+  welcome?: WelcomeSettings;
+};
+/** Welcome WhatsApp + email to new leads and signups (Leads → Welcome messages). */
+export type WelcomeSettings = {
+  auto?: boolean; // send to new leads and signups automatically
+  autoFrom?: string; // ISO: leads created after this are sent automatically
+  whatsapp?: boolean; email?: boolean;
+  waLeadTemplate?: string; waSignupTemplate?: string; waLang?: string; // templates: {{1}} = name
+  leadSubject?: string; leadBody?: string; signupSubject?: string; signupBody?: string; // {{name}} placeholder
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 
@@ -882,6 +891,36 @@ export const leadCrm = pgTable(
   },
   (t) => [uniqueIndex("lead_crm_ref_idx").on(t.kind, t.refId), index("lead_crm_demo_idx").on(t.status, t.demoAt)],
 );
+
+/**
+ * Welcome messages to Growpefy's own leads and signups. One row per (message, channel, recipient),
+ * so a person who is both a Meta lead and a website callback gets the lead welcome once.
+ */
+export const leadMessages = pgTable(
+  "lead_messages",
+  {
+    id: serial("id").primaryKey(),
+    msg: text("msg").$type<"lead" | "signup">().notNull(),
+    channel: text("channel").$type<"whatsapp" | "email">().notNull(),
+    target: text("target").notNull(), // 10-digit phone or lowercase email
+    kind: text("kind").notNull(), // lead kind it was queued for: meta | callback | signup
+    refId: text("ref_id").notNull(),
+    name: text("name").notNull().default(""),
+    status: text("status").$type<"queued" | "sent" | "retry" | "failed" | "skipped">().notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+    providerId: text("provider_id"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("lead_messages_once").on(t.msg, t.channel, t.target),
+    index("lead_messages_due_idx").on(t.status, t.nextAttemptAt),
+    index("lead_messages_ref_idx").on(t.kind, t.refId),
+  ],
+);
+export type LeadMessage = typeof leadMessages.$inferSelect;
 
 export type TeamMember = typeof teamMembers.$inferSelect;
 export type Store = typeof stores.$inferSelect;
