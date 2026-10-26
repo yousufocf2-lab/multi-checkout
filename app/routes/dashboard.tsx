@@ -4,7 +4,7 @@ import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigation,
 import { useEffect, useRef, useState } from "react";
 import { BrandIcon, BrandLockup, BusyOverlay } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
-import { IDLE_MS, can, needsKyc, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
+import { IDLE_MS, can, loginStamp, needsKyc, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
 import { startShipmentWatcher } from "~/lib/logistics.server";
@@ -55,7 +55,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const nextDemo: NextDemo | null = demos[0] ? { ...demos[0], more: demos.length - 1 } : null;
   const team = viewer.role === "admin" ? viewer.staff : viewer.member;
   return json({
-    dropshipAlerts, waPending, support, nextDemo,
+    dropshipAlerts, waPending, support, nextDemo, login: nextDemo ? await loginStamp(request) : "",
     viewer: {
       role: viewer.role, name: viewer.name, email: viewer.email,
       person: team?.name ?? (admin ? "Super admin" : viewer.name),
@@ -84,7 +84,7 @@ type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][numbe
 const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/;
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support, nextDemo } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support, nextDemo, login } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -273,9 +273,9 @@ export default function DashboardLayout() {
 
       <main className="min-w-0 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">
         <ActionLoader stores={stores} />
+        {nextDemo && <DemoBar demo={nextDemo} login={login} />}
         <IdleLogout idleMs={idleMs} />
         <div className="mx-auto max-w-[1180px]">
-          {nextDemo && <DemoBar demo={nextDemo} />}
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
           )}

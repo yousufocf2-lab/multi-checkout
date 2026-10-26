@@ -105,6 +105,7 @@ export type LeadItem = {
   source: SourceTag; via: string; detail: string;
   createdAt: string;
   status: string; demoAt: string | null; notesCount: number; lastNote: string | null;
+  lastBy: string | null; lastAt: string | null; // who last worked on it, and when
   stores: number | null; signedUp: boolean;
 };
 
@@ -128,13 +129,14 @@ export async function listLeads(limit = 400): Promise<LeadItem[]> {
     ownerStores(),
   ]);
   const crmBy = new Map(crm.map((c) => [`${c.kind}-${c.refId}`, c]));
-  const withCrm = (base: Omit<LeadItem, "status" | "demoAt" | "notesCount" | "lastNote" | "stores" | "signedUp">, userId?: number | null): LeadItem => {
+  const withCrm = (base: Omit<LeadItem, "status" | "demoAt" | "notesCount" | "lastNote" | "lastBy" | "lastAt" | "stores" | "signedUp">, userId?: number | null): LeadItem => {
     const c = crmBy.get(base.key);
     const owner = userId ? { n: owners.byId.get(userId) ?? 0 } : base.phone ? owners.byPhone.get(base.phone) : undefined;
     return {
       ...base,
       status: c?.status ?? "new", demoAt: c?.demoAt?.toISOString() ?? null,
-      notesCount: c?.notes.length ?? 0, lastNote: c?.notes.at(-1)?.text ?? null,
+      notesCount: c?.notes.length ?? 0, lastNote: [...(c?.notes ?? [])].reverse().find((x) => x.text)?.text ?? null,
+      lastBy: c?.notes.at(-1)?.by ?? null, lastAt: c?.notes.at(-1)?.at ?? null,
       stores: owner ? owner.n : c?.storesCount ?? null, signedUp: Boolean(owner),
     };
   };
@@ -204,7 +206,7 @@ export async function getLead(kind: LeadKind, id: string) {
 export type LeadUpdate = { status: string; note: string; demoAt: string | null; storesCount: number | null };
 
 /** Saves status / note / demo time. Demo slots must be more than 30 minutes apart. */
-export async function updateLead(kind: LeadKind, id: string, u: LeadUpdate): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function updateLead(kind: LeadKind, id: string, u: LeadUpdate, by?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!isLeadStatus(u.status)) return { ok: false, error: "Pick a status" };
   let demoAt: Date | null = null;
   if (u.status === "demo_scheduled") {
@@ -226,7 +228,7 @@ export async function updateLead(kind: LeadKind, id: string, u: LeadUpdate): Pro
   const note = u.note.trim().slice(0, 1000);
   const changed = !cur || cur.status !== u.status || (demoAt?.getTime() ?? null) !== (cur.demoAt?.getTime() ?? null);
   const notes: LeadNote[] = [...(cur?.notes ?? [])];
-  if (note || changed) notes.push({ at: new Date().toISOString(), text: note, status: u.status, demoAt: demoAt?.toISOString() ?? null });
+  if (note || changed) notes.push({ at: new Date().toISOString(), text: note, status: u.status, demoAt: demoAt?.toISOString() ?? null, ...(by ? { by } : {}) });
   const values = {
     status: u.status, demoAt: u.status === "demo_scheduled" ? demoAt : null,
     storesCount: u.storesCount != null && u.storesCount >= 0 ? Math.min(999, Math.floor(u.storesCount)) : cur?.storesCount ?? null,

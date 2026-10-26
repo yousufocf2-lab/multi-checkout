@@ -50,3 +50,42 @@ export function demoLabel(iso: string, now = new Date()) {
   if (day(d) === day(tomorrow)) return `Tomorrow ${time}`;
   return `${d.toLocaleDateString("en-IN", { ...IST, weekday: "short", day: "numeric", month: "short" })}, ${time}`;
 }
+
+/** Work queues on the Leads page, so leads someone already handled don't keep coming back. */
+export const LEAD_TABS = [
+  { id: "new", label: "New", hint: "Nobody has worked on these yet" },
+  { id: "followup", label: "Follow-up", hint: "Call back, not reachable, demos" },
+  { id: "done", label: "Done", hint: "Customer, not interested, wrong number" },
+  { id: "all", label: "All", hint: "Every lead" },
+] as const;
+export type LeadTab = (typeof LEAD_TABS)[number]["id"];
+const DONE = ["customer", "not_interested", "wrong_number"];
+export function leadTab(l: { status: string; notesCount: number }): Exclude<LeadTab, "all"> {
+  if (DONE.includes(l.status)) return "done";
+  if (l.status === "new" && l.notesCount === 0) return "new";
+  return "followup";
+}
+
+export type LeadFilter = { tab: LeadTab; st: string; src: string; k: string; q: string };
+export function readLeadFilter(sp: URLSearchParams): LeadFilter {
+  const tab = sp.get("tab");
+  return {
+    tab: LEAD_TABS.some((t) => t.id === tab) ? (tab as LeadTab) : "new",
+    st: sp.get("st") ?? "all", src: sp.get("src") ?? "all", k: sp.get("k") ?? "all", q: (sp.get("q") ?? "").trim().toLowerCase(),
+  };
+}
+export function matchLead(l: { status: string; notesCount: number; source: string; kind: string; name: string; phone: string | null; email: string | null }, f: LeadFilter, ignoreTab = false) {
+  return (ignoreTab || f.tab === "all" || leadTab(l) === f.tab) &&
+    (f.st === "all" || l.status === f.st) &&
+    (f.src === "all" || l.source === f.src) &&
+    (f.k === "all" || l.kind === f.k) &&
+    (!f.q || `${l.name} ${l.phone ?? ""} ${l.email ?? ""}`.toLowerCase().includes(f.q));
+}
+
+/** "2h ago", "3d ago" */
+export function agoLabel(iso: string, now = Date.now()) {
+  const m = Math.max(1, Math.round((now - new Date(iso).getTime()) / 60_000));
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}

@@ -1,14 +1,14 @@
 // One lead: contact, form answers, source, and the follow-up log (status, notes, demo booking).
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { json, redirect } from "@remix-run/node";
+import { Form, Link, useActionData, useLoaderData, useLocation, useNavigate, useNavigation } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { SourceTagChip, StatusChip } from "~/components/LeadChips";
 import { Notice, SubmitButton } from "~/components/ui";
 import { requireAdmin } from "~/lib/auth.server";
-import { DEMO_MINUTES, KIND_LABEL, LEAD_STATUSES, demoLabel, parseLeadKey, slotsClash } from "~/lib/leads";
-import { bookedSlots, getLead, updateLead } from "~/lib/leads.server";
+import { DEMO_MINUTES, KIND_LABEL, LEAD_STATUSES, agoLabel, demoLabel, matchLead, parseLeadKey, readLeadFilter, slotsClash } from "~/lib/leads";
+import { bookedSlots, getLead, listLeads, updateLead } from "~/lib/leads.server";
 import { listClients } from "~/lib/clients.server";
 import { messagesFor } from "~/lib/welcome.server";
 import { MSG_LABEL, STATUS_LABEL } from "~/lib/welcome";
@@ -16,23 +16,38 @@ import { STEPS } from "~/lib/clients";
 
 export const meta: MetaFunction = () => [{ title: "Lead · Growpefy" }];
 
+/** Previous / next lead in the same list (tab, filters and search) the person opened this one from. */
+async function neighbours(key: string, sp: URLSearchParams) {
+  const all = await listLeads();
+  const f = readLeadFilter(sp);
+  const at = all.findIndex((l) => l.key === key);
+  const list = all.filter((l) => matchLead(l, f));
+  const pos = list.findIndex((l) => l.key === key);
+  // Works even after this lead has left the list (e.g. it was just marked "not reachable")
+  const before = at < 0 ? [] : all.slice(0, at).filter((l) => matchLead(l, f));
+  const after = at < 0 ? [] : all.slice(at + 1).filter((l) => matchLead(l, f));
+  return { prev: before.at(-1)?.key ?? null, next: after[0]?.key ?? null, pos: pos >= 0 ? pos + 1 : null, total: list.length };
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const k = parseLeadKey(String(params.key));
   if (!k) throw new Response("Not found", { status: 404 });
   const lead = await getLead(k.kind, k.id);
   if (!lead) throw new Response("Lead not found", { status: 404 });
+  const sp = new URL(request.url).searchParams;
   return json({
     key: params.key!, lead: { ...lead, crm: lead.crm ? { ...lead.crm, demoAt: lead.crm.demoAt?.toISOString() ?? null, updatedAt: lead.crm.updatedAt.toISOString() } : null },
     booked: await bookedSlots(params.key),
     // How far this person has got with Growpefy (signup → KYC → store → live → order → recharge)
     progress: lead.owner ? (await listClients(lead.owner.id))[0] ?? null : null,
+    nav: await neighbours(String(params.key), sp),
     welcome: (await messagesFor(lead.phone, lead.email)).map((m) => ({ id: m.id, msg: m.msg, channel: m.channel, status: m.status, error: m.error, at: (m.sentAt ?? m.createdAt).toISOString() })),
   });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  await requireAdmin(request);
+  const v = await requireAdmin(request);
   const k = parseLeadKey(String(params.key));
   if (!k) throw new Response("Not found", { status: 404 });
   const fd = await request.formData();
@@ -43,7 +58,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     note: String(fd.get("note") ?? ""),
     demoAt: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local) ? `${local}:00+05:30` : null,
     storesCount: stores === "" ? null : Number(stores),
-  });
+  }, v.staff?.name ?? "Admin");
+  // "Save & next": go straight to the next lead in the same list
+  const next = String(fd.get("next") ?? "");
+  if (r.ok && fd.get("intent") === "saveNext" && parseLeadKey(next)) throw redirect(`/dashboard/leads/${next}${new URL(request.url).search}`);
   return json(r.ok ? { ok: true as const, error: null } : { ok: false as const, error: r.error }, { status: r.ok ? 200 : 400 });
 }
 
@@ -56,10 +74,42 @@ const toLocal = (iso: string | null | undefined) => {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 };
 
+// Keyed by lead so the form starts fresh when moving to the next / previous lead
 export default function Lead() {
-  const { lead: l, booked, key, progress, welcome } = useLoaderData<typeof loader>();
+  const { key } = useLoaderData<typeof loader>();
+  return <LeadView key={key} />;
+}
+
+function LeadView() {
+  const { lead: l, booked, key, progress, welcome, nav: around } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
+  const { search } = useLocation();
+  const go = useNavigate();
+  const to = (k: string | null) => (k ? `/dashboard/leads/${k}${search}` : null);
+  // ← / → keys and a sideways swipe on phones move between leads
+  useEffect(() => {
+    const prev = to(around.prev), next = to(around.next);
+    const typing = (t: EventTarget | null) => t instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+    const onKey = (e: KeyboardEvent) => {
+      if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "ArrowLeft" && prev) go(prev);
+      if (e.key === "ArrowRight" && next) go(next);
+    };
+    let sx = 0, sy = 0, st = 0;
+    const onStart = (e: TouchEvent) => { if (typing(e.target)) { st = 0; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now(); };
+    const onEnd = (e: TouchEvent) => {
+      if (!st) return;
+      const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+      if (Date.now() - st < 600 && Math.abs(dx) > 70 && Math.abs(dy) < 50) { if (dx < 0 && next) go(next); if (dx > 0 && prev) go(prev); }
+      st = 0;
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("touchstart", onStart); window.removeEventListener("touchend", onEnd); };
+  }, [around.prev, around.next, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  const last = l.crm?.notes.at(-1);
   const [status, setStatus] = useState(l.crm?.status ?? "new");
   const [demo, setDemo] = useState(toLocal(l.crm?.demoAt));
   const form = useRef<HTMLFormElement>(null);
@@ -70,11 +120,19 @@ export default function Lead() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <Link to="/dashboard/leads" className="text-sm text-ink-soft hover:text-ink">← All leads</Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link to={`/dashboard/leads${search}`} className="text-sm text-ink-soft hover:text-ink">← All leads</Link>
+        <div className="flex items-center gap-1" aria-label="Move between leads">
+          {around.prev ? <Link to={to(around.prev)!} prefetch="intent" className="btn-secondary h-8 px-2.5 py-0" aria-label="Previous lead" title="Previous lead (←)">‹</Link> : <span className="btn-secondary pointer-events-none h-8 px-2.5 py-0 opacity-40">‹</span>}
+          <span className="num min-w-[56px] text-center text-xs text-ink-soft">{around.pos ? `${around.pos} / ${around.total}` : `${around.total} left`}</span>
+          {around.next ? <Link to={to(around.next)!} prefetch="intent" className="btn-secondary h-8 px-2.5 py-0" aria-label="Next lead" title="Next lead (→)">›</Link> : <span className="btn-secondary pointer-events-none h-8 px-2.5 py-0 opacity-40">›</span>}
+        </div>
+      </div>
       <div className="mb-5 mt-2 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex flex-wrap items-center gap-2 text-[22px] font-semibold tracking-tight">{l.name}<SourceTagChip s={l.source} /><StatusChip s={l.crm?.status ?? "new"} /></h1>
           <p className="mt-1 text-sm text-ink-soft">{KIND_LABEL[l.kind]} · {when(l.createdAt)}</p>
+          {last && <p className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-800"><Icon name="users" className="h-3.5 w-3.5" />Worked on by {last.by ?? "the team"} · {agoLabel(last.at)}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           {l.phone && <a href={`tel:+91${l.phone.slice(-10)}`} className="btn-primary"><Icon name="phone" className="h-4 w-4" />+91 {l.phone}</a>}
@@ -149,10 +207,14 @@ export default function Lead() {
                   <input type="number" name="stores" min={0} max={999} defaultValue={l.crm?.storesCount ?? ""} placeholder="e.g. 1" className="input num w-32" />
                 </label>
               )}
-              <label className="block"><span className="label">Note (only you see this)</span>
+              <label className="block"><span className="label">Note (only your team sees this)</span>
                 <textarea name="note" rows={3} className="input" maxLength={1000} placeholder="e.g. Called, uses Shopify, 300 orders a month. Wants the RTO Shield demo." />
               </label>
-              <SubmitButton className="btn-primary w-full" busyText="Saving" disabled={Boolean(clash) || nav.state !== "idle"}>Save</SubmitButton>
+              {around.next && <input type="hidden" name="next" value={around.next} />}
+              <div className="flex gap-2">
+                <SubmitButton intent="save" className="btn-primary flex-1" busyText="Saving" disabled={Boolean(clash) || nav.state !== "idle"}>Save</SubmitButton>
+                {around.next && <SubmitButton intent="saveNext" className="btn-secondary flex-1" busyText="Saving" disabled={Boolean(clash) || nav.state !== "idle"}>Save &amp; next lead ›</SubmitButton>}
+              </div>
             </Form>
           </section>
 
@@ -181,7 +243,7 @@ export default function Lead() {
               <ol className="divide-y divide-rule">
                 {notes.map((n, i) => (
                   <li key={i} className="px-5 py-3">
-                    <p className="flex flex-wrap items-center gap-2 text-xs text-ink-faint">{when(n.at)}{n.status && <StatusChip s={n.status} />}{n.demoAt && <span className="num font-medium text-pine">Demo {demoLabel(n.demoAt)}</span>}</p>
+                    <p className="flex flex-wrap items-center gap-2 text-xs text-ink-faint">{n.by && <b className="font-semibold text-ink-soft">{n.by}</b>}{when(n.at)}{n.status && <StatusChip s={n.status} />}{n.demoAt && <span className="num font-medium text-pine">Demo {demoLabel(n.demoAt)}</span>}</p>
                     {n.text && <p className="mt-1 whitespace-pre-line text-sm">{n.text}</p>}
                   </li>
                 ))}

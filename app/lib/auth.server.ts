@@ -10,7 +10,7 @@ import { memberMayOpen } from "./team";
 
 const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
-type SessionData = { admin?: boolean; uid?: number; tid?: number; seen?: number };
+type SessionData = { admin?: boolean; uid?: number; tid?: number; seen?: number; at?: number };
 
 /** Logged out after this long without activity (dashboard pings while the user is active). */
 export const IDLE_MS = (Number(process.env.SESSION_IDLE_MINUTES) > 0 ? Number(process.env.SESSION_IDLE_MINUTES) : 10) * 60 * 1000;
@@ -280,9 +280,16 @@ export async function startSession(request: Request, who: LoginResult, next = "/
   else if ("member" in who) s.set("tid", who.member.id);
   else s.set("uid", who.user.id);
   s.set("seen", Date.now());
+  s.set("at", Date.now()); // when this login started (e.g. a dismissed reminder comes back on the next login)
   const pending = "user" in who && kycIncomplete(who.user);
   const safeNext = pending ? "/onboarding" : next.startsWith("/dashboard") ? next : "/dashboard";
   return redirect(safeNext, { headers: { "Set-Cookie": await st.commitSession(s) } });
+}
+
+/** Identifies the current login (changes every time someone logs in). */
+export async function loginStamp(request: Request) {
+  const s = await getStorage().getSession(request.headers.get("Cookie"));
+  return String(s.get("at") ?? s.get("seen") ?? "");
 }
 
 export async function endSession(request: Request, reason?: string) {

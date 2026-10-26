@@ -13,8 +13,10 @@ import { addDays, istToday, resolveRange } from "~/lib/dates";
 import { INDIAN_STATES } from "~/lib/states";
 import { DEFAULT_RATES, TX_LABELS, mergeRates, rechargeBreakup, rupees, type TxType } from "~/lib/wallet";
 import {
-  confirmRecharge, createRecharge, getPlatform, getWallet, manualAdjust, platformPayu, ratesFor, recentRecharges, stateOf, usageSummary,
+  adminAdjustments, adminCredit, confirmRecharge, createRecharge, getPlatform, getWallet, manualAdjust, platformPayu, ratesFor, recentRecharges, stateOf, usageSummary,
 } from "~/lib/wallet.server";
+import { storeBilling } from "~/lib/billing.server";
+import { BILLING_FIELDS, BILLING_LABEL, type BillingField } from "~/lib/billing";
 
 const PAGE = 50;
 
@@ -35,11 +37,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (type && type in TX_LABELS) where.push(eq(walletTransactions.type, type));
 
   const monthStart = new Date(`${istToday().slice(0, 7)}-01T00:00:00+05:30`);
-  const [rows, usage, recharges, rates] = await Promise.all([
+  const isAdmin = viewer.role === "admin";
+  const [rows, usage, recharges, rates, billing, adjustments] = await Promise.all([
     db.select().from(walletTransactions).where(and(...where)).orderBy(desc(walletTransactions.createdAt), desc(walletTransactions.id)).limit(PAGE + 1).offset((page - 1) * PAGE),
     usageSummary([w.id], monthStart, new Date(Date.now() + 60_000)),
     recentRecharges(w.id, 30),
     ratesFor(w),
+    storeBilling(store.id),
+    isAdmin ? adminAdjustments(w.id) : Promise.resolve([]),
   ]);
   const creds = platformPayu(p);
 
@@ -51,6 +56,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       balance: w.balancePaise, state: stateOf(w), negativeLimit: w.negativeLimitPaise, lowAlert: w.lowAlertPaise,
       status: w.status, billing: w.billing ?? {}, reverseFeeOnRefund: w.reverseFeeOnRefund, rateOverride: w.rates ?? {},
     },
+    billing,
+    adjustments: adjustments.map((t) => ({ id: t.id, amount: t.amountPaise, note: t.note, by: t.createdBy, at: t.createdAt.toISOString() })),
     rates,
     defaultRates: mergeRates(p.rates),
     minRecharge: p.minRechargePaise,
@@ -60,7 +67,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     hasMore: rows.length > PAGE,
     ledger: rows.slice(0, PAGE).map((t) => ({ id: t.id, type: t.type, amount: t.amountPaise, after: t.balanceAfterPaise, refType: t.refType, refId: t.refId, note: t.note, by: t.createdBy, at: t.createdAt.toISOString() })),
     usage,
-    recharges: recharges.map((r) => ({ id: r.id, txnid: r.txnid, credit: r.creditPaise, gst: r.gstPaise, total: r.totalPaise, status: r.status, invoiceNo: r.invoiceNo, at: (r.paidAt ?? r.createdAt).toISOString() })),
+    recharges: recharges.map((r) => ({ id: r.id, txnid: r.txnid, credit: r.creditPaise, gst: r.gstPaise, total: r.totalPaise, status: r.status, invoiceNo: r.invoiceNo, source: r.source, note: r.note, by: r.createdBy, at: (r.paidAt ?? r.createdAt).toISOString() })),
   });
 }
 
@@ -85,13 +92,20 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return redirect(`/wallet/pay/${r.txnid}`);
       }
       case "billing": {
-        const gstin = s("gstin").toUpperCase();
-        if (gstin && !GSTIN.test(gstin)) return fail("GSTIN doesn't look right. It has 15 characters, e.g. 09ABCDE1234F1Z5");
-        if (s("state") && !INDIAN_STATES.some((x) => x.name === s("state"))) return fail("Pick your state");
-        await db.update(wallets).set({
-          billing: { name: s("name").slice(0, 120), gstin, address: s("address").slice(0, 300), state: s("state"), email: s("email").slice(0, 120), phone: s("phone").slice(0, 20) },
-          updatedAt: new Date(),
-        }).where(eq(wallets.id, w.id));
+        // Owners can only fill what's missing; details from KYC (and anything already set) change only by Growpefy (re-KYC)
+        const cur = await storeBilling(store.id);
+        const admin = viewer.role === "admin";
+        const may = (f: BillingField) => admin || (!cur.fromKyc.includes(f) && !cur.details[f]) || (f === "name" && !cur.hasOwner && !(w.billing ?? {}).name);
+        const next = { ...(w.billing ?? {}) };
+        const max: Record<BillingField, number> = { name: 120, gstin: 15, address: 300, state: 60, email: 120, phone: 20 };
+        for (const f of BILLING_FIELDS) {
+          if (!fd.has(f) || !may(f)) continue;
+          const v = (f === "gstin" ? s(f).toUpperCase() : s(f)).slice(0, max[f]);
+          if (f === "gstin" && v && !GSTIN.test(v)) return fail("GSTIN doesn't look right. It has 15 characters, e.g. 09ABCDE1234F1Z5");
+          if (f === "state" && v && !INDIAN_STATES.some((x) => x.name === v)) return fail("Pick the state");
+          if (v) next[f] = v; else delete next[f];
+        }
+        await db.update(wallets).set({ billing: next, updatedAt: new Date() }).where(eq(wallets.id, w.id));
         return json({ ok: "Billing details saved. New invoices will use them.", error: null, field: intent });
       }
       case "recheck": {
@@ -107,8 +121,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
       case "adjust": {
         const amount = paise(fd.get("amount"));
         if (!Number.isFinite(amount) || amount <= 0) return fail("Enter an amount");
-        await manualAdjust(w.id, s("direction") === "debit" ? -amount : amount, s("reason"), viewer.email);
-        return json({ ok: `${s("direction") === "debit" ? "Debited" : "Credited"} ${rupees(amount)}`, error: null, field: intent });
+        const by = viewer.staff?.name ?? "Super admin";
+        if (s("direction") === "debit") {
+          await manualAdjust(w.id, -amount, s("reason"), by);
+          return json({ ok: `Debited ${rupees(amount)}`, error: null, field: intent });
+        }
+        const bill = fd.get("bill") === "on";
+        const r = await adminCredit(store.id, amount, { bill, by, reason: s("reason") });
+        return json({
+          ok: bill ? `Added ${rupees(amount)} with GST invoice ${r.invoiceNo} (${rupees(Math.round(amount * 1.18))} incl. GST). The store can download it from Recharges and invoices.` : `Added ${rupees(amount)} as Growpefy free credit. No invoice.`,
+          error: null, field: intent,
+        });
       }
       case "limits": {
         await db.update(wallets).set({
@@ -373,7 +396,10 @@ function Recharges({ d }: { d: D }) {
             <tbody>
               {d.recharges.map((r) => (
                 <tr key={r.id}>
-                  <td className="whitespace-nowrap text-sm">{when(r.at)}<p className="num text-xs text-ink-faint">{r.txnid}</p></td>
+                  <td className="whitespace-nowrap text-sm">{when(r.at)}
+                    <p className="num text-xs text-ink-faint">{r.source === "admin" ? <span className="mr-1 rounded bg-violet-50 px-1.5 py-px font-sans font-medium text-violet-800">By Growpefy</span> : <span className="mr-1 rounded bg-sky-50 px-1.5 py-px font-sans font-medium text-sky-800">Online</span>}{r.txnid}</p>
+                    {d.isAdmin && r.source === "admin" && (r.note || r.by) && <p className="max-w-[220px] truncate text-xs text-ink-faint" title={r.note ?? ""}>{[r.note, r.by && `by ${r.by}`].filter(Boolean).join(" · ")}</p>}
+                  </td>
                   <td className="num text-right font-medium">{rupees(r.credit)}</td>
                   <td className="num text-right text-ink-soft">{rupees(r.gst)}</td>
                   <td className="num text-right font-semibold">{rupees(r.total)}</td>
@@ -384,7 +410,10 @@ function Recharges({ d }: { d: D }) {
                   </td>
                   <td>
                     {r.invoiceNo ? (
-                      <a href={`/dashboard/wallet/invoice/${r.id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline"><Icon name="download" className="h-3.5 w-3.5" />{r.invoiceNo}</a>
+                      <span className="flex flex-col items-start gap-0.5">
+                        <a href={`/dashboard/wallet/invoice/${r.id}/pdf`} download className="inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline"><Icon name="download" className="h-3.5 w-3.5" />{r.invoiceNo} · PDF</a>
+                        <a href={`/dashboard/wallet/invoice/${r.id}/pdf?view=1`} target="_blank" rel="noreferrer" className="text-xs text-ink-faint hover:text-ink">View</a>
+                      </span>
                     ) : r.status === "pending" ? (
                       <Form method="post"><input type="hidden" name="txnid" value={r.txnid} /><SubmitButton intent="recheck" className="btn-secondary px-2.5 py-1 text-xs" busyText="Checking">Check status</SubmitButton></Form>
                     ) : <span className="text-xs text-ink-faint">—</span>}
@@ -399,30 +428,75 @@ function Recharges({ d }: { d: D }) {
   );
 }
 
+const BILLING_ORDER: BillingField[] = ["name", "gstin", "address", "state", "email", "phone"];
+
 function Billing({ d, field }: { d: D; field?: string }) {
-  const b = d.wallet.billing;
-  const [open, setOpen] = useState(!b.name || field === "billing");
+  const b = d.billing;
+  const det = b.details as Record<string, string | undefined>;
+  // Owner: what came from KYC (or is already set) is read-only; only missing details can be added here
+  const editable = (f: BillingField) => d.isAdmin || (!b.fromKyc.includes(f) && !det[f]);
+  const missing = BILLING_ORDER.filter((f) => !det[f] && editable(f));
+  const [open, setOpen] = useState(d.isAdmin ? field === "billing" : true);
+  const summary = [det.name, det.gstin, det.state].filter(Boolean).join(" · ");
+  const input = (f: BillingField) => f === "state" ? (
+    <select name="state" defaultValue={det.state ?? ""} className="input"><option value="">Select state</option>{INDIAN_STATES.map((x) => <option key={x.code} value={x.name}>{x.name}</option>)}</select>
+  ) : (
+    <input name={f} defaultValue={det[f] ?? ""} type={f === "email" ? "email" : "text"} maxLength={f === "gstin" ? 15 : undefined} className={`input ${f === "gstin" ? "uppercase" : ""}`} placeholder={f === "gstin" ? "09ABCDE1234F1Z5" : undefined} />
+  );
+
   return (
     <section className="panel">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center justify-between px-5 py-4 text-left">
-        <span>
-          <span className="block text-[15px] font-semibold">Billing details for GST invoices</span>
-          <span className="block text-sm text-ink-soft">{b.name ? `${b.name}${b.gstin ? ` · ${b.gstin}` : ""}${b.state ? ` · ${b.state}` : ""}` : "Add your business name and GSTIN to claim input tax credit."}</span>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
+        <span className="min-w-0">
+          <span className="block text-[15px] font-semibold">Billing details on your GST invoices</span>
+          <span className="block truncate text-sm text-ink-soft">{summary || "Your invoices use these details."}</span>
         </span>
-        <Icon name="chevron" className={`h-4 w-4 text-ink-faint transition ${open ? "rotate-180" : ""}`} />
+        <span className="flex shrink-0 items-center gap-2">
+          {b.complete ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-good">Complete</span> : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">Details missing</span>}
+          <Icon name="chevron" className={`h-4 w-4 text-ink-faint transition ${open ? "rotate-180" : ""}`} />
+        </span>
       </button>
       {open && (
-        <Form method="post" className="grid gap-4 border-t border-rule p-5 sm:grid-cols-2">
-          <label className="block"><span className="label">Business / legal name</span><input name="name" defaultValue={b.name ?? ""} className="input" /></label>
-          <label className="block"><span className="label">GSTIN (optional)</span><input name="gstin" defaultValue={b.gstin ?? ""} maxLength={15} className="input uppercase" placeholder="09ABCDE1234F1Z5" /></label>
-          <label className="block sm:col-span-2"><span className="label">Address</span><input name="address" defaultValue={b.address ?? ""} className="input" /></label>
-          <label className="block"><span className="label">State</span>
-            <select name="state" defaultValue={b.state ?? ""} className="input"><option value="">Select state</option>{INDIAN_STATES.map((s) => <option key={s.code} value={s.name}>{s.name}</option>)}</select>
-            <span className="hint">Decides CGST + SGST or IGST on the invoice.</span></label>
-          <label className="block"><span className="label">Billing email</span><input name="email" type="email" defaultValue={b.email ?? ""} className="input" /></label>
-          <label className="block"><span className="label">Phone</span><input name="phone" defaultValue={b.phone ?? ""} className="input" /></label>
-          <div className="flex items-end sm:col-span-2"><SubmitButton intent="billing" busyText="Saving">Save billing details</SubmitButton></div>
-        </Form>
+        <div className="border-t border-rule p-5">
+          {d.isAdmin ? (
+            <Form method="post" className="grid gap-4 sm:grid-cols-2">
+              <p className="rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-900 sm:col-span-2">Admin only. Changing details that came from the owner's KYC is a manual re-KYC: check their documents first. New invoices use these details; old invoices don't change.</p>
+              {BILLING_ORDER.map((f) => (
+                <label key={f} className={`block ${f === "address" ? "sm:col-span-2" : ""}`}>
+                  <span className="label">{BILLING_LABEL[f]}{b.fromKyc.includes(f) && <span className="ml-1.5 rounded bg-paper-sunk px-1.5 py-px text-[10px] font-medium text-ink-soft">From KYC</span>}</span>
+                  {input(f)}
+                </label>
+              ))}
+              <div className="sm:col-span-2"><SubmitButton intent="billing" busyText="Saving">Save billing details</SubmitButton></div>
+            </Form>
+          ) : (
+            <>
+              <dl className="divide-y divide-rule rounded-xl border border-rule">
+                {BILLING_ORDER.filter((f) => det[f]).map((f) => (
+                  <div key={f} className="flex flex-wrap gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm">
+                    <dt className="w-40 shrink-0 text-ink-soft">{BILLING_LABEL[f]}</dt>
+                    <dd className="min-w-0 flex-1 break-words font-medium">{det[f]}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-faint"><Icon name="lock" className="mt-px h-3.5 w-3.5 shrink-0" />These come from your KYC and can't be changed here. To correct them, write to Growpefy support for a re-KYC.</p>
+              {missing.length > 0 && (
+                <Form method="post" className="mt-4 grid gap-4 border-t border-rule pt-4 sm:grid-cols-2">
+                  <p className="text-sm font-medium sm:col-span-2">Add the missing details</p>
+                  {missing.map((f) => (
+                    <label key={f} className={`block ${f === "address" ? "sm:col-span-2" : ""}`}>
+                      <span className="label">{BILLING_LABEL[f]}{f === "gstin" ? " (optional)" : ""}</span>
+                      {input(f)}
+                      {f === "state" && <span className="hint">Decides CGST + SGST or IGST on the invoice.</span>}
+                    </label>
+                  ))}
+                  <p className="text-xs text-ink-faint sm:col-span-2">Once saved, these can only be changed by Growpefy.</p>
+                  <div className="sm:col-span-2"><SubmitButton intent="billing" busyText="Saving">Save</SubmitButton></div>
+                </Form>
+              )}
+            </>
+          )}
+        </div>
       )}
     </section>
   );
@@ -432,9 +506,12 @@ function AdminPanel({ d }: { d: D }) {
   const o = d.wallet.rateOverride as Partial<typeof DEFAULT_RATES>;
   const def = d.defaultRates;
   const [dir, setDir] = useState("credit");
+  const [bill, setBill] = useState(false);
+  const [amt, setAmt] = useState("");
+  const credit = Math.round((Number(amt) || 0) * 100);
   const nav = useNavigation();
   const [key, setKey] = useState(0);
-  useEffect(() => { if (nav.state === "idle") setKey((k) => k + 1); }, [nav.state]);
+  useEffect(() => { if (nav.state === "idle") { setKey((k) => k + 1); setAmt(""); setBill(false); } }, [nav.state]);
   return (
     <section className="panel border-2 border-dashed border-violet-300">
       <div className="flex items-center gap-2 border-b border-rule px-5 py-4">
@@ -444,16 +521,27 @@ function AdminPanel({ d }: { d: D }) {
       </div>
       <div className="grid gap-6 p-5 lg:grid-cols-3">
         <Form method="post" className="space-y-3" key={`adj${key}`}>
-          <p className="text-sm font-semibold">Manual credit / debit</p>
+          <p className="text-sm font-semibold">Add money / debit</p>
           <input type="hidden" name="direction" value={dir} />
           <div className="flex rounded-lg border border-rule-strong bg-surface p-0.5">
-            {[["credit", "Credit"], ["debit", "Debit"]].map(([v, l]) => (
+            {[["credit", "Add money"], ["debit", "Debit"]].map(([v, l]) => (
               <button key={v} type="button" onClick={() => setDir(v)} className={`flex-1 rounded-md px-2 py-1.5 text-sm ${dir === v ? (v === "credit" ? "bg-good text-white" : "bg-bad text-white") : "text-ink-soft"}`}>{l}</button>
             ))}
           </div>
-          <input name="amount" inputMode="decimal" placeholder="Amount ₹" className="input num" required />
-          <input name="reason" placeholder="Reason (required, shown in the ledger)" className="input" required maxLength={300} />
-          <SubmitButton intent="adjust" busyText="Saving" className={dir === "credit" ? "btn-primary w-full" : "btn w-full bg-bad text-white"}>{dir === "credit" ? "Add credit" : "Debit wallet"}</SubmitButton>
+          <input name="amount" inputMode="decimal" placeholder="Amount for the wallet ₹" className="input num" required value={amt} onChange={(e) => setAmt(e.target.value.replace(/[^\d.]/g, ""))} />
+          {dir === "credit" && (
+            <label className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-sm ${bill ? "border-pine bg-pine-tint/40" : "border-rule"}`}>
+              <input type="checkbox" name="bill" checked={bill} onChange={(e) => setBill(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0B5D4B]" />
+              <span>
+                <span className="block font-medium">Generate GST bill</span>
+                <span className="block text-xs text-ink-soft">
+                  {bill ? <>The store gets an invoice of <b className="num text-ink">{rupees(Math.round(credit * 1.18))}</b> ({rupees(credit)} + 18% GST) to download.</> : "Off: added as “Growpefy free credit”, with no invoice or recharge record."}
+                </span>
+              </span>
+            </label>
+          )}
+          <input name="reason" placeholder={dir === "credit" && bill ? "Payment reference (optional, shown on the invoice)" : "Reason (required, shown in the ledger)"} className="input" required={!(dir === "credit" && bill)} maxLength={200} />
+          <SubmitButton intent="adjust" busyText="Saving" className={dir === "credit" ? "btn-primary w-full" : "btn w-full bg-bad text-white"}>{dir === "credit" ? (bill ? "Add money and make the bill" : "Add free credit") : "Debit wallet"}</SubmitButton>
         </Form>
 
         <Form method="post" className="space-y-3">
@@ -485,6 +573,20 @@ function AdminPanel({ d }: { d: D }) {
           ))}
           <SubmitButton intent="rates" className="btn-secondary w-full" busyText="Saving">Save rates</SubmitButton>
         </Form>
+      </div>
+      <div className="border-t border-rule">
+        <p className="px-5 pt-4 text-sm font-semibold">Free credits and debits by Growpefy</p>
+        {d.adjustments.length === 0 ? <p className="px-5 py-4 text-sm text-ink-faint">None yet. Billed recharges are listed under Recharges and invoices.</p> : (
+          <ul className="divide-y divide-rule px-5 pb-2">
+            {d.adjustments.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2.5 text-sm">
+                <span className={`num w-24 font-semibold ${t.amount >= 0 ? "text-good" : "text-bad"}`}>{t.amount >= 0 ? "+" : ""}{rupees(t.amount)}</span>
+                <span className="min-w-0 flex-1 truncate text-ink-soft" title={t.note ?? ""}>{t.note ?? "—"}</span>
+                <span className="text-xs text-ink-faint">{t.by ? `${t.by} · ` : ""}{when(t.at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   );

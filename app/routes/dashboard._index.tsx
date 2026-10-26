@@ -12,6 +12,7 @@ import { funnel, listClients } from "~/lib/clients.server";
 import { listLeads, syncMetaLeads, upcomingDemos } from "~/lib/leads.server";
 import { earliestLead, marketingReport } from "~/lib/marketing.server";
 import { selectedStore } from "~/lib/selection.server";
+import { lastSnapshot, listRecharges } from "~/lib/recharges.server";
 import { selectedStoreIds } from "~/components/StoreFilter";
 import type { Store } from "~/db.server";
 import type { Range } from "~/lib/dates";
@@ -39,7 +40,19 @@ async function adminHome(request: Request, viewer: Viewer & { role: "admin" }, a
         connected: p.connected, error: p.error, spend: p.spend, leads: p.leads, cpl: p.cpl, clicks: p.clicks,
         campaigns: p.campaigns.length, active: p.campaigns.filter((c) => c.status === live).length,
       });
-      return { meta: card(r.meta, "Active"), google: card(r.google, "Enabled"), spend: r.totals.spend, leads: r.totals.platformLeads, cpl: r.totals.cpl };
+      const top = [...r.meta.campaigns.map((c) => ({ ...c, p: "meta" as const })), ...r.google.campaigns.map((c) => ({ ...c, p: "google" as const }))]
+        .sort((x, y) => y.leads - x.leads || y.spend - x.spend).slice(0, 4)
+        .map((c) => ({ id: `${c.p}-${c.id}`, p: c.p, name: c.name, status: c.status, spend: c.spend, leads: c.leads, cpl: c.cpl }));
+      return {
+        meta: card(r.meta, "Active"), google: card(r.google, "Enabled"), spend: r.totals.spend, leads: r.totals.platformLeads, cpl: r.totals.cpl,
+        top, daily: r.series.slice(-14).map((x) => ({ label: x.longLabel, spend: x.meta + x.google, leads: x.adLeads })),
+      };
+    }).then(async (ads) => {
+      if (!ads) return ads;
+      // Growpefy's Meta balance (last reading) and what we recharged this month
+      const monthStart = new Date(`${todayIst.slice(0, 8)}01T00:00:00+05:30`);
+      const [snap, month] = await Promise.all([lastSnapshot(null), listRecharges(null, monthStart)]);
+      return { ...ads, balance: snap ? snap.availablePaise / 100 : null, monthRecharged: month.reduce((a, x) => a + x.amountPaise, 0) / 100, monthRecharges: month.length };
     }).catch(() => null) : null,
     can(viewer, "leads") ? (async () => {
       await syncMetaLeads();

@@ -214,6 +214,9 @@ function PlatformCard({ p, rep, better, site, connected, name }: { p: AdPlatform
           <p className="mt-3 rounded-lg bg-paper-sunk/70 px-3 py-2 text-xs text-ink-soft">
             Reached our website: <b className="text-ink">{site.callbacks}</b> callback{site.callbacks === 1 ? "" : "s"}, <b className="text-ink">{site.signups}</b> signup{site.signups === 1 ? "" : "s"}
           </p>
+          <Link to={`/dashboard/marketing/${p}`} className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline">
+            Open {PLATFORM_NAME[p]} report{p === "meta" ? ", balance and recharges" : ""} <Icon name="arrow" className="h-3.5 w-3.5" />
+          </Link>
         </>
       )}
     </div>

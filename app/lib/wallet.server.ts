@@ -2,8 +2,9 @@ import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import {
   db, platformSettings, walletRecharges, walletTransactions, wallets,
-  type Order, type PlatformSettings, type Store, type Wallet, type WalletRates,
+  type BillingDetails, type Order, type PlatformSettings, type Store, type Wallet, type WalletRates,
 } from "~/db.server";
+import { storeBilling } from "./billing.server";
 import { payuEndpoint, sha512, verifyPayment, verifyPayuResponse, type PayuCreds } from "./payu.server";
 import { orderValuePaise } from "./payment-methods";
 import {
@@ -221,18 +222,15 @@ export async function confirmRecharge(txnid: string) {
     return { status: "mismatch" as const, recharge: r };
   }
 
-  const ours = p.billing ?? {};
+  const [wal] = await db.select({ storeId: wallets.storeId }).from(wallets).where(eq(wallets.id, r.walletId));
+  const buyer = (await storeBilling(wal.storeId)).details;
   // One transaction: lock the recharge, give it an invoice number, credit the wallet. Runs once per recharge.
   const paid = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(walletRecharges).where(eq(walletRecharges.id, r.id)).for("update");
     if (locked.status === "paid") return locked;
-    const [w] = await tx.select().from(wallets).where(eq(wallets.id, locked.walletId));
-    const sameState = Boolean(ours.state && w.billing?.state && ours.state.trim().toLowerCase() === w.billing.state.trim().toLowerCase());
-    const [seq] = (await tx.execute(sql`select nextval('wallet_invoice_seq')::text as n`)) as unknown as { n: string }[];
-    const invoiceNo = `${ours.invoicePrefix || "GP"}/${financialYear(new Date())}/${String(seq.n).padStart(5, "0")}`;
+    const inv = await nextInvoice(tx, p, buyer);
     const [u] = await tx.update(walletRecharges).set({
-      status: "paid", mihpayid: v.mihpayid, paidAt: new Date(), invoiceNo,
-      billing: { ...(w.billing ?? {}), taxType: sameState ? "cgst_sgst" : "igst" },
+      status: "paid", mihpayid: v.mihpayid, paidAt: new Date(), invoiceNo: inv.invoiceNo, billing: inv.billing,
     }).where(eq(walletRecharges.id, locked.id)).returning();
     await postWithin(tx, {
       walletId: locked.walletId, type: "recharge", amountPaise: locked.creditPaise, refType: "recharge", refId: locked.txnid,
@@ -241,6 +239,54 @@ export async function confirmRecharge(txnid: string) {
     return u;
   });
   return { status: "paid" as const, recharge: paid };
+}
+
+/** Next invoice number (one running series per financial year) and the buyer details printed on it. */
+async function nextInvoice(tx: Tx, p: PlatformSettings, buyer: BillingDetails) {
+  const ours = p.billing ?? {};
+  const sameState = Boolean(ours.state && buyer.state && ours.state.trim().toLowerCase() === buyer.state.trim().toLowerCase());
+  const [seq] = (await tx.execute(sql`select nextval('wallet_invoice_seq')::text as n`)) as unknown as { n: string }[];
+  return {
+    invoiceNo: `${ours.invoicePrefix || "GP"}/${financialYear(new Date())}/${String(seq.n).padStart(5, "0")}`,
+    billing: { ...buyer, taxType: sameState ? ("cgst_sgst" as const) : ("igst" as const) },
+  };
+}
+
+/**
+ * Super admin adds money to a store's wallet. With a bill: recorded as a paid recharge with a GST invoice
+ * (₹2,000 credit → invoice of ₹2,360) the owner can download. Without: a "Growpefy free credit", no invoice.
+ */
+export async function adminCredit(storeId: number, creditPaise: number, opts: { bill: boolean; by: string; reason: string }) {
+  if (!Number.isInteger(creditPaise) || creditPaise <= 0) throw new Error("Enter an amount");
+  const w = await getWallet(storeId);
+  if (!opts.bill) {
+    if (!opts.reason.trim()) throw new Error("Write a reason for the free credit");
+    return { invoiceNo: null, ...(await manualAdjust(w.id, creditPaise, opts.reason, opts.by)) };
+  }
+  const p = await getPlatform();
+  const buyer = (await storeBilling(storeId)).details;
+  const b = rechargeBreakup(creditPaise);
+  return db.transaction(async (tx) => {
+    const inv = await nextInvoice(tx, p, buyer);
+    const txnid = `GA${Date.now().toString(36).toUpperCase()}${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+    const now = new Date();
+    const [r] = await tx.insert(walletRecharges).values({
+      walletId: w.id, txnid, creditPaise: b.credit, gstPaise: b.gst, totalPaise: b.total, status: "paid", source: "admin",
+      note: opts.reason.trim().slice(0, 200) || null, invoiceNo: inv.invoiceNo, billing: inv.billing, createdBy: opts.by, paidAt: now,
+    }).returning();
+    const posted = await postWithin(tx, {
+      walletId: w.id, type: "recharge", amountPaise: b.credit, refType: "recharge", refId: txnid, createdBy: opts.by,
+      note: `Recharge by Growpefy · invoice ${inv.invoiceNo} · ₹${(b.total / 100).toFixed(2)} incl. GST${opts.reason.trim() ? ` · ${opts.reason.trim().slice(0, 120)}` : ""}`,
+    });
+    return { invoiceNo: inv.invoiceNo, recharge: r, ...posted };
+  });
+}
+
+/** Admin-only: credits and debits made by hand (free credits), newest first. */
+export function adminAdjustments(walletId: number, limit = 30) {
+  return db.select().from(walletTransactions)
+    .where(and(eq(walletTransactions.walletId, walletId), inArray(walletTransactions.type, ["manual_credit", "manual_debit"])))
+    .orderBy(desc(walletTransactions.createdAt)).limit(limit);
 }
 
 // ---------------- reports ----------------

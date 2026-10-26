@@ -27,7 +27,12 @@ type AdCard = { connected: boolean; error: string | null; spend: number; leads: 
 export type AdminData = {
   greeting: string; who: string;
   range: { preset: string; since: string; until: string };
-  ads: { meta: AdCard; google: AdCard; spend: number; leads: number; cpl: number | null } | null;
+  ads: {
+    meta: AdCard; google: AdCard; spend: number; leads: number; cpl: number | null;
+    top: { id: string; p: "meta" | "google"; name: string; status: string; spend: number; leads: number; cpl: number | null }[];
+    daily: { label: string; spend: number; leads: number }[];
+    balance: number | null; monthRecharged: number; monthRecharges: number;
+  } | null;
   leads: {
     inRange: number; today: number; toCall: number; demos: number; customers: number;
     recent: { key: string; kind: LeadKind; name: string; phone: string | null; source: SourceTag; status: string; detail: string; createdAt: string }[];
@@ -75,8 +80,35 @@ export function AdminOverview({ d }: { d: AdminData }) {
               <Link to="/dashboard/marketing" className="text-xs font-medium text-pine hover:underline">Full report →</Link>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <AdStatus name="Meta" logo={<AdIcon p="meta" className="h-5 w-auto" />} a={d.ads.meta} />
-              <AdStatus name="Google" logo={<AdIcon p="google" className="h-5 w-auto" />} a={d.ads.google} />
+              <AdStatus name="Meta" to="/dashboard/marketing/meta" logo={<AdIcon p="meta" className="h-5 w-auto" />} a={d.ads.meta} />
+              <AdStatus name="Google" to="/dashboard/marketing/google" logo={<AdIcon p="google" className="h-5 w-auto" />} a={d.ads.google} />
+            </div>
+
+            {d.ads.meta.connected && (
+              <Link to="/dashboard/marketing/meta" className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-rule bg-rule text-sm">
+                <span className="bg-surface px-4 py-2.5"><span className="block text-[11px] text-ink-soft">Meta balance</span><b className={`num ${d.ads.balance != null && d.ads.balance < 500 ? "text-bad" : ""}`}>{inr(d.ads.balance, 2)}</b></span>
+                <span className="bg-surface px-4 py-2.5"><span className="block text-[11px] text-ink-soft">Recharged this month</span><b className="num">{inr(d.ads.monthRecharged)}</b><span className="text-[11px] text-ink-faint"> · {d.ads.monthRecharges} time{d.ads.monthRecharges === 1 ? "" : "s"}</span></span>
+              </Link>
+            )}
+
+            {d.ads.daily.some((x) => x.spend > 0 || x.leads > 0) && <SpendBars days={d.ads.daily} />}
+
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Top campaigns</p>
+              {d.ads.top.length === 0 ? <p className="mt-2 text-sm text-ink-faint">No campaign spend in this period.</p> : (
+                <ul className="mt-2 divide-y divide-rule">
+                  {d.ads.top.map((c) => (
+                    <li key={c.id}>
+                      <Link to={`/dashboard/marketing/${c.p}`} className="flex items-center gap-2.5 py-2 text-sm hover:bg-paper">
+                        <AdIcon p={c.p} className="h-4 w-auto shrink-0" />
+                        <span className="min-w-0 flex-1"><span className="block truncate font-medium" title={c.name}>{c.name}</span><span className="block text-[11px] text-ink-faint">{c.status || "—"}</span></span>
+                        <span className="num w-16 text-right text-xs"><b className="block text-sm">{num(c.leads)}</b>leads</span>
+                        <span className="num w-20 text-right text-xs"><b className="block text-sm">{inr(c.cpl)}</b>per lead</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </section>
         )}
@@ -88,9 +120,9 @@ export function AdminOverview({ d }: { d: AdminData }) {
               <Link to="/dashboard/leads" className="text-xs font-medium text-pine hover:underline">All leads →</Link>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2 px-5">
-              <Mini label="To call" value={d.leads.toCall} to="/dashboard/leads?st=new" />
-              <Mini label="Demos booked" value={d.leads.demos} to="/dashboard/leads?st=demo_scheduled" />
-              <Mini label="Customers" value={d.leads.customers} to="/dashboard/leads?st=customer" />
+              <Mini label="To call" value={d.leads.toCall} to="/dashboard/leads" />
+              <Mini label="Demos booked" value={d.leads.demos} to="/dashboard/leads?tab=all&st=demo_scheduled" />
+              <Mini label="Customers" value={d.leads.customers} to="/dashboard/leads?tab=done&st=customer" />
             </div>
             {d.leads.upcoming.length > 0 && (
               <div className="mx-5 mt-3 rounded-lg bg-[#FFF7CC] px-3 py-2 text-xs">
@@ -207,7 +239,7 @@ function Mini({ label, value, to }: { label: string; value: number; to: string }
   );
 }
 
-function AdStatus({ name, logo, a }: { name: string; logo: React.ReactNode; a: AdCard }) {
+function AdStatus({ name, logo, a, to }: { name: string; logo: React.ReactNode; a: AdCard; to: string }) {
   const state = !a.connected ? { t: "Not connected", c: "bg-paper-sunk text-ink-soft" }
     : a.error ? { t: "Error", c: "bg-red-50 text-bad" }
     : a.active > 0 ? { t: `${a.active} running`, c: "bg-emerald-50 text-good" }
@@ -229,6 +261,28 @@ function AdStatus({ name, logo, a }: { name: string; logo: React.ReactNode; a: A
           <div><dt className="text-[11px] text-ink-soft">Per lead</dt><dd className="text-sm font-semibold">{inr(a.cpl)}</dd></div>
         </dl>
       )}
+      {a.connected && <Link to={to} className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-pine hover:underline">Open {name} report <Icon name="arrow" className="h-3 w-3" /></Link>}
+    </div>
+  );
+}
+
+/** Last 14 days: spend bars with the leads count on top. */
+function SpendBars({ days }: { days: { label: string; spend: number; leads: number }[] }) {
+  const max = Math.max(1, ...days.map((x) => x.spend));
+  return (
+    <div className="mt-4">
+      <div className="flex items-baseline justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Spend and leads by day</p>
+        <p className="text-[11px] text-ink-faint">bar = spend · number = leads</p>
+      </div>
+      <div className="mt-2 flex h-24 items-end gap-1">
+        {days.map((x) => (
+          <div key={x.label} className="group relative flex h-full flex-1 flex-col items-center justify-end" title={`${x.label}: ${inr(x.spend)} · ${x.leads} leads`}>
+            {x.leads > 0 && <span className="num mb-0.5 text-[10px] font-semibold text-pine">{Math.round(x.leads)}</span>}
+            <div className="w-full rounded-t bg-gradient-to-t from-pine to-emerald-400 opacity-80 transition group-hover:opacity-100" style={{ height: `${Math.max(3, (x.spend / max) * 72)}%` }} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

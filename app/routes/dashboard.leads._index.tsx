@@ -1,13 +1,13 @@
 // Super admin → Leads: every sales lead (Meta lead forms, website callbacks, signups) with its source and follow-up status.
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useSearchParams } from "@remix-run/react";
-import { useMemo, useState } from "react";
+import { Form, Link, useActionData, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { SourceTagChip, StatusChip } from "~/components/LeadChips";
 import { Notice, PageHeader, SubmitButton } from "~/components/ui";
 import { requireAdmin } from "~/lib/auth.server";
-import { KIND_LABEL, LEAD_STATUSES, SOURCE_TAGS, demoLabel, type LeadKind } from "~/lib/leads";
+import { KIND_LABEL, LEAD_STATUSES, LEAD_TABS, SOURCE_TAGS, agoLabel, demoLabel, leadTab, matchLead, readLeadFilter, type LeadKind } from "~/lib/leads";
 import { listLeads, syncMetaLeads, upcomingDemos } from "~/lib/leads.server";
 
 export const meta: MetaFunction = () => [{ title: "Leads · Growpefy" }];
@@ -31,21 +31,20 @@ export default function Leads() {
   const d = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const [sp, setSp] = useSearchParams();
-  const src = sp.get("src") ?? "all";
-  const st = sp.get("st") ?? "open";
-  const kind = sp.get("k") ?? "all";
-  const [q, setQ] = useState("");
+  const f = readLeadFilter(sp);
+  const [q, setQ] = useState(sp.get("q") ?? "");
   const set = (k: string, v: string | null) => { const n = new URLSearchParams(sp); if (v == null) n.delete(k); else n.set(k, v); setSp(n, { preventScrollReset: true, replace: true }); };
+  // Search goes into the URL (after a short pause) so next / previous inside a lead follows the same list
+  useEffect(() => { const t = setTimeout(() => { if ((sp.get("q") ?? "") !== q) set("q", q.trim() ? q : null); }, 300); return () => clearTimeout(t); }); // eslint-disable-line react-hooks/exhaustive-deps
+  // Teammates' updates show up without reloading
+  const revalidator = useRevalidator();
+  useEffect(() => { const t = setInterval(() => { if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate(); }, 60_000); return () => clearInterval(t); }, [revalidator]);
+  const src = f.src, st = f.st, kind = f.k;
 
-  const CLOSED = ["customer", "not_interested", "wrong_number"];
-  const rows = useMemo(() => d.leads.filter((l) =>
-    (src === "all" || l.source === src) &&
-    (kind === "all" || l.kind === kind) &&
-    (st === "all" ? true : st === "open" ? !CLOSED.includes(l.status) : l.status === st) &&
-    (!q.trim() || `${l.name} ${l.phone ?? ""} ${l.email ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [d.leads, src, st, kind, q]);
-  const count = (s: string) => d.leads.filter((l) => s === "all" || l.source === s).length;
+  const rows = useMemo(() => d.leads.filter((l) => matchLead(l, f)), [d.leads, sp]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tabCount = (t: string) => d.leads.filter((l) => matchLead(l, { ...f, tab: "all" }) && (t === "all" || leadTab(l) === t)).length;
+  const qs = sp.toString() ? `?${sp}` : "";
+  const count = (s: string) => d.leads.filter((l) => matchLead(l, { ...f, src: s })).length;
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
   const newToday = d.leads.filter((l) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(l.createdAt)) === today).length;
 
@@ -82,6 +81,14 @@ export default function Leads() {
         )}
 
         <section className="panel overflow-hidden">
+          <div className="flex gap-1 overflow-x-auto border-b border-rule px-3 pt-2" role="tablist">
+            {LEAD_TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={f.tab === t.id} title={t.hint} onClick={() => set("tab", t.id === "new" ? null : t.id)}
+                className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition ${f.tab === t.id ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>
+                {t.label}<span className={`num rounded-full px-1.5 text-[11px] font-semibold ${f.tab === t.id ? "bg-ink text-white" : "bg-paper-sunk text-ink-soft"}`}>{tabCount(t.id)}</span>
+              </button>
+            ))}
+          </div>
           <div className="space-y-3 border-b border-rule px-5 py-4">
             <div className="flex flex-wrap gap-1.5">
               {([["all", "All sources"], ["meta", "Meta"], ["google", "Google"], ["organic", "Organic"], ["direct", "Direct"], ["other", "Other"]] as const).map(([id, l]) => (
@@ -92,8 +99,8 @@ export default function Leads() {
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select value={st} onChange={(e) => set("st", e.target.value === "open" ? null : e.target.value)} className="input h-9 w-auto py-0 text-sm" aria-label="Status">
-                <option value="open">Open (not closed)</option><option value="all">All statuses</option>
+              <select value={st} onChange={(e) => set("st", e.target.value === "all" ? null : e.target.value)} className="input h-9 w-auto py-0 text-sm" aria-label="Status">
+                <option value="all">Any status</option>
                 {LEAD_STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
               </select>
               <select value={kind} onChange={(e) => set("k", e.target.value === "all" ? null : e.target.value)} className="input h-9 w-auto py-0 text-sm" aria-label="Type">
@@ -103,15 +110,20 @@ export default function Leads() {
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone, email" className="input h-9 min-w-0 flex-1 text-sm" />
             </div>
           </div>
-          {rows.length === 0 ? <p className="px-5 py-12 text-center text-sm text-ink-faint">No leads here.</p> : (
+          {rows.length === 0 ? <p className="px-5 py-12 text-center text-sm text-ink-faint">{f.tab === "new" ? "No new leads. Everyone has been worked on." : "No leads here."}</p> : (
             <ul className="divide-y divide-rule">
               {rows.map((l) => (
                 <li key={l.key}>
-                  <Link to={l.key} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3 transition hover:bg-paper">
+                  <Link to={`${l.key}${qs}`} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-3 transition hover:bg-paper">
                     <div className="min-w-0 flex-1">
                       <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">{l.name}<SourceTagChip s={l.source} /><span className="rounded bg-paper-sunk px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-ink-soft">{KIND_LABEL[l.kind]}</span></p>
                       <p className="mt-0.5 truncate text-xs text-ink-soft">{[l.phone ? `+91 ${l.phone}` : null, l.email, l.detail].filter(Boolean).join(" · ")}</p>
-                      {l.lastNote && <p className="mt-0.5 truncate text-xs text-ink-faint">“{l.lastNote}”</p>}
+                      {(l.lastBy || l.lastNote) && (
+                        <p className="mt-0.5 truncate text-xs text-ink-faint">
+                          {l.lastBy && <span className="font-medium text-ink-soft">{l.lastBy}{l.lastAt ? `, ${agoLabel(l.lastAt)}` : ""}</span>}
+                          {l.lastBy && l.lastNote && " · "}{l.lastNote && `“${l.lastNote}”`}
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {l.signedUp && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-good">{l.stores ?? 0} store{l.stores === 1 ? "" : "s"}</span>}

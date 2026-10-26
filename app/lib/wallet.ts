@@ -20,7 +20,7 @@ export const TX_LABELS: Record<TxType, string> = {
   wa_followup: "WhatsApp inbox follow-up (after 24 h)",
   wa_recovery: "WhatsApp abandoned cart message",
   refund_reversal: "Sale fee reversed (refund)",
-  manual_credit: "Credit by admin",
+  manual_credit: "Growpefy free credit",
   manual_debit: "Debit by admin",
   dropship_product: "Order fulfilment charge",
   dropship_shipping: "Shipping charge",

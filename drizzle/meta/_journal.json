@@ -218,6 +218,20 @@
       "when": 1793034076718,
       "tag": "0030_lead_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793035865927,
+      "tag": "0031_platform_recharges",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793036509057,
+      "tag": "0032_admin_recharges",
+      "breakpoints": true
     }
   ]
 }

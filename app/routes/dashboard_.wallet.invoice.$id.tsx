@@ -24,7 +24,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     seller: { ...p.billing },
     buyer: { name: b.name || row.storeName, gstin: b.gstin, address: b.address, state: b.state, email: b.email, phone: b.phone },
     inv: {
-      no: row.r.invoiceNo, date: (row.r.paidAt ?? row.r.createdAt).toISOString(), txnid: row.r.txnid, mihpayid: row.r.mihpayid,
+      id: row.r.id, no: row.r.invoiceNo, date: (row.r.paidAt ?? row.r.createdAt).toISOString(), txnid: row.r.txnid, mihpayid: row.r.mihpayid,
       credit: row.r.creditPaise, gst: row.r.gstPaise, total: row.r.totalPaise, intra, store: row.storeName,
     },
   });
@@ -57,7 +57,8 @@ export default function Invoice() {
     <main className="min-h-screen bg-paper px-4 py-8 print:bg-white print:p-0">
       <style>{"@media print { .no-print { display: none !important } @page { margin: 14mm } }"}</style>
       <div className="no-print mx-auto mb-4 flex max-w-3xl justify-end gap-2">
-        <button type="button" onClick={() => window.print()} className="btn-primary">Download / Print</button>
+        <a href={`/dashboard/wallet/invoice/${inv.id}/pdf`} download className="btn-primary">Download PDF</a>
+        <button type="button" onClick={() => window.print()} className="btn-secondary">Print</button>
       </div>
       <article className="mx-auto max-w-3xl rounded-xl border border-rule bg-white p-8 text-[13px] leading-relaxed text-[#1C2430] shadow-lift print:rounded-none print:border-0 print:shadow-none sm:p-10">
         <header className="flex flex-wrap items-start justify-between gap-6 border-b border-[#E2E5E0] pb-6">

@@ -654,12 +654,12 @@ export const orders = pgTable(
   ],
 );
 
-/** Meta ad account balance readings, used to detect prepaid recharges. Money is paise. */
+/** Meta ad account balance readings, used to detect prepaid recharges. Money is paise. storeId null = Growpefy's own ad account. */
 export const metaSnapshots = pgTable(
   "meta_snapshots",
   {
     id: serial("id").primaryKey(),
-    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }),
     availablePaise: bigint("available_paise", { mode: "number" }).notNull(), // prepaid funds left
     spentPaise: bigint("spent_paise", { mode: "number" }).notNull(), // lifetime amount_spent
     takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
@@ -667,12 +667,12 @@ export const metaSnapshots = pgTable(
   (t) => [index("meta_snapshots_store_idx").on(t.storeId, t.takenAt)],
 );
 
-/** Meta ad account recharges. amount = what was paid (incl. GST), credit = what reached the ad account. */
+/** Meta ad account recharges. amount = what was paid (incl. GST), credit = what reached the ad account. storeId null = Growpefy's own. */
 export const metaRecharges = pgTable(
   "meta_recharges",
   {
     id: serial("id").primaryKey(),
-    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    storeId: integer("store_id").references(() => stores.id, { onDelete: "cascade" }),
     amountPaise: bigint("amount_paise", { mode: "number" }).notNull(),
     creditPaise: bigint("credit_paise", { mode: "number" }).notNull(),
     source: text("source").notNull(), // auto | manual
@@ -792,6 +792,8 @@ export const walletRecharges = pgTable(
     invoiceNo: text("invoice_no").unique(),
     billing: jsonb("billing").$type<BillingDetails & { taxType?: "igst" | "cgst_sgst" }>(),
     createdBy: text("created_by"),
+    source: text("source").$type<"payu" | "admin">().notNull().default("payu"), // admin = recorded by Growpefy (paid outside PayU)
+    note: text("note"), // admin recharges: how it was paid (UPI ref, bank transfer…)
     paidAt: timestamp("paid_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -875,7 +877,7 @@ export const metaLeads = pgTable(
   (t) => [index("meta_leads_created_idx").on(t.createdAt), index("meta_leads_phone_idx").on(t.phone)],
 );
 
-export type LeadNote = { at: string; text: string; status?: string; demoAt?: string | null };
+export type LeadNote = { at: string; text: string; status?: string; demoAt?: string | null; by?: string };
 /** Follow-up for any lead (website callback, signup or Meta form): status, notes, demo time. */
 export const leadCrm = pgTable(
   "lead_crm",
