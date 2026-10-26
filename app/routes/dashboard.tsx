@@ -16,6 +16,8 @@ import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
 import { supportBadge } from "~/lib/support.server";
+import { upcomingDemos } from "~/lib/leads.server";
+import { DemoBar, type NextDemo } from "~/components/DemoBar";
 
 export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -45,8 +47,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ? await db.select({ n: sql<number>`count(*)::int` }).from(storesTable).where(sql`${storesTable.waVerify}->>'status' = 'submitted'`).then((r) => Number(r[0]?.n ?? 0)).catch(() => 0)
     : 0;
   const support = await supportBadge(viewer).catch(() => 0);
+  // Nearest scheduled sales demo → sticky reminder on every page (super admin only)
+  const demos = viewer.role === "admin" ? await upcomingDemos(5).catch(() => []) : [];
+  const nextDemo: NextDemo | null = demos[0] ? { ...demos[0], more: demos.length - 1 } : null;
   return json({
-    dropshipAlerts, waPending, support,
+    dropshipAlerts, waPending, support, nextDemo,
     viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
@@ -67,7 +72,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support, nextDemo } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -112,6 +117,7 @@ export default function DashboardLayout() {
           <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>
           {stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
           {viewer.role === "admin" && <Item to="/dashboard/marketing" icon="trend">Growpefy marketing</Item>}
+          {viewer.role === "admin" && <Item to="/dashboard/leads" icon="target">Leads</Item>}
         </Group>
         <Group label="Sell more">
           <Item to={storeHref("inbox")} icon="orders" match={/\/inbox$|next=inbox/}>WhatsApp inbox</Item>
@@ -219,6 +225,7 @@ export default function DashboardLayout() {
       <main className="min-w-0 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">
         <ActionLoader stores={stores} />
         <IdleLogout idleMs={idleMs} />
+        {nextDemo && <DemoBar demo={nextDemo} />}
         <div className="mx-auto max-w-[1180px]">
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />

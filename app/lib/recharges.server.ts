@@ -8,18 +8,22 @@ export { GST, withGst } from "./gst";
 const MIN_CREDIT_PAISE = 50_00; // ignore balance wobble below ₹50
 const SNAPSHOT_EVERY_MS = 30 * 60_000;
 
-/** Gross recharge from the ad credit, snapped to a round figure (₹999.46 → ₹1,000). */
-export function grossFromCredit(creditPaise: number) {
-  const g = (creditPaise / 100) * (1 + GST);
-  const ten = Math.round(g / 10) * 10;
-  return Math.round((Math.abs(g - ten) <= 2 ? ten : Math.round(g)) * 100);
+/**
+ * Recharge amount from the rise in available funds. Meta's prepaid "available balance" already includes GST,
+ * so the rise is the recharge itself; only Meta's paise rounding is snapped (₹999.99 → ₹1,000).
+ */
+export function roundRecharge(paise: number) {
+  const r = paise / 100;
+  const ten = Math.round(r / 10) * 10;
+  return Math.round((Math.abs(r - ten) <= 2 ? ten : Math.round(r)) * 100);
 }
 
 export const creditFromGross = (grossPaise: number) => Math.round(grossPaise / (1 + GST));
 
 /**
  * Saves a balance reading and records a recharge if funds went up by more than what was spent.
- * credit added = (available now − before) + (spent now − before)
+ * Available balance includes GST and spend doesn't, so spend takes spend × 1.18 out of the balance:
+ * recharge = (available now − before) + (spent now − before) × 1.18
  */
 export async function recordSnapshot(store: Store, account: MetaAccount, force = false) {
   if (account.available == null) return null;
@@ -31,10 +35,11 @@ export async function recordSnapshot(store: Store, account: MetaAccount, force =
   const now = new Date();
   await db.insert(metaSnapshots).values({ storeId: store.id, availablePaise, spentPaise, takenAt: now });
   if (!last) return null;
-  const credit = availablePaise - last.availablePaise + Math.max(0, spentPaise - last.spentPaise);
-  if (credit < MIN_CREDIT_PAISE) return null;
+  const added = availablePaise - last.availablePaise + Math.max(0, spentPaise - last.spentPaise) * (1 + GST);
+  if (added < MIN_CREDIT_PAISE) return null;
+  const amount = roundRecharge(added);
   const [row] = await db.insert(metaRecharges).values({
-    storeId: store.id, creditPaise: credit, amountPaise: grossFromCredit(credit), source: "auto",
+    storeId: store.id, amountPaise: amount, creditPaise: creditFromGross(amount), source: "auto",
     note: "Detected from the ad account balance", rechargedAt: now,
   }).returning();
   return row;

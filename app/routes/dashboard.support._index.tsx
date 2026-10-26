@@ -324,7 +324,10 @@ function AdminInbox({ d }: { d: D }) {
                 <button key={k} type="button" onClick={() => go({ lk: k === "callbacks" ? null : k })} className={`rounded-md px-3 py-1.5 ${d.lk === k ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"}`}>{l}</button>
               ))}
             </div>
-            <Link to="/dashboard/marketing" className="text-xs font-medium text-pine hover:underline">See ad spend and cost per lead</Link>
+            <span className="flex flex-wrap gap-3">
+              <Link to="/dashboard/leads" className="text-xs font-semibold text-pine hover:underline">Open Leads (with Meta form leads, notes and demos) →</Link>
+              <Link to="/dashboard/marketing" className="text-xs font-medium text-ink-soft hover:underline">Ad spend and cost per lead</Link>
+            </span>
           </div>
           <div className="mb-1 flex flex-wrap items-center gap-x-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Source</div>
           <Filters value={d.src} options={[["all", "All sources"], ...SOURCE_GROUPS.map((g) => [g.id, g.label] as const)]} onPick={(v) => go({ src: v === "all" ? null : v })} />

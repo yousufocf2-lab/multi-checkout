@@ -674,6 +674,8 @@ export type MarketingSettings = {
   googleCustomerId?: string;
   googleLoginCustomerId?: string | null;
   googleAccountName?: string;
+  metaPageId?: string; // Page whose Instant Form leads show under Leads
+  metaPageName?: string;
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 
@@ -807,6 +809,43 @@ export const supportMessages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("support_messages_ticket_idx").on(t.ticketId, t.createdAt)],
+);
+
+/** Leads from Growpefy's own Meta Instant Forms (pulled from the Graph API). */
+export const metaLeads = pgTable(
+  "meta_leads",
+  {
+    id: text("id").primaryKey(), // Meta leadgen id
+    formId: text("form_id").notNull(),
+    formName: text("form_name"),
+    adName: text("ad_name"),
+    campaignName: text("campaign_name"),
+    platform: text("platform"), // fb | ig
+    name: text("name"),
+    phone: text("phone"), // 10 digits when Indian
+    email: text("email"),
+    answers: jsonb("answers").$type<{ q: string; a: string }[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("meta_leads_created_idx").on(t.createdAt), index("meta_leads_phone_idx").on(t.phone)],
+);
+
+export type LeadNote = { at: string; text: string; status?: string; demoAt?: string | null };
+/** Follow-up for any lead (website callback, signup or Meta form): status, notes, demo time. */
+export const leadCrm = pgTable(
+  "lead_crm",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(), // callback | signup | meta
+    refId: text("ref_id").notNull(),
+    status: text("status").notNull().default("new"),
+    demoAt: timestamp("demo_at", { withTimezone: true }),
+    storesCount: integer("stores_count"),
+    notes: jsonb("notes").$type<LeadNote[]>().notNull().default([]),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("lead_crm_ref_idx").on(t.kind, t.refId), index("lead_crm_demo_idx").on(t.status, t.demoAt)],
 );
 
 export type Store = typeof stores.$inferSelect;

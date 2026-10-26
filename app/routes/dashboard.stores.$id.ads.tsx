@@ -335,7 +335,7 @@ function MetaTab({ d }: { d: D }) {
             <Big label={a.available != null ? "Available balance" : "Amount due"} value={inr(a.available ?? a.balance, 2)} tone={low ? "text-bad" : undefined} />
             <Big label="Lifetime spend" value={inr(a.amountSpent)} sub="Without GST, as Meta shows it" />
             <Big label="Total invested" value={inr(invested)} sub={`(Lifetime spend + balance) + ${GST * 100}% GST`} highlight />
-            <Big label="Spending limit" value={a.spendCap ? inr(a.spendCap) : "None"} />
+            <Big label="Spending limit" value={a.available != null ? inr(a.available / (1 + GST)) : a.spendCap ? inr(a.spendCap) : "None"} sub={a.available != null ? `Available balance without ${GST * 100}% GST` : undefined} />
           </dl>
         </section>
       )}
@@ -366,7 +366,7 @@ function MetaTab({ d }: { d: D }) {
           <div>
             <h2 className="text-[15px] font-semibold">Recharges</h2>
             <p className="mt-0.5 max-w-prose text-sm text-ink-soft">
-              Meta doesn't share prepaid recharges, so we spot them from balance changes and add the {GST * 100}% GST back. Example: ₹847 credit = ₹1,000 recharge.
+              Meta doesn't share prepaid recharges, so we spot them from the rise in your available balance (which already includes GST), rounded off. Example: ₹999.99 added = ₹1,000 recharge.
               {d.watchingSince ? ` Watching since ${new Date(d.watchingSince).toLocaleDateString("en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" })}.` : ""}
             </p>
           </div>
