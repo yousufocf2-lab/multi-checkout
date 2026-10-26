@@ -36,8 +36,43 @@ export const users = pgTable("users", {
   kycSubmittedAt: timestamp("kyc_submitted_at", { withTimezone: true }),
   active: boolean("active").notNull().default(true),
   attribution: jsonb("attribution").$type<Attribution>(), // where the signup came from (Growpefy's own marketing)
+  signup: jsonb("signup").$type<SignupProfile>(), // answers from the signup form (websites, ads, goals, urgency)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** What a new owner told us at signup. */
+export type SignupProfile = {
+  websites?: { url: string; platform: "shopify" | "woocommerce" | "other"; other?: string }[];
+  adChannels?: ("meta" | "google" | "other")[];
+  adOther?: string;
+  goals?: string[];
+  goalOther?: string;
+  urgency?: "immediate" | "high" | "medium" | "low";
+};
+
+/**
+ * Team logins. scope "platform" = Growpefy staff (super admin's team);
+ * scope "owner" = a store owner's employee (ownerId). Each sees only what its permissions allow.
+ */
+export const teamMembers = pgTable(
+  "team_members",
+  {
+    id: serial("id").primaryKey(),
+    scope: text("scope").$type<"platform" | "owner">().notNull(),
+    ownerId: integer("owner_id").references((): AnyPgColumn => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    login: text("login").notNull().unique(), // lowercase email or 10-digit mobile
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("custom"), // preset the permissions came from (label only)
+    perms: jsonb("perms").$type<string[]>().notNull().default([]),
+    storeIds: jsonb("store_ids").$type<number[] | null>(), // owner scope: null = all the owner's stores
+    active: boolean("active").notNull().default(true),
+    createdBy: text("created_by"),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("team_members_owner_idx").on(t.scope, t.ownerId)],
+);
 
 /** OTPs for store owner signup / login (hashed). */
 export const ownerOtps = pgTable(
@@ -848,6 +883,7 @@ export const leadCrm = pgTable(
   (t) => [uniqueIndex("lead_crm_ref_idx").on(t.kind, t.refId), index("lead_crm_demo_idx").on(t.status, t.demoAt)],
 );
 
+export type TeamMember = typeof teamMembers.$inferSelect;
 export type Store = typeof stores.$inferSelect;
 export type CallbackRequest = typeof callbackRequests.$inferSelect;
 export type SupportTicket = typeof supportTickets.$inferSelect;

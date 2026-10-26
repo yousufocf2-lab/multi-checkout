@@ -4,7 +4,7 @@ import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigation,
 import { useEffect, useRef, useState } from "react";
 import { BrandIcon, BrandLockup, BusyOverlay } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
-import { IDLE_MS, needsKyc, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
+import { IDLE_MS, can, needsKyc, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
 import { startShipmentWatcher } from "~/lib/logistics.server";
@@ -42,17 +42,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const touched = await touchSession(request);
   if (touched) headers.append("Set-Cookie", touched);
   const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
-  const dropshipAlerts = viewer.role === "admin" ? await dropshipAlertCount().catch(() => 0) : 0;
-  const waPending = viewer.role === "admin"
+  const admin = viewer.role === "admin";
+  const dropshipAlerts = admin && can(viewer, "fulfilment") ? await dropshipAlertCount().catch(() => 0) : 0;
+  const waPending = admin && can(viewer, "clients")
     ? await db.select({ n: sql<number>`count(*)::int` }).from(storesTable).where(sql`${storesTable.waVerify}->>'status' = 'submitted'`).then((r) => Number(r[0]?.n ?? 0)).catch(() => 0)
     : 0;
-  const support = await supportBadge(viewer).catch(() => 0);
-  // Nearest scheduled sales demo → sticky reminder on every page (super admin only)
-  const demos = viewer.role === "admin" ? await upcomingDemos(5).catch(() => []) : [];
+  const support = can(viewer, "support") || viewer.role === "owner" ? await supportBadge(viewer).catch(() => 0) : 0;
+  // Nearest scheduled sales demo → reminder card on every page (admin side, with access to leads)
+  const demos = admin && can(viewer, "leads") ? await upcomingDemos(5).catch(() => []) : [];
   const nextDemo: NextDemo | null = demos[0] ? { ...demos[0], more: demos.length - 1 } : null;
+  const team = viewer.role === "admin" ? viewer.staff : viewer.member;
   return json({
     dropshipAlerts, waPending, support, nextDemo,
-    viewer: { role: viewer.role, name: viewer.name, email: viewer.email },
+    viewer: {
+      role: viewer.role, name: viewer.name, email: viewer.email,
+      person: team?.name ?? (admin ? "Super admin" : viewer.name),
+      perms: team ? team.perms : null, // null = everything (super admin / store owner)
+      isTeam: Boolean(team),
+    },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
     stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.checkoutDomain ?? s.shopDomain })),
@@ -71,91 +78,76 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
+/** Pages that belong to one store's tools (admin enters "store mode" on these when a store is picked). */
+const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/;
+
 export default function DashboardLayout() {
   const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support, nextDemo } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
 
+  const isAdmin = viewer.role === "admin";
+  const may = (perm: string) => viewer.perms == null || viewer.perms.includes(perm);
   const urlStore = Number(location.pathname.match(/^\/dashboard\/stores\/(\d+)/)?.[1]) || null;
   const current = stores.find((s) => s.id === (urlStore ?? selected)) ?? null;
-  const only = stores.length === 1 ? stores[0] : null;
+  const only = !isAdmin && stores.length === 1 ? stores[0] : null;
   const focus = current ?? only;
+  // Admin sees its own panel; a client's store tools only after opening that store
+  const storeMode = !isAdmin || (Boolean(current) && STORE_TOOL.test(location.pathname));
   const storeHref = (section: string) => (focus ? `/dashboard/stores/${focus.id}/${section}` : `/dashboard/stores?next=${section}`);
   const adsHref = focus ? `/dashboard/stores/${focus.id}/ads` : "/dashboard/ads";
   const here = location.pathname + location.search;
+  const adminHome = "/dashboard/select?store=all&to=%2Fdashboard";
   const RANK = { ok: 0, low: 1, negative: 2, locked: 3 } as const;
   const focusWallet = focus ? wallets.find((w) => w.storeId === focus.id) ?? null : null;
   const worst = [...wallets].sort((a, b) => RANK[b.state] - RANK[a.state])[0] ?? null;
-  const alertWallet = focus ? focusWallet : worst;
+  const alertWallet = !may("billing") ? null : focus ? focusWallet : isAdmin ? null : worst;
   const alertStore = alertWallet ? stores.find((s) => s.id === alertWallet.storeId) ?? null : null;
 
-  const settingsPaths = ["/settings", "/design", "/install", "/dashboard/stores/new", "/dashboard/owners"];
+  const settingsPaths = ["/settings", "/design", "/install", "/payments", "/dashboard/stores/new", "/dashboard/team"];
   const inSettings = settingsPaths.some((p) => location.pathname.endsWith(p)) || location.pathname === "/dashboard/stores";
   const [settingsOpen, setSettingsOpen] = useState(inSettings);
   useEffect(() => { if (inSettings) setSettingsOpen(true); }, [inSettings]);
 
-  const nav = (
-    <nav className="flex h-full flex-col bg-night text-night-text">
-      <div className="px-5 pb-4 pt-5">
-        <Link to="/dashboard" aria-label="Growpefy home" className="inline-block"><BrandLockup tone="light" className="h-[30px]" /></Link>
-        <div className="mt-2">
-          {viewer.role === "admin"
-            ? <p className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-400/20 to-sky-400/20 px-2 py-px text-[11px] font-medium text-emerald-200"><Icon name="sparkle" className="h-3 w-3" />Super admin</p>
-            : <p className="text-[11px] text-night-faint">Store dashboard</p>}
-        </div>
-      </div>
+  const badge = (n: number, tone = "bg-emerald-400/20 text-emerald-200") => n > 0 && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${tone}`}>{n}</span>;
+  const labelled = (text: string, n: React.ReactNode) => <span className="flex flex-1 items-center justify-between gap-2">{text}{n}</span>;
 
-      <div className="px-3 pb-3">
-        <StoreSwitcher stores={stores} current={current} here={here} />
-      </div>
-
-      <div className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-        <Group label="Analytics">
-          <Item to="/dashboard" end icon="overview">Overview</Item>
-          <Item to="/dashboard/orders" icon="orders">Orders</Item>
-          <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>
-          {stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
-          {viewer.role === "admin" && <Item to="/dashboard/marketing" icon="trend">Growpefy marketing</Item>}
-          {viewer.role === "admin" && <Item to="/dashboard/leads" icon="target">Leads</Item>}
-        </Group>
+  // ---- one store's tools (store owners, their team, and admin inside a client's store) ----
+  const storeNav = (
+    <>
+      <Group label="Analytics">
+        {may("orders") && <Item to="/dashboard" end icon="overview">Overview</Item>}
+        {may("orders") && <Item to="/dashboard/orders" icon="orders">Orders</Item>}
+        {may("ads") && <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>}
+        {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
+      </Group>
+      {(may("inbox") || may("settings") || may("offers") || may("rto")) && (
         <Group label="Sell more">
-          <Item to={storeHref("inbox")} icon="orders" match={/\/inbox$|next=inbox/}>WhatsApp inbox</Item>
-          <Item to={storeHref("whatsapp")} icon="shield" match={/\/whatsapp$|next=whatsapp/}>WhatsApp settings</Item>
-          <Item to={storeHref("payments")} icon="rupee" match={/\/payments$|next=payments/}>Payment methods</Item>
-          <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/}>Discounts</Item>
-          <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/}>Coupons</Item>
-          <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/}>Bank offers</Item>
-          <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/}>Free gifts</Item>
-          <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>
+          {may("inbox") && <Item to={storeHref("inbox")} icon="chat" match={/\/inbox$|\/whatsapp$|next=inbox/}>WhatsApp inbox</Item>}
+          {may("settings") && <Item to={storeHref("payments")} icon="rupee" match={/\/payments$|next=payments/}>Payment methods</Item>}
+          {may("offers") && <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/}>Discounts</Item>}
+          {may("offers") && <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/}>Coupons</Item>}
+          {may("offers") && <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/}>Bank offers</Item>}
+          {may("offers") && <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/}>Free gifts</Item>}
+          {may("rto") && <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>}
         </Group>
+      )}
+      {may("rto") && (
         <Group label="Protect">
           <Item to={storeHref("logistics")} icon="shipping" match={/\/logistics$|next=logistics/}>Logistics</Item>
           <Item to={storeHref("rto-shield")} icon="shield" match={/\/rto-shield$|next=rto-shield/}>RTO Shield</Item>
           <Item to={storeHref("rto")} icon="shield" match={/\/rto$|next=rto/}>RTO Suite</Item>
         </Group>
+      )}
+      {may("billing") && (
         <Group label="Billing">
           <Item to={storeHref("wallet")} icon="wallet" match={/\/wallet$|next=wallet/}>
-            <span className="flex flex-1 items-center justify-between gap-2">Wallet
-              {focusWallet && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${focusWallet.state === "ok" ? "bg-white/10 text-night-text" : focusWallet.state === "low" ? "bg-amber-400/20 text-amber-200" : "bg-red-400/20 text-red-200"}`}>{rupees(focusWallet.balance, 0)}</span>}
-            </span>
+            {labelled("Wallet", focusWallet && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${focusWallet.state === "ok" ? "bg-white/10 text-night-text" : focusWallet.state === "low" ? "bg-amber-400/20 text-amber-200" : "bg-red-400/20 text-red-200"}`}>{rupees(focusWallet.balance, 0)}</span>)}
           </Item>
-          {viewer.role === "admin" && <Item to="/dashboard/wallets" icon="rupee">All wallets</Item>}
-          {viewer.role === "admin" && (
-            <Item to="/dashboard/wa-verify" icon="shield">
-              <span className="flex flex-1 items-center justify-between gap-2">WhatsApp approvals
-                {waPending > 0 && <span className="num rounded-md bg-amber-400/20 px-1.5 py-px text-[11px] font-semibold text-amber-200">{waPending}</span>}
-              </span>
-            </Item>
-          )}
-          {viewer.role === "admin" && (
-            <Item to="/dashboard/dropship" icon="box">
-              <span className="flex flex-1 items-center justify-between gap-2">Dropshipping
-                {dropshipAlerts > 0 && <span className="num rounded-md bg-red-400/20 px-1.5 py-px text-[11px] font-semibold text-red-200">{dropshipAlerts}</span>}
-              </span>
-            </Item>
-          )}
         </Group>
+      )}
+      {(may("settings") || (!isAdmin && may("team"))) && (
         <div>
           <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen}
             className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition hover:bg-white/5 hover:text-white ${inSettings ? "text-white" : ""}`}>
@@ -165,29 +157,84 @@ export default function DashboardLayout() {
           </button>
           {settingsOpen && (
             <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-night-line pl-2.5">
-              <Item to={storeHref("settings")} icon="stores" match={/\/settings$|next=settings/} small>Store settings</Item>
-              <Item to={storeHref("design")} icon="design" match={/\/design$|next=design/} small>Checkout design</Item>
-              <Item to={storeHref("install")} icon="setup" match={/\/install$|next=install/} small>Setup</Item>
-              <Item to="/dashboard/stores/new" icon="plus" small>Connect store</Item>
-              <Item to="/dashboard/stores" icon="stores" match={(p, q) => p === "/dashboard/stores" && !q.includes("next=")} small>All stores</Item>
-              {viewer.role === "admin" && <Item to="/dashboard/owners" icon="users" small>Store owners</Item>}
+              {may("settings") && <Item to={storeHref("settings")} icon="stores" match={/\/settings$|next=settings/} small>Store settings</Item>}
+              {may("settings") && <Item to={storeHref("design")} icon="design" match={/\/design$|next=design/} small>Checkout design</Item>}
+              {may("settings") && <Item to={storeHref("install")} icon="setup" match={/\/install$|next=install/} small>Setup</Item>}
+              {!isAdmin && may("settings") && <Item to="/dashboard/stores/new" icon="plus" small>Connect store</Item>}
+              {!isAdmin && <Item to="/dashboard/stores" icon="stores" match={(p, q) => p === "/dashboard/stores" && !q.includes("next=")} small>All stores</Item>}
+              {!isAdmin && may("team") && <Item to="/dashboard/team" icon="users" small>Team</Item>}
             </div>
           )}
         </div>
+      )}
+    </>
+  );
+
+  // ---- Growpefy admin panel ----
+  const adminNav = (
+    <>
+      <Group label="Growpefy">
+        <Item to={adminHome} icon="overview" match={(p) => p === "/dashboard"}>Overview</Item>
+        {may("leads") && <Item to="/dashboard/leads" icon="target">Leads</Item>}
+        {may("clients") && <Item to="/dashboard/clients" icon="users">Clients</Item>}
+        {may("support") && <Item to="/dashboard/support" icon="help">{labelled("Support inbox", badge(support))}</Item>}
+        {may("marketing") && <Item to="/dashboard/marketing" icon="trend">Marketing</Item>}
+      </Group>
+      {(may("stores") || may("billing") || may("clients") || may("fulfilment")) && (
+        <Group label="Operations">
+          {may("stores") && <Item to="/dashboard/stores" icon="stores" match={(p) => p === "/dashboard/stores"}>Client stores</Item>}
+          {may("billing") && <Item to="/dashboard/wallets" icon="rupee">Wallets</Item>}
+          {may("clients") && <Item to="/dashboard/wa-verify" icon="shield">{labelled("WhatsApp approvals", badge(waPending, "bg-amber-400/20 text-amber-200"))}</Item>}
+          {may("fulfilment") && <Item to="/dashboard/dropship" icon="box">{labelled("Dropshipping", badge(dropshipAlerts, "bg-red-400/20 text-red-200"))}</Item>}
+        </Group>
+      )}
+      {(may("team") || may("clients")) && (
+        <Group label="Settings">
+          {may("team") && <Item to="/dashboard/team" icon="users">Team</Item>}
+          {may("clients") && <Item to="/dashboard/owners" icon="lock">Owner accounts</Item>}
+        </Group>
+      )}
+    </>
+  );
+
+  const nav = (
+    <nav className="flex h-full flex-col bg-night text-night-text">
+      <div className="px-5 pb-4 pt-5">
+        <Link to={isAdmin ? adminHome : "/dashboard"} aria-label="Growpefy home" className="inline-block"><BrandLockup tone="light" className="h-[30px]" /></Link>
+        <div className="mt-2">
+          {isAdmin
+            ? <p className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-400/20 to-sky-400/20 px-2 py-px text-[11px] font-medium text-emerald-200"><Icon name="sparkle" className="h-3 w-3" />{viewer.isTeam ? "Growpefy team" : "Super admin"}</p>
+            : <p className="text-[11px] text-night-faint">Store dashboard</p>}
+        </div>
       </div>
 
-      <div className="border-t border-night-line px-3 py-2">
-        <Item to="/dashboard/support" icon="help">
-          <span className="flex flex-1 items-center justify-between gap-2">{viewer.role === "admin" ? "Support inbox" : "Help & support"}
-            {support > 0 && <span className="num rounded-md bg-emerald-400/20 px-1.5 py-px text-[11px] font-semibold text-emerald-200">{support}</span>}
-          </span>
-        </Item>
+      {storeMode && (
+        <div className="px-3 pb-3">
+          {isAdmin && (
+            <Link to={adminHome} className="mb-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-200 hover:bg-white/5">
+              <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" />Back to admin panel
+            </Link>
+          )}
+          <StoreSwitcher stores={stores} current={current} here={here} allowAll={!isAdmin} />
+        </div>
+      )}
+
+      <div className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+        {storeMode ? storeNav : adminNav}
       </div>
+
+      {!isAdmin && (
+        <div className="border-t border-night-line px-3 py-2">
+          <Item to="/dashboard/support" icon="help">{labelled("Help & support", badge(support))}</Item>
+        </div>
+      )}
       <div className="flex items-center gap-3 border-t border-night-line px-4 py-3.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-semibold text-white">{viewer.name.slice(0, 1).toUpperCase()}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-semibold text-white">{viewer.person.slice(0, 1).toUpperCase()}</span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">{viewer.name}</p>
-          <p className="truncate text-xs text-night-faint">{viewer.email}</p>
+          <p className="truncate text-sm font-medium text-white">{viewer.person}</p>
+          {viewer.isTeam
+            ? <Link to="/dashboard/account" className="block truncate text-xs text-night-faint hover:text-white">{viewer.email} · My account</Link>
+            : <p className="truncate text-xs text-night-faint">{viewer.email}</p>}
         </div>
         <Form method="post" action="/logout">
           <button className="rounded-lg p-2 text-night-faint hover:bg-white/5 hover:text-white" aria-label="Log out" title="Log out"><Icon name="logout" /></button>
@@ -205,8 +252,8 @@ export default function DashboardLayout() {
         <BrandIcon className="h-8 w-8" />
         <button type="button" onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
           <span className="min-w-0">
-            <span className="block text-[11px] leading-tight text-ink-faint">Showing</span>
-            <span className="block truncate text-sm font-semibold leading-tight">{current?.name ?? (only ? only.name : `All stores (${stores.length})`)}</span>
+            <span className="block text-[11px] leading-tight text-ink-faint">{storeMode ? "Showing" : "Growpefy"}</span>
+            <span className="block truncate text-sm font-semibold leading-tight">{!storeMode ? (viewer.isTeam ? "Team panel" : "Admin panel") : current?.name ?? (only ? only.name : `All stores (${stores.length})`)}</span>
           </span>
           <Icon name="chevron" className="h-4 w-4 shrink-0 text-ink-faint" />
         </button>
@@ -225,8 +272,8 @@ export default function DashboardLayout() {
       <main className="min-w-0 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">
         <ActionLoader stores={stores} />
         <IdleLogout idleMs={idleMs} />
-        {nextDemo && <DemoBar demo={nextDemo} />}
         <div className="mx-auto max-w-[1180px]">
+          {nextDemo && <DemoBar demo={nextDemo} />}
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
           )}
@@ -236,9 +283,19 @@ export default function DashboardLayout() {
 
       {/* Mobile tab bar */}
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-rule bg-surface/95 backdrop-blur lg:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }} aria-label="Quick links">
-        <Tab to="/dashboard" end icon="overview" label="Overview" />
-        <Tab to="/dashboard/orders" icon="orders" label="Orders" />
-        <Tab to={adsHref} icon="ads" label="Ads" />
+        {storeMode ? (
+          <>
+            <Tab to="/dashboard" end icon="overview" label="Overview" />
+            {may("orders") ? <Tab to="/dashboard/orders" icon="orders" label="Orders" /> : <Tab to={storeHref("inbox")} icon="chat" label="Inbox" />}
+            {may("ads") ? <Tab to={adsHref} icon="ads" label="Ads" /> : <Tab to="/dashboard/support" icon="help" label="Help" />}
+          </>
+        ) : (
+          <>
+            <Tab to={adminHome} end icon="overview" label="Overview" />
+            {may("leads") ? <Tab to="/dashboard/leads" icon="target" label="Leads" /> : <Tab to="/dashboard/support" icon="help" label="Support" />}
+            {may("clients") ? <Tab to="/dashboard/clients" icon="users" label="Clients" /> : <Tab to="/dashboard/stores" icon="stores" label="Stores" />}
+          </>
+        )}
         <button type="button" onClick={() => setOpen(true)} className="flex flex-col items-center gap-0.5 py-2 text-[11px] text-ink-soft"><Icon name="menu" className="h-5 w-5" />More</button>
       </nav>
     </div>
@@ -333,7 +390,7 @@ function WalletBanner({ state, balance, store, showStore, to }: { state: "low" |
   );
 }
 
-function StoreSwitcher({ stores, current, here }: { stores: StoreItem[]; current: StoreItem | null; here: string }) {
+function StoreSwitcher({ stores, current, here, allowAll = true }: { stores: StoreItem[]; current: StoreItem | null; here: string; allowAll?: boolean }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -370,7 +427,7 @@ function StoreSwitcher({ stores, current, here }: { stores: StoreItem[]; current
             </div>
           )}
           <div className="scroll-thin max-h-72 overflow-y-auto p-1.5">
-            {stores.length > 1 && (
+            {allowAll && stores.length > 1 && (
               <Link to={to("all")} preventScrollReset className={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-white/5 ${!current ? "text-white" : ""}`}>
                 <Avatar store={null} /><span className="flex-1">All stores</span>{!current && <Icon name="check" className="h-4 w-4 text-emerald-300" />}
               </Link>
@@ -383,7 +440,7 @@ function StoreSwitcher({ stores, current, here }: { stores: StoreItem[]; current
               </Link>
             ))}
           </div>
-          <Link to="/dashboard/stores/new" className="flex items-center gap-2 border-t border-night-line px-3.5 py-2.5 text-sm text-emerald-300 hover:bg-white/5"><Icon name="plus" className="h-4 w-4" />Connect a store</Link>
+          {allowAll && <Link to="/dashboard/stores/new" className="flex items-center gap-2 border-t border-night-line px-3.5 py-2.5 text-sm text-emerald-300 hover:bg-white/5"><Icon name="plus" className="h-4 w-4" />Connect a store</Link>}
         </div>
       )}
     </div>

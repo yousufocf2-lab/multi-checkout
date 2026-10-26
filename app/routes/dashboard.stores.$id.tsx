@@ -3,7 +3,7 @@ import { json } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useLocation } from "@remix-run/react";
 import { Icon } from "~/components/Icons";
 import { StatusBadge } from "~/components/ui";
-import { requireStore, requireViewer } from "~/lib/auth.server";
+import { can, requireStore, requireViewer } from "~/lib/auth.server";
 import { storeBaseUrl } from "~/lib/urls.server";
 import { rupees } from "~/lib/wallet";
 import { getWallet, stateOf } from "~/lib/wallet.server";
@@ -13,12 +13,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const s = await requireStore(viewer, params.id);
   const w = await getWallet(s.id);
   const locked = viewer.role !== "admin" && (stateOf(w) === "locked" || w.status === "suspended");
-  return json({ locked, balance: w.balancePaise, store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : "Shopify" } });
+  return json({ locked, balance: w.balancePaise, canSettings: can(viewer, "settings"), store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : "Shopify" } });
 }
 
 const TITLES: Record<string, { title: string; description: string }> = {
   ads: { title: "Ads", description: "Meta and Google Ads: spend, cost per order, ROAS, and which one works better." },
   inbox: { title: "WhatsApp inbox", description: "Chats with customers who got an order message from your store." },
+  whatsapp: { title: "WhatsApp settings", description: "Business verification for your WhatsApp sender and abandoned-cart messages." },
   payments: { title: "Payment methods", description: "Prepaid, COD and Partial COD: on/off, discount or fee, coupons and when each shows." },
   discounts: { title: "Discounts", description: "Product discounts by payment method and checkout recommendations." },
   coupons: { title: "Coupons", description: "Codes customers can apply at checkout." },
@@ -39,7 +40,7 @@ const LOCKED = new Set(["ads", "gifts", "design"]);
 
 /** Store pages share a slim header; the section menu lives in the sidebar. */
 export default function StoreLayout() {
-  const { store, locked, balance } = useLoaderData<typeof loader>();
+  const { store, locked, balance, canSettings } = useLoaderData<typeof loader>();
   const section = useLocation().pathname.split("/")[4] ?? "";
   const t = TITLES[section];
   return (
@@ -58,6 +59,14 @@ export default function StoreLayout() {
               <span className="hidden truncate text-ink-faint sm:inline">{t.description}</span>
             </p>
           </div>
+          {section === "inbox" && canSettings && (
+            <Link to={`/dashboard/stores/${store.id}/whatsapp`} className="btn-secondary px-3" title="WhatsApp settings" aria-label="WhatsApp settings">
+              <Icon name="settings" className="h-4 w-4" /><span className="hidden sm:inline">Settings</span>
+            </Link>
+          )}
+          {section === "whatsapp" && (
+            <Link to={`/dashboard/stores/${store.id}/inbox`} className="btn-secondary px-3"><Icon name="chat" className="h-4 w-4" />Back to inbox</Link>
+          )}
         </div>
       )}
       {locked && LOCKED.has(section) ? (

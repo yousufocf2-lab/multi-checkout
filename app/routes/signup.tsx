@@ -12,6 +12,9 @@ import { clientIp } from "~/lib/orders.server";
 import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
 import { useAdsTag } from "~/components/site/AdsTag";
 import { readAttribution } from "~/lib/attribution";
+import { SignupQuestions } from "~/components/SignupQuestions";
+import { parseProfile } from "~/lib/clients";
+import type { SignupProfile } from "~/db/schema";
 
 export const meta: MetaFunction = () => [{ title: "Create account · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -26,9 +29,11 @@ type Data = {
   stage: "start" | "otp";
   contact: string;
   brand: string;
+  profileRaw: string;
+  profile?: SignupProfile;
   shown?: string;
   resendIn?: number;
-  errors?: { contact?: string; brand?: string; code?: string; form?: string };
+  errors?: { contact?: string; brand?: string; code?: string; form?: string; profile?: string };
   sent?: boolean;
   widget?: { widgetId: string; tokenAuth: string } | null;
   phone?: string;
@@ -42,10 +47,13 @@ export async function action({ request }: ActionFunctionArgs) {
   const rawContact = String(fd.get("contact") ?? "").trim();
   const brand = String(fd.get("brand") ?? "").trim().slice(0, 120);
   const c = parseContact(rawContact);
-  const base: Data = { stage: "start", contact: rawContact, brand };
+  const profileRaw = String(fd.get("profile") ?? "");
+  const { profile, error: profileError } = parseProfile(profileRaw);
+  const base: Data = { stage: "start", contact: rawContact, brand, profileRaw: JSON.stringify(profile), profile };
 
   const errors: Data["errors"] = {};
   if (brand.length < 2) errors.brand = "Enter your brand name";
+  if (profileError) errors.profile = profileError;
   // New accounts always confirm a mobile number with an OTP (stops sign-ups with made-up numbers)
   if (!c || c.channel !== "phone") errors.contact = "Enter a valid 10-digit mobile number";
   else if (await findOwner(c.channel, c.target)) errors.contact = `An account with this ${c.channel === "phone" ? "number" : "email"} already exists. Log in instead.`;
@@ -60,7 +68,7 @@ export async function action({ request }: ActionFunctionArgs) {
   // verify
   const v = await verifyOwnerOtp(c, "signup", String(fd.get("code") ?? ""), String(fd.get("token") ?? "") || undefined);
   if (!v.ok) return json<Data>({ ...base, stage: "otp", shown: showContact(c), errors: { code: v.error }, widget: await ownerWidget(c), phone: c.channel === "phone" ? c.target : undefined }, { status: 400 });
-  const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target, attribution: readAttribution(request) });
+  const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target, attribution: readAttribution(request), signup: profile });
   return startSession(request, { user }, "/onboarding?welcome=1");
 }
 
@@ -89,12 +97,15 @@ export default function Signup() {
             <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
             <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} error={e.contact} phoneOnly />
             <p className="-mt-2 text-xs text-ink-faint">We'll send a one-time code to confirm it. You can add your email in the next step.</p>
+            <div className="border-t border-rule pt-4">
+              <SignupQuestions initial={data?.profile} error={e.profile} />
+            </div>
             <SubmitButton className="btn-primary w-full py-3" busyText="Sending code">Get OTP</SubmitButton>
             <p className="text-center text-xs text-ink-faint">By continuing you agree to our <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy" className="underline">Privacy policy</Link>.</p>
           </Form>
         ) : (
           <OtpStep
-            hidden={{ contact: data?.contact ?? "", brand: data?.brand ?? "" }}
+            hidden={{ contact: data?.contact ?? "", brand: data?.brand ?? "", profile: data?.profileRaw ?? "" }}
             error={e.code}
             resendIn={data?.resendIn}
             onChange={() => setStage("start")}

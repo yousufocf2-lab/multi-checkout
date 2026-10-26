@@ -6,6 +6,7 @@ import { sourceGroup, touchSummary, type Attribution } from "./attribution";
 import { getMarketing, saveMarketing } from "./marketing.server";
 import { scrubToken } from "./meta.server";
 import { reasonLabel } from "./support";
+import { profileFacts } from "./clients";
 import { DEMO_MINUTES, demoLabel, isLeadStatus, slotsClash, type LeadKind, type SourceTag } from "./leads";
 
 const META_VERSION = () => process.env.META_API_VERSION || "v23.0";
@@ -107,7 +108,7 @@ export type LeadItem = {
   stores: number | null; signedUp: boolean;
 };
 
-const tagOf = (a: Attribution | null | undefined): SourceTag => {
+export const tagOf = (a: Attribution | null | undefined): SourceTag => {
   const g = sourceGroup(a?.channel);
   return g === "google" ? "google" : g === "meta" ? "meta" : g === "organic" ? "organic" : g === "other" || g === "other_ads" ? "other" : "direct";
 };
@@ -193,8 +194,8 @@ export async function getLead(kind: LeadKind, id: string) {
   const t = u.attribution?.last ?? u.attribution?.first;
   return {
     kind, id, name: u.name, phone: u.phone, email: u.email, source: tagOf(u.attribution), createdAt: u.createdAt.toISOString(),
-    facts: [["KYC", u.kycStatus], ["Came from", touchSummary(t) || "Direct"], ["Landed on", t?.lp ?? null]].filter((x) => x[1]) as [string, string][],
-    answers: [], crm: c ?? null, owner: { id: u.id, n: owners.byId.get(u.id) ?? 0 },
+    facts: [["Contact person", u.kyc.contactName ?? null], ["KYC", u.kycStatus], ["Came from", touchSummary(t) || "Direct"], ["Landed on", t?.lp ?? null]].filter((x) => x[1]) as [string, string][],
+    answers: profileFacts(u.signup).map(([q, a]) => ({ q, a })), crm: c ?? null, owner: { id: u.id, n: owners.byId.get(u.id) ?? 0 },
   };
 }
 

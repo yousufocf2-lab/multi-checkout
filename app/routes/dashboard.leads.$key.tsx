@@ -9,6 +9,8 @@ import { Notice, SubmitButton } from "~/components/ui";
 import { requireAdmin } from "~/lib/auth.server";
 import { DEMO_MINUTES, KIND_LABEL, LEAD_STATUSES, demoLabel, parseLeadKey, slotsClash } from "~/lib/leads";
 import { bookedSlots, getLead, updateLead } from "~/lib/leads.server";
+import { listClients } from "~/lib/clients.server";
+import { STEPS } from "~/lib/clients";
 
 export const meta: MetaFunction = () => [{ title: "Lead · Growpefy" }];
 
@@ -21,6 +23,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return json({
     key: params.key!, lead: { ...lead, crm: lead.crm ? { ...lead.crm, demoAt: lead.crm.demoAt?.toISOString() ?? null, updatedAt: lead.crm.updatedAt.toISOString() } : null },
     booked: await bookedSlots(params.key),
+    // How far this person has got with Growpefy (signup → KYC → store → live → order → recharge)
+    progress: lead.owner ? (await listClients(lead.owner.id))[0] ?? null : null,
   });
 }
 
@@ -50,7 +54,7 @@ const toLocal = (iso: string | null | undefined) => {
 };
 
 export default function Lead() {
-  const { lead: l, booked, key } = useLoaderData<typeof loader>();
+  const { lead: l, booked, key, progress } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
   const [status, setStatus] = useState(l.crm?.status ?? "new");
@@ -87,9 +91,28 @@ export default function Lead() {
               <Row k="Growpefy account" v={l.owner ? `Signed up · ${l.owner.n} store${l.owner.n === 1 ? "" : "s"} connected` : "Not signed up yet"} />
             </dl>
           </section>
+          {progress && (
+            <section className="panel p-5">
+              <h2 className="text-sm font-semibold">Onboarding progress</h2>
+              <ol className="mt-3 space-y-2">
+                {STEPS.map((st) => {
+                  const at = progress.steps[st.id];
+                  const isNext = progress.next?.id === st.id;
+                  return (
+                    <li key={st.id} className="flex items-center gap-3 text-sm">
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${at ? "bg-pine text-white" : isNext ? "border-2 border-amber-400 text-amber-600" : "border border-rule-strong text-ink-faint"}`}>{at ? "✓" : ""}</span>
+                      <span className={`flex-1 ${at ? "" : isNext ? "font-semibold" : "text-ink-faint"}`}>{st.label}{isNext && <span className="ml-2 rounded-full bg-amber-50 px-2 py-px text-[11px] font-medium text-amber-800">Next step</span>}</span>
+                      {at && <span className="text-[11px] text-ink-faint">{when(at)}</span>}
+                    </li>
+                  );
+                })}
+              </ol>
+              <p className="mt-3 text-xs text-ink-soft">{progress.stores} store{progress.stores === 1 ? "" : "s"} · {progress.orders} orders{progress.rechargedPaise ? ` · ₹${(progress.rechargedPaise / 100).toLocaleString("en-IN")} recharged` : ""}</p>
+            </section>
+          )}
           <section className="panel p-5">
-            <h2 className="text-sm font-semibold">{l.kind === "meta" ? "Form answers" : "Message"}</h2>
-            {l.answers.length === 0 ? <p className="mt-2 text-sm text-ink-faint">{l.kind === "meta" ? "No extra answers on this lead." : "No message."}</p> : (
+            <h2 className="text-sm font-semibold">{l.kind === "meta" ? "Form answers" : l.kind === "signup" ? "Signup answers" : "Message"}</h2>
+            {l.answers.length === 0 ? <p className="mt-2 text-sm text-ink-faint">{l.kind === "meta" ? "No extra answers on this lead." : l.kind === "signup" ? "Signed up before these questions were added." : "No message."}</p> : (
               <dl className="mt-3 space-y-3">
                 {l.answers.filter((x): x is NonNullable<typeof x> => x != null).map((x, i) => (
                   <div key={i} className="rounded-lg bg-paper px-3 py-2"><dt className="text-xs text-ink-soft">{x.q}</dt><dd className="mt-0.5 whitespace-pre-line text-sm font-medium">{x.a || "—"}</dd></div>

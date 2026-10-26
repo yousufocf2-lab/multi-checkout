@@ -27,7 +27,7 @@ export const meta: MetaFunction = () => [{ title: "Complete your KYC · Growpefy
 async function loadOwner(request: Request) {
   requireAppHost(request);
   const viewer = await requireViewer(request);
-  if (viewer.role !== "owner") throw redirect("/dashboard");
+  if (viewer.role !== "owner" || viewer.member) throw redirect("/dashboard");
   const [u] = await db.select().from(users).where(eq(users.id, viewer.userId)).limit(1);
   return u;
 }

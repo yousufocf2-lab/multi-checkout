@@ -55,7 +55,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const store = await requireStore(viewer, params.id);
   const fd = await request.formData();
   const conv = Number(fd.get("conversation"));
-  const by = viewer.role === "admin" ? "Growpefy admin" : viewer.name;
+  const by = viewer.role === "admin" ? (viewer.staff ? `${viewer.staff.name} (Growpefy)` : "Growpefy admin") : (viewer.member?.name ?? viewer.name);
   const r = fd.get("intent") === "followup" ? await sendFollowup(store, conv, by) : await sendReply(store, conv, String(fd.get("text") ?? ""), by);
   return json(r, { status: r.ok ? 200 : 400 });
 }

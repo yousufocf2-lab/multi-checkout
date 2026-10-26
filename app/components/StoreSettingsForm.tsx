@@ -17,11 +17,18 @@ export type StoreFormValues = {
 
 const saved = (yes?: boolean) => (yes ? "Saved. Leave blank to keep it." : undefined);
 
-export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew }: {
+export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew, siteSuggestions = [] }: {
   values?: StoreFormValues; errors?: Record<string, string>; submitLabel: string; isNew?: boolean;
+  /** Websites the owner gave at signup (not yet connected): pre-fill and suggest them. */
+  siteSuggestions?: { url: string; platform: string }[];
 }) {
   const v = values;
   const [platform, setPlatform] = useState<"shopify" | "woocommerce">(v.platform ?? "shopify");
+  // Picking a suggested website also picks its platform (when it's Shopify or WooCommerce)
+  const onSite = (url: string) => {
+    const hit = siteSuggestions.find((x) => x.url === url || x.url.replace(/^https?:\/\//, "") === url);
+    if (isNew && hit && (hit.platform === "shopify" || hit.platform === "woocommerce")) setPlatform(hit.platform);
+  };
   const woo = platform === "woocommerce";
 
   return (
@@ -46,7 +53,10 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
           <TextField label="Store name" name="name" defaultValue={v.name} error={errors.name} placeholder="Budverse" required />
           <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="budverse" hint="Lowercase letters, numbers and dashes. Used in the theme script and your checkout address." required />
           {!woo && <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="budverse.myshopify.com" hint="Settings → Domains in Shopify admin" required />}
-          <TextField label={woo ? "WordPress site address" : "Store website"} name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in" hint={woo ? "Settings → General → Site Address (URL) in WordPress" : undefined} required />
+          <TextField label={woo ? "WordPress site address" : "Store website"} name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in"
+            hint={woo ? "Settings → General → Site Address (URL) in WordPress" : siteSuggestions.length > 1 ? "Pick one of the websites you gave us, or type another." : undefined} required
+            list={siteSuggestions.length ? "gp-site-suggestions" : undefined} onChange={(e) => onSite(e.currentTarget.value)} />
+          {siteSuggestions.length > 0 && <datalist id="gp-site-suggestions">{siteSuggestions.map((x) => <option key={x.url} value={x.url} />)}</datalist>}
           <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" hint="Shown on the checkout for help." />
           <TextField label="Own checkout domain (optional)" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.budverse.in"
             hint="Leave empty to use your free checkout address (store-id.checkout.growpefy.com). Nothing to set up." />

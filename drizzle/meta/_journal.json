@@ -204,6 +204,13 @@
       "when": 1793017256618,
       "tag": "0028_leads_crm",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793031602338,
+      "tag": "0029_team_signup",
+      "breakpoints": true
     }
   ]
 }

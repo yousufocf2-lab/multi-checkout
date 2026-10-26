@@ -1,4 +1,4 @@
-// Super admin: sticky reminder of the nearest scheduled demo, shown on every dashboard page.
+// Admin side: small tilted reminder card for the nearest scheduled demo, pinned to the top-right of every page.
 import { Link } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { Icon } from "~/components/Icons";
@@ -10,7 +10,7 @@ function until(ms: number) {
   const m = Math.round(ms / 60_000);
   if (m < 60) return `in ${m} min`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `in ${h} hr${m % 60 ? ` ${m % 60} min` : ""}`;
+  if (h < 24) return `in ${h}h${m % 60 ? ` ${m % 60}m` : ""}`;
   const d = Math.round(h / 24);
   return `in ${d} day${d === 1 ? "" : "s"}`;
 }
@@ -18,27 +18,26 @@ function until(ms: number) {
 export function DemoBar({ demo }: { demo: NextDemo }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
-  const at = new Date(demo.demoAt).getTime();
-  const left = at - now;
+  const left = new Date(demo.demoAt).getTime() - now;
   if (left < -DEMO_MINUTES * 60_000) return null; // demo is over
   const live = left <= 0;
   const soon = left <= 15 * 60_000;
-  const tone = live ? "bg-pine text-white" : soon ? "bg-amber-400 text-ink" : "bg-ink text-white";
+  const tone = live ? "bg-emerald-500 text-white" : soon ? "bg-amber-300 text-ink" : "bg-[#FFE45C] text-ink";
 
   return (
-    <div className={`sticky top-[57px] z-20 -mx-4 -mt-5 mb-5 shadow-lift sm:-mx-6 lg:top-0 lg:-mx-10 lg:-mt-8 lg:mb-6 ${tone}`} role="status">
-      <Link to={`/dashboard/leads/${demo.key}`} className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-3 gap-y-0.5 px-4 py-2 text-sm sm:px-6 lg:px-10">
-        <span className="flex items-center gap-1.5 font-semibold">
-          <Icon name="calendar" className="h-4 w-4" />{live ? "Demo live now" : "Upcoming demo"}
-        </span>
-        <span className="num font-semibold">{demoLabel(demo.demoAt)}</span>
-        <span className="min-w-0 truncate opacity-90">{demo.name}{demo.phone ? ` · +91 ${demo.phone}` : ""}</span>
-        <span className="ml-auto flex items-center gap-2 text-xs font-medium opacity-90">
-          {!live && <span className="num">{until(left)}</span>}
-          {demo.more > 0 && <span className="rounded-full bg-white/20 px-2 py-px">+{demo.more} more</span>}
-          <Icon name="arrow" className="h-3.5 w-3.5" />
-        </span>
-      </Link>
+    // Phones: pinned under the top bar. Desktop: sticky in the top-right corner of the page, with the page flowing around it.
+    <div className="pointer-events-none fixed right-2 top-[62px] z-40 lg:pointer-events-auto lg:sticky lg:right-auto lg:top-4 lg:float-right lg:mb-3 lg:ml-5">
+    <Link to={`/dashboard/leads/${demo.key}`} role="status" aria-label={`Upcoming demo with ${demo.name}, ${demoLabel(demo.demoAt)}`}
+      className={`pointer-events-auto block w-[150px] rotate-[3deg] rounded-xl px-3 py-2 shadow-[0_10px_24px_-8px_rgba(0,0,0,.35)] ring-1 ring-black/10 transition hover:rotate-0 hover:scale-[1.03] lg:w-[190px] ${tone}`}>
+      <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+        <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-white" : "animate-pulse bg-red-500"}`} />
+        {live ? "Demo live now" : "Next demo"}
+        {demo.more > 0 && <span className="ml-auto rounded-full bg-black/10 px-1.5 text-[10px] normal-case tracking-normal">+{demo.more}</span>}
+      </span>
+      <span className="num mt-0.5 block text-sm font-bold leading-tight">{demoLabel(demo.demoAt)}</span>
+      <span className="block truncate text-xs font-medium opacity-80">{demo.name}</span>
+      {!live && <span className="num mt-0.5 flex items-center gap-1 text-[11px] font-semibold"><Icon name="clock" className="h-3 w-3" />{until(left)}</span>}
+    </Link>
     </div>
   );
 }
