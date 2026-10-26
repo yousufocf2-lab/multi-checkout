@@ -7,9 +7,16 @@ import { getMarketing, saveMarketing } from "./marketing.server";
 import { messaging } from "./rto.server";
 import { syncMetaLeads } from "./leads.server";
 import { WELCOME_DEFAULTS, fillName, greetName } from "./welcome";
+import { welcomeEmail } from "./welcome-email.server";
+import { getPlatform } from "./wallet.server";
+
+/** Message texts from before the designed email (they had their own greeting, steps and sign-off). */
+const OLD_BODIES = ["Here's how to go live:", "Our team will call you shortly to understand your store. If you'd like to start right away, create your free account here"];
 
 export async function getWelcome() {
-  const w = (await getMarketing()).welcome ?? {};
+  const w = { ...((await getMarketing()).welcome ?? {}) };
+  if (w.leadBody && OLD_BODIES.some((x) => w.leadBody!.includes(x))) delete w.leadBody;
+  if (w.signupBody && OLD_BODIES.some((x) => w.signupBody!.includes(x))) delete w.signupBody;
   return { ...WELCOME_DEFAULTS, ...Object.fromEntries(Object.entries(w).filter(([, v]) => v !== undefined && v !== "")) } as typeof WELCOME_DEFAULTS & { autoFrom?: string };
 }
 
@@ -135,25 +142,35 @@ async function sendWhatsapp(row: LeadMessage, s: Awaited<ReturnType<typeof getWe
   return { ok: false, retry: !permanent, error: msg };
 }
 
-const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-function emailHtml(text: string) {
-  const paras = esc(text).split(/\n{2,}/).map((p) => `<p style="margin:0 0 14px">${p.replace(/\n/g, "<br>").replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color:#0B5D4B">$1</a>')}</p>`).join("");
-  return `<div style="background:#f4f6f5;padding:24px 12px;font-family:system-ui,-apple-system,Segoe UI,sans-serif"><div style="max-width:520px;margin:auto;background:#fff;border-radius:14px;padding:28px 26px;color:#1c2430;font-size:15px;line-height:1.6"><p style="margin:0 0 20px;font-size:20px;font-weight:700;color:#0B5D4B">Growpefy</p>${paras}</div><p style="text-align:center;color:#8a9490;font-size:12px;margin-top:14px">You're getting this because you contacted Growpefy or created an account.</p></div>`;
+/** Subject, HTML and plain text for one welcome email. */
+export async function renderWelcome(kind: "lead" | "signup", rawName: string, s?: Awaited<ReturnType<typeof getWelcome>>) {
+  s ??= await getWelcome();
+  const p = await getPlatform();
+  const name = greetName(rawName);
+  const subject = fillName(kind === "lead" ? s.leadSubject : s.signupSubject, name).replace(/, there(?=\W*$)/, "");
+  const wa = (s.whatsappNumber || p.billing?.phone || "").replace(/\D/g, "");
+  const { html, text } = welcomeEmail(kind, rawName, kind === "lead" ? s.leadBody : s.signupBody, {
+    baseUrl: (process.env.APP_URL || "https://growpefy.com").replace(/\/+$/, ""),
+    fromName: s.fromName || "Growpefy",
+    whatsapp: wa ? (wa.length === 10 ? `91${wa}` : wa) : null,
+    supportEmail: p.billing?.email || "support@growpefy.com",
+    address: p.billing?.address || "",
+  });
+  return { subject, html, text };
 }
 
-async function sendEmail(row: LeadMessage, s: Awaited<ReturnType<typeof getWelcome>>): Promise<Result> {
-  const name = greetName(row.name);
-  const subject = fillName(row.msg === "lead" ? s.leadSubject : s.signupSubject, name).replace(/, there$/, "");
-  const text = fillName(row.msg === "lead" ? s.leadBody : s.signupBody, name);
+async function sendEmail(row: LeadMessage, s: Awaited<ReturnType<typeof getWelcome>>, subjectPrefix = ""): Promise<Result> {
+  const { subject: sub, html, text } = await renderWelcome(row.msg, row.name, s);
+  const subject = subjectPrefix + sub;
   if (emailTestMode()) { console.log(`[welcome] test mode, email to ${row.target}: ${subject}`); return { ok: true, id: null }; }
   if (!process.env.RESEND_API_KEY) return { ok: false, retry: true, error: "Email isn't set up (RESEND_API_KEY)" };
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: process.env.MAIL_FROM || "Growpefy <no-reply@growpefy.com>",
-      reply_to: process.env.MAIL_REPLY_TO || "support@growpefy.com",
-      to: [row.target], subject, text, html: emailHtml(text),
+      from: `${(s.fromName || "Growpefy").replace(/[<>"]/g, "")} <${s.fromEmail || "hello@growpefy.com"}>`,
+      reply_to: s.replyTo || s.fromEmail || "hello@growpefy.com",
+      to: [row.target], subject, text, html,
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => null);
@@ -191,6 +208,17 @@ export async function sendDue(limit = 25) {
     if (row.channel === "whatsapp") await new Promise((res) => setTimeout(res, 300)); // gentle on Meta's rate limits
   }
   return { tried: due.length, sent };
+}
+
+/** Sends both welcome emails to one address right away (for checking how they look). */
+export async function sendTestEmails(to: string) {
+  const s = await getWelcome();
+  const out: string[] = [];
+  for (const msg of ["lead", "signup"] as const) {
+    const r = await sendEmail({ id: 0, msg, channel: "email", target: to, kind: "test", refId: "0", name: "Rahul Sharma", status: "queued", attempts: 0, error: null, providerId: null, nextAttemptAt: new Date(), sentAt: null, createdAt: new Date() }, s, "[Test] ");
+    out.push(r.ok ? `${msg === "lead" ? "Lead" : "Signup"} email sent` : `${msg === "lead" ? "Lead" : "Signup"} email failed: ${r.error}`);
+  }
+  return out.join(" · ");
 }
 
 // ---------------- background job ----------------

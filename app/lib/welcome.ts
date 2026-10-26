@@ -9,30 +9,17 @@ export const WELCOME_DEFAULTS: Required<Omit<WelcomeSettings, "autoFrom">> = {
   waSignupTemplate: "growpefy_signup_welcome",
   waLang: "en",
   leadSubject: "Thanks for your interest in Growpefy, {{name}}",
-  leadBody: `Hi {{name}},
+  leadBody: `Thanks for reaching out to Growpefy. Our team will call you shortly to understand your store and show you how the checkout works for your products.
 
-Thanks for reaching out to Growpefy. We help D2C brands get more prepaid orders, cut RTO with OTP and COD controls, and confirm COD orders on WhatsApp, all from one fast checkout.
+If you'd like to get started right away, create your free account. It takes about a minute, and you can connect your store whenever you're ready.`,
+  signupSubject: "Welcome to Growpefy, {{name}} 🎉",
+  signupBody: `Your Growpefy account is ready. Finish the three steps below and your new checkout goes live on your store.
 
-Our team will call you shortly to understand your store. If you'd like to start right away, create your free account here: https://growpefy.com/signup
-
-Have a question? Just reply to this email.
-
-Team Growpefy`,
-  signupSubject: "Welcome to Growpefy, {{name}}",
-  signupBody: `Hi {{name}},
-
-Welcome to Growpefy! Your account is ready.
-
-Here's how to go live:
-1. Finish your business details
-2. Connect your store (Shopify or WooCommerce)
-3. Recharge your wallet and switch on the checkout
-
-Log in any time at https://growpefy.com/login
-
-Want us to set it up with you? Reply to this email or message us on WhatsApp and we'll help you get started.
-
-Team Growpefy`,
+Stuck anywhere? Reply to this email or message us on WhatsApp and we'll set it up with you.`,
+  fromName: "Growpefy",
+  fromEmail: "hello@growpefy.com",
+  replyTo: "hello@growpefy.com",
+  whatsappNumber: "",
 };
 
 /** Text to paste when creating the two WhatsApp templates in WhatsApp Manager ({{1}} = the person's name). */

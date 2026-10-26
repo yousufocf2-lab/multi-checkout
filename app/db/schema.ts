@@ -720,6 +720,8 @@ export type WelcomeSettings = {
   whatsapp?: boolean; email?: boolean;
   waLeadTemplate?: string; waSignupTemplate?: string; waLang?: string; // templates: {{1}} = name
   leadSubject?: string; leadBody?: string; signupSubject?: string; signupBody?: string; // {{name}} placeholder
+  fromName?: string; fromEmail?: string; replyTo?: string; // who the welcome emails come from
+  whatsappNumber?: string; // for the "Chat on WhatsApp" button, digits with country code
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 

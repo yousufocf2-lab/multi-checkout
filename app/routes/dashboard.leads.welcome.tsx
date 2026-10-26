@@ -8,7 +8,7 @@ import { Notice, PageHeader, Section, SubmitButton, TextField, Toggle } from "~/
 import { requireAdmin } from "~/lib/auth.server";
 import { MSG_LABEL, STATUS_LABEL, WA_TEMPLATE_TEXT, WELCOME_DEFAULTS } from "~/lib/welcome";
 import {
-  emailReady, existingNotSent, getWelcome, queueExisting, recentMessages, retryFailed, saveWelcome, sendDue, startWelcomeWatcher, welcomeStats, whatsappReady,
+  emailReady, existingNotSent, getWelcome, queueExisting, recentMessages, renderWelcome, retryFailed, saveWelcome, sendDue, sendTestEmails, startWelcomeWatcher, welcomeStats, whatsappReady,
 } from "~/lib/welcome.server";
 
 export const meta: MetaFunction = () => [{ title: "Welcome messages · Growpefy" }];
@@ -17,8 +17,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   startWelcomeWatcher();
   const [s, stats, recent, pending, wa] = await Promise.all([getWelcome(), welcomeStats(), recentMessages(40), existingNotSent(), whatsappReady()]);
+  const [pLead, pSignup] = await Promise.all([renderWelcome("lead", "Rahul Sharma", s), renderWelcome("signup", "Rahul Sharma", s)]);
   return json({
     s, stats, wa, email: emailReady(),
+    preview: { lead: { subject: pLead.subject, html: pLead.html }, signup: { subject: pSignup.subject, html: pSignup.html } },
     pending: { whatsapp: pending.whatsapp, email: pending.email, leads: pending.leads, signups: pending.signups },
     recent: recent.map((r) => ({ id: r.id, msg: r.msg, channel: r.channel, target: r.target, name: r.name, kind: r.kind, refId: r.refId, status: r.status, error: r.error, attempts: r.attempts, at: (r.sentAt ?? r.createdAt).toISOString() })),
   });
@@ -35,8 +37,16 @@ export async function action({ request }: ActionFunctionArgs) {
       auto: fd.get("auto") === "on", whatsapp: fd.get("whatsapp") === "on", email: fd.get("email") === "on",
       waLeadTemplate: tpl("waLeadTemplate"), waSignupTemplate: tpl("waSignupTemplate"), waLang: t("waLang", 10) || "en",
       leadSubject: t("leadSubject", 200), leadBody: t("leadBody"), signupSubject: t("signupSubject", 200), signupBody: t("signupBody"),
+      fromName: t("fromName", 60).replace(/[<>"]/g, ""), fromEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t("fromEmail")) ? t("fromEmail", 120).toLowerCase() : undefined,
+      replyTo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t("replyTo")) ? t("replyTo", 120).toLowerCase() : undefined,
+      whatsappNumber: t("whatsappNumber", 20).replace(/\D/g, ""),
     });
     return json({ ok: "Saved" });
+  }
+  if (intent === "test") {
+    const to = t("testTo", 120).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return json({ ok: null, error: "Enter an email address to send the test to" });
+    return json({ ok: `${await sendTestEmails(to)} to ${to}. Check the inbox (and the Promotions / Spam tab).` });
   }
   if (intent === "existing") {
     const n = await queueExisting();
@@ -55,7 +65,7 @@ const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: 
 
 export default function Welcome() {
   const d = useLoaderData<typeof loader>();
-  const r = useActionData<typeof action>();
+  const r = useActionData<typeof action>() as { ok: string | null; error?: string } | undefined;
   const s = d.s;
   const totalPending = d.pending.whatsapp + d.pending.email;
 
@@ -66,6 +76,7 @@ export default function Welcome() {
 
       <div className="space-y-5">
         {r?.ok && <Notice tone="success">{r.ok}</Notice>}
+        {r && "error" in r && typeof r.error === "string" && <Notice tone="error">{r.error}</Notice>}
 
         <div className="grid gap-3 sm:grid-cols-4">
           <Stat label="Sent" value={d.stats.sent} note={`${d.stats.whatsappSent} WhatsApp · ${d.stats.emailSent} email`} />
@@ -118,7 +129,16 @@ export default function Welcome() {
             <div className="mt-4 max-w-[180px]"><TextField label="Template language code" name="waLang" defaultValue={s.waLang} hint="en for English" /></div>
           </Section>
 
-          <Section title="Emails" description="Write {{name}} where the person's first name should go.">
+          <Section title="Who the emails come from" description="Any address @growpefy.com works for sending (the domain is verified in Resend). Replies go to the reply-to address, so make sure it lands in your Gmail (Cloudflare Email Routing).">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField label="Sender name" name="fromName" defaultValue={s.fromName} hint="e.g. Growpefy, or Yusuf from Growpefy. Also used to sign the email." />
+              <TextField label="Sender email" name="fromEmail" type="email" defaultValue={s.fromEmail} hint="e.g. hello@growpefy.com" />
+              <TextField label="Replies go to" name="replyTo" type="email" defaultValue={s.replyTo} hint="e.g. hello@growpefy.com or yusuf@growpefy.com" />
+              <TextField label="WhatsApp number for the button" name="whatsappNumber" defaultValue={s.whatsappNumber} placeholder="Uses the phone in invoice details if empty" hint="10 digits, or with 91" />
+            </div>
+          </Section>
+
+          <Section title="Emails" description="Write {{name}} where the person's first name should go. The design (logo, checkout photo, features, buttons) is added around your message automatically.">
             <div className="grid gap-5 lg:grid-cols-2">
               <EmailBox title="For leads" sKey="leadSubject" bKey="leadBody" subject={s.leadSubject} body={s.leadBody} defSubject={WELCOME_DEFAULTS.leadSubject} defBody={WELCOME_DEFAULTS.leadBody} />
               <EmailBox title="For signups" sKey="signupSubject" bKey="signupBody" subject={s.signupSubject} body={s.signupBody} defSubject={WELCOME_DEFAULTS.signupSubject} defBody={WELCOME_DEFAULTS.signupBody} />
@@ -126,6 +146,8 @@ export default function Welcome() {
           </Section>
           <SubmitButton intent="save" busyText="Saving">Save</SubmitButton>
         </Form>
+
+        <EmailPreview d={d} />
 
         <section className="panel overflow-hidden">
           <h2 className="border-b border-rule px-5 py-3 text-sm font-semibold">Recent messages</h2>
@@ -186,5 +208,32 @@ function EmailBox({ title, sKey, bKey, subject, body, defSubject, defBody }: { t
         <textarea name={bKey} defaultValue={vals.body} rows={12} className="input text-sm leading-relaxed" />
       </label>
     </div>
+  );
+}
+
+function EmailPreview({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> }) {
+  const [tab, setTab] = useState<"lead" | "signup">("lead");
+  const [wide, setWide] = useState(true);
+  const p = d.preview[tab];
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-3">
+        <h2 className="mr-auto text-sm font-semibold">Email preview</h2>
+        <div className="flex rounded-lg bg-paper-sunk p-0.5 text-xs font-medium">
+          {(["lead", "signup"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 ${tab === k ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{k === "lead" ? "For leads" : "For signups"}</button>)}
+        </div>
+        <div className="flex rounded-lg bg-paper-sunk p-0.5 text-xs font-medium">
+          {([[true, "Computer"], [false, "Phone"]] as const).map(([v, l]) => <button key={l} type="button" onClick={() => setWide(v)} className={`rounded-md px-3 py-1.5 ${wide === v ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{l}</button>)}
+        </div>
+      </div>
+      <div className="border-b border-rule bg-paper px-5 py-2.5 text-sm"><span className="text-ink-soft">Subject:</span> <b>{p.subject}</b> <span className="text-xs text-ink-faint">· from {d.s.fromName} &lt;{d.s.fromEmail}&gt;</span></div>
+      <div className="flex justify-center bg-[#e9ecea] p-4">
+        <iframe title="Email preview" srcDoc={p.html} className="h-[900px] rounded-lg border border-rule bg-white transition-all" style={{ width: wide ? 680 : 390, maxWidth: "100%" }} />
+      </div>
+      <Form method="post" className="flex flex-wrap items-end gap-2 border-t border-rule px-5 py-4">
+        <div className="min-w-0 flex-1"><TextField label="Send both emails to yourself as a test" name="testTo" type="email" placeholder="you@gmail.com" /></div>
+        <SubmitButton intent="test" className="btn-secondary mb-[22px]" busyText="Sending"><Icon name="send" className="h-4 w-4" />Send test</SubmitButton>
+      </Form>
+    </section>
   );
 }
