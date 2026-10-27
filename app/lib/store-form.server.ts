@@ -1,5 +1,4 @@
 import type { Store } from "~/db/schema";
-import { appHost, checkoutRoot, cleanDomain } from "./urls.server";
 import type { StoreGateway } from "~/db/schema";
 import { MAX_GATEWAYS, gatewayById } from "./gateways/catalog";
 import { storeGateways } from "./gateways/index.server";
@@ -25,6 +24,8 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   const platform: Store["platform"] = existing ? existing.platform : s("platform") === "woocommerce" ? "woocommerce" : "shopify";
   const woo = platform === "woocommerce";
   const site = s("storefrontUrl").replace(/\/+$/, "");
+  // "Get credentials" stores: the owner's form has no app fields, so keep what Growpefy's team saved
+  const keepApp = !woo && Boolean(existing && (existing.connectStatus || existing.installUrl)) && !fd.has("clientId");
 
   const data: StoreInput = {
     name: s("name"),
@@ -34,11 +35,12 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     slug: s("slug").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""),
     shopDomain: (woo ? site : s("shopDomain")).replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase(),
     storefrontUrl: site,
-    checkoutDomain: s("checkoutDomain") ? cleanDomain(s("checkoutDomain")) : null,
+    // Every checkout runs on Growpefy's own address (store-id.checkout.growpefy.com); own domains are no longer used
+    checkoutDomain: null,
     active: on("active"),
-    adminToken: on("clearAdminToken") ? null : secret("adminToken", existing?.adminToken),
-    clientId: s("clientId") || null,
-    clientSecret: secret("clientSecret", existing?.clientSecret),
+    adminToken: keepApp ? existing!.adminToken : on("clearAdminToken") ? null : secret("adminToken", existing?.adminToken),
+    clientId: keepApp ? existing!.clientId : s("clientId") || null,
+    clientSecret: keepApp ? existing!.clientSecret : secret("clientSecret", existing?.clientSecret),
     apiVersion: s("apiVersion") || "2025-07",
     // filled in from the gateways below (PayU's keys are also kept in the old columns)
     payuKey: null,
@@ -91,12 +93,8 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   if (!woo && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
   if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://budverse.in";
   if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://budverse.in";
-  if (s("checkoutDomain") && !data.checkoutDomain) errors.checkoutDomain = "Enter only the domain, e.g. checkout.budverse.in";
-  if (data.checkoutDomain && data.checkoutDomain === appHost()) errors.checkoutDomain = "Use your store's own subdomain, not the platform domain";
-  const root = checkoutRoot();
-  if (data.checkoutDomain && root && (data.checkoutDomain === root || data.checkoutDomain.endsWith(`.${root}`))) errors.checkoutDomain = "Leave this empty to use your free checkout address. Only add a domain you own.";
   if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
-  if (!woo && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
+  if (!woo && !keepApp && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
 
   return { data, errors };
 }

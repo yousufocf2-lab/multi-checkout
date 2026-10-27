@@ -113,7 +113,8 @@ export async function finishOAuth(request: Request) {
   }
   const data = (await res.json()) as { access_token: string; scope?: string };
 
-  await db.update(stores).set({ adminToken: data.access_token }).where(eq(stores.id, store.id));
+  // Connected: a "Get credentials" request is done
+  await db.update(stores).set({ adminToken: data.access_token, connectStatus: null }).where(eq(stores.id, store.id));
   clearTokenCache(store.id);
   return redirect(`/dashboard/stores/${store.id}/install?connected=1`, {
     headers: { "Set-Cookie": await stateCookie().serialize("", { maxAge: 0 }) },

@@ -28,12 +28,15 @@ export function slugFromHost(host: string) {
   return LABEL_RE.test(s) ? s : null;
 }
 
-/** The host a store's checkout lives on: its own domain if set, else its subdomain. */
+/**
+ * The host a store's checkout lives on: its subdomain on Growpefy's checkout domain.
+ * Stores' own domains (checkout.brand.com) are no longer used; old links on them redirect here.
+ */
 export function storeHost(store: Pick<Store, "checkoutDomain" | "slug">) {
-  return store.checkoutDomain || storeSubdomain(store.slug);
+  return storeSubdomain(store.slug);
 }
 
-/** Public base URL for a store's checkout: its own domain, else its subdomain, else the app URL. */
+/** Public base URL for a store's checkout: its subdomain, else the app URL. */
 export function storeBaseUrl(store: Pick<Store, "checkoutDomain" | "slug">) {
   const host = storeHost(store);
   return host ? `https://${host}` : env.appUrl;
@@ -67,14 +70,13 @@ export function cleanDomain(v: string) {
 }
 
 /**
- * Customer pages are served on the store's own host (its domain or its subdomain).
- * Both the store's own domain and its subdomain are accepted; anything else redirects.
+ * Customer pages are served on the store's subdomain; anything else (an old own domain too) redirects there.
  */
 export function ensureStoreHost(request: Request, store: Pick<Store, "checkoutDomain" | "slug">) {
   const want = storeHost(store);
   if (!want) return;
   const host = requestHost(request);
-  if (host === want || host === store.checkoutDomain || host === storeSubdomain(store.slug) || host === "localhost" || host === "127.0.0.1") return;
+  if (host === want || host === "localhost" || host === "127.0.0.1") return;
   throw new Response(null, { status: 302, headers: { Location: sameUrlOn(storeBaseUrl(store), request) } });
 }
 

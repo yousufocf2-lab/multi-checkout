@@ -14,7 +14,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const owners = viewer.role === "admin" ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(asc(users.name)) : null;
-  return json({ store: storeForClient(store), owners });
+  return json({ store: storeForClient(store), owners, isAdmin: viewer.role === "admin" });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -50,14 +50,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function StoreSettings() {
-  const { store, owners } = useLoaderData<typeof loader>();
+  const { store, owners, isAdmin } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const errors = (res?.errors ?? {}) as Record<string, string>;
   return (
     <div className="max-w-3xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
       {Object.keys(errors).length > 0 && !errors.confirm && <Notice tone="error">Fix the highlighted fields and save again.</Notice>}
-      <StoreSettingsForm key={JSON.stringify(store)} values={store} errors={errors} submitLabel="Save settings" />
+      <StoreSettingsForm key={JSON.stringify(store)} values={store} errors={errors} submitLabel="Save settings" isAdmin={isAdmin} />
 
       {owners && (
         <Section title="Store owner" description="The owner can log in and manage this store.">

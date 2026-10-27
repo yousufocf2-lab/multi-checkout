@@ -18,6 +18,7 @@ import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
 import { supportBadge } from "~/lib/support.server";
 import { upcomingDemos } from "~/lib/leads.server";
+import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
 
 export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { name: "robots", content: "noindex" }];
@@ -49,13 +50,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const waPending = admin && can(viewer, "clients")
     ? await db.select({ n: sql<number>`count(*)::int` }).from(storesTable).where(sql`${storesTable.waVerify}->>'status' = 'submitted'`).then((r) => Number(r[0]?.n ?? 0)).catch(() => 0)
     : 0;
+  const connectPending = admin && can(viewer, "stores") ? await pendingConnectCount().catch(() => 0) : 0;
   const support = can(viewer, "support") || viewer.role === "owner" ? await supportBadge(viewer).catch(() => 0) : 0;
   // Nearest scheduled sales demo → reminder card on every page (admin side, with access to leads)
   const demos = admin && can(viewer, "leads") ? await upcomingDemos(5).catch(() => []) : [];
   const nextDemo: NextDemo | null = demos[0] ? { ...demos[0], more: demos.length - 1 } : null;
   const team = viewer.role === "admin" ? viewer.staff : viewer.member;
   return json({
-    dropshipAlerts, waPending, support, nextDemo, login: nextDemo ? await loginStamp(request) : "",
+    dropshipAlerts, waPending, connectPending, support, nextDemo, login: nextDemo ? await loginStamp(request) : "",
     viewer: {
       role: viewer.role, name: viewer.name, email: viewer.email,
       person: team?.name ?? (admin ? "Super admin" : viewer.name),
@@ -64,7 +66,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.checkoutDomain ?? s.shopDomain })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain })),
     selected,
   }, { headers });
 }
@@ -84,7 +86,7 @@ type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][numbe
 const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/;
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, support, nextDemo, login } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -185,6 +187,7 @@ export default function DashboardLayout() {
       {(may("stores") || may("billing") || may("clients") || may("fulfilment")) && (
         <Group label="Operations">
           {may("stores") && <Item to="/dashboard/stores" icon="stores" match={(p) => p === "/dashboard/stores"}>Client stores</Item>}
+          {may("stores") && <Item to="/dashboard/connect-requests" icon="plus">{labelled("Connect requests", badge(connectPending, "bg-amber-400/20 text-amber-200"))}</Item>}
           {may("billing") && <Item to="/dashboard/wallets" icon="rupee">Wallets</Item>}
           {may("clients") && <Item to="/dashboard/wa-verify" icon="shield">{labelled("WhatsApp approvals", badge(waPending, "bg-amber-400/20 text-amber-200"))}</Item>}
           {may("fulfilment") && <Item to="/dashboard/dropship" icon="box">{labelled("Dropshipping", badge(dropshipAlerts, "bg-red-400/20 text-red-200"))}</Item>}

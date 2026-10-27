@@ -27,7 +27,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return json({
     isAdmin: viewer.role === "admin",
     stores: list.map((s) => ({
-      id: s.id, name: s.name, domain: s.checkoutDomain ?? s.shopDomain, active: s.active, logoUrl: s.logoUrl,
+      id: s.id, name: s.name, domain: s.shopDomain, active: s.active, logoUrl: s.logoUrl,
+      connect: s.platform === "shopify" && !s.adminToken ? s.connectStatus : null,
       shopifyReady: s.platform === "woocommerce" ? Boolean(s.wooSecret) : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : "Shopify", payuReady: Boolean(s.payuKey && s.payuSalt), adsReady: Boolean((s.metaAdAccountId && s.metaAccessToken) || (s.googleRefreshToken && s.googleAdsCustomerId)),
       orders: by.get(s.id)?.count ?? 0, revenue: Number(by.get(s.id)?.revenue ?? 0) / 100,
       owner: s.ownerId ? ownerName.get(s.ownerId) ?? null : null,
@@ -70,6 +71,8 @@ export default function StoresList() {
                 </span>
                 <StatusBadge status={s.active ? "live" : "off"} />
               </Link>
+              {s.connect === "requested" && <p className="mt-3 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">We're setting up your Shopify app. You'll get WhatsApp + email.</p>}
+              {s.connect === "ready" && <Link to={`/dashboard/stores/${s.id}/install`} className="mt-3 block rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-good">Your app is ready → Connect store</Link>}
               <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
                 <Check ok={s.shopifyReady} label={s.platform} /><Check ok={s.payuReady} label="PayU" /><Check ok={s.adsReady} label="Meta ads" />
               </div>

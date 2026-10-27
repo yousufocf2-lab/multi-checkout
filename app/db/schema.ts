@@ -160,6 +160,11 @@ export const stores = pgTable("stores", {
   clientId: text("client_id"),
   clientSecret: text("client_secret"),
   apiVersion: text("api_version").notNull().default("2025-07"),
+  // One-click connect: the owner asks for credentials, Growpefy's team makes the Shopify app and saves its install link
+  connectStatus: text("connect_status").$type<"requested" | "ready">(), // null once connected (or for stores added the old way)
+  connectRequestedAt: timestamp("connect_requested_at", { withTimezone: true }),
+  connectReadyAt: timestamp("connect_ready_at", { withTimezone: true }),
+  installUrl: text("install_url"), // Shopify's custom-distribution install link for this store's app
   // WooCommerce: shared secret for the Growpefy plugin (signs every request both ways)
   wooSecret: text("woo_secret"),
   // Branding

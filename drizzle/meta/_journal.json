@@ -232,6 +232,13 @@
       "when": 1793036509057,
       "tag": "0032_admin_recharges",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793090908002,
+      "tag": "0033_connect_requests",
+      "breakpoints": true
     }
   ]
 }

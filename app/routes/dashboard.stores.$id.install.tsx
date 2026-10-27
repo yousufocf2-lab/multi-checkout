@@ -1,10 +1,12 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useSearchParams } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
 import { CopyField, Notice, SubmitButton } from "~/components/ui";
 import { and, desc, eq } from "drizzle-orm";
 import { db, paymentEvents } from "~/db.server";
-import { requireStore, requireViewer } from "~/lib/auth.server";
+import { can, requireStore, requireViewer } from "~/lib/auth.server";
+import { ConnectAppForm } from "~/components/ConnectAppForm";
+import { connectFormAction } from "~/lib/connect.server";
 import { env } from "~/lib/env.server";
 import { testMeta } from "~/lib/meta.server";
 import { ADAPTERS, activeGateways } from "~/lib/gateways/index.server";
@@ -12,17 +14,20 @@ import { SLOT_LABELS, gatewayById, gatewayName } from "~/lib/gateways/catalog";
 import { SHOPIFY_SCOPES } from "~/lib/scopes";
 import { testConnection } from "~/lib/platform.server";
 import { WOO_PLUGIN_PATH, WOO_PLUGIN_VERSION } from "~/lib/woo";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { storeBaseUrl } from "~/lib/urls.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const s = await requireStore(await requireViewer(request), params.id);
+  const viewer = await requireViewer(request);
+  const s = await requireStore(viewer, params.id);
+  const team = viewer.role === "admin" && can(viewer, "stores");
   const [lastHook] = await db.select({ at: paymentEvents.createdAt, kind: paymentEvents.kind, status: paymentEvents.status })
     .from(paymentEvents).where(and(eq(paymentEvents.storeId, s.id), eq(paymentEvents.source, "webhook"))).orderBy(desc(paymentEvents.createdAt)).limit(1);
   return json({
     lastHook: lastHook ? { at: lastHook.at.toISOString(), kind: lastHook.kind, status: lastHook.status } : null,
     store: {
-      id: s.id, slug: s.slug, shopDomain: s.shopDomain, checkoutDomain: s.checkoutDomain,
+      id: s.id, slug: s.slug, name: s.name, shopDomain: s.shopDomain,
+      connectStatus: s.connectStatus, installUrl: s.installUrl, requestedAt: s.connectRequestedAt?.toISOString() ?? null,
       hasToken: Boolean(s.adminToken), hasClient: Boolean(s.clientId && s.clientSecret),
       woo: s.platform === "woocommerce", wooSecret: s.platform === "woocommerce" ? s.wooSecret ?? "" : "", site: s.storefrontUrl,
       metaReady: Boolean(s.metaAdAccountId && s.metaAccessToken),
@@ -30,12 +35,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     gateways: activeGateways(s).map((g, i) => ({ id: g.id, name: gatewayName(g.id), mode: g.mode, slot: SLOT_LABELS[i], webhook: Boolean(gatewayById(g.id)?.webhook) })),
     appUrl: env.appUrl,
     checkoutBase: storeBaseUrl(s),
+    // Growpefy team: the form to save this store's app (Client ID, secret, install link)
+    teamForm: team && s.platform === "shopify" && (s.connectStatus || s.installUrl)
+      ? { id: s.id, name: s.name, shop: s.shopDomain, status: (s.connectStatus ?? "ready") as "requested" | "ready", clientId: s.clientId ?? "", hasSecret: Boolean(s.clientSecret), installUrl: s.installUrl ?? "" }
+      : null,
+    scopes: SHOPIFY_SCOPES,
   });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  const store = await requireStore(await requireViewer(request), params.id);
-  const intent = (await request.formData()).get("intent");
+  const viewer = await requireViewer(request);
+  const store = await requireStore(viewer, params.id);
+  const fd = await request.formData();
+  const intent = fd.get("intent");
+  if (intent === "saveConnect" || intent === "resendReady") {
+    if (viewer.role !== "admin" || !can(viewer, "stores")) return json({ intent, ok: null, error: "Not allowed" }, { status: 403 });
+    fd.set("storeId", String(store.id));
+    return json(await connectFormAction(fd));
+  }
   const run = async (fn: () => Promise<string>) => {
     try { return json({ intent, ok: await fn(), error: null }); }
     catch (e) { return json({ intent, ok: null, error: e instanceof Error ? e.message : String(e) }); }
@@ -61,53 +78,82 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function Setup() {
-  const { store, appUrl, checkoutBase, lastHook, gateways } = useLoaderData<typeof loader>();
-  const res = useActionData<typeof action>();
+  const { store, appUrl, checkoutBase, lastHook, gateways, teamForm, scopes } = useLoaderData<typeof loader>();
+  const res = useActionData<typeof action>() as { intent?: unknown; ok?: unknown; error?: string | null } | undefined;
   const [params] = useSearchParams();
   // Always the platform domain: it works even while a store's own checkout domain is being set up
   const snippet = `<script src="${appUrl}/embed.js?store=${store.slug}" defer></script>`;
   const result = (intent: string) =>
-    res?.intent === intent ? <div className="mt-3"><Notice tone={res.ok ? "success" : "error"}>{res.ok ?? res.error}</Notice></div> : null;
+    res?.intent === intent ? <div className="mt-3"><Notice tone={res.ok ? "success" : "error"}>{String(res.ok ?? res.error ?? "")}</Notice></div> : null;
+  const waitingInstall = !store.woo && !store.hasToken && store.connectStatus === "ready" && Boolean(store.installUrl);
 
   return (
     <div className="max-w-3xl space-y-5">
       {params.get("created") && <Notice tone="success">Store saved. Follow these steps to start taking orders.</Notice>}
-      {params.get("connected") && <Notice tone="success">Shopify connected. Run the test below to confirm.</Notice>}
+      {params.get("connected") && <Notice tone="success">Your Shopify store is connected 🎉 Last step: add the theme script (step 5 below) and your checkout is live.</Notice>}
+      {params.get("requested") && <Notice tone="success">Request sent. Our team is setting up your Shopify app. You'll get WhatsApp and email when it's ready, usually within a few hours.</Notice>}
+      {waitingInstall && <AutoRefresh />}
+
+      {teamForm && (
+        <section className="panel border-amber-200 p-5">
+          <h2 className="text-[15px] font-semibold">Growpefy team: {teamForm.status === "requested" ? "make this store's Shopify app" : "this store's Shopify app"}</h2>
+          <p className="mb-4 mt-0.5 text-sm text-ink-soft">Only your team sees this box.</p>
+          <ConnectAppForm store={teamForm} appUrl={appUrl} scopes={scopes} />
+        </section>
+      )}
 
       <ol className="space-y-5">
         {store.woo ? <WooSteps store={store} appUrl={appUrl} result={result} /> : (
         <Step n={1} title="Connect Shopify" done={store.hasToken}>
-          <p className="text-sm text-ink-soft">In your Shopify app (Dev Dashboard), set these values and turn on <b>Use legacy install flow</b>. Turn off <b>Embed app in Shopify admin</b>.</p>
-          <div className="mt-4 space-y-3">
-            <CopyField label="App URL" value={`${appUrl}/shopify/install`} />
-            <CopyField label="Allowed redirection URL" value={`${appUrl}/shopify/callback`} />
-            <CopyField label="Scopes" value={SHOPIFY_SCOPES} />
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {store.hasClient ? (
-              <a href={`/shopify/install?shop=${encodeURIComponent(store.shopDomain)}&store=${store.id}`} className="btn-primary">{store.hasToken ? "Reconnect Shopify" : "Connect with Shopify"}</a>
-            ) : (
-              <Link to="../settings" relative="path" className="btn-primary">Add Client ID and secret</Link>
-            )}
-            <Form method="post"><SubmitButton intent="testShopify" className="btn-secondary" busyText="Testing" disabled={!store.hasToken}>Test connection</SubmitButton></Form>
-          </div>
-          {result("testShopify")}
+          {store.hasToken ? (
+            <>
+              <p className="text-sm text-ink-soft">Your Shopify store <b className="text-ink">{store.shopDomain}</b> is connected.</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Form method="post"><SubmitButton intent="testShopify" className="btn-secondary" busyText="Testing">Test connection</SubmitButton></Form>
+                {store.hasClient && <a href={`/shopify/install?shop=${encodeURIComponent(store.shopDomain)}&store=${store.id}`} className="btn-secondary">Reconnect</a>}
+              </div>
+              {result("testShopify")}
+            </>
+          ) : waitingInstall ? (
+            <>
+              <p className="text-sm text-ink-soft">Your app is ready. Click <b className="text-ink">Connect store</b>: Shopify opens in a new tab, log in if asked and click <b className="text-ink">Install</b>. You'll come back here connected.</p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <a href={store.installUrl!} target="_blank" rel="noreferrer" className="btn-primary px-6 py-3 text-base">Connect store</a>
+                <span className="text-xs text-ink-faint">Store: {store.shopDomain}</span>
+              </div>
+              <p className="mt-3 text-xs text-ink-faint">
+                Clicked Install but didn't come back? <a href={`/shopify/install?shop=${encodeURIComponent(store.shopDomain)}&store=${store.id}`} className="underline">Finish connecting</a>.
+                Wrong store or stuck? Message us from Help &amp; support.
+              </p>
+            </>
+          ) : store.connectStatus === "requested" ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">We're setting up your Shopify app ⏳</p>
+              <p className="mt-1">Request for <b>{store.shopDomain}</b> received{store.requestedAt ? ` on ${new Date(store.requestedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}` : ""}. You'll get WhatsApp and email when it's ready, usually within a few hours. Then come back here and click <b>Connect store</b>.</p>
+              <p className="mt-2 text-xs">Meanwhile you can add your payment gateway and Meta ads in Settings.</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-ink-soft">In your Shopify app (Dev Dashboard), set these values and turn on <b>Use legacy install flow</b>. Turn off <b>Embed app in Shopify admin</b>.</p>
+              <div className="mt-4 space-y-3">
+                <CopyField label="App URL" value={`${appUrl}/shopify/install`} />
+                <CopyField label="Allowed redirection URL" value={`${appUrl}/shopify/callback`} />
+                <CopyField label="Scopes" value={SHOPIFY_SCOPES} />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {store.hasClient ? (
+                  <a href={`/shopify/install?shop=${encodeURIComponent(store.shopDomain)}&store=${store.id}`} className="btn-primary">Connect with Shopify</a>
+                ) : (
+                  <Link to="../settings" relative="path" className="btn-primary">Add Client ID and secret</Link>
+                )}
+              </div>
+            </>
+          )}
         </Step>
         )}
 
         <Step n={store.woo ? 3 : 2} title="Checkout address" done>
           <p className="text-sm text-ink-soft">Your checkout opens on <b className="text-ink">{checkoutBase.replace(/^https:\/\//, "")}</b>. Nothing to set up.</p>
-          {store.checkoutDomain ? (
-            <div className="mt-2 space-y-2 text-sm text-ink-soft">
-              <p>You use your own domain. Make sure these are done, or clear the domain in <Link to="../settings" relative="path" className="underline">Settings</Link> to use the free address:</p>
-              <ul className="list-disc space-y-1 pl-5">
-                <li>Railway: Settings → Networking → Custom domain → add <b className="text-ink">{store.checkoutDomain}</b>.</li>
-                <li>Your DNS: add a <b className="text-ink">CNAME</b> record named <b className="text-ink">{store.checkoutDomain.split(".")[0]}</b> pointing to the target Railway shows.</li>
-              </ul>
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-ink-faint">Want your own domain like checkout.yourstore.com? Add it in <Link to="../settings" relative="path" className="underline">Settings</Link>.</p>
-          )}
         </Step>
 
         <Step n={store.woo ? 4 : 3} title="Payment gateways" done={gateways.length > 0}>
@@ -160,6 +206,16 @@ export default function Setup() {
       </ol>
     </div>
   );
+}
+
+/** While the owner installs the app in another tab, check every few seconds so this page turns "connected" by itself. */
+function AutoRefresh() {
+  const { revalidate, state } = useRevalidator();
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === "visible" && state === "idle") revalidate(); }, 4000);
+    return () => clearInterval(t);
+  }, [revalidate, state]);
+  return null;
 }
 
 function Step({ n, title, done, children }: { n: number; title: string; done?: boolean; children: React.ReactNode }) {

@@ -76,7 +76,7 @@ function needFor(scope: Scope, path: string): Need {
     if (p.startsWith("/dashboard/clients") || p.startsWith("/dashboard/owners") || p.startsWith("/dashboard/wa-verify") || p.startsWith("/dashboard/store-doc")) return "clients";
     if (p.startsWith("/dashboard/wallets") || p.startsWith("/dashboard/wallet/") || (store && store[2] === "wallet")) return "billing";
     if (p.startsWith("/dashboard/dropship")) return "fulfilment";
-    if (store || p.startsWith("/dashboard/stores") || p.startsWith("/dashboard/orders") || p === "/dashboard/ads" || p === "/dashboard/compare") return "stores";
+    if (store || p.startsWith("/dashboard/stores") || p.startsWith("/dashboard/connect-requests") || p.startsWith("/dashboard/orders") || p === "/dashboard/ads" || p === "/dashboard/compare") return "stores";
     return null;
   }
 

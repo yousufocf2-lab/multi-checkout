@@ -12,13 +12,18 @@ export type StoreFormValues = {
   hasMetaToken?: boolean; hasCapiToken?: boolean;
   id?: number; googleConnected?: boolean; googleAdsCustomerId?: string | null; googleConversionActionName?: string | null; googleTagId?: string | null;
   logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null; popupCheckout?: boolean;
+  connectStatus?: string | null; installUrl?: string | null;
 };
 
 
 const saved = (yes?: boolean) => (yes ? "Saved. Leave blank to keep it." : undefined);
 
-export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew, siteSuggestions = [] }: {
+export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew, siteSuggestions = [], lockPlatform, isAdmin }: {
   values?: StoreFormValues; errors?: Record<string, string>; submitLabel: string; isNew?: boolean;
+  /** The platform was already picked on the page (no picker in the form). */
+  lockPlatform?: boolean;
+  /** Growpefy team viewing: always show the Shopify app fields. */
+  isAdmin?: boolean;
   /** Websites the owner gave at signup (not yet connected): pre-fill and suggest them. */
   siteSuggestions?: { url: string; platform: string }[];
 }) {
@@ -27,13 +32,16 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
   // Picking a suggested website also picks its platform (when it's Shopify or WooCommerce)
   const onSite = (url: string) => {
     const hit = siteSuggestions.find((x) => x.url === url || x.url.replace(/^https?:\/\//, "") === url);
-    if (isNew && hit && (hit.platform === "shopify" || hit.platform === "woocommerce")) setPlatform(hit.platform);
+    if (isNew && !lockPlatform && hit && (hit.platform === "shopify" || hit.platform === "woocommerce")) setPlatform(hit.platform);
   };
   const woo = platform === "woocommerce";
+  // Stores connected with "Get credentials": Growpefy's team made the app, so the owner doesn't see its keys
+  const managed = !woo && !isAdmin && Boolean(v.connectStatus || v.installUrl);
 
   return (
     <Form method="post" className="space-y-5" noValidate>
-      {isNew ? (
+      {isNew && lockPlatform && <input type="hidden" name="platform" value={platform} />}
+      {isNew && !lockPlatform ? (
         <Section title="Store platform" description="Where your store runs. This can't be changed later.">
           <input type="hidden" name="platform" value={platform} />
           <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Store platform">
@@ -58,8 +66,6 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
             list={siteSuggestions.length ? "gp-site-suggestions" : undefined} onChange={(e) => onSite(e.currentTarget.value)} />
           {siteSuggestions.length > 0 && <datalist id="gp-site-suggestions">{siteSuggestions.map((x) => <option key={x.url} value={x.url} />)}</datalist>}
           <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" hint="Shown on the checkout for help." />
-          <TextField label="Own checkout domain (optional)" name="checkoutDomain" defaultValue={v.checkoutDomain ?? ""} error={errors.checkoutDomain} placeholder="checkout.budverse.in"
-            hint="Leave empty to use your free checkout address (store-id.checkout.growpefy.com). Nothing to set up." />
         </div>
         <div className={`mt-4 border-t border-rule pt-4 ${woo ? "hidden" : ""}`}><Toggle name="popupCheckout" label="Open checkout as a popup" description="Checkout opens over your store, so customers never leave your website. On phones it fills the screen like a normal page. If it can't load, it opens as a page instead." defaultChecked={v.popupCheckout ?? true} /></div>
         {!isNew && <div className="mt-4 border-t border-rule pt-4"><Toggle name="active" label="Checkout is live" description="When off, the theme script stops opening this checkout." defaultChecked={v.active ?? true} /></div>}
@@ -70,6 +76,10 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         <Section title="WooCommerce plugin" description="Growpefy talks to your store through a small WordPress plugin. Every request is signed with a secret key.">
           <p className="text-sm text-ink-soft">{isNew ? "After you save, the Setup page gives you the plugin to install and the Store ID and secret key to paste in it." : <>Plugin download, Store ID and secret key are on the <b className="text-ink">Setup</b> page.</>}</p>
           {!isNew && v.hasWooSecret && <div className="mt-4 border-t border-rule pt-4"><Toggle name="rotateWooSecret" label="Make a new secret key" description="The old key stops working right away. Paste the new one in the plugin after saving." /></div>}
+        </Section>
+      ) : managed ? (
+        <Section title="Shopify connection" description="Growpefy set up the Shopify app for this store. Nothing to fill in here.">
+          <p className="text-sm text-ink-soft">{v.hasAdminToken ? "Your Shopify store is connected." : <>Connect your store from the <b className="text-ink">Setup</b> page.</>}</p>
         </Section>
       ) : (
       <Section title="Shopify app" description="Create an app in the Shopify Dev Dashboard, then paste its credentials here. You'll connect it in the next step.">
