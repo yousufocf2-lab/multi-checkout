@@ -1,14 +1,14 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { customerAddresses, db, type CustomerAddress, type Order } from "~/db.server";
-import { addressKey, maskName, maskText, type MaskedAddress } from "./addresses";
+import { addressKey, type SavedAddressPreview } from "./addresses";
 
 const MAX_PER_PHONE = 5;
 
-export function toMasked(a: CustomerAddress): MaskedAddress {
+export function toSavedAddressPreview(a: CustomerAddress): SavedAddressPreview {
   return {
     id: a.id,
-    name: maskName(a.firstName, a.lastName),
-    line: [maskText(a.address1), a.address2 ? maskText(a.address2) : ""].filter(Boolean).join(", "),
+    name: [a.firstName, a.lastName].filter(Boolean).join(" "),
+    line: [a.address1, a.address2].filter(Boolean).join(", "),
     city: a.city,
     state: a.state,
     pincode: a.pincode,
@@ -16,11 +16,11 @@ export function toMasked(a: CustomerAddress): MaskedAddress {
   };
 }
 
-/** Saved addresses for a phone (any store), newest first, masked. */
-export async function lookupAddresses(phone: string): Promise<MaskedAddress[]> {
+/** Saved addresses for a phone (any store), newest first. */
+export async function lookupAddresses(phone: string): Promise<SavedAddressPreview[]> {
   if (!/^\d{10}$/.test(phone)) return [];
   const rows = await db.select().from(customerAddresses).where(eq(customerAddresses.phone, phone)).orderBy(desc(customerAddresses.lastUsedAt)).limit(MAX_PER_PHONE);
-  return rows.map(toMasked);
+  return rows.map(toSavedAddressPreview);
 }
 
 /** Full address, only for its own phone. Call after the phone is OTP-verified. */

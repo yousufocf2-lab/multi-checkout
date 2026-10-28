@@ -15,7 +15,7 @@ import { codeLength, widgetRetry, widgetSend, widgetVerify, type WidgetConfig } 
 import { shieldFor } from "~/lib/rto-shield.server";
 import { SHIELD_MESSAGE } from "~/lib/rto-shield";
 import { lookupAddresses, revealAddress } from "~/lib/addresses.server";
-import type { MaskedAddress } from "~/lib/addresses";
+import type { SavedAddressPreview } from "~/lib/addresses";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
@@ -204,10 +204,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     });
   }
 
-  // Saved addresses (shared across stores): masked until the phone is verified with an OTP
+  // Saved addresses (shared across stores): returned with their full address details.
   if (intent === "addr_lookup") {
     const phone = normalizePhone(String(fd.get("phone") ?? ""));
-    if (!/^[6-9]\d{9}$/.test(phone) || session.addrLookups >= 12 || !otpReady(await messaging())) return json({ addresses: [] as MaskedAddress[] });
+    if (!/^[6-9]\d{9}$/.test(phone) || session.addrLookups >= 12 || !otpReady(await messaging())) return json({ addresses: [] as SavedAddressPreview[] });
     await db.update(checkoutSessions).set({ addrLookups: sql`${checkoutSessions.addrLookups} + 1` }).where(eq(checkoutSessions.id, session.id));
     return json({ addresses: await lookupAddresses(phone) });
   }
@@ -413,10 +413,10 @@ export default function Checkout() {
   const partialBlocked = Boolean(codStatus && !codStatus.partial.allowed);
   const orderBlocked = codStatus?.block === "all";
 
-  // Saved addresses from any Growpefy store, shown masked; full address only after OTP
-  const addrFetcher = useFetcher<{ addresses: MaskedAddress[] }>();
+  // Saved addresses from any Growpefy store, shown with full address details.
+  const addrFetcher = useFetcher<{ addresses: SavedAddressPreview[] }>();
   const revealFetcher = useFetcher<{ address: Partial<OrderCustomer> | null; error: string | null }>();
-  const [saved, setSaved] = useState<MaskedAddress[]>([]);
+  const [saved, setSaved] = useState<SavedAddressPreview[]>([]);
   // A saved address is picked by itself only when the chosen payment method asks for an OTP anyway;
   // otherwise the customer taps "Use a saved address" (and then verifies)
   const autoSaved = Boolean(otp[method]);
@@ -434,7 +434,7 @@ export default function Checkout() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [c.phone, phoneOk]);
-  const pickSaved = (a: MaskedAddress) => {
+  const pickSaved = (a: SavedAddressPreview) => {
     autoPicked.current = false;
     setSavedId(a.id); setAddrMode("saved"); setShowAll(false);
     setC((prev) => ({ ...prev, city: a.city, state: a.state, pincode: a.pincode }));
@@ -738,7 +738,7 @@ export default function Checkout() {
       )}
       <label className="col-span-2 flex cursor-pointer items-start gap-2.5 text-xs text-ink-soft">
         <input type="checkbox" name={steps ? undefined : "saveAddress"} checked={saveAddr} onChange={(e) => setSaveAddr(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--brand)]" />
-        <span>Save this address for faster checkout next time. You'll see it masked and confirm with an OTP on stores that use this checkout.</span>
+        <span>Save this address for faster checkout next time. You'll confirm it's you with an OTP on stores that use this checkout.</span>
       </label>
     </>
   );
@@ -901,8 +901,7 @@ export default function Checkout() {
             <ContactLine phone={c.phone} onChange={() => setStep(1)} />
             <div className="flex items-start justify-between gap-3 text-sm">
               {savedNow ? (
-                <div className="min-w-0"><p className="font-medium">{savedNow.name}</p><p className="text-ink-soft">{savedNow.line}</p><p className="text-ink-soft">{savedNow.city}, {INDIAN_STATES.find((s) => s.code === savedNow.state)?.name ?? savedNow.state} – {savedNow.pincode}</p>
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-ink-faint"><LockIcon /> Saved address, partly hidden for privacy</p></div>
+                <div className="min-w-0"><p className="font-medium">{savedNow.name}</p><p className="text-ink-soft">{savedNow.line}</p><p className="text-ink-soft">{savedNow.city}, {INDIAN_STATES.find((s) => s.code === savedNow.state)?.name ?? savedNow.state} – {savedNow.pincode}</p></div>
               ) : (
                 <div className="min-w-0"><p className="font-medium">{c.firstName} {c.lastName}</p><p className="text-ink-soft">{c.address1}{c.address2 ? `, ${c.address2}` : ""}</p><p className="text-ink-soft">{c.city}, {stateName} – {c.pincode}</p></div>
               )}
@@ -1445,12 +1444,12 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
 }
 
 function SavedAddresses({ list, selected, showAll, setShowAll, onPick, onEdit, onAddNew, revealing, className = "" }: {
-  list: MaskedAddress[]; selected: number; showAll: boolean; setShowAll: (v: boolean) => void;
-  onPick: (a: MaskedAddress) => void; onEdit: (id: number) => void; onAddNew: () => void; revealing: boolean; className?: string;
+  list: SavedAddressPreview[]; selected: number; showAll: boolean; setShowAll: (v: boolean) => void;
+  onPick: (a: SavedAddressPreview) => void; onEdit: (id: number) => void; onAddNew: () => void; revealing: boolean; className?: string;
 }) {
   const current = list.find((a) => a.id === selected) ?? list[0];
   const stateName = (code: string) => INDIAN_STATES.find((s) => s.code === code)?.name ?? code;
-  const Box = ({ a, active, onClick }: { a: MaskedAddress; active: boolean; onClick?: () => void }) => (
+  const Box = ({ a, active, onClick }: { a: SavedAddressPreview; active: boolean; onClick?: () => void }) => (
     <div onClick={onClick} role={onClick ? "radio" : undefined} aria-checked={onClick ? active : undefined} tabIndex={onClick ? 0 : undefined}
       onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
       className={`rounded-xl border px-4 py-3 text-sm transition ${active ? "border-brand bg-brand/5 ring-1 ring-brand" : "border-rule-strong"} ${onClick ? "cursor-pointer hover:border-brand/60" : ""}`}>
@@ -1468,7 +1467,6 @@ function SavedAddresses({ list, selected, showAll, setShowAll, onPick, onEdit, o
     <div className={className}>
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-medium">Deliver to your saved address</span>
-        <span className="flex items-center gap-1 text-[11px] text-ink-faint"><LockIcon /> Partly hidden for privacy</span>
       </div>
       {showAll ? (
         <div className="space-y-2" role="radiogroup" aria-label="Saved addresses">
