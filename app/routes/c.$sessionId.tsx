@@ -207,9 +207,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Saved addresses (shared across stores): returned with their full address details.
   if (intent === "addr_lookup") {
     const phone = normalizePhone(String(fd.get("phone") ?? ""));
-    if (!/^[6-9]\d{9}$/.test(phone) || session.addrLookups >= 12 || !otpReady(await messaging())) return json({ addresses: [] as SavedAddressPreview[] });
+    if (!/^[6-9]\d{9}$/.test(phone) || session.addrLookups >= 12 || !otpReady(await messaging())) return json({ phone, addresses: [] as SavedAddressPreview[] });
     await db.update(checkoutSessions).set({ addrLookups: sql`${checkoutSessions.addrLookups} + 1` }).where(eq(checkoutSessions.id, session.id));
-    return json({ addresses: await lookupAddresses(phone) });
+    return json({ phone, addresses: await lookupAddresses(phone) });
   }
   if (intent === "addr_reveal") {
     const phone = normalizePhone(String(fd.get("phone") ?? ""));
@@ -374,6 +374,7 @@ export default function Checkout() {
   useEffect(() => { if (actionData && "top" in actionData && actionData.top) goTop(actionData.top); }, [actionData]);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [stepError, setStepError] = useState<Partial<Record<keyof OrderCustomer, string>>>({});
+  const autoAdvanceRequestedPhone = useRef<string | null>(null);
 
   const [c, setC] = useState<OrderCustomer>(EMPTY);
   const [method, setMethod] = useState<PaymentMethod>(pay.prepaid.on ? "prepaid" : "cod");
@@ -382,11 +383,16 @@ export default function Checkout() {
   const [couponError, setCouponError] = useState<string | null>(null);
 
   useEffect(() => {
+    const restore = (value: Partial<OrderCustomer>) => {
+      const next = { ...EMPTY, ...value };
+      if (steps && /^[6-9]\d{9}$/.test(next.phone)) autoAdvanceRequestedPhone.current = next.phone;
+      setC(next);
+    };
     try {
       const saved = localStorage.getItem(LS_KEY);
-      if (saved) setC({ ...EMPTY, ...JSON.parse(saved) });
-      else if (draft) setC({ ...EMPTY, ...draft } as OrderCustomer);
-    } catch { if (draft) setC({ ...EMPTY, ...draft } as OrderCustomer); }
+      if (saved) restore(JSON.parse(saved) as Partial<OrderCustomer>);
+      else if (draft) restore(draft);
+    } catch { if (draft) restore(draft); }
   }, []);
   useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(c)); } catch { /* storage unavailable */ } }, [c]);
 
@@ -414,7 +420,7 @@ export default function Checkout() {
   const orderBlocked = codStatus?.block === "all";
 
   // Saved addresses from any Growpefy store, shown with full address details.
-  const addrFetcher = useFetcher<{ addresses: SavedAddressPreview[] }>();
+  const addrFetcher = useFetcher<{ phone: string; addresses: SavedAddressPreview[] }>();
   const revealFetcher = useFetcher<{ address: Partial<OrderCustomer> | null; error: string | null }>();
   const [saved, setSaved] = useState<SavedAddressPreview[]>([]);
   // A saved address is picked by itself only when the chosen payment method asks for an OTP anyway;
@@ -440,7 +446,7 @@ export default function Checkout() {
     setC((prev) => ({ ...prev, city: a.city, state: a.state, pincode: a.pincode }));
   };
   useEffect(() => {
-    const list = addrFetcher.data?.addresses ?? [];
+    const list = addrFetcher.data?.phone === c.phone ? addrFetcher.data.addresses : [];
     setSaved(list);
     if (!list.length) { setAddrMode("manual"); setSavedId(null); return; }
     // Pick the saved address by itself only when the store uses OTP anyway; otherwise the customer chooses it (and the OTP)
@@ -481,9 +487,6 @@ export default function Checkout() {
     const i = t.indexOf(" ");
     setC((prev) => ({ ...prev, firstName: i < 0 ? t : t.slice(0, i), lastName: i < 0 ? "" : t.slice(i + 1) }));
   };
-  // New customer in the 3-page checkout: ask the PIN code first, then the full form
-  const [pinFirst, setPinFirst] = useState(true);
-
   // Save what the customer has typed (for abandoned checkout recovery)
   const draftFetcher = useFetcher();
   useEffect(() => {
@@ -514,8 +517,6 @@ export default function Checkout() {
       .catch(() => setPinStatus("unknown"));
     return () => ctrl.abort();
   }, [c.pincode]);
-
-  useEffect(() => { if (pinFirst && /^\d{6}$/.test(c.pincode) && (pinStatus === "ok" || pinStatus === "unknown")) setPinFirst(false); }, [pinFirst, c.pincode, pinStatus]);
 
   const priced = (m: PaymentMethod) => {
     const base = computePricing(lines, rule, m, coupon);
@@ -559,7 +560,6 @@ export default function Checkout() {
   const otpFor = useRef<OtpPurpose>("order");
   const usingSaved = addrMode === "saved" && savedId != null && saved.some((a) => a.id === savedId);
   const needsOtp = (otp[method] || usingSaved) && verifiedPhone.current !== c.phone;
-  const showPinFirst = steps && step === 2 && !usingSaved && pinFirst && !(/^\d{6}$/.test(c.pincode) && c.city.trim());
   const askOtp = (why: OtpPurpose) => { otpFor.current = why; setOtpOpen(true); };
   useEffect(() => { if (actionData && "needOtp" in actionData && actionData.needOtp) askOtp("order"); }, [actionData]);
   // 1-page checkout with OTP at the start: ask as soon as a valid number is typed
@@ -577,13 +577,17 @@ export default function Checkout() {
   // ----- 3-page checkout -----
   const waitingForLookup = useRef(false);
   const lookupPending = phoneOk && (lookedUp.current !== c.phone || addrFetcher.state !== "idle");
+  const contactProgress = !phoneOk ? "Enter a valid 10-digit mobile number to continue automatically."
+    : otpOpen ? "Verify your number to continue."
+    : lookupPending ? "Checking for a saved address…"
+    : autoAdvanceRequestedPhone.current === c.phone ? "Moving to the next step…" : "Tap Continue when you're ready.";
   const afterContact = () => {
     if (lookupPending) { waitingForLookup.current = true; return; }
-    const list = addrFetcher.data?.addresses ?? [];
+    const list = addrFetcher.data?.phone === c.phone ? addrFetcher.data.addresses : [];
     // Saved address (from any Growpefy store): pick it and skip the address page. It stays behind an OTP at the end.
     const willUseSaved = usingSaved || (list.length > 0 && !choseManual.current);
     if (willUseSaved && !usingSaved && list[0]) pickSaved(list[0]);
-    setStep(willUseSaved || addressComplete(c) ? 3 : 2);
+    setStep(willUseSaved ? 3 : 2);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   useEffect(() => {
@@ -592,17 +596,19 @@ export default function Checkout() {
   }, [lookupPending, addrFetcher.data]);
   const continueFromContact = () => {
     if (!phoneOk) { setStepError({ phone: "Enter a valid 10-digit mobile number" }); return; }
-    if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) { setStepError({ email: "Enter a valid email address" }); return; }
+    if (autoAdvanceRequestedPhone.current === c.phone) autoAdvanceRequestedPhone.current = null;
     setStepError({});
     if (otp.start && verifiedPhone.current !== c.phone) { askOtp("start_next"); return; }
     afterContact();
   };
+  useEffect(() => {
+    if (!steps || step !== 1 || !phoneOk || autoAdvanceRequestedPhone.current !== c.phone) return;
+    autoAdvanceRequestedPhone.current = null;
+    continueFromContact();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [steps, step, phoneOk, c.phone]);
   const continueFromAddress = () => {
     if (usingSaved) { setStepError({}); setStep(3); return; }
-    if (showPinFirst) {
-      if (!/^\d{6}$/.test(c.pincode)) { setStepError({ pincode: "Enter your 6-digit PIN code" }); return; }
-      setStepError({}); setPinFirst(false); return;
-    }
     const e: Partial<Record<keyof OrderCustomer, string>> = {};
     if (!phoneOk) e.phone = "Enter a valid 10-digit mobile number";
     if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) e.email = "Enter a valid email address";
@@ -620,7 +626,7 @@ export default function Checkout() {
     if (!steps || !actionData || !("errors" in actionData)) return;
     const e = actionData.errors as FieldErrors;
     if (e.phone && !e.firstName) setStep(1);
-    else if (e.email || e.firstName || e.address1 || e.city || e.state || e.pincode) { setPinFirst(false); setStep(2); }
+    else if (e.email || e.firstName || e.address1 || e.city || e.state || e.pincode) setStep(2);
   }, [actionData, steps]);
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -639,7 +645,9 @@ export default function Checkout() {
   const giftTitle = `Your order (${itemCount}${freeCount ? ` + ${freeCount} free` : ""})`;
   const set = (k: keyof OrderCustomer) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     if (stepError[k]) setStepError((x) => ({ ...x, [k]: undefined }));
-    setC((prev) => ({ ...prev, [k]: k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : k === "pincode" ? e.target.value.replace(/\D/g, "").slice(0, 6) : e.target.value }));
+    const value = k === "phone" ? e.target.value.replace(/\D/g, "").slice(-10) : k === "pincode" ? e.target.value.replace(/\D/g, "").slice(0, 6) : e.target.value;
+    if (steps && k === "phone") autoAdvanceRequestedPhone.current = /^[6-9]\d{9}$/.test(value) ? value : null;
+    setC((prev) => ({ ...prev, [k]: value }));
   };
   const applyCode = (code: string) => { setCouponError(null); couponFetcher.submit({ intent: "coupon", code }, { method: "post" }); };
   const discountLabel = (r: typeof prepaid) => (r.paymentDiscountPct ? `${r.paymentDiscountPct}% off` : r.paymentDiscount > 0 ? `Save ${formatINR(r.paymentDiscount)}` : null);
@@ -647,7 +655,7 @@ export default function Checkout() {
   const payLabel = method === "partial" && advance
     ? `Pay ${formatINR(advance)} now`
     : buttonText(method === "prepaid" ? theme.prepaidButtonText : theme.codButtonText, formatINR(p.total));
-  const barLabel = steps && step < 3 ? "Continue"
+  const barLabel = steps && step === 2 ? "Continue to payment"
     : method === "partial" && advance ? `Pay ${formatINR(advance)} now`
     : buttonText(method === "prepaid" ? theme.prepaidButtonText : theme.codButtonText, "").replace(/[\s,·-]+$/, "").trim() || (method === "prepaid" ? "Pay now" : "Place order");
   const showUpsell = upsell.length > 0 && theme.upsellPlacement !== "hidden";
@@ -699,7 +707,7 @@ export default function Checkout() {
   );
   const nameField = (
     <Field label="Full name" error={fieldError("firstName")} className="col-span-2">
-      <input autoComplete="name" required className="input" placeholder="First and last name" value={fullName} onChange={(e) => setName(e.target.value)} aria-invalid={Boolean(fieldError("firstName")) || undefined} />
+      <input autoComplete="name" autoFocus={steps && step === 2} required className="input" placeholder="First and last name" value={fullName} onChange={(e) => setName(e.target.value)} aria-invalid={Boolean(fieldError("firstName")) || undefined} />
       {!steps && <><input type="hidden" name="firstName" value={c.firstName} /><input type="hidden" name="lastName" value={c.lastName} /></>}
     </Field>
   );
@@ -718,14 +726,14 @@ export default function Checkout() {
   ) : (
     <>
       <p className="col-span-2 -mb-1 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Contact information</p>
+      {!steps && phoneField}
       {nameField}
       {email}
-      {phoneField}
       <p className="col-span-2 -mb-1 mt-2 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Delivery address</p>
       {pinField}
-      <Field label="City" error={fieldError("city")}><input name={nm("city")} autoComplete="address-level2" required className="input" value={c.city} onChange={set("city")} /></Field>
       <Field label="House number, building, street" error={fieldError("address1")} className="col-span-2"><input name={nm("address1")} autoComplete="address-line1" required className="input" value={c.address1} onChange={set("address1")} /></Field>
       <Field label="Area, landmark (optional)" className="col-span-2"><input name={nm("address2")} autoComplete="address-line2" className="input" value={c.address2} onChange={set("address2")} /></Field>
+      <Field label="City" error={fieldError("city")}><input name={nm("city")} autoComplete="address-level2" required className="input" value={c.city} onChange={set("city")} /></Field>
       <Field label="State" error={fieldError("state")} className="col-span-2">
         <select name={nm("state")} required className="input" value={c.state} onChange={set("state")}>
           <option value="">Select state</option>
@@ -869,26 +877,10 @@ export default function Checkout() {
           <PhoneBox value={c.phone} onChange={set("phone")} valid={phoneOk} invalid={Boolean(fieldError("phone"))} autoFocus onEnter={() => continueFromContact()} />
           {fieldError("phone") && <p className="error-text mt-1.5">{fieldError("phone")}</p>}
           <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />{otp.start ? "We'll send a one-time code to confirm your number." : "For order and delivery updates. We never share your number."}</p>
-          <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromContact(); }}>Continue</button>
+          <p className="mt-3 text-xs text-ink-faint" aria-live="polite">{contactProgress}</p>
         </Card>
       )}
-      {step === 2 && showPinFirst && (
-        <Card title="Where should we deliver?">
-          <label className="block">
-            <span className="label">PIN code</span>
-            <div className={`flex h-14 items-center rounded-2xl border-2 bg-surface px-4 transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 ${fieldError("pincode") ? "border-red-300" : "border-rule-strong"}`}>
-              <span className="text-ink-faint"><PinIcon /></span>
-              <input inputMode="numeric" autoComplete="postal-code" maxLength={6} autoFocus className="num h-full min-w-0 flex-1 bg-transparent px-3 text-lg font-semibold tracking-[0.3em] outline-none placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-ink-faint"
-                placeholder="6-digit PIN code" value={c.pincode} onChange={set("pincode")} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); continueFromAddress(); } }} />
-              {pinStatus === "loading" && <span className="text-ink-faint"><Spinner /></span>}
-            </div>
-            {fieldError("pincode") && <span className="error-text">{fieldError("pincode")}</span>}
-          </label>
-          <p className="mt-3 text-xs text-ink-faint">We'll fill in your city and state.</p>
-          <button type="button" className="btn-primary mt-4 hidden w-full py-3 lg:flex" onClick={(e) => { e.preventDefault(); continueFromAddress(); }}>Continue</button>
-        </Card>
-      )}
-      {step === 2 && !showPinFirst && (
+      {step === 2 && (
         <Card title={usingSaved ? "Delivery address" : "Your details"}>
           {usingSaved && <ContactLine phone={c.phone} onChange={() => setStep(1)} />}
           <div className="grid grid-cols-2 gap-3">{addressFields(usingSaved ? null : emailField)}</div>
@@ -970,8 +962,13 @@ export default function Checkout() {
             <Card title={giftTitle}>
               {orderItems}
               <div className="mt-4 border-t border-rule pt-4">{priceDetails}</div>
-              {steps && step < 3 ? (
-                <button key="aside-continue" type="button" className="btn-primary mt-5 w-full py-3.5 text-base" onClick={continueStep}>{step === 1 || showPinFirst ? "Continue" : "Continue to payment"}</button>
+              {steps && step === 1 ? (
+                <>
+                  <p className="mt-5 text-center text-xs text-ink-faint" aria-live="polite">{contactProgress}</p>
+                  <button type="button" className="btn-primary mt-3 w-full py-3.5 text-base" onClick={continueFromContact} disabled={!phoneOk || otpOpen || lookupPending}>Continue</button>
+                </>
+              ) : steps && step === 2 ? (
+                <button key="aside-continue" type="button" className="btn-primary mt-5 w-full py-3.5 text-base" onClick={continueStep}>{barLabel}</button>
               ) : (
                 <button key="aside-submit" type="submit" className="btn-primary mt-5 w-full py-3.5 text-base" disabled={placing || noMethod}>
                   {placing ? <><Spinner /> {redirectingToPay ? "Opening secure payment" : "Placing your order"}</> : payLabel}
@@ -991,7 +988,12 @@ export default function Checkout() {
             {method === "partial" && advance ? <p className="text-xs font-medium text-ink-soft">{formatINR(advance)} now</p>
               : p.savings > 0 && <p className="text-xs font-medium text-good">{formatINR(p.savings)} saved</p>}
           </div>
-          {steps && step < 3 ? (
+          {steps && step === 1 ? (
+            <div className="flex-1 text-right">
+              <p className="mb-1 text-xs text-ink-faint" aria-live="polite">{contactProgress}</p>
+              <button type="button" className="btn-primary w-full py-3.5 text-base" onClick={continueFromContact} disabled={!phoneOk || otpOpen || lookupPending}>Continue</button>
+            </div>
+          ) : steps && step === 2 ? (
             <button key="bar-continue" type="button" className="btn-primary flex-1 py-3.5 text-base" onClick={continueStep}>{barLabel}</button>
           ) : (
             <button key="bar-submit" type="submit" form="checkout-form" className="btn-primary flex-1 py-3.5 text-base" disabled={placing || noMethod}>
@@ -1016,9 +1018,6 @@ export default function Checkout() {
     </Shell>
   );
 }
-
-const addressComplete = (c: OrderCustomer) =>
-  Boolean(c.firstName.trim() && c.address1.trim().length >= 5 && c.city.trim() && /^\d{6}$/.test(c.pincode) && INDIAN_STATES.some((s) => s.code === c.state));
 
 function StepBar({ step, onGo }: { step: 1 | 2 | 3; onGo: (s: 1 | 2 | 3) => void }) {
   const items = [[1, "Mobile"], [2, "Address"], [3, "Payment"]] as const;
@@ -1579,7 +1578,6 @@ function HomeIcon() { return ico(<><path d="M3 11 12 4l9 7" /><path d="M5 10v10h
 function WorkIcon() { return ico(<><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>, 16); }
 function TagIcon() { return ico(<><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></>); }
 function CouponIcon() { return ico(<><path d="M3 8a2 2 0 0 0 0 4 2 2 0 0 1 0 4v2h18v-2a2 2 0 0 1 0-4 2 2 0 0 0 0-4V6H3z" /><path d="M14 6v12" strokeDasharray="2 2" /></>, 16); }
-function PinIcon() { return ico(<><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>, 20); }
 
 function LockIcon() {
   return (
