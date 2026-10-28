@@ -9,7 +9,7 @@ import { db, stores } from "~/db.server";
 import { onlineReady } from "~/lib/gateways/index.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import {
-  METHOD_LABEL, describeRule, resolvePaymentMethods,
+  DEFAULT_COD_UNAVAILABLE_MESSAGE, METHOD_LABEL, describeRule, resolvePaymentMethods,
   type AdjustMode, type AmountType, type MethodSettings, type PartialSettings, type PayMethod, type ShowRule,
 } from "~/lib/payment-methods";
 
@@ -69,6 +69,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (Object.keys(errors).length) return json({ ok: null, which, errors }, { status: 400 });
 
   const all = { ...current, [which]: next };
+  if (which === "cod") {
+    const show = fd.get("showCodUnavailable") === "on";
+    const message = String(fd.get("codUnavailableMessage") ?? DEFAULT_COD_UNAVAILABLE_MESSAGE).trim();
+    if (message.length > 60) return json({ ok: null, which, errors: { codUnavailableMessage: "Use 60 characters or fewer." } }, { status: 400 });
+    all.codUnavailable = { show, message: message || DEFAULT_COD_UNAVAILABLE_MESSAGE };
+  }
   const legacyPct = (x: MethodSettings) => (x.adjust === "discount" && x.type === "percent" ? Math.min(100, x.value) : 0);
   await db.update(stores).set({
     paymentMethods: all,
@@ -98,7 +104,7 @@ export default function PaymentMethods() {
         Product discounts (in Discounts) still win for their products. Partial COD follows your COD rules in RTO Suite (wait time, blocks, OTP).
       </p>
       {(["prepaid", "cod", "partial"] as const).map((k) => (
-        <MethodPanel key={k} k={k} storeId={d.storeId} s={d.methods[k]} errors={res?.which === k ? ((res.errors ?? {}) as Record<string, string>) : {}} />
+        <MethodPanel key={k} k={k} storeId={d.storeId} s={d.methods[k]} codUnavailable={d.methods.codUnavailable} errors={res?.which === k ? ((res.errors ?? {}) as Record<string, string>) : {}} />
       ))}
     </div>
   );
@@ -108,7 +114,7 @@ type RuleRow = ShowRule & { key: string };
 let seq = 0;
 const newKey = () => `r${Date.now().toString(36)}${seq++}`;
 
-function MethodPanel({ k, storeId, s, errors }: { k: PayMethod; storeId: number; s: MethodSettings | PartialSettings; errors: Record<string, string> }) {
+function MethodPanel({ k, storeId, s, codUnavailable, errors }: { k: PayMethod; storeId: number; s: MethodSettings | PartialSettings; codUnavailable: { show: boolean; message: string }; errors: Record<string, string> }) {
   const [adjust, setAdjust] = useState<AdjustMode>(s.adjust);
   const [type, setType] = useState<AmountType>(s.type);
   const [rules, setRules] = useState<RuleRow[]>(s.rules.map((r) => ({ ...r, key: newKey() })));
@@ -122,6 +128,16 @@ function MethodPanel({ k, storeId, s, errors }: { k: PayMethod; storeId: number;
         <span className="text-2xl leading-none" aria-hidden>{INFO[k].icon}</span>
         <div className="min-w-0 flex-1">
           <Toggle name="on" label={label} description={INFO[k].text} defaultChecked={s.on} />
+          {k === "cod" && (
+            <fieldset className="mt-4 rounded-lg border border-rule p-3">
+              <Toggle name="showCodUnavailable" label="Show COD as unavailable when COD is off" description="Customers can see COD, but can't select it. A short message appears below it." defaultChecked={codUnavailable.show} />
+              <label className="mt-3 block">
+                <span className="label">Message below COD (up to 60 characters)</span>
+                <input name="codUnavailableMessage" type="text" maxLength={60} defaultValue={codUnavailable.message || DEFAULT_COD_UNAVAILABLE_MESSAGE} className="input" />
+                {errors.codUnavailableMessage && <span className="error-text">{errors.codUnavailableMessage}</span>}
+              </label>
+            </fieldset>
+          )}
         </div>
       </div>
       {errors.form && <div className="mt-3"><Notice tone="error">{errors.form}</Notice></div>}

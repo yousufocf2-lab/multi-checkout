@@ -32,7 +32,9 @@ export type MethodSettings = {
 
 export type PartialSettings = MethodSettings & { advanceType: AmountType; advanceValue: number };
 
-export type PaymentMethodsSettings = { prepaid: MethodSettings; cod: MethodSettings; partial: PartialSettings };
+export type CodUnavailableSettings = { show: boolean; message: string };
+export const DEFAULT_COD_UNAVAILABLE_MESSAGE = "COD is temporarily unavailable for this pin code.";
+export type PaymentMethodsSettings = { prepaid: MethodSettings; cod: MethodSettings; partial: PartialSettings; codUnavailable: CodUnavailableSettings };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
 const clean = (v: unknown, fallback: MethodSettings): MethodSettings => {
@@ -73,7 +75,12 @@ export function resolvePaymentMethods(
     advanceType: p.advanceType === "flat" ? "flat" : "percent",
     advanceValue: Math.max(0, num(p.advanceValue, 10)),
   };
-  return { prepaid, cod, partial };
+  const unavailable = (s as Partial<PaymentMethodsSettings>).codUnavailable;
+  const codUnavailable: CodUnavailableSettings = {
+    show: unavailable?.show === true,
+    message: typeof unavailable?.message === "string" ? unavailable.message.slice(0, 60) : DEFAULT_COD_UNAVAILABLE_MESSAGE,
+  };
+  return { prepaid, cod, partial, codUnavailable };
 }
 
 /** What the pricing engine needs for one method. */

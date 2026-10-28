@@ -63,7 +63,7 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
   const prepaidDeal = deal(store.mixPrepaidOn, store.mixFreeQty, store.mixFreeWhich, store.mixKeepPrepaid);
   const codDeal = deal(store.mixCodOn, store.mixCodFreeQty, store.mixCodFreeWhich, store.mixKeepCod);
   const pm = resolvePaymentMethods(store.paymentMethods, store);
-  const adj = (m: PaymentMethodsSettings[keyof PaymentMethodsSettings]) => ({ adjust: m.adjust, type: m.type, value: m.value, coupons: m.coupons });
+  const adj = (m: PaymentMethodsSettings["prepaid"]) => ({ adjust: m.adjust, type: m.type, value: m.value, coupons: m.coupons });
   return {
     methods: { prepaid: adj(pm.prepaid), cod: adj(pm.cod), partial: adj(pm.partial) },
     prepaidDiscountPct: store.prepaidDiscountPct,
@@ -151,6 +151,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     pay: {
       prepaid: { ...slim(pm.prepaid), on: pm.prepaid.on && payuReady },
       cod: slim(pm.cod),
+      codUnavailable: pm.codUnavailable,
       partial: { ...slim(pm.partial), on: pm.partial.on && payuReady, advanceType: pm.partial.advanceType, advanceValue: pm.partial.advanceValue },
     },
     otpWidget: widgetPublic(await messaging()),
@@ -540,6 +541,7 @@ export default function Checkout() {
     cod: store.codEnabled && methodShows(pay.cod, cart),
     partial: methodShows(pay.partial, cart) && advance != null,
   };
+  const showUnavailableCod = !store.codEnabled && pay.codUnavailable.show;
   const usable = (m: PaymentMethod) => shows[m] && !(m === "cod" && codBlocked) && !(m === "partial" && partialBlocked);
   const codAvailable = usable("cod");
   useEffect(() => {
@@ -841,9 +843,10 @@ export default function Checkout() {
             badge={badgeFor(prepaid)} highlight={prepaid.paymentFee === 0} amount={prepaid.total}
             note={<>{codAvailable && prepaid.total < cod.total && <>{formatINR(cod.total - prepaid.total)} less than COD</>}{bestBank > 0 && <>{codAvailable && prepaid.total < cod.total ? ". " : ""}Bank offers can save up to {formatINR(bestBank)} more</>}</>} />
         )}
-        {shows.cod && (
+        {(shows.cod || showUnavailableCod) && (
           <PayOption selected={method === "cod"} onSelect={() => codAvailable && setMethod("cod")} disabled={!codAvailable}
-            title="Cash on Delivery" subtitle={codBlocked ? codStatus?.message ?? "" : "Pay when your order arrives"}
+            title="Cash on Delivery" subtitle={showUnavailableCod ? "Not available right now" : codBlocked ? codStatus?.message ?? "" : "Pay when your order arrives"}
+            alert={showUnavailableCod ? pay.codUnavailable.message : undefined}
             badge={codAvailable ? badgeFor(cod) : null} amount={cod.total} />
         )}
         {shows.partial && advance != null && (
@@ -1339,8 +1342,8 @@ function Row({ label, value, green, muted }: { label: string; value: string; gre
   );
 }
 
-function PayOption({ selected, onSelect, title, subtitle, badge, amount, note, highlight, disabled }: {
-  selected: boolean; onSelect: () => void; title: string; subtitle: string; badge: string | null; amount: number; note?: React.ReactNode; highlight?: boolean; disabled?: boolean;
+function PayOption({ selected, onSelect, title, subtitle, badge, amount, note, highlight, disabled, alert }: {
+  selected: boolean; onSelect: () => void; title: string; subtitle: string; badge: string | null; amount: number; note?: React.ReactNode; highlight?: boolean; disabled?: boolean; alert?: string;
 }) {
   return (
     <button type="button" role="radio" aria-checked={selected} aria-disabled={disabled || undefined} onClick={onSelect}
@@ -1354,6 +1357,7 @@ function PayOption({ selected, onSelect, title, subtitle, badge, amount, note, h
           {badge && <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${highlight ? "bg-good text-white" : "bg-amber-100 text-amber-900"}`}>{badge}</span>}
         </span>
         <span className={`mt-0.5 block text-xs ${disabled ? "text-warn" : "text-ink-soft"}`}>{subtitle}</span>
+        {alert && <span className="mt-1 block max-w-full truncate text-xs text-red-700" title={alert}>{alert}</span>}
         {note && <span className="mt-1 block text-xs font-medium text-good">{note}</span>}
       </span>
       {!disabled && <span className="num shrink-0 text-right text-base font-semibold">{formatINR(amount)}</span>}
