@@ -34,7 +34,9 @@ export type PartialSettings = MethodSettings & { advanceType: AmountType; advanc
 
 export type CodUnavailableSettings = { show: boolean; message: string };
 export const DEFAULT_COD_UNAVAILABLE_MESSAGE = "COD is temporarily unavailable for this pin code.";
-export type PaymentMethodsSettings = { prepaid: MethodSettings; cod: MethodSettings; partial: PartialSettings; codUnavailable: CodUnavailableSettings };
+export type QuantityLimitRule = { id: string; on: boolean; scope: "cart" | "product"; methods: ("prepaid" | "cod")[]; productMode: "all" | "selected"; max: number; products: ProductLite[] };
+export type CartValueLimitRule = { id: string; on: boolean; methods: ("prepaid" | "cod")[]; maxRupees: number };
+export type PaymentMethodsSettings = { prepaid: MethodSettings; cod: MethodSettings; partial: PartialSettings; codUnavailable: CodUnavailableSettings; quantityLimits: QuantityLimitRule[]; cartValueLimits: CartValueLimitRule[] };
 
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
 const clean = (v: unknown, fallback: MethodSettings): MethodSettings => {
@@ -45,7 +47,7 @@ const clean = (v: unknown, fallback: MethodSettings): MethodSettings => {
     type: o.type === "flat" ? "flat" : o.type === "percent" ? "percent" : fallback.type,
     value: Math.max(0, num(o.value, fallback.value)),
     coupons: typeof o.coupons === "boolean" ? o.coupons : fallback.coupons,
-    rules: Array.isArray(o.rules) ? o.rules.map(cleanRule).filter((r): r is ShowRule => r !== null).slice(0, 20) : fallback.rules,
+    rules: Array.isArray(o.rules) ? o.rules.map(cleanRule).filter((r): r is ShowRule => r !== null).slice(0, 100) : fallback.rules,
   };
 };
 function cleanRule(v: unknown): ShowRule | null {
@@ -80,7 +82,30 @@ export function resolvePaymentMethods(
     show: unavailable?.show === true,
     message: typeof unavailable?.message === "string" ? unavailable.message.slice(0, 60) : DEFAULT_COD_UNAVAILABLE_MESSAGE,
   };
-  return { prepaid, cod, partial, codUnavailable };
+  const raw = saved as Partial<PaymentMethodsSettings> | null | undefined;
+  const quantityLimits = Array.isArray(raw?.quantityLimits) ? raw!.quantityLimits!.filter((r) => r && typeof r.id === "string" && typeof r.max === "number" && r.max > 0 && ["cart", "product"].includes(r.scope)).slice(0, 100).map((r) => ({ ...r, methods: Array.isArray(r.methods) ? r.methods.filter((m) => m === "prepaid" || m === "cod") : [], products: Array.isArray(r.products) ? r.products.filter((p) => p && typeof p.id === "string").slice(0, 100) : [] })) : [];
+  const cartValueLimits = Array.isArray(raw?.cartValueLimits) ? raw!.cartValueLimits!.filter((r) => r && typeof r.id === "string" && typeof r.maxRupees === "number" && r.maxRupees >= 0).slice(0, 100).map((r) => ({ ...r, methods: Array.isArray(r.methods) ? r.methods.filter((m) => m === "prepaid" || m === "cod") : [] })) : [];
+  return { prepaid, cod, partial, codUnavailable, quantityLimits, cartValueLimits };
+}
+
+/** Return the first matching checkout restriction. Partial COD uses COD limits. */
+export function paymentLimitReason(settings: Pick<PaymentMethodsSettings, "quantityLimits" | "cartValueLimits">, method: PayMethod, lines: { productId: string; quantity: number }[], valuePaise: number): string | null {
+  const channel = method === "prepaid" ? "prepaid" : "cod";
+  for (const r of settings.quantityLimits) {
+    if (!r.on || !r.methods.includes(channel)) continue;
+    const items = r.productMode === "selected" ? lines.filter((l) => r.products.some((p) => p.id === l.productId)) : lines;
+    if (r.productMode === "selected" && !items.length) continue;
+    const exceeded = r.scope === "cart" ? items.reduce((n, l) => n + l.quantity, 0) > r.max : items.some((l) => l.quantity > r.max);
+    if (exceeded) return channel === "cod"
+      ? r.scope === "cart" ? `COD is unavailable when cart quantity exceeds ${r.max}.` : `COD is unavailable when a product quantity exceeds ${r.max}.`
+      : r.scope === "cart" ? `Online payment is unavailable when cart quantity exceeds ${r.max}.` : `Online payment is unavailable when a product quantity exceeds ${r.max}.`;
+  }
+  for (const r of settings.cartValueLimits) {
+    if (!r.on || !r.methods.includes(channel) || valuePaise <= r.maxRupees * 100) continue;
+    const amount = r.maxRupees.toLocaleString("en-IN");
+    return channel === "cod" ? `COD is unavailable for carts above ₹${amount}.` : `Online payment is unavailable for carts above ₹${amount}.`;
+  }
+  return null;
 }
 
 /** What the pricing engine needs for one method. */

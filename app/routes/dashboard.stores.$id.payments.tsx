@@ -45,7 +45,7 @@ function readMethod(fd: FormData): { m: MethodSettings; errors: Record<string, s
     if (min != null && max != null && max < min) errors.rules = "In a rule the maximum can't be less than the minimum";
     rules.push({ min, max, products, productMode: fd.get(`mode_${k}`) === "only" ? "only" : "contains" });
   }
-  return { m: { on: fd.get("on") === "on", adjust, type, value: adjust === "off" ? 0 : value, coupons: fd.get("coupons") === "on", rules: rules.slice(0, 20) }, errors };
+  return { m: { on: fd.get("on") === "on", adjust, type, value: adjust === "off" ? 0 : value, coupons: fd.get("coupons") === "on", rules: rules.slice(0, 100) }, errors };
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {

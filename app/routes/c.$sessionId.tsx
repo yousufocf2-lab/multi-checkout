@@ -29,7 +29,7 @@ import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
 import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.server";
-import { legacyMethod, methodShows, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
+import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_QTY = 9999;
@@ -153,6 +153,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       cod: slim(pm.cod),
       codUnavailable: pm.codUnavailable,
       partial: { ...slim(pm.partial), on: pm.partial.on && payuReady, advanceType: pm.partial.advanceType, advanceValue: pm.partial.advanceValue },
+      quantityLimits: pm.quantityLimits,
+      cartValueLimits: pm.cartValueLimits,
     },
     otpWidget: widgetPublic(await messaging()),
     rule,
@@ -307,6 +309,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
   const freeLines = (await freeGiftsFor(store, lines))[legacyMethod(method)];
   const cartInfo = { value: lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0), productIds: lines.map((l) => l.productId) };
+  const limitReason = paymentLimitReason(pm, method, lines, cartInfo.value);
+  if (limitReason) return json({ errors: { form: limitReason } as FieldErrors }, { status: 400 });
   if (!methodShows(pm[method], cartInfo)) return json({ errors: { form: "This payment method isn't available for your cart. Choose another one." } as FieldErrors }, { status: 400 });
 
   let coupon: CouponRule | null = null;
@@ -522,16 +526,22 @@ export default function Checkout() {
   const p = P[method];
   const advance = partialAdvance(pay.partial, partial.total);
   const bestBank = useMemo(() => Math.max(0, ...offers.map((o) => bankOfferEstimate(o, prepaid.subtotal, prepaid.total))), [offers, prepaid]);
+  const bestCoupon = useMemo(() => coupons.map((cp) => ({ cp, preview: computePricing(lines, rule, method, cp) })).filter((x) => x.preview.couponApplied).sort((a, b) => b.preview.couponDiscount - a.preview.couponDiscount)[0] ?? null, [coupons, lines, rule, method]);
 
   // Which payment methods show for this cart (Payment methods tab rules)
   const cart = useMemo(() => ({ value: lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0), productIds: lines.map((l) => l.productId) }), [lines]);
+  const limitReasons = {
+    prepaid: paymentLimitReason(pay, "prepaid", lines, cart.value),
+    cod: paymentLimitReason(pay, "cod", lines, cart.value),
+    partial: paymentLimitReason(pay, "partial", lines, cart.value),
+  };
   const shows = {
     prepaid: methodShows(pay.prepaid, cart),
     cod: store.codEnabled && methodShows(pay.cod, cart),
     partial: methodShows(pay.partial, cart) && advance != null,
   };
   const showUnavailableCod = !store.codEnabled && pay.codUnavailable.show;
-  const usable = (m: PaymentMethod) => shows[m] && !(m === "cod" && codBlocked) && !(m === "partial" && partialBlocked);
+  const usable = (m: PaymentMethod) => shows[m] && !limitReasons[m] && !(m === "cod" && codBlocked) && !(m === "partial" && partialBlocked);
   const codAvailable = usable("cod");
   useEffect(() => {
     if (usable(method)) return;
@@ -539,7 +549,7 @@ export default function Checkout() {
     if (next) setMethod(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shows.prepaid, shows.cod, shows.partial, codBlocked, partialBlocked, method]);
-  const noMethod = !shows.prepaid && !shows.cod && !shows.partial;
+  const noMethod = !(["prepaid", "cod", "partial"] as const).some(usable);
 
   const errors = (actionData && "errors" in actionData ? actionData.errors : {}) as FieldErrors;
   const fieldError = (k: keyof OrderCustomer) => stepError[k] ?? errors[k];
@@ -761,6 +771,12 @@ export default function Checkout() {
           <button type="button" className="shrink-0 text-sm font-medium text-bad" onClick={() => { setCoupon(null); setCouponInput(""); }}>Remove</button>
         </div>
       ) : (
+        <>
+        {bestCoupon && <div className="coupon-glint relative mb-3 flex items-center gap-3 overflow-hidden rounded-2xl border border-brand/25 bg-brand/[0.045] px-4 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand"><CouponIcon /></span>
+          <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Save {formatINR(bestCoupon.preview.couponDiscount)} with <span className="text-brand">{bestCoupon.cp.code}</span></p><p className="text-xs text-ink-soft">Best available saving on this order</p></div>
+          <button type="button" className="btn-primary h-9 shrink-0 rounded-xl px-4 text-sm" disabled={couponFetcher.state !== "idle"} onClick={() => applyCode(bestCoupon.cp.code)}>{couponFetcher.state !== "idle" ? <Spinner /> : "Apply"}</button>
+        </div>}
         <div className={`flex h-[52px] items-center rounded-2xl border bg-surface pl-3.5 pr-1.5 transition focus-within:border-brand focus-within:ring-4 focus-within:ring-brand/10 ${couponError ? "border-red-300" : "border-rule-strong"}`}>
           <span className="text-ink-faint"><TagIcon /></span>
           <input className="h-full min-w-0 flex-1 bg-transparent px-2.5 text-[15px] font-medium uppercase tracking-wide outline-none placeholder:font-normal placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-faint"
@@ -771,6 +787,7 @@ export default function Checkout() {
             {couponFetcher.state !== "idle" ? <Spinner /> : "Apply"}
           </button>
         </div>
+        </>
       )}
       {couponError && <p className="mt-2 text-xs font-medium text-bad" role="alert">{couponError}</p>}
       {coupons.length > 0 && (
@@ -831,20 +848,20 @@ export default function Checkout() {
     <Card title="Payment">
       <div className="space-y-3" role="radiogroup" aria-label="Payment method">
         {shows.prepaid && (
-          <PayOption selected={method === "prepaid"} onSelect={() => setMethod("prepaid")} title="Pay online" subtitle="UPI, cards, net banking, wallets"
+          <PayOption selected={method === "prepaid"} onSelect={() => !limitReasons.prepaid && setMethod("prepaid")} disabled={Boolean(limitReasons.prepaid)} title="Pay online" subtitle={limitReasons.prepaid ?? "UPI, cards, net banking, wallets"}
             badge={badgeFor(prepaid)} highlight={prepaid.paymentFee === 0} amount={prepaid.total}
             note={<>{codAvailable && prepaid.total < cod.total && <>{formatINR(cod.total - prepaid.total)} less than COD</>}{bestBank > 0 && <>{codAvailable && prepaid.total < cod.total ? ". " : ""}Bank offers can save up to {formatINR(bestBank)} more</>}</>} />
         )}
         {(shows.cod || showUnavailableCod) && (
           <PayOption selected={method === "cod"} onSelect={() => codAvailable && setMethod("cod")} disabled={!codAvailable}
-            title="Cash on Delivery" subtitle={showUnavailableCod ? "Not available right now" : codBlocked ? codStatus?.message ?? "" : "Pay when your order arrives"}
-            alert={showUnavailableCod ? pay.codUnavailable.message : undefined}
+            title="Cash on Delivery" subtitle={limitReasons.cod ?? (showUnavailableCod ? "Not available right now" : codBlocked ? codStatus?.message ?? "" : "Pay when your order arrives")}
+            alert={limitReasons.cod ? undefined : showUnavailableCod ? pay.codUnavailable.message : undefined}
             badge={codAvailable ? badgeFor(cod) : null} amount={cod.total} />
         )}
         {shows.partial && advance != null && (
-          <PayOption selected={method === "partial"} onSelect={() => !partialBlocked && setMethod("partial")} disabled={partialBlocked}
-            title="Partial COD" subtitle={partialBlocked ? codStatus?.partial.message ?? "" : `Pay ${formatINR(advance)} now, ${formatINR(partial.total - advance)} on delivery`}
-            badge={partialBlocked ? null : badgeFor(partial)} highlight={partial.paymentFee === 0} amount={partial.total} />
+          <PayOption selected={method === "partial"} onSelect={() => !partialBlocked && !limitReasons.partial && setMethod("partial")}
+            title="Partial COD" subtitle={limitReasons.partial ?? (partialBlocked ? codStatus?.partial.message ?? "" : `Pay ${formatINR(advance)} now, ${formatINR(partial.total - advance)} on delivery`)}
+            disabled={partialBlocked || Boolean(limitReasons.partial)} badge={partialBlocked || limitReasons.partial ? null : badgeFor(partial)} highlight={partial.paymentFee === 0} amount={partial.total} />
         )}
         {noMethod && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">No payment method is available for this cart. Please contact the store.</p>}
       </div>
@@ -938,7 +955,6 @@ export default function Checkout() {
               case "address": return (
                 <Card key={key} title="Delivery details">
                   <div className="grid grid-cols-2 gap-3">
-                    {usingSaved && phoneField}
                     {addressFields(emailField)}
                   </div>
                 </Card>
@@ -1269,11 +1285,11 @@ function UpsellCard({ item, rule }: { item: LoaderData["upsell"][number]; rule: 
   const online = v.pricePaise - pct;
   const busy = f.state !== "idle";
   return (
-    <li className="w-[150px] shrink-0 snap-start">
+    <li className="w-[118px] shrink-0 snap-start">
       <div className="aspect-square overflow-hidden rounded-lg border border-rule bg-paper">
         {item.image && <img src={item.image} alt="" className="h-full w-full object-cover" loading="lazy" />}
       </div>
-      <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-xs font-medium">{item.title}</p>
+      <p className="mt-1.5 line-clamp-2 min-h-[2rem] text-[11px] font-medium">{item.title}</p>
       {item.variants.length > 1 && (
         <select className="input mt-1 px-2 py-1 text-xs" value={variantId} onChange={(e) => setVariantId(e.target.value)} aria-label={`Option for ${item.title}`}>
           {item.variants.map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
@@ -1284,7 +1300,7 @@ function UpsellCard({ item, rule }: { item: LoaderData["upsell"][number]; rule: 
         {pct > 0 ? <s className="num text-ink-faint">{formatINR(v.pricePaise)}</s> : v.comparePaise && <s className="num text-ink-faint">{formatINR(v.comparePaise)}</s>}
       </p>
       {pct > 0 && <p className="text-[11px] text-good">when you pay online</p>}
-      <button type="button" className="btn-secondary mt-2 w-full py-1.5 text-xs" disabled={busy}
+      <button type="button" className="btn-secondary mt-1.5 w-full py-1 text-[11px]" disabled={busy}
         onClick={() => f.submit({ intent: "cart", op: "add", variantId: v.id }, { method: "post" })}>
         {busy ? <Spinner className="h-3.5 w-3.5" /> : "Add"}
       </button>
@@ -1370,6 +1386,10 @@ function Field({ label, error, className = "", children }: { label: string; erro
 function Trust({ phone, text, className = "" }: { phone: string | null; text: string | null; className?: string }) {
   return (
     <div className={`space-y-1 text-center text-xs text-ink-faint ${className}`}>
+      <div className="flex items-center justify-center gap-5 text-black" aria-label="Checkout trust information">
+        <span className="inline-flex items-center gap-1"><LockIcon /><span>Secure checkout</span></span>
+        {phone && <span className="inline-flex items-center gap-1"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="M4 5a2 2 0 0 1 2-2h2l2 5-2 1.5a14 14 0 0 0 6.5 6.5L16 14l5 2v2a2 2 0 0 1-2 2A17 17 0 0 1 4 5Z" /></svg><span>Order support</span></span>}
+      </div>
       {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
       <p className="pt-1"><PoweredBy /></p>

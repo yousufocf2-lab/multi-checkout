@@ -15,6 +15,8 @@ import { resolveShield } from "~/lib/rto-shield";
 import { addBlocks, completedOrders, messaging, otpReady, waReady } from "~/lib/rto.server";
 import { rupees } from "~/lib/wallet";
 import { getWallet, ratesFor, usageSummary } from "~/lib/wallet.server";
+import { ProductPicker, parsePicked } from "~/components/ProductPicker";
+import { resolvePaymentMethods } from "~/lib/payment-methods";
 
 const PAGE = 50;
 const MAX_CSV_BYTES = 8 * 1024 * 1024;
@@ -55,6 +57,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     waVerified: store.waVerify?.status === "approved",
     confirm: { autoCancel: store.confirmAutoCancel, buttons: Boolean(m.waButtons), on: store.confirmEnabled, whatsapp: store.confirmWhatsapp, prepaid: store.confirmWaPrepaid, cod: store.confirmWaCod, ready: waReady(m), price: rates.waConfirm, orders: orderCount },
     list: list.map((r) => ({ id: r.id, kind: r.kind as BlockKind, value: r.value, label: showValue(r.kind as BlockKind, r.value), source: r.source, at: r.createdAt.toISOString() })),
+    limits: (() => { const p = resolvePaymentMethods(store.paymentMethods, store); return { quantity: p.quantityLimits, cartValue: p.cartValueLimits }; })(),
     total: Number(total), page, kind, q,
     counts: Object.fromEntries(byKind.map((r) => [r.kind, Number(r.n)])) as Partial<Record<BlockKind, number>>,
   });
@@ -131,6 +134,31 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await db.update(stores).set({ confirmEnabled: enabled, confirmWhatsapp: wa, confirmWaPrepaid: prepaid, confirmWaCod: cod, confirmAutoCancel: on("autoCancel") }).where(eq(stores.id, store.id));
     return res(enabled ? "Order confirmation is on" : "Order confirmation is off");
   }
+  if (intent === "quantityLimitAdd" || intent === "cartValueLimitAdd" || intent === "limitDelete") {
+    const pm = resolvePaymentMethods(store.paymentMethods, store);
+    if (intent === "limitDelete") {
+      const id = String(fd.get("id") ?? "");
+      const quantityLimits = pm.quantityLimits.filter((x) => x.id !== id);
+      const cartValueLimits = pm.cartValueLimits.filter((x) => x.id !== id);
+      await db.update(stores).set({ paymentMethods: { ...pm, quantityLimits, cartValueLimits } }).where(eq(stores.id, store.id));
+      return res("Limit removed");
+    }
+    const methods = [on("prepaid") && "prepaid", on("cod") && "cod"].filter((x): x is "prepaid" | "cod" => Boolean(x));
+    if (!methods.length) return res(null, "Choose Prepaid, COD or both");
+    const id = crypto.randomUUID();
+    if (intent === "quantityLimitAdd") {
+      const max = Math.floor(Number(fd.get("max")) || 0), scope = fd.get("scope") === "product" ? "product" as const : "cart" as const;
+      const productMode = fd.get("productMode") === "selected" ? "selected" as const : "all" as const;
+      const products = productMode === "selected" ? parsePicked(fd.get("products")).slice(0, 100) : [];
+      if (max < 1 || (productMode === "selected" && !products.length)) return res(null, "Enter a limit and choose products for selected-product rules");
+      await db.update(stores).set({ paymentMethods: { ...pm, quantityLimits: [...pm.quantityLimits, { id, on: true, methods, scope, productMode, max, products }] } }).where(eq(stores.id, store.id));
+    } else {
+      const maxRupees = Math.floor(Number(fd.get("maxRupees")) || 0);
+      if (maxRupees < 0) return res(null, "Enter a valid cart value");
+      await db.update(stores).set({ paymentMethods: { ...pm, cartValueLimits: [...pm.cartValueLimits, { id, on: true, methods, maxRupees }] } }).where(eq(stores.id, store.id));
+    }
+    return res("Checkout limit saved");
+  }
   return res(null, "Unknown action");
 }
 
@@ -152,11 +180,23 @@ export default function RtoSuite() {
       <UsageCard d={d} />
       {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`/dashboard/stores/${d.storeId}/payments`}>Payment methods</Link>.</Notice>}
       <CodForm d={d} msg={msg} />
+      <CheckoutLimits d={d} msg={msg} />
       <OtpForm d={d} msg={msg} />
       <BlockCard d={d} msg={msg} blocked={blocked} />
       <ConfirmForm d={d} msg={msg} />
     </div>
   );
+}
+
+function CheckoutLimits({ d, msg }: { d: D; msg: Msg }) {
+  return <section id="limits" className="panel space-y-5 p-5">
+    <div><h2 className="font-semibold">Quantity Control</h2><p className="text-xs text-ink-soft">Set cart-total or per-product quantity limits for COD (including Partial COD), Prepaid, or both.</p></div>
+    {d.limits.quantity.map((r) => <div key={r.id} className="flex items-center gap-3 rounded-lg border border-rule p-3 text-sm"><span className="flex-1">{r.methods.join(" + ")} · {r.scope === "cart" ? "total cart quantity" : "quantity per product"} ≤ {r.max}{r.productMode === "selected" ? ` · ${r.products.map((p) => p.title).join(", ")}` : " · all products"}</span><Form method="post"><input type="hidden" name="intent" value="limitDelete"/><input type="hidden" name="id" value={r.id}/><button className="text-bad">Remove</button></Form></div>)}
+    <Form method="post" className="grid gap-3 rounded-xl bg-paper p-4 sm:grid-cols-2"><input type="hidden" name="intent" value="quantityLimitAdd"/><label className="text-sm">Limit type<select className="input mt-1" name="scope"><option value="cart">Total quantity in cart</option><option value="product">Quantity of each product</option></select></label><label className="text-sm">Maximum quantity<input className="input mt-1" type="number" min="1" name="max" required/></label><label className="text-sm">Applies to<select className="input mt-1" name="productMode"><option value="all">All products</option><option value="selected">Selected products</option></select></label><div><span className="label">Selected products (used when selected products is chosen)</span><ProductPicker storeId={d.storeId} name="products" placeholder="Choose products"/></div><div className="flex gap-4"><label><input type="checkbox" name="cod" defaultChecked/> COD + Partial COD</label><label><input type="checkbox" name="prepaid"/> Prepaid</label></div><div className="flex items-center justify-end gap-3"><span>{msg("quantityLimitAdd")}</span><SubmitButton intent="quantityLimitAdd">Add quantity rule</SubmitButton></div></Form>
+    <div className="border-t border-rule pt-4"><h3 className="font-semibold">Cart Value Limit</h3><p className="text-xs text-ink-soft">The chosen method is unavailable when item value is above this amount.</p></div>
+    {d.limits.cartValue.map((r) => <div key={r.id} className="flex items-center gap-3 rounded-lg border border-rule p-3 text-sm"><span className="flex-1">{r.methods.join(" + ")} unavailable above ₹{r.maxRupees.toLocaleString("en-IN")}</span><Form method="post"><input type="hidden" name="intent" value="limitDelete"/><input type="hidden" name="id" value={r.id}/><button className="text-bad">Remove</button></Form></div>)}
+    <Form method="post" className="grid gap-3 rounded-xl bg-paper p-4 sm:grid-cols-2"><input type="hidden" name="intent" value="cartValueLimitAdd"/><label className="text-sm">Maximum cart value (₹)<input className="input mt-1" type="number" min="0" name="maxRupees" required/></label><div className="flex items-end gap-4"><label><input type="checkbox" name="cod" defaultChecked/> COD + Partial COD</label><label><input type="checkbox" name="prepaid"/> Prepaid</label></div><div className="flex items-center justify-end gap-3 sm:col-span-2"><span>{msg("cartValueLimitAdd")}</span><SubmitButton intent="cartValueLimitAdd">Add value rule</SubmitButton></div></Form>
+  </section>;
 }
 
 function Hero({ d, blocked }: { d: D; blocked: number }) {
