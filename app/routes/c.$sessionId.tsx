@@ -214,7 +214,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
   if (intent === "addr_reveal") {
     const phone = normalizePhone(String(fd.get("phone") ?? ""));
-    if (!(await otpVerified(session.id, phone))) return json({ address: null, error: "Verify your mobile number first" });
+    const requestedMethod = String(fd.get("method") ?? "prepaid");
+    const method = requestedMethod === "cod" || requestedMethod === "partial" ? requestedMethod : "prepaid";
+    if ((await otpRequired(store, method)) && !(await otpVerified(session.id, phone))) return json({ address: null, error: "Verify your mobile number first" });
     const a = await revealAddress(Number(fd.get("id")), phone);
     return json({ address: a ? { firstName: a.firstName, lastName: a.lastName, email: a.email, address1: a.address1, address2: a.address2, city: a.city, state: a.state, pincode: a.pincode } : null, error: a ? null : "Address not found" });
   }
@@ -266,12 +268,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const method: PaymentMethod = str("method") === "cod" ? "cod" : str("method") === "partial" ? "partial" : "prepaid";
   const pm = resolvePaymentMethods(store.paymentMethods, store);
 
-  // A saved address is used only after the customer verifies the phone (OTP at the end)
+  // Verify saved-address orders only when the selected payment method requires OTP.
   const savedId = Number(str("savedAddressId")) || 0;
   if (savedId) {
-    if (!(await otpVerified(session.id, customer.phone))) {
-      return json({ errors: { form: "Verify your mobile number with the OTP to use your saved address." } as FieldErrors, needOtp: true }, { status: 400 });
-    }
     const a = await revealAddress(savedId, customer.phone);
     if (!a) return json({ errors: { form: "That saved address isn't available. Enter your address." } as FieldErrors }, { status: 400 });
     Object.assign(customer, { firstName: a.firstName, lastName: a.lastName, email: customer.email || a.email, address1: a.address1, address2: a.address2, city: a.city, state: a.state, pincode: a.pincode });
@@ -424,10 +423,6 @@ export default function Checkout() {
   const addrFetcher = useFetcher<{ phone: string; addresses: SavedAddressPreview[] }>();
   const revealFetcher = useFetcher<{ address: Partial<OrderCustomer> | null; error: string | null }>();
   const [saved, setSaved] = useState<SavedAddressPreview[]>([]);
-  // A saved address is picked by itself only when the chosen payment method asks for an OTP anyway;
-  // otherwise the customer taps "Use a saved address" (and then verifies)
-  const autoSaved = Boolean(otp[method]);
-  const autoPicked = useRef(false);
   const [addrMode, setAddrMode] = useState<"manual" | "saved">("manual");
   const [savedId, setSavedId] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -442,7 +437,6 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [c.phone, phoneOk]);
   const pickSaved = (a: SavedAddressPreview) => {
-    autoPicked.current = false;
     setSavedId(a.id); setAddrMode("saved"); setShowAll(false);
     setC((prev) => ({ ...prev, city: a.city, state: a.state, pincode: a.pincode }));
   };
@@ -450,15 +444,10 @@ export default function Checkout() {
     const list = addrFetcher.data?.phone === c.phone ? addrFetcher.data.addresses : [];
     setSaved(list);
     if (!list.length) { setAddrMode("manual"); setSavedId(null); return; }
-    // Pick the saved address by itself only when the store uses OTP anyway; otherwise the customer chooses it (and the OTP)
-    if (autoSaved && !choseManual.current && !c.address1.trim()) { pickSaved(list[0]); autoPicked.current = true; }
+    // Put the latest saved address at the top as soon as this phone has one.
+    if (!choseManual.current && !c.address1.trim()) pickSaved(list[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addrFetcher.data]);
-  // Switched to a payment method without OTP: drop the saved address we picked by ourselves
-  useEffect(() => {
-    if (!autoSaved && autoPicked.current && addrMode === "saved") { autoPicked.current = false; setAddrMode("manual"); setSavedId(null); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSaved]);
   useEffect(() => {
     const a = revealFetcher.data?.address;
     if (!a) return;
@@ -561,7 +550,7 @@ export default function Checkout() {
   const [otpOpen, setOtpOpen] = useState(false);
   const otpFor = useRef<OtpPurpose>("order");
   const usingSaved = addrMode === "saved" && savedId != null && saved.some((a) => a.id === savedId);
-  const needsOtp = (otp[method] || usingSaved) && verifiedPhone.current !== c.phone;
+  const needsOtp = otp[method] && verifiedPhone.current !== c.phone;
   const askOtp = (why: OtpPurpose) => { otpFor.current = why; setOtpOpen(true); };
   useEffect(() => { if (actionData && "needOtp" in actionData && actionData.needOtp) askOtp("order"); }, [actionData]);
   // 1-page checkout with OTP at the start: ask as soon as a valid number is typed
@@ -572,7 +561,10 @@ export default function Checkout() {
     return () => clearTimeout(t);
   }, [steps, otp.start, phoneOk, c.phone]);
   const editSaved = (id: number) => {
-    if (verifiedPhone.current === c.phone) { revealFetcher.submit({ intent: "addr_reveal", id: String(id), phone: c.phone }, { method: "post" }); return; }
+    if (!otp[method] || verifiedPhone.current === c.phone) {
+      revealFetcher.submit({ intent: "addr_reveal", id: String(id), phone: c.phone, method }, { method: "post" });
+      return;
+    }
     askOtp({ reveal: id });
   };
 
@@ -723,8 +715,8 @@ export default function Checkout() {
     </Field>
   );
   const addressFields = (email: React.ReactNode) => usingSaved ? (
-    <>{email}<SavedAddresses className="col-span-2" list={saved} selected={savedId!} showAll={showAll} setShowAll={setShowAll}
-      onPick={pickSaved} onEdit={editSaved} onAddNew={addNew} revealing={revealFetcher.state !== "idle"} /></>
+    <>{!steps && phoneField}<SavedAddresses className="col-span-2" list={saved} selected={savedId!} showAll={showAll} setShowAll={setShowAll}
+      onPick={pickSaved} onEdit={editSaved} onAddNew={addNew} revealing={revealFetcher.state !== "idle"} requireOtp={otp[method]} />{email}</>
   ) : (
     <>
       <p className="col-span-2 -mb-1 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Contact information</p>
@@ -858,7 +850,7 @@ export default function Checkout() {
       </div>
       {orderBlocked && codStatus?.message && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{codStatus.message}</p>}
       {errors.form && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">{errors.form}</p>}
-      {(otp[method] || usingSaved) && verifiedPhone.current !== c.phone && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />We'll send a one-time code to your mobile to confirm the order.</p>}
+      {otp[method] && verifiedPhone.current !== c.phone && <p className="mt-3 flex items-center gap-1.5 text-xs text-ink-faint"><LockIcon />We'll send a one-time code to your mobile to confirm the order.</p>}
     </Card>
   );
 
@@ -1014,7 +1006,7 @@ export default function Checkout() {
             const f = otpFor.current;
             if (f === "start") return;
             if (f === "start_next") { afterContact(); return; }
-            if (f !== "order") revealFetcher.submit({ intent: "addr_reveal", id: String(f.reveal), phone: c.phone }, { method: "post" });
+            if (f !== "order") revealFetcher.submit({ intent: "addr_reveal", id: String(f.reveal), phone: c.phone, method }, { method: "post" });
             else setTimeout(() => formRef.current?.requestSubmit(), 0);
           }} />
       )}
@@ -1446,44 +1438,51 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   );
 }
 
-function SavedAddresses({ list, selected, showAll, setShowAll, onPick, onEdit, onAddNew, revealing, className = "" }: {
+function SavedAddresses({ list, selected, showAll, setShowAll, onPick, onEdit, onAddNew, revealing, requireOtp, className = "" }: {
   list: SavedAddressPreview[]; selected: number; showAll: boolean; setShowAll: (v: boolean) => void;
-  onPick: (a: SavedAddressPreview) => void; onEdit: (id: number) => void; onAddNew: () => void; revealing: boolean; className?: string;
+  onPick: (a: SavedAddressPreview) => void; onEdit: (id: number) => void; onAddNew: () => void; revealing: boolean; requireOtp: boolean; className?: string;
 }) {
   const current = list.find((a) => a.id === selected) ?? list[0];
   const stateName = (code: string) => INDIAN_STATES.find((s) => s.code === code)?.name ?? code;
-  const Box = ({ a, active, onClick }: { a: SavedAddressPreview; active: boolean; onClick?: () => void }) => (
-    <div onClick={onClick} role={onClick ? "radio" : undefined} aria-checked={onClick ? active : undefined} tabIndex={onClick ? 0 : undefined}
-      onKeyDown={(e) => { if (onClick && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onClick(); } }}
-      className={`rounded-xl border px-4 py-3 text-sm transition ${active ? "border-brand bg-brand/5 ring-1 ring-brand" : "border-rule-strong"} ${onClick ? "cursor-pointer hover:border-brand/60" : ""}`}>
+  const Box = ({ a, active, onClick, action }: { a: SavedAddressPreview; active: boolean; onClick?: () => void; action?: React.ReactNode }) => (
+    <div className={`rounded-xl border px-4 py-3 text-sm transition ${active ? "border-brand bg-brand/5 ring-1 ring-brand" : "border-rule-strong"}`}>
       <div className="flex items-start gap-3">
-        <span aria-hidden className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${active ? "border-brand" : "border-rule-strong"}`}>{active && <span className="h-2 w-2 rounded-full bg-brand" />}</span>
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-2 font-semibold">{a.name}<span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-soft">{a.label === "work" ? "Work" : "Home"}</span></p>
-          <p className="mt-0.5 break-words text-ink-soft">{a.line}</p>
-          <p className="text-ink-soft">{a.city}, {stateName(a.state)} – <span className="num">{a.pincode}</span></p>
-        </div>
+        <button type="button" role={onClick ? "radio" : undefined} aria-checked={onClick ? active : undefined} onClick={onClick}
+          className={`flex min-w-0 flex-1 items-start gap-3 text-left ${onClick ? "cursor-pointer" : "cursor-default"}`}>
+          <span aria-hidden className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${active ? "border-brand" : "border-rule-strong"}`}>{active && <span className="h-2 w-2 rounded-full bg-brand" />}</span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 font-semibold">{a.name}<span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-soft">{a.label === "work" ? "Work" : "Home"}</span></span>
+            <span className="mt-0.5 block break-words text-ink-soft">{a.line}</span>
+            <span className="block text-ink-soft">{a.city}, {stateName(a.state)} – <span className="num">{a.pincode}</span></span>
+          </span>
+        </button>
+        {action}
       </div>
     </div>
   );
   return (
     <div className={className}>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium">Deliver to your saved address</span>
-      </div>
       {showAll ? (
-        <div className="space-y-2" role="radiogroup" aria-label="Saved addresses">
-          {list.map((a) => <Box key={a.id} a={a} active={a.id === current.id} onClick={() => onPick(a)} />)}
+        <div>
+          <p className="mb-2 text-sm font-semibold">Choose a saved address</p>
+          <div className="space-y-2" role="radiogroup" aria-label="Saved addresses">
+            {list.map((a) => <Box key={a.id} a={a} active={a.id === current.id} onClick={() => onPick(a)} action={
+              <button type="button" className="shrink-0 text-sm font-semibold text-brand disabled:text-ink-faint" disabled={revealing} onClick={() => onEdit(a.id)}>{revealing ? "Opening…" : "Edit"}</button>
+            } />)}
+          </div>
+          <button type="button" className="mt-3 text-sm font-semibold text-brand" onClick={onAddNew}>+ Add new address</button>
         </div>
       ) : (
-        <Box a={current} active />
+        <>
+          <p className="mb-2 text-sm font-semibold">Deliver to this saved address</p>
+          <Box a={current} active action={<button type="button" className="shrink-0 text-sm font-semibold text-brand" onClick={() => setShowAll(true)}>{list.length > 1 ? `Change (${list.length})` : "Change"}</button>} />
+          <div className="mt-2 flex items-center gap-4">
+            <button type="button" className="text-sm font-medium text-brand disabled:text-ink-faint" disabled={revealing} onClick={() => onEdit(current.id)}>{revealing ? "Opening…" : "Edit address"}</button>
+            <button type="button" className="text-sm font-medium text-brand" onClick={onAddNew}>+ Add new address</button>
+          </div>
+        </>
       )}
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium">
-        {list.length > 1 && <button type="button" className="text-brand" onClick={() => setShowAll(!showAll)}>{showAll ? "Done" : `Change (${list.length})`}</button>}
-        <button type="button" className="text-brand disabled:text-ink-faint" disabled={revealing} onClick={() => onEdit(current.id)}>{revealing ? "Opening…" : "Edit"}</button>
-        <button type="button" className="text-brand" onClick={onAddNew}>+ Add new address</button>
-      </div>
-      <p className="mt-2 text-xs text-ink-faint">We'll confirm it's you with an OTP before placing the order.</p>
+      {requireOtp && <p className="mt-2 text-xs text-ink-faint">We’ll verify your number before placing this COD order.</p>}
     </div>
   );
 }
