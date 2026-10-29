@@ -126,21 +126,33 @@ export async function loader({ request }: LoaderFunctionArgs) {
     var f=el.closest("form");
     if(f&&f.querySelector('[name="id"]'))return f;
     var fid=el.getAttribute&&el.getAttribute("form"); if(fid&&document.getElementById(fid))return document.getElementById(fid);
-    var wrap=el.closest("product-form-component,product-info,.product-information,.product,section");
+    var wrap=el.closest("product-form-component,product-info,.product-information,.product,[id^=ProductInfo-],[id^=MainProduct-]");
     f=wrap&&wrap.querySelector('form[action*="/cart/add"]');
-    return f||document.querySelector('form[action*="/cart/add"]');
+    return f||null;
+  }
+  function buyData(el){
+    var f=productForm(el), id=f&&(f.querySelector('[name="id"]')||{}).value;
+    var q=f&&(f.querySelector('[name="quantity"]')||{}).value;
+    // Some themes render the accelerated button outside its product form. Resolve the
+    // selected variant only from this product section or the product URL; never use cart.js.
+    if(!id){
+      var wrap=el.closest("product-form-component,product-info,.product-information,.product,[id^=ProductInfo-],[id^=MainProduct-]");
+      var field=wrap&&wrap.querySelector('form[action*="/cart/add"] [name="id"]');
+      id=field&&field.value;
+      var qty=wrap&&wrap.querySelector('form[action*="/cart/add"] [name="quantity"]');
+      q=q||(qty&&qty.value);
+    }
+    if(!id){try{id=new URL(location.href).searchParams.get("variant")}catch(e){}}
+    return {id:id,q:q};
   }
   function onBuy(e){
     var buy=findBuy(e); if(!buy)return false;
     if(buy.closest&&buy.closest("cart-drawer,cart-drawer-component,.cart-drawer,#cart-drawer,[data-cart],form[action*='/cart']:not([action*='/cart/add'])")){
       e.preventDefault();e.stopImmediatePropagation();go();return true; // wallet buttons in the cart
     }
-    var f=productForm(buy);
-    var id=f&&(f.querySelector('[name="id"]')||{}).value;
-    var q=f&&(f.querySelector('[name="quantity"]')||{}).value;
-    if(!id){var qi=document.querySelector('input[name="quantity"]'); id=(new URL(location.href).searchParams.get("variant"))||null; q=q||(qi&&qi.value);}
+    var data=buyData(buy);
     e.preventDefault();e.stopImmediatePropagation();
-    if(id)buyNow(id,q); else go();
+    if(data.id)buyNow(data.id,data.q); else{busy=false;overlay(false);alert("Please select a product option and try again.");}
     return true;
   }
 
@@ -155,6 +167,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   document.addEventListener("submit",function(e){
     var f=e.target, s=e.submitter;
+    if(s&&s.matches&&s.matches(BUY_SEL)){
+      e.preventDefault();e.stopImmediatePropagation();
+      var data=buyData(s);
+      if(data.id)buyNow(data.id,data.q); else{busy=false;overlay(false);alert("Please select a product option and try again.");}
+      return;
+    }
     if((s&&s.name==="checkout")||(f&&f.action&&/\\/checkout(\\?|$)/.test(f.action))){
       e.preventDefault();e.stopImmediatePropagation();go();
     }
