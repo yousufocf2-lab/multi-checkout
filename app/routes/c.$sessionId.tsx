@@ -29,6 +29,7 @@ import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
 import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.server";
+import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.server";
 import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -103,7 +104,9 @@ export const headers: HeadersFunction = ({ loaderHeaders }) => {
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session, store } = await loadSession(params.sessionId!);
-  ensureStoreHost(request, store);
+  // On the store's domain (Shopify App Proxy) the page stays there; otherwise it moves to the store's Growpefy address
+  const proxied = isProxied(request);
+  if (!proxied) ensureStoreHost(request, store);
   const [lines, coupons, offers, rule] = await Promise.all([
     fetchLines(store, session.items),
     listVisibleCoupons(store.id),
@@ -156,6 +159,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       quantityLimits: pm.quantityLimits,
       cartValueLimits: pm.cartValueLimits,
     },
+    // "/apps/growpefy" on the store's domain: the page's own requests (pincode lookup) go through the App Proxy too
+    base: proxied ? PROXY_PATH : "",
     otpWidget: widgetPublic(await messaging()),
     rule,
     shipping,
@@ -329,6 +334,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const dsBlock = await dropshipBlock(store, method, [...lines, ...freeLines], customer);
   if (dsBlock) return json({ errors: { form: dsBlock } as FieldErrors }, { status: 400 });
 
+  // Checkout on the store's domain: payment and the thank-you page stay there too
+  const proxyOrigin = isProxied(request) ? cleanProxyOrigin(store, fd.get("origin")) ?? new URL(store.storefrontUrl).origin : null;
+
   const [order] = await db
     .insert(orders)
     .values({
@@ -340,6 +348,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       saveAddress: savedId > 0 || fd.get("saveAddress") === "on",
       tracking: {
         ...(session.tracking ?? {}),
+        ...(proxyOrigin ? { proxyOrigin } : {}),
         ip: clientIp(request) ?? session.tracking?.ip,
         ua: request.headers.get("user-agent")?.slice(0, 500) ?? session.tracking?.ua,
       },
@@ -348,6 +357,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   await db.update(checkoutSessions).set({ customer, paymentAttempted: true, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
   // In the popup, payment and the thank-you page open on the full page (the store's tab), not inside the popup
+  if (proxyOrigin) {
+    if (method === "cod") {
+      await finalizeOrder(store, order, { status: "cod_placed" });
+      return json({ top: `${PROXY_PATH}/order/${order.id}` });
+    }
+    return json({ top: `${PROXY_PATH}/pay/${order.id}` });
+  }
   const embedded = fd.get("embed") === "1";
   const abs = (to: string) => (/^https?:\/\//.test(to) ? to : `${storeBaseUrl(store)}${to}`);
   if (method === "cod") {
@@ -368,7 +384,10 @@ type Eligibility = { cod: CodStatus; block: "cod" | "all" | null; message: strin
 type OtpPurpose = "order" | "start" | "start_next" | { reveal: number };
 
 export default function Checkout() {
-  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers } = useLoaderData<typeof loader>();
+  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers, base } = useLoaderData<typeof loader>();
+  // The store domain the customer is on (only used when the checkout runs through the App Proxy)
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
   const actionData = useActionData<typeof action>();
   const nav = useNavigation();
   const couponFetcher = useFetcher<typeof action>();
@@ -505,7 +524,7 @@ export default function Checkout() {
     fill(null, guessStateFromPincode(c.pincode));
     setPinStatus("loading");
     const ctrl = new AbortController();
-    fetch(`/api/pincode/${c.pincode}`, { signal: ctrl.signal })
+    fetch(`${base}/api/pincode/${c.pincode}`, { signal: ctrl.signal })
       .then((r) => r.json())
       .then((d: { city: string | null; state: string | null }) => { fill(d.city, d.state); setPinStatus(d.city ? "ok" : "unknown"); })
       .catch(() => setPinStatus("unknown"));
@@ -935,6 +954,7 @@ export default function Checkout() {
       <Form method="post" id="checkout-form" ref={formRef} onSubmit={onSubmit} noValidate={steps} className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-8 lg:py-8">
         <input type="hidden" name="intent" value="place" />
         {embedded && <input type="hidden" name="embed" value="1" />}
+        {base && origin && <input type="hidden" name="origin" value={origin} />}
         <input type="hidden" name="method" value={method} />
         <input type="hidden" name="couponCode" value={coupon?.code ?? ""} />
         {usingSaved && <input type="hidden" name="savedAddressId" value={savedId!} />}

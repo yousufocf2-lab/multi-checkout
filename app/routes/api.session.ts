@@ -6,6 +6,7 @@ import { storeBaseUrl } from "~/lib/urls.server";
 import { clientIp } from "~/lib/orders.server";
 import { wooVerify } from "~/lib/woo.server";
 import { startWelcomeWatcher } from "~/lib/welcome.server";
+import { PROXY_PATH, proxyCheckoutReady } from "~/lib/proxy-checkout.server";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -32,7 +33,10 @@ export async function action({ request }: ActionFunctionArgs) {
   }
 
   const [store] = await db
-    .select({ id: stores.id, slug: stores.slug, checkoutDomain: stores.checkoutDomain, platform: stores.platform, wooSecret: stores.wooSecret })
+    .select({
+      id: stores.id, slug: stores.slug, checkoutDomain: stores.checkoutDomain, platform: stores.platform, wooSecret: stores.wooSecret,
+      shopDomain: stores.shopDomain, proxyCheckout: stores.proxyCheckout, clientSecret: stores.clientSecret,
+    })
     .from(stores)
     .where(and(eq(stores.slug, String(body.store ?? "")), eq(stores.active, true)))
     .limit(1);
@@ -68,7 +72,9 @@ export async function action({ request }: ActionFunctionArgs) {
       ua,
     },
   });
-  return reply({ url: `${storeBaseUrl(store)}/c/${id}`, id });
+  // proxy: the store script opens <store domain>/apps/growpefy/c/<id> (same checkout, on the store's own domain)
+  const proxy = proxyCheckoutReady(store);
+  return reply({ url: `${storeBaseUrl(store)}/c/${id}`, id, proxy: proxy ? `${PROXY_PATH}/c/${id}` : null });
 }
 
 /** Google click IDs are URL-safe tokens; anything else is ignored. */

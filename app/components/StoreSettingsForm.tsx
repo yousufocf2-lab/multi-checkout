@@ -11,7 +11,7 @@ export type StoreFormValues = {
   metaAdAccountId?: string | null; metaPixelId?: string | null; metaApiVersion?: string; metaFireCodPurchase?: boolean;
   hasMetaToken?: boolean; hasCapiToken?: boolean;
   id?: number; googleConnected?: boolean; googleAdsCustomerId?: string | null; googleConversionActionName?: string | null; googleTagId?: string | null;
-  logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null; popupCheckout?: boolean;
+  logoUrl?: string | null; primaryColor?: string; supportPhone?: string | null; popupCheckout?: boolean; proxyCheckout?: boolean;
   connectStatus?: string | null; installUrl?: string | null;
 };
 
@@ -67,7 +67,12 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
           {siteSuggestions.length > 0 && <datalist id="gp-site-suggestions">{siteSuggestions.map((x) => <option key={x.url} value={x.url} />)}</datalist>}
           <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" hint="Shown on the checkout for help." />
         </div>
-        <div className={`mt-4 border-t border-rule pt-4 ${woo ? "hidden" : ""}`}><Toggle name="popupCheckout" label="Open checkout as a popup" description="Checkout opens over your store, so customers never leave your website. On phones it fills the screen like a normal page. If it can't load, it opens as a page instead." defaultChecked={v.popupCheckout ?? true} /></div>
+        <div className={`mt-4 space-y-4 border-t border-rule pt-4 ${woo ? "hidden" : ""}`}>
+          <Toggle name="proxyCheckout" label="Open checkout on your own website (recommended)"
+            description={`Checkout, payment and the thank-you page open on ${v.storefrontUrl ? v.storefrontUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "") : "your store"}/apps/growpefy/…, so your Meta and Google ads see every order on your own store. Uses the App Proxy in your Shopify app. If it isn't working, checkout opens on your Growpefy address instead.`}
+            defaultChecked={v.proxyCheckout ?? true} />
+          <Toggle name="popupCheckout" label="Open checkout as a popup" description="Only when checkout can't open on your own website. Checkout opens over your store; on phones it fills the screen like a normal page." defaultChecked={v.popupCheckout ?? true} />
+        </div>
         {!isNew && <div className="mt-4 border-t border-rule pt-4"><Toggle name="active" label="Checkout is live" description="When off, the theme script stops opening this checkout." defaultChecked={v.active ?? true} /></div>}
         {isNew && <input type="hidden" name="active" value="on" />}
       </Section>

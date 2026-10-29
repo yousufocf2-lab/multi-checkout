@@ -7,6 +7,7 @@ import { db, paymentEvents } from "~/db.server";
 import { can, requireStore, requireViewer } from "~/lib/auth.server";
 import { ConnectAppForm } from "~/components/ConnectAppForm";
 import { connectFormAction } from "~/lib/connect.server";
+import { PROXY_PATH, checkProxyNow, proxyCheckoutReady } from "~/lib/proxy-checkout.server";
 import { env } from "~/lib/env.server";
 import { testMeta } from "~/lib/meta.server";
 import { ADAPTERS, activeGateways } from "~/lib/gateways/index.server";
@@ -35,6 +36,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     gateways: activeGateways(s).map((g, i) => ({ id: g.id, name: gatewayName(g.id), mode: g.mode, slot: SLOT_LABELS[i], webhook: Boolean(gatewayById(g.id)?.webhook) })),
     appUrl: env.appUrl,
     checkoutBase: storeBaseUrl(s),
+    // Shopify: checkout on the store's own domain through the App Proxy
+    proxy: s.platform === "shopify" ? {
+      on: s.proxyCheckout,
+      ready: proxyCheckoutReady(s),
+      site: (() => { try { return new URL(s.storefrontUrl).host; } catch { return s.shopDomain; } })(),
+      ping: (() => { try { return `${new URL(s.storefrontUrl).origin}${PROXY_PATH}/ping`; } catch { return `https://${s.shopDomain}${PROXY_PATH}/ping`; } })(),
+    } : null,
     // Growpefy team: the form to save this store's app (Client ID, secret, install link)
     teamForm: team && s.platform === "shopify" && (s.connectStatus || s.installUrl)
       ? { id: s.id, name: s.name, shop: s.shopDomain, status: (s.connectStatus ?? "ready") as "requested" | "ready", clientId: s.clientId ?? "", hasSecret: Boolean(s.clientSecret), installUrl: s.installUrl ?? "" }
@@ -57,6 +65,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     try { return json({ intent, ok: await fn(), error: null }); }
     catch (e) { return json({ intent, ok: null, error: e instanceof Error ? e.message : String(e) }); }
   };
+  if (intent === "checkProxy") return run(async () => {
+    if (await checkProxyNow(store)) return "App Proxy works. New checkouts open on your own website.";
+    throw new Error("App Proxy didn't answer. In your Shopify app, check App proxy: prefix apps, subpath growpefy, URL https://growpefy.com/proxy, then Release. Checkout keeps opening on your Growpefy address meanwhile.");
+  });
   if (intent === "testShopify") return run(async () => { const s = await testConnection(store); return `Connected to ${s.name} (${s.currencyCode})`; });
   if (intent === "testWoo") return run(async () => {
     const s = await testConnection(store) as { name: string; currencyCode: string; plugin?: string; wc?: string };
@@ -78,7 +90,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function Setup() {
-  const { store, appUrl, checkoutBase, lastHook, gateways, teamForm, scopes } = useLoaderData<typeof loader>();
+  const { store, appUrl, checkoutBase, lastHook, gateways, teamForm, scopes, proxy } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>() as { intent?: unknown; ok?: unknown; error?: string | null } | undefined;
   const [params] = useSearchParams();
   // Always the platform domain: it works even while a store's own checkout domain is being set up
@@ -152,8 +164,24 @@ export default function Setup() {
         </Step>
         )}
 
-        <Step n={store.woo ? 3 : 2} title="Checkout address" done>
-          <p className="text-sm text-ink-soft">Your checkout opens on <b className="text-ink">{checkoutBase.replace(/^https:\/\//, "")}</b>. Nothing to set up.</p>
+        <Step n={store.woo ? 3 : 2} title="Checkout address" done={!proxy?.on || proxy.ready}>
+          {proxy?.on ? (
+            <>
+              <p className="text-sm text-ink-soft">
+                {proxy.ready
+                  ? <>Your checkout opens on your own website: <b className="text-ink">{proxy.site}/apps/growpefy/…</b></>
+                  : <>Your checkout will open on your own website (<b className="text-ink">{proxy.site}/apps/growpefy/…</b>) once the App Proxy answers. Until then it opens on <b className="text-ink">{checkoutBase.replace(/^https:\/\//, "")}</b>.</>}
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">Your Meta and Google ads then see the order on your own store. Needs the App Proxy in your Shopify app (prefix <b>apps</b>, subpath <b>growpefy</b>, URL <b>{appUrl}/proxy</b>).</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Form method="post"><SubmitButton intent="checkProxy" className="btn-secondary" busyText="Checking">Check App Proxy</SubmitButton></Form>
+                <a href={proxy.ping} target="_blank" rel="noreferrer" className="btn-secondary">Open test page</a>
+              </div>
+              {result("checkProxy")}
+            </>
+          ) : (
+            <p className="text-sm text-ink-soft">Your checkout opens on <b className="text-ink">{checkoutBase.replace(/^https:\/\//, "")}</b>. Nothing to set up.{proxy && <> To open it on your own website, turn on “Open checkout on your own website” in <Link to="../settings" relative="path" className="underline">Settings</Link>.</>}</p>
+          )}
         </Step>
 
         <Step n={store.woo ? 4 : 3} title="Payment gateways" done={gateways.length > 0}>

@@ -32,6 +32,12 @@ export function ConnectAppForm({ store, appUrl, scopes, action }: { store: Conne
             <CopyField label="Redirect URL" value={`${appUrl}/shopify/callback`} />
             <CopyField label="Scopes" value={scopes} />
           </div>
+          <p className="mt-3">In the same version, add an <b className="text-ink">App proxy</b> (checkout and payments open on the store's own website):</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+            <CopyField label="Subpath prefix" value="apps" />
+            <CopyField label="Subpath" value="growpefy" />
+            <CopyField label="Proxy URL" value={`${appUrl}/proxy`} />
+          </div>
         </Li>
         <Li n={3}>
           <b className="text-ink">Distribution</b> → <b className="text-ink">Custom distribution</b> → paste the store's address → <b className="text-ink">Generate link</b>. Copy the install link.

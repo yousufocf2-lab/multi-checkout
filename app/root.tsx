@@ -11,16 +11,17 @@ import {
 } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import stylesheet from "./tailwind.css?url";
+import { asset } from "~/lib/asset";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
   { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" },
   { rel: "stylesheet", href: stylesheet },
-  { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
-  { rel: "icon", href: "/brand/growpefy-icon.svg", type: "image/svg+xml" },
-  { rel: "apple-touch-icon", href: "/brand/apple-touch-icon.png" },
-  { rel: "manifest", href: "/site.webmanifest" },
+  { rel: "icon", href: asset("/favicon.ico"), sizes: "48x48" },
+  { rel: "icon", href: asset("/brand/growpefy-icon.svg"), type: "image/svg+xml" },
+  { rel: "apple-touch-icon", href: asset("/brand/apple-touch-icon.png") },
+  { rel: "manifest", href: asset("/site.webmanifest") },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

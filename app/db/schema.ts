@@ -242,6 +242,8 @@ export const stores = pgTable("stores", {
   recovery: jsonb("recovery").$type<RecoverySettings>().notNull().default({}),
   // Open checkout as a popup over the store (full screen on phones); falls back to a page redirect
   popupCheckout: boolean("popup_checkout").notNull().default(true),
+  // Open the checkout on the store's own domain (https://<store>/apps/growpefy/c/...) when its App Proxy works
+  proxyCheckout: boolean("proxy_checkout").notNull().default(true),
   // Dropshipping (super admin only, never shown to the store): Shipnex ships prepaid orders, the wallet pays
   dropshipEnabled: boolean("dropship_enabled").notNull().default(false),
   dropship: jsonb("dropship").$type<StoreDropship>().notNull().default({}),
@@ -569,6 +571,7 @@ export type TrackingInfo = {
   ip?: string;
   ua?: string;
   sourceUrl?: string;
+  proxyOrigin?: string; // https://<store domain> when the checkout ran on the store's domain (Shopify App Proxy)
 };
 
 export type OrderCustomer = {

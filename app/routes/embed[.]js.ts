@@ -95,6 +95,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return fetch(APP+"/api/session",{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify(Object.assign({store:STORE,items:list,fbp:ck("_fbp"),fbc:ck("_fbc")||fbcFromUrl(),url:location.href},gclick()))});
     }).then(function(r){return r.json()}).then(function(d){
       if(!d.url)throw new Error(d.error||"no url");
+      // On the store's own domain (Shopify App Proxy): a normal page, so the store's pixel cookies and website stay the same
+      if(d.proxy){location.href=location.origin+d.proxy;return;}
       if(POPUP)openPop(d.url); else location.href=d.url;
     }).catch(function(e){busy=false;overlay(false);
       if(String(e&&e.message)!=="empty")alert("We couldn\u2019t open checkout. Please try again.");});

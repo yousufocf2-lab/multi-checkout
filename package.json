@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "remix vite:dev",
     "build": "remix vite:build",
-    "start": "node scripts/migrate.mjs && remix-serve ./build/server/index.js",
+    "start": "node scripts/migrate.mjs && node server.mjs",
     "db:generate": "drizzle-kit generate",
     "typecheck": "tsc"
   },
@@ -13,11 +13,15 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@remix-run/express": "^2.17.5",
     "@remix-run/node": "^2.17.5",
     "@remix-run/react": "^2.17.5",
     "@remix-run/serve": "^2.17.5",
+    "compression": "^1.8.2",
     "drizzle-orm": "^0.45.4",
+    "express": "^4.22.3",
     "isbot": "^5.2.2",
+    "morgan": "^1.12.1",
     "pdfkit": "^0.17.2",
     "postgres": "^3.4.9",
     "react": "^18.3.1",

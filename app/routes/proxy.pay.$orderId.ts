@@ -5,7 +5,7 @@ import { redirect } from "@remix-run/node";
 import { and, eq } from "drizzle-orm";
 import { db, orders } from "~/db.server";
 import { getOrderWithStore } from "~/lib/orders.server";
-import { htmlResponse, payPage, proxyBase, startPayment } from "~/lib/gateways/index.server";
+import { PROXY_PATH, htmlResponse, orderPageUrl, payPage, proxyBase, startPayment } from "~/lib/gateways/index.server";
 import { verifyProxySignature } from "~/lib/payu-flow.server";
 import { storeBaseUrl } from "~/lib/urls.server";
 
@@ -23,8 +23,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const [u] = await db.update(orders).set({ status: "pending_payment", error: null, updatedAt: new Date() }).where(and(eq(orders.id, order.id), eq(orders.status, "failed"))).returning();
     if (u) order = u;
   }
-  if (order.status !== "pending_payment") return redirect(`${storeBaseUrl(store)}/order/${order.id}`);
-  const out = await startPayment(store, order, proxyBase(store), { retry });
+  if (order.status !== "pending_payment") return redirect(orderPageUrl(store, order));
+  // Checkout on the store's domain: the gateway returns there too, and "back" goes to that checkout
+  const origin = order.tracking?.proxyOrigin;
+  const out = await startPayment(store, order, origin ? `${origin}${PROXY_PATH}` : proxyBase(store), { retry });
+  const back = origin ? `${origin}${PROXY_PATH}/c/${order.sessionId ?? ""}` : `${storeBaseUrl(store)}/c/${order.sessionId ?? ""}`;
   // text/html (not application/liquid) so Shopify returns the page as it is, without the theme
-  return htmlResponse(payPage(store, order, out, `${storeBaseUrl(store)}/c/${order.sessionId ?? ""}`));
+  return htmlResponse(payPage(store, order, out, back));
 }

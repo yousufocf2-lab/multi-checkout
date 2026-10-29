@@ -3,12 +3,13 @@ import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
 import { json } from "@remix-run/node";
 import { eq } from "drizzle-orm";
 import { db, orders } from "~/db.server";
-import { Link, useLoaderData, useRevalidator } from "@remix-run/react";
+import { useLoaderData, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { activeGateways, payUrl, syncOrderPayment } from "~/lib/gateways/index.server";
 import { formatINR } from "~/lib/pricing";
 import { ensureStoreHost } from "~/lib/urls.server";
+import { PROXY_PATH, isProxied } from "~/lib/proxy-checkout.server";
 import { MetaPixel } from "~/components/MetaPixel";
 import { GoogleTag } from "~/components/GoogleTag";
 import { BrandLoader, PoweredBy } from "~/components/Brand";
@@ -21,7 +22,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!row) throw new Response("Order not found", { status: 404 });
   let { order } = row;
   const { store } = row;
-  ensureStoreHost(request, store);
+  // On the store's domain (Shopify App Proxy) the thank-you page stays there, so the store's own pixel cookies are used
+  const proxied = isProxied(request);
+  if (!proxied) ensureStoreHost(request, store);
   // If the gateway redirect never arrived (closed browser, network), ask the gateway directly — at most every 20s.
   if (order.status === "pending_payment" && Date.now() - order.createdAt.getTime() > 45_000 && Date.now() - order.updatedAt.getTime() > 20_000) {
     try { order = await syncOrderPayment(store, order, "order-page"); } catch (e) { console.error("[order sync]", e instanceof Error ? e.message : e); }
@@ -56,7 +59,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : null,
     plainStoreUrl: store.storefrontUrl,
     // after a failed payment: pay again, on the next gateway when the store has backups
-    retryUrl: order.status === "failed" && (order.paymentMethod === "prepaid" || order.paymentMethod === "partial") ? payUrl(store, order.id, true) : null,
+    retryUrl: order.status === "failed" && (order.paymentMethod === "prepaid" || order.paymentMethod === "partial")
+      ? proxied ? `${PROXY_PATH}/pay/${order.id}?retry=1` : payUrl(store, order.id, true)
+      : null,
+    base: proxied ? PROXY_PATH : "",
     hasBackup: activeGateways(store).length > 1,
   });
 }
@@ -128,7 +134,7 @@ export default function OrderStatus() {
               <h1 className="mt-4 text-2xl font-semibold tracking-tight">Payment didn't go through</h1>
               <p className="mt-1 text-ink-soft">No order was placed. If money left your account, your bank will return it in 5 to 7 working days.</p>
               {d.retryUrl && <a href={d.retryUrl} className="btn-primary mt-6 w-full py-3">{d.hasBackup ? "Try another payment option" : "Pay again"}</a>}
-              {d.sessionId && <Link to={`/c/${d.sessionId}`} className={`${d.retryUrl ? "btn-secondary mt-3" : "btn-primary mt-6"} w-full py-3`}>{d.retryUrl ? "Change payment method" : "Try again"}</Link>}
+              {d.sessionId && <a href={`${d.base}/c/${d.sessionId}`} className={`${d.retryUrl ? "btn-secondary mt-3" : "btn-primary mt-6"} w-full py-3`}>{d.retryUrl ? "Change payment method" : "Try again"}</a>}
               <a href={d.plainStoreUrl} className="btn-secondary mt-3 w-full py-3">Back to store</a>
             </>
           )}

@@ -1,0 +1,1 @@
+ALTER TABLE "stores" ADD COLUMN "proxy_checkout" boolean DEFAULT true NOT NULL;

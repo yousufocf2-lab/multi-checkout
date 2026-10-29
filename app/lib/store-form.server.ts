@@ -11,7 +11,7 @@ export type StoreInput = Pick<
   | "payuKey" | "payuSalt" | "payuMode" | "payuViaStorefront" | "gateways"
   | "codEnabled" | "codCooldownHours" | "codBlockAfterPrepaid"
   | "metaAdAccountId" | "metaAccessToken" | "metaPixelId" | "metaCapiToken" | "metaApiVersion" | "metaFireCodPurchase"
-  | "supportPhone" | "popupCheckout"
+  | "supportPhone" | "popupCheckout" | "proxyCheckout"
 >;
 
 /** Parses + validates the store settings form. Blank secret fields keep the saved value. */
@@ -61,6 +61,8 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     metaFireCodPurchase: on("metaFireCodPurchase"),
     supportPhone: s("supportPhone") || null,
     popupCheckout: on("popupCheckout"),
+    // New stores start on (the form's default); WooCommerce doesn't use it
+    proxyCheckout: woo ? false : on("proxyCheckout"),
   };
 
   // Payment gateways: up to 3, in the order shown (primary first). Blank secrets keep the saved value.

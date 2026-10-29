@@ -9,6 +9,7 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { clearTokenCache } from "~/lib/platform.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 import { storeForClient } from "~/lib/store-view.server";
+import { forgetProxyCheck } from "~/lib/proxy-checkout.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -46,6 +47,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (Object.keys(errors).length) return json({ ok: null, errors }, { status: 400 });
   await db.update(stores).set(data).where(eq(stores.id, store.id));
   clearTokenCache(store.id);
+  forgetProxyCheck(store.id); // a new Client secret or the toggle: check the App Proxy again
   return json({ ok: "Settings saved", errors: null });
 }
 

@@ -239,6 +239,13 @@
       "when": 1793090908002,
       "tag": "0033_connect_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793275371416,
+      "tag": "0034_proxy_checkout",
+      "breakpoints": true
     }
   ]
 }

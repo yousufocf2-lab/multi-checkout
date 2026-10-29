@@ -216,6 +216,8 @@ export async function handleWebhook(gatewayId: string, body: Record<string, unkn
 }
 
 /** Back to the checkout or order page on the store's own host. */
-export const orderPageUrl = (store: Store, order: Order) => `${storeBaseUrl(store)}/order/${order.id}`;
+/** Thank-you page: on the store's domain when the order was placed there (App Proxy), else the store's Growpefy address. */
+export const orderPageUrl = (store: Store, order: Order) =>
+  order.tracking?.proxyOrigin ? `${order.tracking.proxyOrigin}${PROXY_PATH}/order/${order.id}` : `${storeBaseUrl(store)}/order/${order.id}`;
 
 
