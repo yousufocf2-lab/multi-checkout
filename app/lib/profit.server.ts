@@ -11,8 +11,9 @@ import { storeGateways } from "./gateways/index.server";
 const istToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
 const dayDate = (day: string) => new Date(`${day}T00:00:00+05:30`);
 function addDays(day: string, n: number) {
-  const d = dayDate(day); d.setUTCDate(d.getUTCDate() + n);
-  return new Date(d.getTime() - 330 * 60_000).toISOString().slice(0, 10);
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 const moneyPaise = (v: unknown) => Math.round(Number(v ?? 0) * 100);
 type DailyProfit = { day: string; orders: number; revenue: number; settlement: number; adSpend: number; adCostWithGst: number; dropship: number; net: number; cumulative: number; growpefyShare: number; storeShare: number };
