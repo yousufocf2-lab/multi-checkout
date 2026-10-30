@@ -27,7 +27,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const sum = (k: "orders" | "revenue" | "settlement" | "adCostWithGst" | "dropship" | "payments" | "net") => rows.reduce((n, x) => n + x[k], 0);
   const inRange = { orders: sum("orders"), revenue: sum("revenue"), settlement: sum("settlement"), ads: sum("adCostWithGst"), dropship: sum("dropship"), payments: sum("payments"), net: sum("net") };
   const t = raw.totals;
-  const share = store.dropshipEnabled ? 20 : store.profitShareBps / 100;
+  const share = store.profitShareBps / 100;
 
   const payments = await db.select().from(profitPayments)
     .where(and(eq(profitPayments.storeId, store.id), or(
@@ -112,7 +112,7 @@ export default function ProfitShare() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold leading-tight tracking-tight">Sales and profit</h1>
-          <p className="mt-1 text-sm text-ink-soft">{d.name} · partnership since {dateLabel(d.since, true)}{!d.dropship && d.admin ? ` · Growpefy share ${d.share}%` : ""}</p>
+          <p className="mt-1 text-sm text-ink-soft">{d.name} · partnership since {dateLabel(d.since, true)}{d.admin ? ` · Growpefy share ${d.share}%` : ""}</p>
         </div>
         {d.enabled && <RangePicker current={d.range} align="right" />}
       </div>

@@ -267,6 +267,13 @@
       "when": 1793440000100,
       "tag": "0037_native_orders_profit_start",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793440000200,
+      "tag": "0038_dropship_native_orders",
+      "breakpoints": true
     }
   ]
 }

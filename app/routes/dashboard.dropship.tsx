@@ -16,7 +16,7 @@ import { getWallet, stateOf, walletsFor } from "~/lib/wallet.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  const allStores = await db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl, enabled: stores.dropshipEnabled, dropship: stores.dropship })
+  const allStores = await db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl, enabled: stores.dropshipEnabled, dropship: stores.dropship, shareBps: stores.profitShareBps })
     .from(stores).orderBy(asc(stores.name));
   const [ws, zones, skus, recent, alerts, counts] = await Promise.all([
     walletsFor(allStores.map((s) => s.id)),
@@ -35,11 +35,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return {
         id: s.id, name: s.name, logoUrl: s.logoUrl, enabled: s.enabled,
         balance: w.balancePaise, limit: w.negativeLimitPaise, state: stateOf(w),
-        rtoPaise: s.dropship?.rtoPaise ?? null, prices: s.dropship?.prices ?? {},
+        rtoPaise: s.dropship?.rtoPaise ?? null, prices: s.dropship?.prices ?? {}, share: s.shareBps / 100,
       };
     }),
     orders: recent.map((r) => ({
-      id: r.d.orderId, name: r.name, store: r.storeName, city: r.customer.city, pincode: r.customer.pincode,
+      id: r.d.orderId, name: r.name, store: r.storeName, city: r.customer?.city ?? r.d.city ?? "", pincode: r.customer?.pincode ?? r.d.pincode ?? "",
+      source: r.d.source,
       status: r.d.status as DropshipStatus, zone: r.d.zone, product: r.d.productPaise, shipping: r.d.shippingPaise, packing: r.d.packingPaise,
       rto: r.d.rtoPaise, refund: r.d.refundPaise, tracking: r.d.trackingNumber, error: r.d.error,
       lines: r.d.lines, missing: r.d.missingSkus, fulfilAfter: r.d.fulfilAfter, fulfilledAt: r.d.fulfilledAt, createdAt: r.d.createdAt,
@@ -73,6 +74,8 @@ export async function action({ request }: ActionFunctionArgs) {
     const rto = paise(fd.get("rto"));
     if (limit == null || Number.isNaN(limit)) return fail("Enter how far below ₹0 the wallet may go (e.g. 500)");
     if (Number.isNaN(rto)) return fail("RTO charge isn't a valid amount");
+    const share = Number(s("share"));
+    if (!Number.isFinite(share) || share < 0 || share > 100) return fail("Growpefy profit share must be from 0 to 100 percent");
     const { rows, bad } = parsePriceLines(s("prices"), false);
     if (bad.length) return fail(`Couldn't read these price lines: ${bad.slice(0, 3).join(" | ")}`);
     const prices: Record<string, number> = {};
@@ -82,6 +85,7 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     await db.update(stores).set({
       dropshipEnabled: on,
+      profitShareBps: Math.round(share * 100),
       dropship: {
         ...store.dropship, rtoPaise: rto, prices,
         enabledAt: on ? (store.dropshipEnabled && store.dropship?.enabledAt ? store.dropship.enabledAt : new Date().toISOString()) : store.dropship?.enabledAt,
@@ -255,7 +259,7 @@ function StoreRow({ s }: { s: D["stores"][number] }) {
             <span className={on ? "font-medium text-ink" : "text-ink-soft"}>{on ? "Dropshipping on" : "Off"}</span>
           </label>
         </div>
-        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
           <label className="block">
             <span className="label">Wallet can go down to (₹ below 0)</span>
             <input name="limit" inputMode="decimal" className="input" defaultValue={s.limit / 100} />
@@ -263,6 +267,10 @@ function StoreRow({ s }: { s: D["stores"][number] }) {
           <label className="block">
             <span className="label">RTO charge (₹)</span>
             <input name="rto" inputMode="decimal" className="input" defaultValue={s.rtoPaise == null ? "" : s.rtoPaise / 100} placeholder="Same as the order's shipping" />
+          </label>
+          <label className="block">
+            <span className="label">Growpefy profit share (%)</span>
+            <input name="share" type="number" min="0" max="100" step="0.01" className="input" defaultValue={s.share} />
           </label>
           <SubmitButton className="btn-primary" busyText="Saving">Save</SubmitButton>
         </div>
@@ -298,7 +306,7 @@ function Orders({ orders }: { orders: D["orders"] }) {
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id}>
-                  <td><span className="font-medium">{o.name ?? o.id}</span><span className="block text-xs text-ink-faint">{when(o.createdAt)}</span></td>
+                  <td><span className="font-medium">{o.name ?? o.id}</span>{o.source === "shopify" && <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Shopify checkout</span>}<span className="block text-xs text-ink-faint">{when(o.createdAt)}</span></td>
                   <td className="text-sm">{o.store}</td>
                   <td className="text-sm">{o.city} {o.pincode}<span className="block text-xs text-ink-faint">Zone {o.zone}</span></td>
                   <td className="max-w-[240px] text-xs">

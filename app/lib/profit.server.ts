@@ -265,7 +265,8 @@ export async function profitReport(store: Store) {
   for (const w of walletRows) rowFor(w.day).dropship += Number(w.amount) / 100;
   for (const p of paymentRows) rowFor(p.paymentDate).payments += p.amountPaise / 100;
 
-  const share = store.dropshipEnabled ? 0.2 : store.profitShareBps / 10_000;
+  // Growpefy's share of net profit, set by the super admin (Store settings or Dropshipping)
+  const share = store.profitShareBps / 10_000;
   let cumulative = 0, paymentsReceived = 0;
   const rows: DailyProfit[] = [];
   for (let day = since; day <= until; day = addDays(day, 1)) {

@@ -39,7 +39,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (intent === "profitDashboard") {
     const enabled = fd.get("profitEnabled") === "on";
     const pct = Number(fd.get("profitSharePct"));
-    if (!store.dropshipEnabled && (!Number.isFinite(pct) || pct < 0 || pct > 100)) {
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
       return json({ ok: null, errors: { profitSharePct: "Enter a share from 0 to 100 percent." } }, { status: 400 });
     }
     const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -51,7 +51,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const startChanged = startDate !== profitStart(store);
     const [updated] = await db.update(stores).set({
       profitEnabled: enabled,
-      ...(!store.dropshipEnabled ? { profitShareBps: Math.round(pct * 100) } : {}),
+      profitShareBps: Math.round(pct * 100),
       profitEnabledAt: enabled ? (store.profitEnabledAt ?? new Date()) : store.profitEnabledAt,
       profitStartDate: startDate,
       ...(startChanged ? { profitSettledFrom: null } : {}),
@@ -119,9 +119,9 @@ export default function StoreSettings() {
               <span className="mt-1 block text-xs text-ink-faint">Can be in the past. Profit, PayU settlements and orders from the store's own Shopify checkout count from this date (Shopify gives the last 60 days of its orders).</span>
               {errors.profitStartDate && <span className="error-text">{errors.profitStartDate}</span>}
             </label>
-            {profit.dropship
-              ? <p className="text-sm text-ink-soft">Dropshipping is enabled for this store. Its Growpefy share is fixed at <b>20%</b>; dropshipping applies only to eligible prepaid orders.</p>
-              : <label className="block max-w-xs"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(profit.shareBps / 100).toFixed(2)} />{errors.profitSharePct && <span className="error-text">{errors.profitSharePct}</span>}</label>}
+            <label className="block max-w-xs"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(profit.shareBps / 100).toFixed(2)} />
+              <span className="mt-1 block text-xs text-ink-faint">Growpefy's share of the net profit after every cost{profit.dropship ? " (ads, dropship product, shipping, packing, RTO)" : ""}. Same setting as on the Dropshipping page.</span>
+              {errors.profitSharePct && <span className="error-text">{errors.profitSharePct}</span>}</label>
             <SubmitButton intent="profitDashboard" className="btn-primary" busyText="Saving">Save dashboard access</SubmitButton>
           </Form>
         </Section>

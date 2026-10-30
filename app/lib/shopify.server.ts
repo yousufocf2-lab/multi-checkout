@@ -62,25 +62,31 @@ async function adminGraphql<T>(store: Store, query: string, variables?: unknown)
 export type NativeOrder = {
   id: string; name: string; createdAt: string; totalPaise: number; prepaid: boolean;
   financialStatus: string | null; gateway: string | null; cancelled: boolean;
+  /** Only with `details`: what was bought and where it goes (for dropshipping). */
+  lines?: { variantId: string; title: string; variantTitle: string | null; quantity: number }[];
+  address?: { state: string | null; pincode: string | null; city: string | null };
 };
 
 /**
  * Orders placed on the store's own Shopify checkout since `sinceIso`, oldest first.
  * Shopify only returns the last 60 days unless the app has read_all_orders.
  */
-export async function fetchNativeOrders(store: Store, sinceIso: string, maxPages = 40) {
+export async function fetchNativeOrders(store: Store, sinceIso: string, maxPages = 40, details = false) {
   type Node = {
     id: string; name: string; createdAt: string; tags: string[]; cancelledAt: string | null; test: boolean;
     displayFinancialStatus: string | null; paymentGatewayNames: string[];
     currentTotalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+    lineItems?: { nodes: { title: string; variantTitle: string | null; currentQuantity: number; variant: { id: string } | null }[] };
+    shippingAddress?: { provinceCode: string | null; zip: string | null; city: string | null } | null;
   };
+  const extra = details ? " lineItems(first:50){nodes{title variantTitle currentQuantity variant{id}}} shippingAddress{provinceCode zip city}" : "";
   type Page = { orders: { edges: { node: Node }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
   const out: NativeOrder[] = [];
   let cursor: string | null = null;
   for (let page = 0; page < maxPages; page++) {
     const data: Page = await adminGraphql<Page>(store,
-      `query($first:Int!,$after:String,$q:String!){orders(first:$first,after:$after,query:$q,sortKey:CREATED_AT){edges{node{id name createdAt tags cancelledAt test displayFinancialStatus paymentGatewayNames currentTotalPriceSet{shopMoney{amount currencyCode}}}} pageInfo{hasNextPage endCursor}}}`,
-      { first: 250, after: cursor, q: `created_at:>='${sinceIso}'` });
+      `query($first:Int!,$after:String,$q:String!){orders(first:$first,after:$after,query:$q,sortKey:CREATED_AT){edges{node{id name createdAt tags cancelledAt test displayFinancialStatus paymentGatewayNames currentTotalPriceSet{shopMoney{amount currencyCode}}${extra}}} pageInfo{hasNextPage endCursor}}}`,
+      { first: details ? 50 : 250, after: cursor, q: `created_at:>='${sinceIso}'` });
     for (const { node } of data.orders.edges) {
       if (node.test || node.tags.some((t) => t.toLowerCase() === "growpefy")) continue;
       const gateways = node.paymentGatewayNames ?? [];
@@ -91,6 +97,11 @@ export async function fetchNativeOrders(store: Store, sinceIso: string, maxPages
         totalPaise: Math.round(Number(node.currentTotalPriceSet.shopMoney.amount) * 100),
         prepaid: !cod && (status === "PAID" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED" || status === "PARTIALLY_PAID"),
         financialStatus: status, gateway: gateways.join(", ").slice(0, 120) || null, cancelled: Boolean(node.cancelledAt),
+        ...(details ? {
+          lines: (node.lineItems?.nodes ?? []).filter((l) => l.variant && l.currentQuantity > 0)
+            .map((l) => ({ variantId: l.variant!.id.replace(/\D/g, ""), title: l.title, variantTitle: l.variantTitle, quantity: l.currentQuantity })),
+          address: { state: node.shippingAddress?.provinceCode ?? null, pincode: node.shippingAddress?.zip ?? null, city: node.shippingAddress?.city ?? null },
+        } : {}),
       });
     }
     if (!data.orders.pageInfo.hasNextPage || !data.orders.pageInfo.endCursor) return { orders: out, complete: true };

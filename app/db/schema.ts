@@ -288,7 +288,11 @@ export type StoreGateway = { id: string; mode: "test" | "live"; on: boolean; cre
 export type PayAttempt = { g: string; txn: string; ref?: string | null; at: string };
 
 /** Per-store dropshipping options. Prices are paise, keyed by the 9-character SKU. */
-export type StoreDropship = { rtoPaise?: number | null; prices?: Record<string, number>; enabledAt?: string };
+export type StoreDropship = {
+  rtoPaise?: number | null; prices?: Record<string, number>; enabledAt?: string;
+  /** Orders from the store's own Shopify checkout are charged from this moment on (set the first time we look). */
+  nativeFrom?: string;
+};
 
 /** Dropshipping price list (default for every store). Orders match on the first 9 characters of the SKU. */
 export const dropshipSkus = pgTable("dropship_skus", {
@@ -307,8 +311,15 @@ export type DropshipLine = { sku: string | null; title: string; quantity: number
 export const dropshipOrders = pgTable(
   "dropship_orders",
   {
-    orderId: text("order_id").primaryKey().references(() => orders.id, { onDelete: "cascade" }),
+    // Growpefy order id, or "SH<shopify id>" for an order from the store's own Shopify checkout
+    orderId: text("order_id").primaryKey(),
     storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    source: text("source").$type<"growpefy" | "shopify">().notNull().default("growpefy"),
+    shopifyOrderId: text("shopify_order_id"), // Shopify checkout orders (Growpefy orders keep it on the order)
+    orderName: text("order_name"), // #1234
+    city: text("city"),
+    pincode: text("pincode"),
+    totalPaise: integer("total_paise"),
     status: text("status").notNull().default("charged"), // charged | fulfilled | cancelled | rto
     zone: text("zone").notNull(), // A..E
     lines: jsonb("lines").$type<DropshipLine[]>().notNull(),

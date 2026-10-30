@@ -12,6 +12,7 @@ import {
 } from "~/db.server";
 import { FULFIL_AFTER_HOURS, PACKING_FEE_PAISE, PRODUCT_REFUND_HOURS, cancelRefund, skuKey, zoneFor, zoneRates, type Zone } from "./dropship";
 import { fetchFulfillmentTracking, fetchVariantSkus, fulfilStoreOrder, orderGid } from "./platform.server";
+import { fetchNativeOrders } from "./shopify.server";
 import { getPlatform, getWallet, postTransaction } from "./wallet.server";
 
 const TRACKING_COMPANY = "Shipnex";
@@ -63,33 +64,77 @@ export const dropshipEligible = (store: Pick<Store, "dropshipEnabled">, order: P
 
 const ref = (o: Pick<Order, "id" | "shopifyOrderName">) => o.shopifyOrderName ?? o.id;
 
-/** Charges a paid prepaid order once (safe to call again). Never throws. */
+type Charge = {
+  orderId: string; ref: string; createdAt: Date; items: LineIn[];
+  address: Pick<OrderCustomer, "state" | "pincode" | "city">;
+  source: "growpefy" | "shopify"; shopifyOrderId?: string | null; orderName?: string | null; totalPaise?: number | null;
+};
+
+/** Takes product (by SKU), zone shipping and ₹4/unit packing from the wallet once per order. */
+async function chargeLines(store: Store, c: Charge) {
+  const [have] = await db.select({ id: dropshipOrders.orderId }).from(dropshipOrders).where(eq(dropshipOrders.orderId, c.orderId)).limit(1);
+  if (have) return null;
+  const q = await quoteDropship(store, c.items, c.address);
+  const [row] = await db.insert(dropshipOrders).values({
+    orderId: c.orderId, storeId: store.id, zone: q.zone, lines: q.lines, source: c.source,
+    shopifyOrderId: c.shopifyOrderId ?? null, orderName: c.orderName ?? null, totalPaise: c.totalPaise ?? null,
+    city: c.address.city ?? null, pincode: c.address.pincode ?? null,
+    productPaise: q.productPaise, shippingPaise: q.shippingPaise, packingPaise: q.packingPaise, missingSkus: q.missing,
+    fulfilAfter: new Date(c.createdAt.getTime() + FULFIL_AFTER_HOURS * 3600_000),
+  }).onConflictDoNothing().returning();
+  if (!row) return null;
+  const w = await getWallet(store.id);
+  if (q.productPaise > 0) {
+    await postTransaction({ walletId: w.id, type: "dropship_product", amountPaise: -q.productPaise, refType: "order", refId: c.orderId, note: c.ref });
+  }
+  if (q.shippingPaise > 0) {
+    await postTransaction({ walletId: w.id, type: "dropship_shipping", amountPaise: -q.shippingPaise, refType: "order", refId: c.orderId, note: c.ref });
+  }
+  if (q.packingPaise > 0) {
+    await postTransaction({ walletId: w.id, type: "dropship_packing", amountPaise: -q.packingPaise, refType: "order", refId: c.orderId, note: `${c.ref} · ${c.items.reduce((n, l) => n + l.quantity, 0)} units` });
+  }
+  return row;
+}
+
+/** Charges a paid prepaid Growpefy order once (safe to call again). Never throws. */
 export async function chargeDropship(store: Store, order: Order) {
   try {
     if (!dropshipEligible(store, order)) return null;
-    const [have] = await db.select({ id: dropshipOrders.orderId }).from(dropshipOrders).where(eq(dropshipOrders.orderId, order.id)).limit(1);
-    if (have) return null;
-    const q = await quoteDropship(store, order.items, order.customer);
-    const [row] = await db.insert(dropshipOrders).values({
-      orderId: order.id, storeId: store.id, zone: q.zone, lines: q.lines,
-      productPaise: q.productPaise, shippingPaise: q.shippingPaise, packingPaise: q.packingPaise, missingSkus: q.missing,
-      fulfilAfter: new Date(new Date(order.createdAt).getTime() + FULFIL_AFTER_HOURS * 3600_000),
-    }).onConflictDoNothing().returning();
-    if (!row) return null;
-    const w = await getWallet(store.id);
-    if (q.productPaise > 0) {
-      await postTransaction({ walletId: w.id, type: "dropship_product", amountPaise: -q.productPaise, refType: "order", refId: order.id, note: ref(order) });
-    }
-    if (q.shippingPaise > 0) {
-      await postTransaction({ walletId: w.id, type: "dropship_shipping", amountPaise: -q.shippingPaise, refType: "order", refId: order.id, note: ref(order) });
-    }
-    if (q.packingPaise > 0) {
-      await postTransaction({ walletId: w.id, type: "dropship_packing", amountPaise: -q.packingPaise, refType: "order", refId: order.id, note: `${ref(order)} · ${order.items.reduce((n, l) => n + l.quantity, 0)} units` });
-    }
-    return row;
+    return await chargeLines(store, {
+      orderId: order.id, ref: ref(order), createdAt: new Date(order.createdAt), items: order.items, address: order.customer,
+      source: "growpefy", orderName: order.shopifyOrderName, totalPaise: order.total,
+    });
   } catch (e) {
     console.error(`[dropship] charge ${order.id}:`, e instanceof Error ? e.message : e);
     return null;
+  }
+}
+
+/**
+ * Orders from the store's own Shopify checkout: same rules as Growpefy orders (paid online only, COD and
+ * Partial COD excluded), same charges, same fulfilment. Counted from the first time we look at the store.
+ */
+async function chargeNativeOrders() {
+  const list = await db.select().from(stores).where(and(eq(stores.dropshipEnabled, true), eq(stores.platform, "shopify"), isNotNull(stores.adminToken)));
+  for (const s of list) {
+    try {
+      if (!s.dropship?.nativeFrom) {
+        await db.update(stores).set({ dropship: { ...s.dropship, nativeFrom: new Date().toISOString() } }).where(eq(stores.id, s.id));
+        continue;
+      }
+      const from = new Date(Math.max(new Date(s.dropship.nativeFrom).getTime(), Date.now() - 3 * 86400_000));
+      const { orders: list2 } = await fetchNativeOrders(s, from.toISOString(), 10, true);
+      for (const o of list2) {
+        if (o.cancelled || !o.prepaid || o.financialStatus !== "PAID" || !o.lines?.length) continue;
+        await chargeLines(s, {
+          orderId: `SH${o.id}`, ref: o.name, createdAt: new Date(o.createdAt), items: o.lines,
+          address: { state: o.address?.state ?? "", pincode: o.address?.pincode ?? "", city: o.address?.city ?? "" },
+          source: "shopify", shopifyOrderId: orderGid(o.id), orderName: o.name, totalPaise: o.totalPaise,
+        });
+      }
+    } catch (e) {
+      console.error(`[dropship] Shopify checkout orders for store ${s.id}:`, e instanceof Error ? e.message : e);
+    }
   }
 }
 
@@ -127,7 +172,7 @@ export async function cancelDropship(row: DropshipOrder, at = new Date()) {
     const w = await getWallet(row.storeId);
     await postTransaction({
       walletId: w.id, type: "dropship_refund", amountPaise: refund, refType: "order", refId: row.orderId,
-      note: `${o ? ref(o) : row.orderId} · ${row.status === "charged" ? "product + shipping" : "product"}`,
+      note: `${o ? ref(o) : row.orderName ?? row.orderId} · ${row.status === "charged" ? "product + shipping + packing" : "product + packing"}`,
     });
   }
   return u;
@@ -144,10 +189,10 @@ export async function markRto(orderId: string, by: string) {
     .where(and(eq(dropshipOrders.orderId, orderId), eq(dropshipOrders.status, "fulfilled"))).returning();
   if (!u) return null;
   const [o] = await db.select({ id: orders.id, shopifyOrderName: orders.shopifyOrderName }).from(orders).where(eq(orders.id, orderId)).limit(1);
-  await db.update(orders).set({ shipStatus: "rto", shipStatusRaw: "RTO", shipStatusAt: new Date() }).where(eq(orders.id, orderId));
+  if (o) await db.update(orders).set({ shipStatus: "rto", shipStatusRaw: "RTO", shipStatusAt: new Date() }).where(eq(orders.id, orderId));
   if (charge > 0) {
     const w = await getWallet(row.storeId);
-    await postTransaction({ walletId: w.id, type: "dropship_rto", amountPaise: -charge, refType: "order", refId: orderId, note: o ? ref(o) : orderId, createdBy: by });
+    await postTransaction({ walletId: w.id, type: "dropship_rto", amountPaise: -charge, refType: "order", refId: orderId, note: o ? ref(o) : row.orderName ?? orderId, createdBy: by });
   }
   return u;
 }
@@ -158,7 +203,10 @@ const newTracking = () => `SNX${crypto.randomInt(100_000, 999_999)}${crypto.rand
 
 /** Marks one due order fulfilled in Shopify. */
 export async function fulfilDropship(row: DropshipOrder) {
-  const [hit] = await db.select({ order: orders, store: stores }).from(orders).innerJoin(stores, eq(orders.storeId, stores.id)).where(eq(orders.id, row.orderId)).limit(1);
+  // Shopify-checkout orders carry their Shopify id themselves; Growpefy orders keep it on the order
+  const hit = row.source === "shopify"
+    ? await db.select().from(stores).where(eq(stores.id, row.storeId)).limit(1).then(([st]) => (st ? { store: st, order: { shopifyOrderId: row.shopifyOrderId } } : null))
+    : await db.select({ order: orders, store: stores }).from(orders).innerJoin(stores, eq(orders.storeId, stores.id)).where(eq(orders.id, row.orderId)).limit(1).then(([h]) => h ?? null);
   if (!hit) return null;
   if (!hit.order.shopifyOrderId) {
     await db.update(dropshipOrders).set({ error: "Order isn't in Shopify yet" }).where(eq(dropshipOrders.orderId, row.orderId));
@@ -206,8 +254,12 @@ async function checkCancellations() {
     and(eq(dropshipOrders.status, "fulfilled"), gt(dropshipOrders.fulfilledAt, new Date(Date.now() - PRODUCT_REFUND_HOURS * 3600_000))),
   ));
   if (!rows.length) return 0;
-  const info = await db.select({ id: orders.id, gid: orders.shopifyOrderId, storeId: orders.storeId }).from(orders)
-    .where(and(inArray(orders.id, rows.map((r) => r.orderId)), isNotNull(orders.shopifyOrderId)));
+  const own = rows.filter((r) => r.source !== "shopify");
+  const info = [
+    ...(own.length ? await db.select({ id: orders.id, gid: orders.shopifyOrderId, storeId: orders.storeId }).from(orders)
+      .where(and(inArray(orders.id, own.map((r) => r.orderId)), isNotNull(orders.shopifyOrderId))) : []),
+    ...rows.filter((r) => r.source === "shopify" && r.shopifyOrderId).map((r) => ({ id: r.orderId, gid: r.shopifyOrderId, storeId: r.storeId })),
+  ];
   const storeIds = [...new Set(info.map((i) => i.storeId))];
   const storeRows = storeIds.length ? await db.select().from(stores).where(inArray(stores.id, storeIds)) : [];
   let n = 0;
@@ -229,6 +281,7 @@ async function checkCancellations() {
 
 export async function runDropship() {
   await chargeMissed();
+  await chargeNativeOrders();
   await checkCancellations();
   const due = await db.select().from(dropshipOrders)
     .where(and(eq(dropshipOrders.status, "charged"), lte(dropshipOrders.fulfilAfter, new Date())))
@@ -285,14 +338,14 @@ export async function saveZones(z: Record<Zone, number>) {
 }
 
 export function recentDropshipOrders(limit = 100) {
-  return db.select({ d: dropshipOrders, name: orders.shopifyOrderName, customer: orders.customer, total: orders.total, storeName: stores.name })
-    .from(dropshipOrders).innerJoin(orders, eq(orders.id, dropshipOrders.orderId)).innerJoin(stores, eq(stores.id, dropshipOrders.storeId))
+  return db.select({ d: dropshipOrders, name: sql<string | null>`coalesce(${orders.shopifyOrderName}, ${dropshipOrders.orderName})`, customer: orders.customer, total: orders.total, storeName: stores.name })
+    .from(dropshipOrders).leftJoin(orders, eq(orders.id, dropshipOrders.orderId)).innerJoin(stores, eq(stores.id, dropshipOrders.storeId))
     .orderBy(desc(dropshipOrders.createdAt)).limit(limit);
 }
 
 export function dropshipAlerts() {
-  return db.select({ d: dropshipOrders, name: orders.shopifyOrderName, storeName: stores.name })
-    .from(dropshipOrders).innerJoin(orders, eq(orders.id, dropshipOrders.orderId)).innerJoin(stores, eq(stores.id, dropshipOrders.storeId))
+  return db.select({ d: dropshipOrders, name: sql<string | null>`coalesce(${orders.shopifyOrderName}, ${dropshipOrders.orderName})`, storeName: stores.name })
+    .from(dropshipOrders).leftJoin(orders, eq(orders.id, dropshipOrders.orderId)).innerJoin(stores, eq(stores.id, dropshipOrders.storeId))
     .where(and(eq(dropshipOrders.alertSeen, false), sql`jsonb_array_length(${dropshipOrders.missingSkus}) > 0`))
     .orderBy(desc(dropshipOrders.createdAt)).limit(100);
 }
