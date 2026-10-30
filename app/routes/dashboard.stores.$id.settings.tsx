@@ -29,7 +29,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await db.update(stores).set({ ownerId: id }).where(eq(stores.id, store.id));
     return json({ ok: "Owner updated", errors: null });
   }
-  if (intent === "profitDashboard" && viewer.role === "admin") {
+  if (intent === "profitDashboard" && viewer.role !== "admin") {
+    throw new Response("Forbidden", { status: 403 });
+  }
+  if (intent === "profitDashboard") {
     const enabled = fd.get("profitEnabled") === "on";
     const pct = Number(fd.get("profitSharePct"));
     if (!store.dropshipEnabled && (!Number.isFinite(pct) || pct < 0 || pct > 100)) {
