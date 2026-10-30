@@ -1,6 +1,7 @@
 import { and, desc, gte, inArray, lt, sql } from "drizzle-orm";
 import { orderValueSql } from "~/lib/order-value.server";
-import { checkoutSessions, db, orders, type Store } from "~/db.server";
+import { checkoutSessions, db, orders, shopifyNativeOrders, type Store } from "~/db.server";
+import { syncNativeOrders } from "./native-orders.server";
 import { addDays, bucketKeys, bucketLabel, granularityFor, type Granularity, type Range } from "./dates";
 import { clickOrders, compare, metaReady, spendFor, totalOf } from "./ads.server";
 import { googleReady } from "./google-ads.server";
@@ -26,7 +27,9 @@ export type Overview = {
     abandonedValue: number; // rupees, selling price
     refunded: number; // rupees
     sessions: number;
-    conversion: number | null; // 0..1
+    nativeOrders: number; // orders from the store's own Shopify checkout (profit dashboard stores), included above
+    nativeRevenue: number;
+    conversion: number | null; // 0..1, Growpefy checkout only
     adSpend: number | null; // null = no ad account connected
     roas: number | null;
     costPerOrder: number | null;
@@ -164,7 +167,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       googleSpend: googleSpend != null && granularity !== "hour" ? 0 : null }]),
   );
 
-  const totals = { revenue: 0, orders: 0, prepaidOrders: 0, codOrders: 0, prepaidRevenue: 0, codRevenue: 0, discounts: 0 };
+  const totals = { revenue: 0, orders: 0, prepaidOrders: 0, codOrders: 0, prepaidRevenue: 0, codRevenue: 0, discounts: 0, nativeOrders: 0, nativeRevenue: 0 };
   for (const r of rows) {
     const rev = Number(r.revenue) / 100;
     const b = map.get(r.bucket);
@@ -175,6 +178,36 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     else { totals.prepaidOrders += r.count; totals.prepaidRevenue += rev; if (b) b.prepaid += rev; }
     if (b) b.orders += r.count;
   }
+  // Stores with the profit dashboard on: orders from their own Shopify checkout count too
+  const nativeStores = storeList.filter((st) => st.profitEnabled && st.platform === "shopify");
+  for (const st of nativeStores) void syncNativeOrders(st).catch(() => {});
+  if (nativeStores.length) {
+    const nBucket = granularity === "hour"
+      ? sql<string>`to_char(${shopifyNativeOrders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD HH24')`
+      : granularity === "day"
+        ? sql<string>`to_char(${shopifyNativeOrders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`
+        : sql<string>`to_char(${shopifyNativeOrders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM')`;
+    const nativeRows = await db.select({
+      bucket: nBucket, prepaid: shopifyNativeOrders.prepaid,
+      count: sql<number>`count(*)::int`, revenue: sql<string>`coalesce(sum(${shopifyNativeOrders.totalPaise}), 0)`,
+    }).from(shopifyNativeOrders)
+      .where(and(inArray(shopifyNativeOrders.storeId, nativeStores.map((st) => st.id)), sql`${shopifyNativeOrders.cancelled} = false`, gte(shopifyNativeOrders.createdAt, from), lt(shopifyNativeOrders.createdAt, to)))
+      .groupBy(nBucket, shopifyNativeOrders.prepaid);
+    for (const r of nativeRows) {
+      const rev = Number(r.revenue) / 100;
+      const b = map.get(r.bucket);
+      totals.revenue += rev; totals.orders += r.count; totals.nativeOrders += r.count; totals.nativeRevenue += rev;
+      if (r.prepaid) { totals.prepaidOrders += r.count; totals.prepaidRevenue += rev; if (b) b.prepaid += rev; }
+      else { totals.codOrders += r.count; totals.codRevenue += rev; if (b) b.cod += rev; }
+      if (b) b.orders += r.count;
+    }
+    if (prev) {
+      const [np] = await db.select({ n: sql<number>`count(*)::int`, revenue: sql<string>`coalesce(sum(${shopifyNativeOrders.totalPaise}), 0)` }).from(shopifyNativeOrders)
+        .where(and(inArray(shopifyNativeOrders.storeId, nativeStores.map((st) => st.id)), sql`${shopifyNativeOrders.cancelled} = false`, gte(shopifyNativeOrders.createdAt, prevFrom), lt(shopifyNativeOrders.createdAt, from)));
+      if (prev[0]) { prev[0].n += Number(np?.n ?? 0); prev[0].revenue = String(Number(prev[0].revenue) + Number(np?.revenue ?? 0)); }
+    }
+  }
+
   if (granularity !== "hour") {
     for (const sp of spends) for (const pf of ["meta", "google"] as const) {
       const x = sp[pf];
@@ -202,7 +235,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       abandoned: Number(abandonedRows[0]?.n ?? 0),
       abandonedValue: Number(abandonedRows[0]?.value ?? 0) / 100,
       refunded: Number(refundRows[0]?.v ?? 0) / 100,
-      conversion: sessionCount ? Math.min(1, totals.orders / sessionCount) : null,
+      conversion: sessionCount ? Math.min(1, (totals.orders - totals.nativeOrders) / sessionCount) : null,
       adSpend,
       roas: adSpend ? totals.revenue / adSpend : null,
       costPerOrder: adSpend != null && totals.orders ? adSpend / totals.orders : null,

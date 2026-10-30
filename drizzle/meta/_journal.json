@@ -260,6 +260,13 @@
       "when": 1793440000000,
       "tag": "0036_profit_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793358016078,
+      "tag": "0037_native_orders_profit_start",
+      "breakpoints": true
     }
   ]
 }

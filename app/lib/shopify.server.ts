@@ -58,33 +58,45 @@ async function adminGraphql<T>(store: Store, query: string, variables?: unknown)
   return json.data as T;
 }
 
-/** Native Shopify checkout sales by IST order date, excluding orders Growpefy created itself. */
-export async function fetchNativeSales(store: Store, since: string, until: string) {
-  if (store.platform !== "shopify") return { daily: {} as Record<string, { orders: number; revenue: number }>, currency: "INR" };
-  type Node = { createdAt: string; tags: string[]; cancelledAt: string | null; test: boolean; currentTotalPriceSet: { shopMoney: { amount: string; currencyCode: string } } };
-  type Page = { orders: { edges: { cursor: string; node: Node }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
-  const from = new Date(`${since}T00:00:00+05:30`).toISOString();
-  const to = new Date(`${until}T00:00:00+05:30`).toISOString();
-  const queryText = `created_at:>='${from}' created_at:<'${to}'`;
-  const daily: Record<string, { orders: number; revenue: number }> = {};
-  let currency = "INR";
+/** One order from the store's own Shopify checkout (orders Growpefy created are left out). */
+export type NativeOrder = {
+  id: string; name: string; createdAt: string; totalPaise: number; prepaid: boolean;
+  financialStatus: string | null; gateway: string | null; cancelled: boolean;
+};
+
+/**
+ * Orders placed on the store's own Shopify checkout since `sinceIso`, oldest first.
+ * Shopify only returns the last 60 days unless the app has read_all_orders.
+ */
+export async function fetchNativeOrders(store: Store, sinceIso: string, maxPages = 40) {
+  type Node = {
+    id: string; name: string; createdAt: string; tags: string[]; cancelledAt: string | null; test: boolean;
+    displayFinancialStatus: string | null; paymentGatewayNames: string[];
+    currentTotalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
+  };
+  type Page = { orders: { edges: { node: Node }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+  const out: NativeOrder[] = [];
   let cursor: string | null = null;
-  for (let page = 0; page < 40; page++) {
-    const data: Page = await adminGraphql<Page>(store, `query($first:Int!,$after:String,$q:String!){orders(first:$first,after:$after,query:$q,sortKey:CREATED_AT){edges{cursor node{id createdAt tags cancelledAt test currentTotalPriceSet{shopMoney{amount currencyCode}}}} pageInfo{hasNextPage endCursor}}}`, { first: 250, after: cursor, q: queryText });
+  for (let page = 0; page < maxPages; page++) {
+    const data: Page = await adminGraphql<Page>(store,
+      `query($first:Int!,$after:String,$q:String!){orders(first:$first,after:$after,query:$q,sortKey:CREATED_AT){edges{node{id name createdAt tags cancelledAt test displayFinancialStatus paymentGatewayNames currentTotalPriceSet{shopMoney{amount currencyCode}}}} pageInfo{hasNextPage endCursor}}}`,
+      { first: 250, after: cursor, q: `created_at:>='${sinceIso}'` });
     for (const { node } of data.orders.edges) {
-      if (node.test || node.cancelledAt || node.tags.some((t) => t.toLowerCase() === "growpefy")) continue;
-      currency = node.currentTotalPriceSet.shopMoney.currencyCode;
-      if (currency !== "INR") throw new Error(`Shopify order currency is ${currency}; this profit report currently expects INR.`);
-      const day = new Date(new Date(node.createdAt).getTime() + 330 * 60_000).toISOString().slice(0, 10);
-      const row = daily[day] ??= { orders: 0, revenue: 0 };
-      row.orders++;
-      row.revenue += Number(node.currentTotalPriceSet.shopMoney.amount);
+      if (node.test || node.tags.some((t) => t.toLowerCase() === "growpefy")) continue;
+      const gateways = node.paymentGatewayNames ?? [];
+      const status = node.displayFinancialStatus ?? null;
+      const cod = gateways.some((g) => /cash on delivery|\bcod\b|manual/i.test(g));
+      out.push({
+        id: node.id.replace(/\D/g, ""), name: node.name, createdAt: node.createdAt,
+        totalPaise: Math.round(Number(node.currentTotalPriceSet.shopMoney.amount) * 100),
+        prepaid: !cod && (status === "PAID" || status === "PARTIALLY_REFUNDED" || status === "REFUNDED" || status === "PARTIALLY_PAID"),
+        financialStatus: status, gateway: gateways.join(", ").slice(0, 120) || null, cancelled: Boolean(node.cancelledAt),
+      });
     }
-    if (!data.orders.pageInfo.hasNextPage || !data.orders.pageInfo.endCursor) break;
+    if (!data.orders.pageInfo.hasNextPage || !data.orders.pageInfo.endCursor) return { orders: out, complete: true };
     cursor = data.orders.pageInfo.endCursor;
-    if (page === 39) throw new Error("There are too many Shopify orders in this date range. Choose a shorter range.");
   }
-  return { daily, currency };
+  return { orders: out, complete: false };
 }
 
 // ---------- reads ----------

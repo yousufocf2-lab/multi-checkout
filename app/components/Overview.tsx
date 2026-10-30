@@ -135,6 +135,9 @@ export function OverviewView({ data, showStoreColumn, adsHref, leaders }: { data
               <span className="num text-sm text-white/80">{inr(t.revenue)} from {t.orders.toLocaleString("en-IN")} orders</span>
               <Delta now={t.revenue} before={data.previous?.revenue} onDark />
             </div>
+            {t.nativeOrders > 0 && (
+              <p className="num mt-2 text-xs text-white/70">Includes {t.nativeOrders.toLocaleString("en-IN")} orders ({inr(t.nativeRevenue)}) from your Shopify checkout · {(t.orders - t.nativeOrders).toLocaleString("en-IN")} from Growpefy</p>
+            )}
           </div>
           <dl className="grid grid-cols-3 gap-2 sm:gap-3">
             <Glass label="Orders" value={t.orders.toLocaleString("en-IN")} />

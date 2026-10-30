@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { db, orders, profitPayments, profitSettlements, stores, users, wallets, walletTransactions, type Store } from "~/db.server";
+import { db, orders, profitPayments, profitSettlements, shopifyNativeOrders, stores, users, wallets, walletTransactions, type Store } from "~/db.server";
 import { orderValueSql } from "./order-value.server";
 import { fetchSpend as metaSpend } from "./meta.server";
 import { fetchSpend as googleSpend, googleReady } from "./google-ads.server";
 import { metaReady } from "./ads.server";
-import { fetchNativeSales } from "./shopify.server";
+import { profitStart, syncNativeOrders, nativeSyncStatus, NATIVE_HISTORY_DAYS } from "./native-orders.server";
 import { storeGateways } from "./gateways/index.server";
 import { env } from "./env.server";
 import { messaging } from "./rto.server";
@@ -90,8 +90,7 @@ export async function createProfitPayment(store: Store, input: { amountPaise: nu
   if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0 || input.amountPaise > 2_147_483_647) throw new Error("Enter a valid payment amount.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate) || input.paymentDate > istToday()) throw new Error("Choose a valid payment date (today or earlier).");
   if (new Date(input.paymentDate + "T00:00:00Z").toISOString().slice(0, 10) !== input.paymentDate) throw new Error("Choose a real calendar date.");
-  const enabledDate = store.profitEnabledAt ? new Date(store.profitEnabledAt.getTime() + 330 * 60_000).toISOString().slice(0, 10) : istToday();
-  if (input.paymentDate < enabledDate) throw new Error("Payment date can't be before this dashboard was enabled.");
+  if (input.paymentDate < profitStart(store)) throw new Error("Payment date can't be before the partnership start date.");
   const m = await messaging();
   let recipient: { phone: string | null; email: string | null } = { phone: null, email: null };
   const targetRole = input.role === "admin" ? "owner" : "admin";
@@ -140,6 +139,36 @@ type SettlementResponse = { status: number; message?: string; result?: { page?: 
   settlementId: string; settlementCompletedDate: string; settlementAmount: string; utrNumber?: string;
 }[] } };
 
+const settleSync = new Map<number, { at: number; error: string | null }>();
+
+/**
+ * Brings PayU settlements up to date: from a few days before the last one we have (or the start date the first
+ * time) to today. At most once every 15 minutes per store.
+ */
+async function refreshSettlements(store: Store, since: string, until: string) {
+  const prev = settleSync.get(store.id);
+  if (prev && Date.now() - prev.at < 15 * 60_000) return prev.error;
+  // First time (or the start date moved earlier): every day from the start. Later: just the last few days.
+  let from = since;
+  if (store.profitSettledFrom && store.profitSettledFrom <= since) {
+    const [last] = await db.select({ d: sql<string | null>`max(${profitSettlements.settlementDate})` }).from(profitSettlements)
+      .where(and(eq(profitSettlements.storeId, store.id), gte(profitSettlements.settlementDate, since)));
+    const base = last?.d ?? addDays(until, -5);
+    from = addDays(base, -5) > since ? addDays(base, -5) : since;
+  }
+  const error = await syncSettlements(store, from, until);
+  settleSync.set(store.id, { at: Date.now(), error });
+  if (!error && from === since && store.profitSettledFrom !== since) {
+    await db.update(stores).set({ profitSettledFrom: since }).where(eq(stores.id, store.id));
+  }
+  return error;
+}
+
+/** The start date or access changed: fetch settlements again on the next view. */
+export function forgetProfitCache(storeId: number) {
+  settleSync.delete(storeId);
+}
+
 /** Pull and cache PayU's actual settled-to-bank amounts; PayU limits a request to three dates. */
 async function syncSettlements(store: Store, since: string, until: string) {
   const payu = storeGateways(store).find((g) => g.id === "payu");
@@ -184,26 +213,22 @@ async function syncSettlements(store: Store, since: string, until: string) {
   }
 }
 
-/** Cash-basis daily profit: bank settlements − ads incl GST + direct dropship wallet charges/refunds. */
+/** Cash-basis daily profit since the partnership start: bank settlements − ads incl GST + direct dropship wallet charges/refunds. */
 export async function profitReport(store: Store) {
   const until = istToday();
-  const since = store.profitEnabledAt ? new Date(new Date(store.profitEnabledAt).getTime() + 330 * 60_000).toISOString().slice(0, 10) : until;
+  const since = profitStart(store) > until ? until : profitStart(store);
   const warnings: string[] = [];
-  if (!store.profitEnabled) return { enabled: false, since, until, rows: [] as DailyProfit[], totals: null, warnings };
+  if (!store.profitEnabled) return { enabled: false, since, until, rows: [] as DailyProfit[], totals: null, warnings, upcoming: [] as Upcoming[], lastSettlement: null as string | null, native: null };
 
-  const nativeSince = since < addDays(until, -59) ? addDays(until, -59) : since;
-  let nativeError: string | null = null;
-  const [settleWarn, nativeResult, metaResult, googleResult] = await Promise.all([
-    syncSettlements(store, since, until),
-    store.platform === "shopify" ? fetchNativeSales(store, nativeSince, addDays(until, 1)).catch((e) => {
-      nativeError = e instanceof Error ? e.message : "Could not load Shopify native orders.";
-      return { daily: {}, currency: "INR" };
-    }) : Promise.resolve({ daily: {}, currency: "INR" }),
+  const [settleWarn, metaResult, googleResult] = await Promise.all([
+    refreshSettlements(store, since, until),
     metaReady(store) ? metaSpend(store, { since, until }, "day") : Promise.resolve(null),
     googleReady(store) ? googleSpend(store, { since, until }, "day") : Promise.resolve(null),
+    syncNativeOrders(store),
   ]);
   if (settleWarn) warnings.push(settleWarn);
-  if (nativeError) warnings.push(nativeError);
+  const native = store.platform === "shopify" ? nativeSyncStatus(store.id) : null;
+  if (native?.error) warnings.push(`Shopify checkout orders: ${native.error}`);
   if (metaResult?.error) warnings.push(`Meta ads: ${metaResult.error}`);
   if (googleResult?.error) warnings.push(`Google Ads: ${googleResult.error}`);
 
@@ -214,6 +239,12 @@ export async function profitReport(store: Store) {
     revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)::text`,
   }).from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), gte(orders.createdAt, from), lt(orders.createdAt, to)))
     .groupBy(sql`1`);
+  const nativeSales = store.platform === "shopify" ? await db.select({
+    day: sql<string>`to_char(${shopifyNativeOrders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`,
+    count: sql<number>`count(*)::int`,
+    revenue: sql<string>`coalesce(sum(${shopifyNativeOrders.totalPaise}), 0)::text`,
+  }).from(shopifyNativeOrders).where(and(eq(shopifyNativeOrders.storeId, store.id), eq(shopifyNativeOrders.cancelled, false), gte(shopifyNativeOrders.createdAt, from), lt(shopifyNativeOrders.createdAt, to)))
+    .groupBy(sql`1`) : [];
   const settlementRows = await db.select().from(profitSettlements).where(and(eq(profitSettlements.storeId, store.id), gte(profitSettlements.settlementDate, since), lt(profitSettlements.settlementDate, addDays(until, 1))));
   const paymentRows = await db.select({ paymentDate: profitPayments.paymentDate, amountPaise: profitPayments.amountPaise })
     .from(profitPayments).where(and(eq(profitPayments.storeId, store.id), eq(profitPayments.status, "confirmed"), gte(profitPayments.paymentDate, since), lt(profitPayments.paymentDate, addDays(until, 1))));
@@ -227,7 +258,7 @@ export async function profitReport(store: Store) {
   const map = new Map<string, { orders: number; revenue: number; settlement: number; adSpend: number; dropship: number; payments: number }>();
   const rowFor = (d: string) => { const r = map.get(d) ?? { orders: 0, revenue: 0, settlement: 0, adSpend: 0, dropship: 0, payments: 0 }; map.set(d, r); return r; };
   for (const s of localSales) { const r = rowFor(s.day); r.orders += Number(s.count); r.revenue += Number(s.revenue) / 100; }
-  for (const [day, s] of Object.entries(nativeResult.daily)) { const r = rowFor(day); r.orders += s.orders; r.revenue += s.revenue; }
+  for (const s of nativeSales) { const r = rowFor(s.day); r.orders += Number(s.count); r.revenue += Number(s.revenue) / 100; }
   for (const s of settlementRows) rowFor(s.settlementDate).settlement += s.settlementAmount / 100;
   for (const [day, n] of Object.entries(metaResult?.series ?? {})) rowFor(day).adSpend += n;
   for (const [day, n] of Object.entries(googleResult?.series ?? {})) rowFor(day).adSpend += n;
@@ -247,12 +278,60 @@ export async function profitReport(store: Store) {
   }
   if (!metaResult && !googleResult) warnings.push("No Meta or Google ad account is connected; ads costs are not included.");
   if (!settlementRows.length && !settleWarn) warnings.push("No PayU settlement records were returned for this period yet.");
-  if (store.platform !== "shopify") warnings.push("Native order revenue sync is only available for Shopify stores.");
-  if (store.platform === "shopify" && since < nativeSince) warnings.push(`Shopify native-order sales are shown from ${nativeSince}, because the app currently has access to the last 60 days. Profit calculations include settlements and ad costs from ${since}.`);
+  const nativeFloor = addDays(until, -(NATIVE_HISTORY_DAYS - 1));
+  if (store.platform === "shopify" && since < nativeFloor) warnings.push(`Shopify gives orders from its own checkout for the last ${NATIVE_HISTORY_DAYS} days only, so those orders show from ${nativeFloor}. Settlements and ad costs count from ${since}.`);
   const last = rows.at(-1);
   const totals = rows.reduce((a, r) => ({ orders: a.orders + r.orders, revenue: a.revenue + r.revenue, settlement: a.settlement + r.settlement, adCostWithGst: a.adCostWithGst + r.adCostWithGst, payments: a.payments + r.payments }),
     { orders: 0, revenue: 0, settlement: 0, adCostWithGst: 0, payments: 0 });
-  return { enabled: true, since, until, rows, totals: { ...totals, cumulative: last?.cumulative ?? 0, growpefyShare: last?.growpefyShare ?? 0, growpefyBalance: last?.growpefyBalance ?? 0, storeShare: last?.storeShare ?? 0 }, warnings };
+  const { upcoming, lastSettlement } = await upcomingSettlements(store, since, settlementRows.map((x) => x.settlementDate));
+  const codDays = await db.select({ n: sql<number>`count(*)::int` }).from(orders)
+    .where(and(eq(orders.storeId, store.id), inArray(orders.paymentMethod, ["cod", "partial"]), inArray(orders.status, ["cod_placed", "paid"]), gte(orders.createdAt, from)));
+  if (Number(codDays[0]?.n ?? 0) > 0) warnings.push("COD money arrives through the courier, not PayU, so COD orders aren't in the profit yet (only in orders and revenue).");
+  return { enabled: true, since, until, rows, totals: { ...totals, cumulative: last?.cumulative ?? 0, growpefyShare: last?.growpefyShare ?? 0, growpefyBalance: last?.growpefyBalance ?? 0, storeShare: last?.storeShare ?? 0 }, warnings, upcoming, lastSettlement, native };
+}
+
+export type Upcoming = { day: string; expected: string; amount: number; orders: number };
+
+/** PayU usually settles a day's online payments two working days later (Sundays skipped). */
+function expectedSettlement(day: string) {
+  let d = addDays(day, 2);
+  if (new Date(`${d}T12:00:00Z`).getUTCDay() === 0) d = addDays(d, 1);
+  return d;
+}
+
+/**
+ * Estimate of money still to come from PayU: online payments (Growpefy prepaid and Partial COD advances, plus
+ * Shopify-checkout orders paid through PayU) from the day before the last settlement onwards. Before PayU's fee.
+ */
+async function upcomingSettlements(store: Store, since: string, settled: string[]) {
+  const lastSettlement = settled.length ? settled.slice().sort().at(-1)! : null;
+  // From the day before the last settlement; without any settlement yet, only the last few days can still be pending
+  const floor = lastSettlement ? addDays(lastSettlement, -1) : addDays(istToday(), -4);
+  const fromDay = floor > since ? floor : since;
+  const from = dayDate(fromDay);
+  const [own, native] = await Promise.all([
+    db.select({
+      day: sql<string>`to_char(${orders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`,
+      count: sql<number>`count(*)::int`,
+      amount: sql<string>`coalesce(sum(coalesce(${orders.amountPaid}, ${orders.total})), 0)::text`,
+    }).from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.paymentMethod, ["prepaid", "partial"]), sql`(${orders.amountPaid} is not null or ${orders.status} = 'paid')`, inArray(orders.status, ["paid", "cod_placed"]), gte(orders.createdAt, from)))
+      .groupBy(sql`1`),
+    store.platform === "shopify" ? db.select({
+      day: sql<string>`to_char(${shopifyNativeOrders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`,
+      count: sql<number>`count(*)::int`,
+      amount: sql<string>`coalesce(sum(${shopifyNativeOrders.totalPaise}), 0)::text`,
+    }).from(shopifyNativeOrders).where(and(eq(shopifyNativeOrders.storeId, store.id), eq(shopifyNativeOrders.prepaid, true), eq(shopifyNativeOrders.cancelled, false), sql`${shopifyNativeOrders.gateway} ilike '%payu%'`, gte(shopifyNativeOrders.createdAt, from)))
+      .groupBy(sql`1`) : Promise.resolve([]),
+  ]);
+  const byDay = new Map<string, Upcoming>();
+  for (const r of [...own, ...native]) {
+    const u = byDay.get(r.day) ?? { day: r.day, expected: expectedSettlement(r.day), amount: 0, orders: 0 };
+    u.amount = round(u.amount + Number(r.amount) / 100); u.orders += Number(r.count);
+    byDay.set(r.day, u);
+  }
+  const today = istToday();
+  const upcoming = [...byDay.values()].filter((u) => u.expected >= today || !lastSettlement || u.expected > lastSettlement).sort((a, b) => a.day.localeCompare(b.day));
+  return { upcoming, lastSettlement };
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;

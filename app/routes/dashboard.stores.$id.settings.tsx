@@ -10,13 +10,15 @@ import { clearTokenCache } from "~/lib/platform.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 import { storeForClient } from "~/lib/store-view.server";
 import { forgetProxyCheck } from "~/lib/proxy-checkout.server";
+import { profitStart, resetNativeOrders, syncNativeOrders } from "~/lib/native-orders.server";
+import { forgetProfitCache } from "~/lib/profit.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const owners = viewer.role === "admin" ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(asc(users.name)) : null;
   // Admin-only fields (storeForClient leaves them out so they never reach the store owner)
-  const profit = viewer.role === "admin" ? { dropship: store.dropshipEnabled, shareBps: store.profitShareBps } : null;
+  const profit = viewer.role === "admin" ? { dropship: store.dropshipEnabled, shareBps: store.profitShareBps, start: profitStart(store), startSet: Boolean(store.profitStartDate) } : null;
   return json({ store: storeForClient(store), owners, isAdmin: viewer.role === "admin", profit });
 }
 
@@ -40,11 +42,24 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (!store.dropshipEnabled && (!Number.isFinite(pct) || pct < 0 || pct > 100)) {
       return json({ ok: null, errors: { profitSharePct: "Enter a share from 0 to 100 percent." } }, { status: 400 });
     }
-    await db.update(stores).set({
+    const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+    const rawStart = String(fd.get("profitStartDate") ?? "").trim();
+    if (rawStart && (!/^\d{4}-\d{2}-\d{2}$/.test(rawStart) || rawStart > today || new Date(`${rawStart}T00:00:00Z`).toISOString().slice(0, 10) !== rawStart)) {
+      return json({ ok: null, errors: { profitStartDate: "Choose a real date, today or earlier." } }, { status: 400 });
+    }
+    const startDate = rawStart || store.profitStartDate || today;
+    const startChanged = startDate !== profitStart(store);
+    const [updated] = await db.update(stores).set({
       profitEnabled: enabled,
       ...(!store.dropshipEnabled ? { profitShareBps: Math.round(pct * 100) } : {}),
       profitEnabledAt: enabled ? (store.profitEnabledAt ?? new Date()) : store.profitEnabledAt,
-    }).where(eq(stores.id, store.id));
+      profitStartDate: startDate,
+      ...(startChanged ? { profitSettledFrom: null } : {}),
+    }).where(eq(stores.id, store.id)).returning();
+    forgetProfitCache(store.id);
+    // New start date: copy the store's Shopify-checkout orders again from that date (in the background)
+    if (startChanged || (enabled && !store.profitEnabled)) await resetNativeOrders(store.id);
+    if (updated?.profitEnabled) void syncNativeOrders(updated, { force: true }).catch(() => {});
     return json({ ok: enabled ? "Sales and profit dashboard enabled for this store." : "Sales and profit dashboard disabled for this store.", errors: null });
   }
   if (intent === "deleteStore") {
@@ -97,6 +112,12 @@ export default function StoreSettings() {
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <input type="checkbox" name="profitEnabled" defaultChecked={store.profitEnabled} className="mt-0.5 h-4 w-4" />
               <span><b>Enable dashboard for this store</b><span className="block text-xs text-ink-faint">When off, the store owner only sees the regular Growpefy checkout dashboard and its orders.</span></span>
+            </label>
+            <label className="block max-w-xs">
+              <span className="label">Partnership start date</span>
+              <input name="profitStartDate" type="date" max={new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)} defaultValue={profit.start} className="input" />
+              <span className="mt-1 block text-xs text-ink-faint">Can be in the past. Profit, PayU settlements and orders from the store's own Shopify checkout count from this date (Shopify gives the last 60 days of its orders).</span>
+              {errors.profitStartDate && <span className="error-text">{errors.profitStartDate}</span>}
             </label>
             {profit.dropship
               ? <p className="text-sm text-ink-soft">Dropshipping is enabled for this store. Its Growpefy share is fixed at <b>20%</b>; dropshipping applies only to eligible prepaid orders.</p>

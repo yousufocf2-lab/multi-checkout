@@ -11,6 +11,7 @@ import { startShipmentWatcher } from "~/lib/logistics.server";
 import { dropshipAlertCount, startDropshipWatcher } from "~/lib/dropship.server";
 import { startRecoveryWatcher } from "~/lib/recovery.server";
 import { startWelcomeWatcher } from "~/lib/welcome.server";
+import { startNativeOrdersWatcher } from "~/lib/native-orders.server";
 import { db, stores as storesTable } from "~/db.server";
 import { sql } from "drizzle-orm";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
@@ -30,6 +31,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startDropshipWatcher();
   startRecoveryWatcher();
   startWelcomeWatcher();
+  startNativeOrdersWatcher();
   const viewer = await requireViewer(request);
   // New owners finish the 3-step KYC before anything else
   if (needsKyc(viewer)) throw redirect("/onboarding");
@@ -125,6 +127,7 @@ export default function DashboardLayout() {
         {may("orders") && <Item to="/dashboard/orders" icon="orders">Orders</Item>}
         {may("ads") && <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>}
         {(isAdmin || focus?.profitEnabled) && <Item to={storeHref("profit")} icon="trend" match={/\/profit$/}>Profit share</Item>}
+        {may("orders") && <Item to={storeHref("funnel")} icon="filter" match={/\/funnel$|next=funnel/}>Checkout funnel</Item>}
         {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
       </Group>
       {(may("inbox") || may("settings") || may("offers") || may("rto")) && (

@@ -56,7 +56,7 @@ export const roleLabel = (scope: Scope, id: string) => rolesFor(scope).find((r) 
 type Need = "open" | string | null;
 
 const STORE_SECTION: Record<string, string> = {
-  orders: "orders", ads: "ads", google: "ads", inbox: "inbox", whatsapp: "settings",
+  orders: "orders", funnel: "orders", ads: "ads", google: "ads", inbox: "inbox", whatsapp: "settings",
   discounts: "offers", coupons: "offers", offers: "offers", gifts: "offers",
   logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto",
   wallet: "billing", settings: "settings", design: "settings", install: "settings", payments: "settings",

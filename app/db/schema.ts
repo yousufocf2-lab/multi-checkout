@@ -250,6 +250,9 @@ export const stores = pgTable("stores", {
   profitEnabled: boolean("profit_enabled").notNull().default(false),
   profitShareBps: integer("profit_share_bps").notNull().default(5000), // Growpefy's share for non-dropshipping partnership stores
   profitEnabledAt: timestamp("profit_enabled_at", { withTimezone: true }),
+  // Partnership start (YYYY-MM-DD, IST). Can be in the past: profit, settlements and Shopify orders count from here.
+  profitStartDate: text("profit_start_date"),
+  profitSettledFrom: text("profit_settled_from"), // PayU settlements are fetched for every day from this date (YYYY-MM-DD)
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -340,6 +343,27 @@ export const profitSettlements = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("profit_settlements_store_id_unique").on(t.storeId, t.settlementId), index("profit_settlements_store_date_idx").on(t.storeId, t.settlementDate)],
+);
+
+/**
+ * Orders placed on the store's own Shopify checkout (not Growpefy's), copied from Shopify for stores with the
+ * profit dashboard on. They count in the profit report and the store's Overview.
+ */
+export const shopifyNativeOrders = pgTable(
+  "shopify_native_orders",
+  {
+    id: text("id").primaryKey(), // Shopify order id (numeric part of the gid)
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // #1234
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    totalPaise: integer("total_paise").notNull(), // current total (after refunds/edits)
+    prepaid: boolean("prepaid").notNull(), // paid online (else COD / pending)
+    financialStatus: text("financial_status"),
+    gateway: text("gateway"),
+    cancelled: boolean("cancelled").notNull().default(false),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("shopify_native_orders_store_created_idx").on(t.storeId, t.createdAt)],
 );
 
 /** Two-party-confirmed manual payments against Growpefy's accrued profit share. */
