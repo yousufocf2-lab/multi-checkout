@@ -342,6 +342,29 @@ export const profitSettlements = pgTable(
   (t) => [uniqueIndex("profit_settlements_store_id_unique").on(t.storeId, t.settlementId), index("profit_settlements_store_date_idx").on(t.storeId, t.settlementDate)],
 );
 
+/** Two-party-confirmed manual payments against Growpefy's accrued profit share. */
+export const profitPayments = pgTable(
+  "profit_payments",
+  {
+    id: text("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    amountPaise: integer("amount_paise").notNull(),
+    paymentDate: text("payment_date").notNull(), // date the transfer was made
+    note: text("note"),
+    createdByRole: text("created_by_role").notNull(), // admin | owner
+    createdBy: text("created_by").notNull(),
+    confirmRole: text("confirm_role").notNull(), // other party must confirm
+    status: text("status").notNull().default("pending"), // pending | confirmed | expired
+    otpHash: text("otp_hash"),
+    otpExpiresAt: timestamp("otp_expires_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    confirmedBy: text("confirmed_by"),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("profit_payments_store_date_idx").on(t.storeId, t.paymentDate), index("profit_payments_store_status_idx").on(t.storeId, t.status)],
+);
+
 /** RTO Suite block list: one row per blocked phone / email / pincode / city / state / country (values normalised). */
 export const blockedCustomers = pgTable(
   "blocked_customers",
@@ -724,6 +747,8 @@ export type MessagingSettings = {
   waAppSecret?: string; // Meta app secret, to check webhook signatures
   waFollowupTemplate?: string; // template the inbox sends after the 24-hour window: {{1}} customer name, {{2}} store
   waRecoveryTemplate?: string; // abandoned cart: {{1}} customer name, {{2}} store, {{3}} items; URL button suffix = checkout id
+  profitOtpPhone?: string; // Super Admin WhatsApp for confirming store-entered direct payments
+  profitOtpTemplate?: string; // approved utility template: {{1}} store, {{2}} party, {{3}} amount, {{4}} OTP
 };
 export type DropshipZones = { A: number; B: number; C: number; D: number; E: number };
 /** Growpefy's own ad accounts (Super admin → Marketing). Tokens never leave the server. */

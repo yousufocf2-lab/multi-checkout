@@ -253,6 +253,13 @@
       "when": 1793350000000,
       "tag": "0035_profit_and_packing",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793440000000,
+      "tag": "0036_profit_payments",
+      "breakpoints": true
     }
   ]
 }

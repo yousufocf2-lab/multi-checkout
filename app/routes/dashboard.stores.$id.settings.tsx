@@ -41,7 +41,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await db.update(stores).set({
       profitEnabled: enabled,
       ...(!store.dropshipEnabled ? { profitShareBps: Math.round(pct * 100) } : {}),
-      profitEnabledAt: enabled ? (store.profitEnabled && store.profitEnabledAt ? store.profitEnabledAt : new Date()) : null,
+      profitEnabledAt: enabled ? (store.profitEnabledAt ?? new Date()) : store.profitEnabledAt,
     }).where(eq(stores.id, store.id));
     return json({ ok: enabled ? "Sales and profit dashboard enabled for this store." : "Sales and profit dashboard disabled for this store.", errors: null });
   }
