@@ -15,7 +15,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const owners = viewer.role === "admin" ? await db.select({ id: users.id, name: users.name, email: users.email }).from(users).orderBy(asc(users.name)) : null;
-  return json({ store: storeForClient(store), owners, isAdmin: viewer.role === "admin" });
+  // Admin-only fields (storeForClient leaves them out so they never reach the store owner)
+  const profit = viewer.role === "admin" ? { dropship: store.dropshipEnabled, shareBps: store.profitShareBps } : null;
+  return json({ store: storeForClient(store), owners, isAdmin: viewer.role === "admin", profit });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -68,7 +70,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function StoreSettings() {
-  const { store, owners, isAdmin } = useLoaderData<typeof loader>();
+  const { store, owners, isAdmin, profit } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const errors = (res?.errors ?? {}) as Record<string, string>;
   return (
@@ -89,16 +91,16 @@ export default function StoreSettings() {
         </Section>
       )}
 
-      {isAdmin && (
+      {isAdmin && profit && (
         <Section title="Sales and profit dashboard" description="Off by default. When enabled, the store owner can see the available checkout orders, revenue, PayU settlements, ad costs and profit share.">
           <Form method="post" className="space-y-4">
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <input type="checkbox" name="profitEnabled" defaultChecked={store.profitEnabled} className="mt-0.5 h-4 w-4" />
               <span><b>Enable dashboard for this store</b><span className="block text-xs text-ink-faint">When off, the store owner only sees the regular Growpefy checkout dashboard and its orders.</span></span>
             </label>
-            {store.dropshipEnabled
+            {profit.dropship
               ? <p className="text-sm text-ink-soft">Dropshipping is enabled for this store. Its Growpefy share is fixed at <b>20%</b>; dropshipping applies only to eligible prepaid orders.</p>
-              : <label className="block max-w-xs"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(store.profitShareBps / 100).toFixed(2)} />{errors.profitSharePct && <span className="error-text">{errors.profitSharePct}</span>}</label>}
+              : <label className="block max-w-xs"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(profit.shareBps / 100).toFixed(2)} />{errors.profitSharePct && <span className="error-text">{errors.profitSharePct}</span>}</label>}
             <SubmitButton intent="profitDashboard" className="btn-primary" busyText="Saving">Save dashboard access</SubmitButton>
           </Form>
         </Section>
