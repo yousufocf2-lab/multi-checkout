@@ -16,8 +16,7 @@ import { getWallet, stateOf, walletsFor } from "~/lib/wallet.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  const allStores = await db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl, enabled: stores.dropshipEnabled, dropship: stores.dropship,
-    profitEnabled: stores.profitEnabled, profitShareBps: stores.profitShareBps, profitEnabledAt: stores.profitEnabledAt })
+  const allStores = await db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl, enabled: stores.dropshipEnabled, dropship: stores.dropship })
     .from(stores).orderBy(asc(stores.name));
   const [ws, zones, skus, recent, alerts, counts] = await Promise.all([
     walletsFor(allStores.map((s) => s.id)),
@@ -35,7 +34,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const w = ws.find((x) => x.storeId === s.id)!;
       return {
         id: s.id, name: s.name, logoUrl: s.logoUrl, enabled: s.enabled,
-        profitEnabled: s.profitEnabled, profitShareBps: s.profitShareBps,
         balance: w.balancePaise, limit: w.negativeLimitPaise, state: stateOf(w),
         rtoPaise: s.dropship?.rtoPaise ?? null, prices: s.dropship?.prices ?? {},
       };
@@ -71,9 +69,6 @@ export async function action({ request }: ActionFunctionArgs) {
     const [store] = await db.select().from(stores).where(eq(stores.id, id)).limit(1);
     if (!store) return fail("Store not found");
     const on = fd.get("enabled") === "on";
-    const profitOn = fd.get("profitEnabled") === "on";
-    const profitPctRaw = Number(s("profitSharePct"));
-    if (!Number.isFinite(profitPctRaw) || profitPctRaw < 0 || profitPctRaw > 100) return fail("Profit share must be between 0 and 100 percent");
     const limit = paise(fd.get("limit"));
     const rto = paise(fd.get("rto"));
     if (limit == null || Number.isNaN(limit)) return fail("Enter how far below ₹0 the wallet may go (e.g. 500)");
@@ -87,9 +82,6 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     await db.update(stores).set({
       dropshipEnabled: on,
-      profitEnabled: profitOn,
-      ...(!on ? { profitShareBps: Math.round(profitPctRaw * 100) } : {}),
-      profitEnabledAt: profitOn ? (store.profitEnabled && store.profitEnabledAt ? store.profitEnabledAt : new Date()) : null,
       dropship: {
         ...store.dropship, rtoPaise: rto, prices,
         enabledAt: on ? (store.dropshipEnabled && store.dropship?.enabledAt ? store.dropship.enabledAt : new Date().toISOString()) : store.dropship?.enabledAt,
@@ -273,15 +265,6 @@ function StoreRow({ s }: { s: D["stores"][number] }) {
             <input name="rto" inputMode="decimal" className="input" defaultValue={s.rtoPaise == null ? "" : s.rtoPaise / 100} placeholder="Same as the order's shipping" />
           </label>
           <SubmitButton className="btn-primary" busyText="Saving">Save</SubmitButton>
-        </div>
-        <div className="grid gap-3 border-t border-rule pt-3 sm:grid-cols-[1fr_180px] sm:items-end">
-          <label className="flex cursor-pointer items-start gap-2 text-sm">
-            <input type="checkbox" name="profitEnabled" defaultChecked={s.profitEnabled} className="mt-0.5 h-4 w-4" />
-            <span><b>Show sales and profit dashboard</b><span className="block text-xs text-ink-faint">Includes Shopify sales, PayU bank settlements and ads.</span></span>
-          </label>
-          {s.enabled
-            ? <p className="text-sm text-ink-soft">Growpefy share is fixed at <b>20%</b> for dropshipping.</p>
-            : <label className="block"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(s.profitShareBps / 100).toFixed(2)} /></label>}
         </div>
         <div>
           <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs font-medium text-brand underline-offset-2 hover:underline" aria-expanded={open}>

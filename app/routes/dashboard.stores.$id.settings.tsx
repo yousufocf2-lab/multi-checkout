@@ -29,6 +29,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await db.update(stores).set({ ownerId: id }).where(eq(stores.id, store.id));
     return json({ ok: "Owner updated", errors: null });
   }
+  if (intent === "profitDashboard" && viewer.role === "admin") {
+    const enabled = fd.get("profitEnabled") === "on";
+    const pct = Number(fd.get("profitSharePct"));
+    if (!store.dropshipEnabled && (!Number.isFinite(pct) || pct < 0 || pct > 100)) {
+      return json({ ok: null, errors: { profitSharePct: "Enter a share from 0 to 100 percent." } }, { status: 400 });
+    }
+    await db.update(stores).set({
+      profitEnabled: enabled,
+      ...(!store.dropshipEnabled ? { profitShareBps: Math.round(pct * 100) } : {}),
+      profitEnabledAt: enabled ? (store.profitEnabled && store.profitEnabledAt ? store.profitEnabledAt : new Date()) : null,
+    }).where(eq(stores.id, store.id));
+    return json({ ok: enabled ? "Sales and profit dashboard enabled for this store." : "Sales and profit dashboard disabled for this store.", errors: null });
+  }
   if (intent === "deleteStore") {
     if (String(fd.get("confirm") ?? "").trim() !== store.slug) return json({ ok: null, errors: { confirm: `Type ${store.slug} to confirm` } }, { status: 400 });
     await db.delete(stores).where(eq(stores.id, store.id));
@@ -69,6 +82,21 @@ export default function StoreSettings() {
               {owners.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.email})</option>)}
             </SelectField>
             <SubmitButton intent="assignOwner" className="btn-secondary" busyText="Saving">Save owner</SubmitButton>
+          </Form>
+        </Section>
+      )}
+
+      {isAdmin && (
+        <Section title="Sales and profit dashboard" description="Off by default. When enabled, the store owner can see the available checkout orders, revenue, PayU settlements, ad costs and profit share.">
+          <Form method="post" className="space-y-4">
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input type="checkbox" name="profitEnabled" defaultChecked={store.profitEnabled} className="mt-0.5 h-4 w-4" />
+              <span><b>Enable dashboard for this store</b><span className="block text-xs text-ink-faint">When off, the store owner only sees the regular Growpefy checkout dashboard and its orders.</span></span>
+            </label>
+            {store.dropshipEnabled
+              ? <p className="text-sm text-ink-soft">Dropshipping is enabled for this store. Its Growpefy share is fixed at <b>20%</b>; dropshipping applies only to eligible prepaid orders.</p>
+              : <label className="block max-w-xs"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(store.profitShareBps / 100).toFixed(2)} />{errors.profitSharePct && <span className="error-text">{errors.profitSharePct}</span>}</label>}
+            <SubmitButton intent="profitDashboard" className="btn-primary" busyText="Saving">Save dashboard access</SubmitButton>
           </Form>
         </Section>
       )}
