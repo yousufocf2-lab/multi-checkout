@@ -188,6 +188,8 @@ async function syncSettlements(store: Store, since: string, until: string) {
         const res = await fetch(url, { headers: { Authorization: authorization, Date: date }, signal: AbortSignal.timeout(20_000) });
         if (!res.ok) throw new Error(`PayU settlement API returned ${res.status}`);
         const body = await res.json() as SettlementResponse;
+        // PayU answers "No data found" for days without a settlement: that's an empty result, not an error
+        if (body.status !== 0 && /no data/i.test(body.message ?? "")) break;
         if (body.status !== 0) throw new Error(body.message || "PayU did not return settlement data");
         const rows = body.result?.data ?? [];
         for (const r of rows) {
