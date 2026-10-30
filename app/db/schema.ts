@@ -748,6 +748,7 @@ export type MessagingSettings = {
   waFollowupTemplate?: string; // template the inbox sends after the 24-hour window: {{1}} customer name, {{2}} store
   waRecoveryTemplate?: string; // abandoned cart: {{1}} customer name, {{2}} store, {{3}} items; URL button suffix = checkout id
   profitOtpPhone?: string; // Super Admin WhatsApp for confirming store-entered direct payments
+  profitOtpEmail?: string; // Super Admin email for confirming store-entered direct payments
   profitOtpTemplate?: string; // approved utility template: {{1}} store, {{2}} party, {{3}} amount, {{4}} OTP
 };
 export type DropshipZones = { A: number; B: number; C: number; D: number; E: number };

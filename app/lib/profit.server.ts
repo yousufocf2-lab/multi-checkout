@@ -32,21 +32,57 @@ function phone10(raw: string | null | undefined) {
   return /^[6-9]\d{9}$/.test(digits) ? digits : null;
 }
 
-async function sendProfitOtp(store: Store, to: string, code: string, creator: string, amountPaise: number) {
-  const m = await messaging();
-  if (!m.waPhoneNumberId || !m.waToken || !m.profitOtpTemplate) throw new Error("Profit confirmation WhatsApp is not configured. Add the approved template and WhatsApp credentials in Super Admin → All wallets → Settings → Messaging.");
-  const res = await fetch("https://graph.facebook.com/v21.0/" + m.waPhoneNumberId + "/messages", {
+function emailAddress(raw: string | null | undefined) {
+  const email = String(raw ?? "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
+}
+
+async function sendProfitEmail(to: string, store: Store, code: string, creator: string, amountPaise: number) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return false;
+  const text = [
+    "A direct payment needs your confirmation in Growpefy.",
+    "Store: " + store.name,
+    "Reported by: " + creator,
+    "Amount: " + formatINR(amountPaise),
+    "Confirmation code: " + code,
+    "This code expires in 10 minutes. Enter it only in the Growpefy dashboard.",
+    "If you did not expect this entry, do not share the code.",
+  ].join("\n");
+  const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
-    headers: { Authorization: "Bearer " + m.waToken, "Content-Type": "application/json" },
+    headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
     body: JSON.stringify({
-      messaging_product: "whatsapp", to: "91" + to, type: "template",
-      template: { name: m.profitOtpTemplate, language: { code: m.waLang || "en" }, components: [{ type: "body", parameters: [store.name, creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }] },
+      from: process.env.MAIL_FROM || "Growpefy <no-reply@growpefy.com>",
+      to: [to], subject: "Confirm direct payment · " + store.name, text,
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => null);
-  if (!res) throw new Error("Could not reach WhatsApp. No payment entry was created.");
-  const body = await res.json().catch(() => ({})) as { messages?: unknown[]; error?: { message?: string } };
-  if (!res.ok || !body.messages?.length) throw new Error("WhatsApp couldn't send the confirmation code" + (body.error?.message ? ": " + body.error.message : "."));
+  return Boolean(res?.ok);
+}
+
+async function sendProfitOtp(store: Store, recipient: { phone: string | null; email: string | null }, code: string, creator: string, amountPaise: number) {
+  const m = await messaging();
+  const sends: Promise<boolean>[] = [];
+  if (recipient.phone && m.waPhoneNumberId && m.waToken && m.profitOtpTemplate) {
+    sends.push((async () => {
+      const res = await fetch("https://graph.facebook.com/v21.0/" + m.waPhoneNumberId + "/messages", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + m.waToken, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messaging_product: "whatsapp", to: "91" + recipient.phone, type: "template",
+          template: { name: m.profitOtpTemplate, language: { code: m.waLang || "en" }, components: [{ type: "body", parameters: [store.name, creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }] },
+        }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch(() => null);
+      if (!res) return false;
+      const body = await res.json().catch(() => ({})) as { messages?: unknown[] };
+      return Boolean(res.ok && body.messages?.length);
+    })());
+  }
+  if (recipient.email) sends.push(sendProfitEmail(recipient.email, store, code, creator, amountPaise));
+  const results = await Promise.all(sends.map((p) => p.catch(() => false)));
+  if (!results.some(Boolean)) throw new Error("Couldn't send the confirmation code. Set a valid email with RESEND_API_KEY or configure WhatsApp and its approved template.");
 }
 
 /** Creates a pending direct-payment entry; it affects profit balance only after the other party confirms. */
@@ -57,14 +93,17 @@ export async function createProfitPayment(store: Store, input: { amountPaise: nu
   const enabledDate = store.profitEnabledAt ? new Date(store.profitEnabledAt.getTime() + 330 * 60_000).toISOString().slice(0, 10) : istToday();
   if (input.paymentDate < enabledDate) throw new Error("Payment date can't be before this dashboard was enabled.");
   const m = await messaging();
-  let recipient: string | null = null;
+  let recipient: { phone: string | null; email: string | null } = { phone: null, email: null };
   const targetRole = input.role === "admin" ? "owner" : "admin";
-  if (targetRole === "admin") recipient = phone10(m.profitOtpPhone);
+  if (targetRole === "admin") recipient = {
+    phone: phone10(m.profitOtpPhone),
+    email: emailAddress(m.profitOtpEmail || process.env.ADMIN_EMAIL),
+  };
   else if (store.ownerId) {
-    const [owner] = await db.select({ phone: users.phone }).from(users).where(eq(users.id, store.ownerId)).limit(1);
-    recipient = phone10(owner?.phone);
+    const [owner] = await db.select({ phone: users.phone, email: users.email }).from(users).where(eq(users.id, store.ownerId)).limit(1);
+    recipient = { phone: phone10(owner?.phone), email: emailAddress(owner?.email) };
   }
-  if (!recipient) throw new Error(targetRole === "admin" ? "Set the Super Admin WhatsApp number in All wallets → Settings → Messaging first." : "This store owner has no valid mobile number on their account, so WhatsApp confirmation can't be sent.");
+  if (!recipient.phone && !recipient.email) throw new Error(targetRole === "admin" ? "Set the Super Admin email or WhatsApp number in All wallets → Settings → Messaging first." : "This store owner has no valid mobile number or email on their account, so confirmation can't be sent.");
   const id = crypto.randomUUID();
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
   await sendProfitOtp(store, recipient, code, input.role === "admin" ? "Growpefy Super Admin" : "The store", input.amountPaise);

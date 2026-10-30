@@ -54,7 +54,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         amountPaise, paymentDate: String(fd.get("paymentDate") ?? ""),
         note: String(fd.get("note") ?? "").trim().slice(0, 200) || null, role: viewer.role, name: viewer.name,
       });
-      return json({ ok: "A 6-digit confirmation code was sent to the other party. The entry affects the balance only after they confirm.", error: null });
+      return json({ ok: "A 6-digit confirmation code was sent to the other party by the available channel(s). The entry affects the balance only after they confirm.", error: null });
     }
     if (intent === "confirmPayment") {
       const result = await confirmProfitPayment(String(fd.get("paymentId") ?? ""), store.id, String(fd.get("code") ?? "").trim(), viewer.role, viewer.name);

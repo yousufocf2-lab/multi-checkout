@@ -29,6 +29,7 @@ export async function messaging(): Promise<MessagingSettings> {
     waFollowupTemplate: m.waFollowupTemplate || process.env.WA_FOLLOWUP_TEMPLATE || undefined,
     waRecoveryTemplate: m.waRecoveryTemplate || process.env.WA_RECOVERY_TEMPLATE || undefined,
     profitOtpPhone: m.profitOtpPhone || undefined,
+    profitOtpEmail: m.profitOtpEmail || undefined,
     profitOtpTemplate: m.profitOtpTemplate || undefined,
   };
 }
