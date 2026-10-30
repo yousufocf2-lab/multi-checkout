@@ -61,14 +61,16 @@ export const STATUS_LABEL: Record<DropshipStatus, string> = {
 export const FULFIL_AFTER_HOURS = 8;
 /** After fulfilment, a cancellation within this many hours refunds the product price (not shipping). */
 export const PRODUCT_REFUND_HOURS = 24;
+/** Packing is charged per physical unit; like product cost it is refundable within the product-refund window. */
+export const PACKING_FEE_PAISE = 400;
 
 /**
  * What a cancellation gives back:
  * before fulfilment → product + shipping; within 24 h of fulfilment → product only; later → nothing.
  */
-export function cancelRefund(d: { status: string; productPaise: number; shippingPaise: number; fulfilledAt: Date | string | null }, at = new Date()) {
-  if (d.status === "charged") return d.productPaise + d.shippingPaise;
-  if (d.status === "fulfilled" && d.fulfilledAt && at.getTime() - new Date(d.fulfilledAt).getTime() <= PRODUCT_REFUND_HOURS * 3600_000) return d.productPaise;
+export function cancelRefund(d: { status: string; productPaise: number; shippingPaise: number; packingPaise?: number; fulfilledAt: Date | string | null }, at = new Date()) {
+  if (d.status === "charged") return d.productPaise + d.shippingPaise + (d.packingPaise ?? 0);
+  if (d.status === "fulfilled" && d.fulfilledAt && at.getTime() - new Date(d.fulfilledAt).getTime() <= PRODUCT_REFUND_HOURS * 3600_000) return d.productPaise + (d.packingPaise ?? 0);
   return 0;
 }
 

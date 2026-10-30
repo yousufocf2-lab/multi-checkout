@@ -66,7 +66,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled })),
     selected,
   }, { headers });
 }
@@ -124,6 +124,7 @@ export default function DashboardLayout() {
         {may("orders") && <Item to="/dashboard" end icon="overview">Overview</Item>}
         {may("orders") && <Item to="/dashboard/orders" icon="orders">Orders</Item>}
         {may("ads") && <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>}
+        {(isAdmin || focus?.profitEnabled) && <Item to={storeHref("profit")} icon="trend" match={/\/profit$/}>Profit share</Item>}
         {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
       </Group>
       {(may("inbox") || may("settings") || may("offers") || may("rto")) && (

@@ -247,6 +247,9 @@ export const stores = pgTable("stores", {
   // Dropshipping (super admin only, never shown to the store): Shipnex ships prepaid orders, the wallet pays
   dropshipEnabled: boolean("dropship_enabled").notNull().default(false),
   dropship: jsonb("dropship").$type<StoreDropship>().notNull().default({}),
+  profitEnabled: boolean("profit_enabled").notNull().default(false),
+  profitShareBps: integer("profit_share_bps").notNull().default(5000), // Growpefy's share for non-dropshipping partnership stores
+  profitEnabledAt: timestamp("profit_enabled_at", { withTimezone: true }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -308,6 +311,7 @@ export const dropshipOrders = pgTable(
     lines: jsonb("lines").$type<DropshipLine[]>().notNull(),
     productPaise: integer("product_paise").notNull(),
     shippingPaise: integer("shipping_paise").notNull(),
+    packingPaise: integer("packing_paise").notNull().default(0),
     rtoPaise: integer("rto_paise"),
     refundPaise: integer("refund_paise").notNull().default(0),
     missingSkus: jsonb("missing_skus").$type<string[]>().notNull().default([]),
@@ -321,6 +325,21 @@ export const dropshipOrders = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("dropship_orders_status_idx").on(t.status, t.fulfilAfter), index("dropship_orders_store_idx").on(t.storeId, t.createdAt)],
+);
+
+/** PayU settlement batches cached for cash-basis profit reporting. */
+export const profitSettlements = pgTable(
+  "profit_settlements",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    settlementId: text("settlement_id").notNull(),
+    settlementDate: text("settlement_date").notNull(), // PayU's settlement date in YYYY-MM-DD
+    settlementAmount: integer("settlement_amount").notNull(), // paise, actual bank remittance
+    utrNumber: text("utr_number"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("profit_settlements_store_id_unique").on(t.storeId, t.settlementId), index("profit_settlements_store_date_idx").on(t.storeId, t.settlementDate)],
 );
 
 /** RTO Suite block list: one row per blocked phone / email / pincode / city / state / country (values normalised). */

@@ -16,7 +16,8 @@ import { getWallet, stateOf, walletsFor } from "~/lib/wallet.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
-  const allStores = await db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl, enabled: stores.dropshipEnabled, dropship: stores.dropship })
+  const allStores = await db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl, enabled: stores.dropshipEnabled, dropship: stores.dropship,
+    profitEnabled: stores.profitEnabled, profitShareBps: stores.profitShareBps, profitEnabledAt: stores.profitEnabledAt })
     .from(stores).orderBy(asc(stores.name));
   const [ws, zones, skus, recent, alerts, counts] = await Promise.all([
     walletsFor(allStores.map((s) => s.id)),
@@ -34,13 +35,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       const w = ws.find((x) => x.storeId === s.id)!;
       return {
         id: s.id, name: s.name, logoUrl: s.logoUrl, enabled: s.enabled,
+        profitEnabled: s.profitEnabled, profitShareBps: s.profitShareBps,
         balance: w.balancePaise, limit: w.negativeLimitPaise, state: stateOf(w),
         rtoPaise: s.dropship?.rtoPaise ?? null, prices: s.dropship?.prices ?? {},
       };
     }),
     orders: recent.map((r) => ({
       id: r.d.orderId, name: r.name, store: r.storeName, city: r.customer.city, pincode: r.customer.pincode,
-      status: r.d.status as DropshipStatus, zone: r.d.zone, product: r.d.productPaise, shipping: r.d.shippingPaise,
+      status: r.d.status as DropshipStatus, zone: r.d.zone, product: r.d.productPaise, shipping: r.d.shippingPaise, packing: r.d.packingPaise,
       rto: r.d.rtoPaise, refund: r.d.refundPaise, tracking: r.d.trackingNumber, error: r.d.error,
       lines: r.d.lines, missing: r.d.missingSkus, fulfilAfter: r.d.fulfilAfter, fulfilledAt: r.d.fulfilledAt, createdAt: r.d.createdAt,
     })),
@@ -69,6 +71,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const [store] = await db.select().from(stores).where(eq(stores.id, id)).limit(1);
     if (!store) return fail("Store not found");
     const on = fd.get("enabled") === "on";
+    const profitOn = fd.get("profitEnabled") === "on";
+    const profitPctRaw = Number(s("profitSharePct"));
+    if (!Number.isFinite(profitPctRaw) || profitPctRaw < 0 || profitPctRaw > 100) return fail("Profit share must be between 0 and 100 percent");
     const limit = paise(fd.get("limit"));
     const rto = paise(fd.get("rto"));
     if (limit == null || Number.isNaN(limit)) return fail("Enter how far below ₹0 the wallet may go (e.g. 500)");
@@ -82,6 +87,9 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     await db.update(stores).set({
       dropshipEnabled: on,
+      profitEnabled: profitOn,
+      ...(!on ? { profitShareBps: Math.round(profitPctRaw * 100) } : {}),
+      profitEnabledAt: profitOn ? (store.profitEnabled && store.profitEnabledAt ? store.profitEnabledAt : new Date()) : null,
       dropship: {
         ...store.dropship, rtoPaise: rto, prices,
         enabledAt: on ? (store.dropshipEnabled && store.dropship?.enabledAt ? store.dropship.enabledAt : new Date().toISOString()) : store.dropship?.enabledAt,
@@ -266,6 +274,15 @@ function StoreRow({ s }: { s: D["stores"][number] }) {
           </label>
           <SubmitButton className="btn-primary" busyText="Saving">Save</SubmitButton>
         </div>
+        <div className="grid gap-3 border-t border-rule pt-3 sm:grid-cols-[1fr_180px] sm:items-end">
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="checkbox" name="profitEnabled" defaultChecked={s.profitEnabled} className="mt-0.5 h-4 w-4" />
+            <span><b>Show sales and profit dashboard</b><span className="block text-xs text-ink-faint">Includes Shopify sales, PayU bank settlements and ads.</span></span>
+          </label>
+          {s.enabled
+            ? <p className="text-sm text-ink-soft">Growpefy share is fixed at <b>20%</b> for dropshipping.</p>
+            : <label className="block"><span className="label">Growpefy profit share (%)</span><input name="profitSharePct" type="number" min="0" max="100" step="0.01" className="input" defaultValue={(s.profitShareBps / 100).toFixed(2)} /></label>}
+        </div>
         <div>
           <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs font-medium text-brand underline-offset-2 hover:underline" aria-expanded={open}>
             {custom ? `Own prices for ${custom} SKU${custom === 1 ? "" : "s"}` : "Set own prices for this store"} {open ? "▴" : "▾"}
@@ -287,14 +304,14 @@ function Orders({ orders }: { orders: D["orders"] }) {
     <section className="panel">
       <div className="border-b border-rule px-5 py-4">
         <h2 className="text-[15px] font-semibold">Dropship orders</h2>
-        <p className="mt-0.5 text-xs text-ink-faint">Cancelled before fulfilment: product + shipping go back to the wallet. Cancelled within 24 h after fulfilment: product only. Later: nothing.</p>
+        <p className="mt-0.5 text-xs text-ink-faint">Packing is ₹4 per unit. Before fulfilment: product + packing + shipping go back to the wallet. Within 24 h after fulfilment: product + packing. Later: nothing.</p>
       </div>
       {orders.length === 0 ? (
         <p className="px-5 py-8 text-center text-sm text-ink-faint">No dropship orders yet. They show up here when a prepaid order is paid on a dropshipping store.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="table min-w-[920px]">
-            <thead><tr><th>Order</th><th>Store</th><th>Deliver to</th><th>Items</th><th className="text-right">Product</th><th className="text-right">Shipping</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Order</th><th>Store</th><th>Deliver to</th><th>Items</th><th className="text-right">Product</th><th className="text-right">Shipping</th><th className="text-right">Packing</th><th>Status</th><th /></tr></thead>
             <tbody>
               {orders.map((o) => (
                 <tr key={o.id}>
@@ -308,6 +325,7 @@ function Orders({ orders }: { orders: D["orders"] }) {
                   </td>
                   <td className="num text-right text-sm">{rupees(o.product)}</td>
                   <td className="num text-right text-sm">{rupees(o.shipping)}{o.rto ? <span className="block text-xs text-bad">RTO {rupees(o.rto)}</span> : null}</td>
+                  <td className="num text-right text-sm">{rupees(o.packing)}</td>
                   <td>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CHIP[o.status]}`}>{STATUS_LABEL[o.status]}</span>
                     {o.status === "charged" && <span className="mt-1 block text-[11px] text-ink-faint">at {when(o.fulfilAfter)}</span>}

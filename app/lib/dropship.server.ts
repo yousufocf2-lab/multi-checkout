@@ -10,7 +10,7 @@ import {
   db, dropshipOrders, dropshipSkus, orders, platformSettings, stores,
   type DropshipLine, type DropshipOrder, type Order, type OrderCustomer, type Store,
 } from "~/db.server";
-import { FULFIL_AFTER_HOURS, PRODUCT_REFUND_HOURS, cancelRefund, skuKey, zoneFor, zoneRates, type Zone } from "./dropship";
+import { FULFIL_AFTER_HOURS, PACKING_FEE_PAISE, PRODUCT_REFUND_HOURS, cancelRefund, skuKey, zoneFor, zoneRates, type Zone } from "./dropship";
 import { fetchFulfillmentTracking, fetchVariantSkus, fulfilStoreOrder, orderGid } from "./platform.server";
 import { getPlatform, getWallet, postTransaction } from "./wallet.server";
 
@@ -38,7 +38,7 @@ export async function pricesFor(store: Pick<Store, "dropship">) {
 
 type LineIn = { variantId: string; title: string; variantTitle?: string | null; quantity: number };
 
-/** What a dropship order costs the store: product prices from the SKU list + one zone shipping charge. */
+/** What a dropship order costs the store: product prices, one zone shipping charge, and ₹4 per unit packing. */
 export async function quoteDropship(store: Store, items: LineIn[], address: Pick<OrderCustomer, "state" | "pincode" | "city">) {
   const [skus, prices, zones] = await Promise.all([fetchVariantSkus(store, items.map((l) => l.variantId)), pricesFor(store), zonesNow()]);
   const zone: Zone = zoneFor(address);
@@ -54,7 +54,8 @@ export async function quoteDropship(store: Store, items: LineIn[], address: Pick
     lines.push({ sku, title, quantity: l.quantity, unitPaise: hit?.pricePaise ?? null });
     product += (hit?.pricePaise ?? 0) * l.quantity;
   }
-  return { zone, lines, missing, productPaise: product, shippingPaise: lines.length ? zones[zone] : 0 };
+  const packingPaise = items.reduce((n, l) => n + Math.max(0, Math.floor(l.quantity)) * PACKING_FEE_PAISE, 0);
+  return { zone, lines, missing, productPaise: product, shippingPaise: lines.length ? zones[zone] : 0, packingPaise };
 }
 
 export const dropshipEligible = (store: Pick<Store, "dropshipEnabled">, order: Pick<Order, "paymentMethod" | "status">) =>
@@ -71,7 +72,7 @@ export async function chargeDropship(store: Store, order: Order) {
     const q = await quoteDropship(store, order.items, order.customer);
     const [row] = await db.insert(dropshipOrders).values({
       orderId: order.id, storeId: store.id, zone: q.zone, lines: q.lines,
-      productPaise: q.productPaise, shippingPaise: q.shippingPaise, missingSkus: q.missing,
+      productPaise: q.productPaise, shippingPaise: q.shippingPaise, packingPaise: q.packingPaise, missingSkus: q.missing,
       fulfilAfter: new Date(new Date(order.createdAt).getTime() + FULFIL_AFTER_HOURS * 3600_000),
     }).onConflictDoNothing().returning();
     if (!row) return null;
@@ -81,6 +82,9 @@ export async function chargeDropship(store: Store, order: Order) {
     }
     if (q.shippingPaise > 0) {
       await postTransaction({ walletId: w.id, type: "dropship_shipping", amountPaise: -q.shippingPaise, refType: "order", refId: order.id, note: ref(order) });
+    }
+    if (q.packingPaise > 0) {
+      await postTransaction({ walletId: w.id, type: "dropship_packing", amountPaise: -q.packingPaise, refType: "order", refId: order.id, note: `${ref(order)} · ${order.items.reduce((n, l) => n + l.quantity, 0)} units` });
     }
     return row;
   } catch (e) {
@@ -103,7 +107,7 @@ export async function dropshipBlock(store: Store, method: string, items: LineIn[
   if (method !== "prepaid") return null;
   try {
     const q = await quoteDropship(store, items, address);
-    if (w.balancePaise - q.productPaise - q.shippingPaise < floor) return BLOCK_MESSAGE;
+    if (w.balancePaise - q.productPaise - q.shippingPaise - q.packingPaise < floor) return BLOCK_MESSAGE;
   } catch (e) {
     console.error(`[dropship] quote for store ${store.id}:`, e instanceof Error ? e.message : e);
   }

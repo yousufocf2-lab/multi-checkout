@@ -58,6 +58,35 @@ async function adminGraphql<T>(store: Store, query: string, variables?: unknown)
   return json.data as T;
 }
 
+/** Native Shopify checkout sales by IST order date, excluding orders Growpefy created itself. */
+export async function fetchNativeSales(store: Store, since: string, until: string) {
+  if (store.platform !== "shopify") return { daily: {} as Record<string, { orders: number; revenue: number }>, currency: "INR" };
+  type Node = { createdAt: string; tags: string[]; cancelledAt: string | null; test: boolean; currentTotalPriceSet: { shopMoney: { amount: string; currencyCode: string } } };
+  type Page = { orders: { edges: { cursor: string; node: Node }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } };
+  const from = new Date(`${since}T00:00:00+05:30`).toISOString();
+  const to = new Date(`${until}T00:00:00+05:30`).toISOString();
+  const queryText = `created_at:>='${from}' created_at:<'${to}'`;
+  const daily: Record<string, { orders: number; revenue: number }> = {};
+  let currency = "INR";
+  let cursor: string | null = null;
+  for (let page = 0; page < 40; page++) {
+    const data: Page = await adminGraphql<Page>(store, `query($first:Int!,$after:String,$q:String!){orders(first:$first,after:$after,query:$q,sortKey:CREATED_AT){edges{cursor node{id createdAt tags cancelledAt test currentTotalPriceSet{shopMoney{amount currencyCode}}}} pageInfo{hasNextPage endCursor}}}`, { first: 250, after: cursor, q: queryText });
+    for (const { node } of data.orders.edges) {
+      if (node.test || node.cancelledAt || node.tags.some((t) => t.toLowerCase() === "growpefy")) continue;
+      currency = node.currentTotalPriceSet.shopMoney.currencyCode;
+      if (currency !== "INR") throw new Error(`Shopify order currency is ${currency}; this profit report currently expects INR.`);
+      const day = new Date(new Date(node.createdAt).getTime() + 330 * 60_000).toISOString().slice(0, 10);
+      const row = daily[day] ??= { orders: 0, revenue: 0 };
+      row.orders++;
+      row.revenue += Number(node.currentTotalPriceSet.shopMoney.amount);
+    }
+    if (!data.orders.pageInfo.hasNextPage || !data.orders.pageInfo.endCursor) break;
+    cursor = data.orders.pageInfo.endCursor;
+    if (page === 39) throw new Error("There are too many Shopify orders in this date range. Choose a shorter range.");
+  }
+  return { daily, currency };
+}
+
 // ---------- reads ----------
 
 export async function testConnection(store: Store) {

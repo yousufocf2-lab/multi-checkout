@@ -6,7 +6,7 @@ export const WALLET_GST = 0.18;
 export const DEFAULT_RATES: WalletRates = { saleFeeBps: 100, otp: 100, waConfirm: 150, waTracking: 100, waPromo: 250, waReply: 7, waFollowup: 150, waRecovery: 250 };
 
 export type TxType = "recharge" | "sale_fee" | "otp" | "wa_confirm" | "wa_tracking" | "wa_promo" | "wa_reply" | "wa_followup" | "wa_recovery" | "refund_reversal" | "manual_credit" | "manual_debit"
-  | "dropship_product" | "dropship_shipping" | "dropship_rto" | "dropship_refund";
+  | "dropship_product" | "dropship_shipping" | "dropship_packing" | "dropship_rto" | "dropship_refund";
 export type UsageType = "otp" | "wa_confirm" | "wa_tracking" | "wa_promo" | "wa_reply" | "wa_followup" | "wa_recovery";
 
 export const TX_LABELS: Record<TxType, string> = {
@@ -24,6 +24,7 @@ export const TX_LABELS: Record<TxType, string> = {
   manual_debit: "Debit by admin",
   dropship_product: "Order fulfilment charge",
   dropship_shipping: "Shipping charge",
+  dropship_packing: "Packing charge",
   dropship_rto: "RTO charge",
   dropship_refund: "Refund for cancelled order",
 };
