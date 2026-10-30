@@ -52,7 +52,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     address: `${order.customer.address1}${order.customer.address2 ? ", " + order.customer.address2 : ""}, ${order.customer.city} ${order.customer.pincode}`,
     continueUrl,
     pixel: shouldTrackPurchase(store, order)
-      ? { id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0) }
+      ? {
+          id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0),
+          // Advanced matching: who bought (the pixel hashes these in the browser)
+          user: {
+            ph: `91${order.customer.phone}`, em: order.customer.email || undefined, fn: order.customer.firstName, ln: order.customer.lastName || undefined,
+            ct: order.customer.city?.replace(/\s+/g, ""), st: order.customer.state, zp: order.customer.pincode, country: "in", external_id: order.customer.phone,
+          },
+        }
       : null,
     gtag: store.googleTagId && store.googleTagLabel && (order.status === "paid" || (order.status === "cod_placed" && store.googleFireCod))
       ? { id: store.googleTagId, label: store.googleTagLabel, value: purchaseValue(order) }
@@ -95,7 +102,7 @@ export default function OrderStatus() {
           {ok && (
             <>
               {d.pixel && (
-                <MetaPixel pixelId={d.pixel.id} event="Purchase" eventId={d.id} onceKey={`purchase_${d.id}`}
+                <MetaPixel pixelId={d.pixel.id} event="Purchase" eventId={d.id} onceKey={`purchase_${d.id}`} user={d.pixel.user}
                   data={{ currency: "INR", value: d.pixel.value, content_ids: d.pixel.items, content_type: "product", num_items: d.pixel.count }} />
               )}
               {d.gtag && <GoogleTag tagId={d.gtag.id} label={d.gtag.label} value={d.gtag.value} orderId={d.id} />}

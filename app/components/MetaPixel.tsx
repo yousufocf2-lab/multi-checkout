@@ -7,7 +7,10 @@ declare global {
   }
 }
 
-function loadPixel(pixelId: string) {
+/** Customer details for Meta's advanced matching (plain text; the pixel hashes them before sending). */
+export type PixelUser = { ph?: string; em?: string; fn?: string; ln?: string; ct?: string; st?: string; zp?: string; country?: string; external_id?: string };
+
+function loadPixel(pixelId: string, user?: PixelUser) {
   if (typeof window === "undefined") return;
   if (!window.fbq) {
     /* eslint-disable */
@@ -28,18 +31,20 @@ function loadPixel(pixelId: string) {
   const w = window as unknown as { __cxPixels?: Set<string> };
   w.__cxPixels ??= new Set();
   if (!w.__cxPixels.has(pixelId)) {
-    window.fbq!("init", pixelId);
+    const am = user ? Object.fromEntries(Object.entries(user).filter(([, v]) => typeof v === "string" && v.trim()).map(([k, v]) => [k, v!.trim().toLowerCase()])) : {};
+    if (Object.keys(am).length) window.fbq!("init", pixelId, am);
+    else window.fbq!("init", pixelId);
     window.fbq!("track", "PageView");
     w.__cxPixels.add(pixelId);
   }
 }
 
 /** Fires one Meta Pixel event (once per onceKey per browser). */
-export function MetaPixel({ pixelId, event, data, eventId, onceKey }: {
-  pixelId: string; event: string; data?: Record<string, unknown>; eventId?: string; onceKey?: string;
+export function MetaPixel({ pixelId, event, data, eventId, onceKey, user }: {
+  pixelId: string; event: string; data?: Record<string, unknown>; eventId?: string; onceKey?: string; user?: PixelUser;
 }) {
   useEffect(() => {
-    loadPixel(pixelId);
+    loadPixel(pixelId, user);
     const key = onceKey ? `cx_px_${onceKey}` : null;
     try { if (key && sessionStorage.getItem(key)) return; } catch { /* ignore */ }
     window.fbq!("trackSingle", pixelId, event, data ?? {}, eventId ? { eventID: eventId } : undefined);
