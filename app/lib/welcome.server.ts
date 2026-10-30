@@ -123,12 +123,18 @@ async function sendWhatsapp(row: LeadMessage, s: Awaited<ReturnType<typeof getWe
   const m = await messaging();
   if (!m.waPhoneNumberId || !m.waToken) return { ok: false, retry: true, error: "WhatsApp isn't set up in Messaging settings" };
   const template = row.msg === "lead" ? s.waLeadTemplate : s.waSignupTemplate;
+  // A template with an image header must get the image with every message, or WhatsApp rejects it (#132012)
+  const img = (row.msg === "lead" ? s.waLeadImage : s.waSignupImage).trim();
+  const imageLink = !img || /^none$/i.test(img) ? null
+    : img.startsWith("/") ? `${(process.env.APP_URL || "https://growpefy.com").replace(/\/+$/, "")}${img}` : img;
+  const components: unknown[] = [{ type: "body", parameters: [{ type: "text", text: greetName(row.name) }] }];
+  if (imageLink) components.unshift({ type: "header", parameters: [{ type: "image", image: { link: imageLink } }] });
   const res = await fetch(`https://graph.facebook.com/v21.0/${m.waPhoneNumberId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${m.waToken}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       messaging_product: "whatsapp", to: `91${row.target}`, type: "template",
-      template: { name: template, language: { code: s.waLang || "en" }, components: [{ type: "body", parameters: [{ type: "text", text: greetName(row.name) }] }] },
+      template: { name: template, language: { code: s.waLang || "en" }, components },
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch((e) => ({ ok: false, status: 0, json: async () => ({ error: { message: e instanceof Error ? e.message : String(e) } }) }) as unknown as Response);

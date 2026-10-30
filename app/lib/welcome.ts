@@ -8,6 +8,9 @@ export const WELCOME_DEFAULTS: Required<Omit<WelcomeSettings, "autoFrom">> = {
   waLeadTemplate: "growpefy_lead_welcome",
   waSignupTemplate: "growpefy_signup_welcome",
   waLang: "en",
+  // Header image of each template (both templates have one in WhatsApp Manager). "none" = template without an image.
+  waLeadImage: "/wa/lead-welcome.jpg",
+  waSignupImage: "/wa/signup-welcome.jpg",
   leadSubject: "Thanks for your interest in Growpefy, {{name}}",
   leadBody: `Thanks for reaching out to Growpefy. Our team will call you shortly to understand your store and show you how the checkout works for your products.
 

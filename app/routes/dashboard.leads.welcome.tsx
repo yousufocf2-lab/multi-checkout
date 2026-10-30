@@ -36,6 +36,7 @@ export async function action({ request }: ActionFunctionArgs) {
     await saveWelcome({
       auto: fd.get("auto") === "on", whatsapp: fd.get("whatsapp") === "on", email: fd.get("email") === "on",
       waLeadTemplate: tpl("waLeadTemplate"), waSignupTemplate: tpl("waSignupTemplate"), waLang: t("waLang", 10) || "en",
+      waLeadImage: t("waLeadImage", 500), waSignupImage: t("waSignupImage", 500),
       leadSubject: t("leadSubject", 200), leadBody: t("leadBody"), signupSubject: t("signupSubject", 200), signupBody: t("signupBody"),
       fromName: t("fromName", 60).replace(/[<>"]/g, ""), fromEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t("fromEmail")) ? t("fromEmail", 120).toLowerCase() : undefined,
       replyTo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t("replyTo")) ? t("replyTo", 120).toLowerCase() : undefined,
@@ -123,8 +124,8 @@ export default function Welcome() {
 
           <Section title="WhatsApp templates" description="Create these two templates in WhatsApp Manager → Message templates (category Marketing, language English). Use the exact names, and {{1}} for the person's name.">
             <div className="grid gap-4 lg:grid-cols-2">
-              <TemplateBox title="For leads" name="waLeadTemplate" value={s.waLeadTemplate} text={WA_TEMPLATE_TEXT.lead} />
-              <TemplateBox title="For signups" name="waSignupTemplate" value={s.waSignupTemplate} text={WA_TEMPLATE_TEXT.signup} />
+              <TemplateBox title="For leads" name="waLeadTemplate" value={s.waLeadTemplate} text={WA_TEMPLATE_TEXT.lead} imageName="waLeadImage" image={s.waLeadImage} />
+              <TemplateBox title="For signups" name="waSignupTemplate" value={s.waSignupTemplate} text={WA_TEMPLATE_TEXT.signup} imageName="waSignupImage" image={s.waSignupImage} />
             </div>
             <div className="mt-4 max-w-[180px]"><TextField label="Template language code" name="waLang" defaultValue={s.waLang} hint="en for English" /></div>
           </Section>
@@ -179,12 +180,14 @@ function Stat({ label, value, note }: { label: string; value: number; note: stri
   return <div className="panel p-4"><p className="text-xs font-medium text-ink-soft">{label}</p><p className="num mt-1 text-2xl font-semibold">{value}</p><p className="truncate text-[11px] text-ink-faint">{note}</p></div>;
 }
 
-function TemplateBox({ title, name, value, text }: { title: string; name: string; value: string; text: string }) {
+function TemplateBox({ title, name, value, text, imageName, image }: { title: string; name: string; value: string; text: string; imageName: string; image: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="rounded-xl border border-rule p-4">
       <p className="text-sm font-semibold">{title}</p>
       <div className="mt-2"><TextField label="Template name" name={name} defaultValue={value} /></div>
+      <div className="mt-2"><TextField label="Header image" name={imageName} defaultValue={image} hint="Sent as the template's image. Write none if the template has no image header." /></div>
+      {image && !/^none$/i.test(image) && <img src={image} alt="" className="mt-2 w-full rounded-lg border border-rule" />}
       <div className="mt-1 flex items-center justify-between">
         <span className="label mb-0">Template text to paste</span>
         <button type="button" className="text-xs font-medium text-pine hover:underline" onClick={() => { navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); }}>{copied ? "Copied" : "Copy"}</button>

@@ -807,6 +807,7 @@ export type WelcomeSettings = {
   autoFrom?: string; // ISO: leads created after this are sent automatically
   whatsapp?: boolean; email?: boolean;
   waLeadTemplate?: string; waSignupTemplate?: string; waLang?: string; // templates: {{1}} = name
+  waLeadImage?: string; waSignupImage?: string; // header image link ("/..." = on Growpefy's site), "none" = no image
   leadSubject?: string; leadBody?: string; signupSubject?: string; signupBody?: string; // {{name}} placeholder
   fromName?: string; fromEmail?: string; replyTo?: string; // who the welcome emails come from
   whatsappNumber?: string; // for the "Chat on WhatsApp" button, digits with country code
