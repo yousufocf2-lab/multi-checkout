@@ -269,16 +269,18 @@ export async function createShopifyOrder(store: Store, order: Order) {
     ] : []),
     email: c.email || null,
     phone: `+91${c.phone}`,
-    // Create / match the Shopify customer by phone (and email when given). Without this, orders without
-    // an email show "No customer" in Shopify.
-    customer: {
-      toUpsert: {
-        firstName: c.firstName,
-        lastName: c.lastName || null,
-        phone: `+91${c.phone}`,
-        ...(c.email ? { email: c.email } : {}),
+    // Create / match the Shopify customer. Shopify's customer upsert needs an email (or a customer id), so
+    // orders without an email skip it and keep the phone and address on the order itself.
+    ...(c.email ? {
+      customer: {
+        toUpsert: {
+          firstName: c.firstName,
+          lastName: c.lastName || null,
+          phone: `+91${c.phone}`,
+          email: c.email,
+        },
       },
-    },
+    } : {}),
     shippingAddress: address,
     billingAddress: address,
     financialStatus: isCod ? "PENDING" : isPartial ? "PARTIALLY_PAID" : "PAID",
