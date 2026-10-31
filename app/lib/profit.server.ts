@@ -70,18 +70,28 @@ async function sendProfitOtp(store: Store, recipient: { phone: string | null; em
   const sends: Promise<boolean>[] = [];
   if (recipient.phone && m.waPhoneNumberId && m.waToken && m.profitOtpTemplate) {
     sends.push((async () => {
-      const res = await fetch("https://graph.facebook.com/v21.0/" + m.waPhoneNumberId + "/messages", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + m.waToken, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messaging_product: "whatsapp", to: "91" + recipient.phone, type: "template",
-          template: { name: m.profitOtpTemplate, language: { code: m.waLang || "en" }, components: [{ type: "body", parameters: [store.name, direction === "to_store" ? `${creator} (given to the store)` : creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }] },
-        }),
-        signal: AbortSignal.timeout(10_000),
-      }).catch(() => null);
-      if (!res) return false;
-      const body = await res.json().catch(() => ({})) as { messages?: unknown[] };
-      return Boolean(res.ok && body.messages?.length);
+      const send = async (components: unknown[]) => {
+        const res = await fetch("https://graph.facebook.com/v21.0/" + m.waPhoneNumberId + "/messages", {
+          method: "POST",
+          headers: { Authorization: "Bearer " + m.waToken, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messaging_product: "whatsapp", to: "91" + recipient.phone, type: "template",
+            template: { name: m.profitOtpTemplate, language: { code: m.waLang || "en" }, components },
+          }),
+          signal: AbortSignal.timeout(10_000),
+        }).catch(() => null);
+        if (!res) return false;
+        const body = await res.json().catch(() => ({})) as { messages?: unknown[] };
+        return Boolean(res.ok && body.messages?.length);
+      };
+      // Utility template: {{1}} store, {{2}} who recorded it, {{3}} amount, {{4}} code
+      const detailed = [{ type: "body", parameters: [store.name, direction === "to_store" ? `${creator} (given to the store)` : creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }];
+      // Authentication template (Meta's fixed "{{1}} is your verification code" with a Copy code button): just the code
+      const auth = [
+        { type: "body", parameters: [{ type: "text", text: code }] },
+        { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: code }] },
+      ];
+      return (await send(detailed)) || (await send(auth));
     })());
   }
   if (recipient.email) sends.push(sendProfitEmail(recipient.email, store, code, creator, amountPaise, direction));
