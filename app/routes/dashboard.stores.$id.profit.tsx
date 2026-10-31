@@ -9,7 +9,7 @@ import { Notice, SubmitButton } from "~/components/ui";
 import { db, profitPayments } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { resolveRange } from "~/lib/dates";
-import { confirmProfitPayment, createProfitPayment, profitReport } from "~/lib/profit.server";
+import { confirmProfitPayment, createProfitPayment, PAYMENT_REPLY_DAYS, profitReport } from "~/lib/profit.server";
 import { compactINR } from "~/lib/pricing";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -32,6 +32,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const payments = await db.select().from(profitPayments)
     .where(and(eq(profitPayments.storeId, store.id), or(
       eq(profitPayments.status, "pending"),
+      and(eq(profitPayments.status, "rejected"), gte(profitPayments.paymentDate, range.since), lte(profitPayments.paymentDate, range.until)),
       and(eq(profitPayments.status, "confirmed"), gte(profitPayments.paymentDate, range.since), lte(profitPayments.paymentDate, range.until)),
     )))
     .orderBy(desc(profitPayments.createdAt)).limit(100);
@@ -51,7 +52,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     payments: payments.map((p) => ({
       id: p.id, amount: p.amountPaise, direction: p.direction === "to_store" ? "to_store" as const : "to_growpefy" as const, date: p.paymentDate, note: p.note, createdBy: p.createdBy, confirmedBy: p.confirmedBy,
       status: p.status, confirmRole: p.confirmRole,
-      expired: p.status === "pending" && (!p.otpExpiresAt || p.otpExpiresAt.getTime() < Date.now()),
+      // Pending entries stay open for the WhatsApp buttons for a week; the 6-digit code only for 10 minutes
+      expired: p.status === "expired" || (p.status === "pending" && Date.now() - p.createdAt.getTime() > PAYMENT_REPLY_DAYS * 86400_000),
+      viaWhatsapp: Boolean(p.waPhone),
       canConfirm: canManage && p.status === "pending" && Boolean(p.otpExpiresAt && p.otpExpiresAt.getTime() >= Date.now()) && p.confirmRole === viewer.role,
     })),
   });
@@ -72,15 +75,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
         direction: fd.get("direction") === "to_store" ? "to_store" : "to_growpefy",
         note: String(fd.get("note") ?? "").trim().slice(0, 200) || null, role: viewer.role, name: viewer.name,
       });
-      return json({ ok: "A 6-digit confirmation code was sent to the other party. The entry changes the balance only after they confirm.", error: null });
+      return json({ ok: "Sent to the other side on WhatsApp (I accept / I reject) and email (6-digit code). The entry changes the balance only after they accept.", error: null });
     }
     if (intent === "confirmPayment") {
       const result = await confirmProfitPayment(String(fd.get("paymentId") ?? ""), store.id, String(fd.get("code") ?? "").trim(), viewer.role, viewer.name);
       const messages = {
         confirmed: "Payment confirmed. The balance is updated.",
         incorrect: "That code isn't correct. Check the message and try again.",
-        locked: "Too many incorrect codes. This entry expired; create a new entry to confirm the payment.",
-        expired: "This code expired. Create a new entry to confirm the payment.",
+        locked: "Too many incorrect codes. The code is blocked; the other side can still accept on WhatsApp.",
+        expired: "This code expired. The other side can still accept on WhatsApp, or create a new entry.",
         unavailable: "This payment can't be confirmed from this account or is no longer pending.",
       };
       return result === "confirmed" ? json({ ok: messages[result], error: null }) : json({ ok: null, error: messages[result] }, { status: 400 });
@@ -337,7 +340,7 @@ function Payments({ d }: { d: D }) {
     <section className="panel">
       <div className="border-b border-rule px-5 py-4">
         <h2 className="text-[15px] font-semibold">Direct payments between the store and Growpefy</h2>
-        <p className="mt-0.5 text-xs text-ink-faint">Both ways: the store paying Growpefy its share, or Growpefy giving the store money (it's added to what the store owes). Only confirmed entries change the balance. The other side confirms with a 6-digit code sent on WhatsApp and email.</p>
+        <p className="mt-0.5 text-xs text-ink-faint">Both ways: the store paying Growpefy its share, or Growpefy giving the store money (it's added to what the store owes). The other side gets the details on WhatsApp with I accept / I reject buttons (or a 6-digit code by email). Only accepted entries change the balance.</p>
       </div>
       {d.canManage && (
         <Form method="post" className="grid gap-3 border-b border-rule p-5 sm:grid-cols-4">
@@ -369,8 +372,11 @@ function Payments({ d }: { d: D }) {
                   <span className="text-xs font-normal text-ink-faint">{dateLabel(p.date, true)}</span>
                 </p>
                 <p className="text-xs text-ink-soft">Entered by {p.createdBy}{p.note ? ` · ${p.note}` : ""}</p>
-                <p className={`text-xs ${p.status === "confirmed" ? "text-good" : "text-amber-700"}`}>
-                  {p.status === "confirmed" ? `Confirmed by ${p.confirmedBy ?? "the other side"}` : p.expired || p.status === "expired" ? "Code expired. Create a new entry to confirm." : `Waiting for ${p.confirmRole === "admin" ? "Growpefy" : "the store"} to confirm`}
+                <p className={`text-xs ${p.status === "confirmed" ? "text-good" : p.status === "rejected" ? "text-bad" : "text-amber-700"}`}>
+                  {p.status === "confirmed" ? `Accepted by ${p.confirmedBy ?? "the other side"}`
+                    : p.status === "rejected" ? `Rejected by ${p.confirmedBy ?? "the other side"}. Not counted.`
+                    : p.expired ? "Expired without an answer. Create a new entry."
+                    : `Waiting for ${p.confirmRole === "admin" ? "Growpefy" : "the store"} to accept${p.viaWhatsapp ? " on WhatsApp" : ""}`}
                 </p>
               </div>
               {p.canConfirm && (

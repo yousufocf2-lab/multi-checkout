@@ -391,7 +391,9 @@ export const profitPayments = pgTable(
     createdByRole: text("created_by_role").notNull(), // admin | owner
     createdBy: text("created_by").notNull(),
     confirmRole: text("confirm_role").notNull(), // other party must confirm
-    status: text("status").notNull().default("pending"), // pending | confirmed | expired
+    status: text("status").notNull().default("pending"), // pending | confirmed | rejected | expired
+    waPhone: text("wa_phone"), // the 10-digit number the WhatsApp (I accept / I reject) went to; only it can answer
+    respondedVia: text("responded_via"), // whatsapp | code
     otpHash: text("otp_hash"),
     otpExpiresAt: timestamp("otp_expires_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),

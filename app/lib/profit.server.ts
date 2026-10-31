@@ -8,7 +8,7 @@ import { metaReady } from "./ads.server";
 import { profitStart, syncNativeOrders, nativeSyncStatus, NATIVE_HISTORY_DAYS } from "./native-orders.server";
 import { storeGateways } from "./gateways/index.server";
 import { env } from "./env.server";
-import { messaging } from "./rto.server";
+import { messaging, sendWhatsappText } from "./rto.server";
 import { formatINR } from "./pricing";
 
 const istToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -65,7 +65,18 @@ async function sendProfitEmail(to: string, store: Store, code: string, creator: 
   return Boolean(res?.ok);
 }
 
-async function sendProfitOtp(store: Store, recipient: { phone: string | null; email: string | null }, code: string, creator: string, amountPaise: number, direction: PaymentDirection) {
+type Entry = { id: string; amountPaise: number; paymentDate: string; note: string | null; direction: PaymentDirection };
+const entryDate = (d: string) => new Date(`${d}T12:00:00+05:30`).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
+/** WhatsApp template parameters can't be empty or contain line breaks / long runs of spaces. */
+const waParam = (t: string, max = 120) => (t.replace(/\s+/g, " ").trim() || "-").slice(0, max);
+
+/**
+ * WhatsApp to the other side with the entry's details and I accept / I reject buttons (approved Utility template:
+ * {{1}} store, {{2}} who recorded it, {{3}} amount, {{4}} type, {{5}} date, {{6}} note; quick replies 0 = accept, 1 = reject).
+ * Older templates (4 variables with a code, or an Authentication copy-code template) still work. The email carries
+ * the code, which can also be typed in the dashboard.
+ */
+async function sendProfitOtp(store: Store, recipient: { phone: string | null; email: string | null }, code: string, creator: string, entry: Entry) {
   const m = await messaging();
   const sends: Promise<boolean>[] = [];
   if (recipient.phone && m.waPhoneNumberId && m.waToken && m.profitOtpTemplate) {
@@ -81,22 +92,26 @@ async function sendProfitOtp(store: Store, recipient: { phone: string | null; em
           signal: AbortSignal.timeout(10_000),
         }).catch(() => null);
         if (!res) return false;
-        const body = await res.json().catch(() => ({})) as { messages?: unknown[] };
+        const body = await res.json().catch(() => ({})) as { messages?: unknown[]; error?: { message?: string } };
+        if (!res.ok) console.warn("[profit] WhatsApp:", body.error?.message);
         return Boolean(res.ok && body.messages?.length);
       };
-      // Utility template: {{1}} store, {{2}} who recorded it, {{3}} amount, {{4}} code
-      const detailed = [{ type: "body", parameters: [store.name, direction === "to_store" ? `${creator} (given to the store)` : creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }];
-      // Authentication template (Meta's fixed "{{1}} is your verification code" with a Copy code button): just the code
+      const amount = formatINR(entry.amountPaise);
+      const buttons = [
+        { type: "body", parameters: [store.name, creator, amount, DIRECTION_TEXT[entry.direction], entryDate(entry.paymentDate), entry.note ?? ""].map((t) => ({ type: "text", text: waParam(t) })) },
+        ...(["accept", "reject"] as const).map((a, i) => ({ type: "button", sub_type: "quick_reply", index: String(i), parameters: [{ type: "payload", payload: `pp:${a}:${entry.id}` }] })),
+      ];
+      const detailed = [{ type: "body", parameters: [store.name, entry.direction === "to_store" ? `${creator} (given to the store)` : creator, amount, code].map((text) => ({ type: "text", text: waParam(text, 60) })) }];
       const auth = [
         { type: "body", parameters: [{ type: "text", text: code }] },
         { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: code }] },
       ];
-      return (await send(detailed)) || (await send(auth));
+      return (await send(buttons)) || (await send(detailed)) || (await send(auth));
     })());
   }
-  if (recipient.email) sends.push(sendProfitEmail(recipient.email, store, code, creator, amountPaise, direction));
+  if (recipient.email) sends.push(sendProfitEmail(recipient.email, store, code, creator, entry.amountPaise, entry.direction));
   const results = await Promise.all(sends.map((p) => p.catch(() => false)));
-  if (!results.some(Boolean)) throw new Error("Couldn't send the confirmation code. Set a valid email with RESEND_API_KEY or configure WhatsApp and its approved template.");
+  if (!results.some(Boolean)) throw new Error("Couldn't send the confirmation. Set a valid email with RESEND_API_KEY or configure WhatsApp and its approved template.");
 }
 
 /**
@@ -123,11 +138,12 @@ export async function createProfitPayment(store: Store, input: { amountPaise: nu
   if (!recipient.phone && !recipient.email) throw new Error(targetRole === "admin" ? "Set the Super Admin email or WhatsApp number in All wallets → Settings → Messaging first." : "This store owner has no valid mobile number or email on their account, so confirmation can't be sent.");
   const id = crypto.randomUUID();
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
-  await sendProfitOtp(store, recipient, code, input.role === "admin" ? "Growpefy Super Admin" : "The store", input.amountPaise, input.direction);
+  const note = input.note?.slice(0, 200) || null;
+  await sendProfitOtp(store, recipient, code, input.role === "admin" ? "Growpefy" : store.name, { id, amountPaise: input.amountPaise, paymentDate: input.paymentDate, note, direction: input.direction });
   const expiresAt = new Date(Date.now() + PAYMENT_OTP_TTL_MS);
   await db.insert(profitPayments).values({
-    id, storeId: store.id, amountPaise: input.amountPaise, direction: input.direction, paymentDate: input.paymentDate, note: input.note?.slice(0, 200) || null,
-    createdByRole: input.role, createdBy: input.name.slice(0, 120), confirmRole: targetRole,
+    id, storeId: store.id, amountPaise: input.amountPaise, direction: input.direction, paymentDate: input.paymentDate, note,
+    createdByRole: input.role, createdBy: input.name.slice(0, 120), confirmRole: targetRole, waPhone: recipient.phone,
     otpHash: paymentOtpHash(id, code), otpExpiresAt: expiresAt,
   });
   return { id, expiresAt };
@@ -138,19 +154,55 @@ export async function confirmProfitPayment(id: string, storeId: number, code: st
   return db.transaction(async (tx) => {
     const [row] = await tx.select().from(profitPayments).where(and(eq(profitPayments.id, id), eq(profitPayments.storeId, storeId))).limit(1);
     if (!row || row.status !== "pending" || row.confirmRole !== role || !row.otpHash) return "unavailable" as const;
-    if (!row.otpExpiresAt || row.otpExpiresAt.getTime() < Date.now()) {
-      await tx.update(profitPayments).set({ status: "expired", otpHash: null }).where(eq(profitPayments.id, id));
-      return "expired" as const;
-    }
+    // The code expires after 10 minutes; the entry itself stays open for the WhatsApp buttons
+    if (!row.otpExpiresAt || row.otpExpiresAt.getTime() < Date.now()) return "expired" as const;
     const want = Buffer.from(row.otpHash, "hex"), got = Buffer.from(paymentOtpHash(id, code), "hex");
     if (!/^\d{6}$/.test(code) || want.length !== got.length || !crypto.timingSafeEqual(want, got)) {
       const attempts = row.attempts + 1;
-      await tx.update(profitPayments).set({ attempts, ...(attempts >= PAYMENT_OTP_MAX_ATTEMPTS ? { status: "expired", otpHash: null } : {}) }).where(eq(profitPayments.id, id));
+      await tx.update(profitPayments).set({ attempts, ...(attempts >= PAYMENT_OTP_MAX_ATTEMPTS ? { otpHash: null, otpExpiresAt: null } : {}) }).where(eq(profitPayments.id, id));
       return attempts >= PAYMENT_OTP_MAX_ATTEMPTS ? "locked" as const : "incorrect" as const;
     }
-    await tx.update(profitPayments).set({ status: "confirmed", confirmedBy: name.slice(0, 120), confirmedAt: new Date(), otpHash: null, otpExpiresAt: null }).where(eq(profitPayments.id, id));
+    await tx.update(profitPayments).set({ status: "confirmed", confirmedBy: name.slice(0, 120), confirmedAt: new Date(), otpHash: null, otpExpiresAt: null, respondedVia: "code" }).where(eq(profitPayments.id, id));
     return "confirmed" as const;
   });
+}
+
+/** How long the WhatsApp I accept / I reject buttons stay valid. */
+export const PAYMENT_REPLY_DAYS = 7;
+
+/**
+ * I accept / I reject tapped on the payment WhatsApp. Only the number it was sent to can answer, once, within
+ * PAYMENT_REPLY_DAYS. Returns false when the message isn't a payment reply (so other handlers can look at it).
+ */
+export async function handleProfitReply(msg: { from?: string; button?: { payload?: string }; interactive?: { button_reply?: { id?: string } } }) {
+  const payload = msg.button?.payload ?? msg.interactive?.button_reply?.id ?? "";
+  const p = /^pp:(accept|reject):([0-9a-f-]{36})$/.exec(payload);
+  if (!p) return false;
+  const [, act, id] = p;
+  const from = (msg.from ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
+  const m = await messaging();
+  const reply = (text: string) => sendWhatsappText(m, "91" + from, text).catch(() => {});
+  const [row] = await db.select().from(profitPayments).where(eq(profitPayments.id, id)).limit(1);
+  if (!row || !row.waPhone || row.waPhone !== from) { console.warn(`[profit] reply for ${id} from a different number`); return true; }
+  const [store] = await db.select({ name: stores.name }).from(stores).where(eq(stores.id, row.storeId)).limit(1);
+  const what = `${formatINR(row.amountPaise)} (${DIRECTION_TEXT[row.direction === "to_store" ? "to_store" : "to_growpefy"].toLowerCase()}, ${entryDate(row.paymentDate)}) for ${store?.name ?? "the store"}`;
+  if (row.status !== "pending") {
+    await reply(`This entry of ${what} was already ${row.status === "confirmed" ? "accepted ✅" : row.status === "rejected" ? "rejected ❌" : "closed"}.`);
+    return true;
+  }
+  if (Date.now() - row.createdAt.getTime() > PAYMENT_REPLY_DAYS * 86400_000) {
+    await db.update(profitPayments).set({ status: "expired", otpHash: null }).where(eq(profitPayments.id, id));
+    await reply(`This entry of ${what} is more than ${PAYMENT_REPLY_DAYS} days old and has expired. Please ask for a new entry.`);
+    return true;
+  }
+  const done = await db.update(profitPayments).set({
+    status: act === "accept" ? "confirmed" : "rejected", confirmedBy: `WhatsApp +91 ${from}`, confirmedAt: new Date(),
+    otpHash: null, otpExpiresAt: null, respondedVia: "whatsapp",
+  }).where(and(eq(profitPayments.id, id), eq(profitPayments.status, "pending"))).returning({ id: profitPayments.id });
+  if (done.length) await reply(act === "accept"
+    ? `✅ Accepted. The entry of ${what} is now added to the Growpefy account.`
+    : `❌ Rejected. The entry of ${what} was not added. Please contact the other side if this is a mistake.`);
+  return true;
 }
 
 type SettlementResponse = { status: number; message?: string; result?: { page?: number; size?: number; totalCount?: number; data?: {

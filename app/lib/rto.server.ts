@@ -311,7 +311,7 @@ export function verifyMetaSignature(raw: string, header: string | null, appSecre
   return got.length === expected.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
 }
 
-async function sendWhatsappText(m: MessagingSettings, to: string, text: string, log?: { storeId: number; orderId: string }) {
+export async function sendWhatsappText(m: MessagingSettings, to: string, text: string, log?: { storeId: number; orderId: string }) {
   try {
     const res = await fetch(`https://graph.facebook.com/v21.0/${m.waPhoneNumberId}/messages`, {
       method: "POST",

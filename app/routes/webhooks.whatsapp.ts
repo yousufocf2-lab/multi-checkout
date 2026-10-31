@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { recordInbound, updateStatus } from "~/lib/inbox.server";
 import { handleWhatsappReply, messaging, verifyMetaSignature } from "~/lib/rto.server";
+import { handleProfitReply } from "~/lib/profit.server";
 
 /**
  * Meta WhatsApp Cloud API webhook.
@@ -39,6 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
       for (const msg of c.value?.messages ?? []) {
         const name = c.value?.contacts?.find((x) => x.wa_id === msg.from)?.profile?.name;
         try { await recordInbound(msg, name); } catch (err) { console.error("[inbox] inbound:", err instanceof Error ? err.message : err); }
+        try { if (await handleProfitReply(msg)) continue; } catch (err) { console.error("[profit] reply:", err instanceof Error ? err.message : err); }
         try { await handleWhatsappReply(msg); } catch (err) { console.error("[whatsapp] reply:", err instanceof Error ? err.message : err); }
       }
     }
