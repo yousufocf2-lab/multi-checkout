@@ -19,7 +19,7 @@ function addDays(day: string, n: number) {
   return d.toISOString().slice(0, 10);
 }
 const moneyPaise = (v: unknown) => Math.round(Number(v ?? 0) * 100);
-type DailyProfit = { day: string; orders: number; revenue: number; settlement: number; adSpend: number; adCostWithGst: number; dropship: number; payments: number; net: number; cumulative: number; growpefyShare: number; growpefyBalance: number; storeShare: number };
+type DailyProfit = { day: string; orders: number; revenue: number; settlement: number; adSpend: number; adCostWithGst: number; dropship: number; payments: number; advances: number; net: number; cumulative: number; growpefyShare: number; growpefyBalance: number; storeShare: number };
 
 const PAYMENT_OTP_TTL_MS = 10 * 60_000;
 const PAYMENT_OTP_MAX_ATTEMPTS = 5;
@@ -37,12 +37,16 @@ function emailAddress(raw: string | null | undefined) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 }
 
-async function sendProfitEmail(to: string, store: Store, code: string, creator: string, amountPaise: number) {
+export type PaymentDirection = "to_growpefy" | "to_store";
+const DIRECTION_TEXT: Record<PaymentDirection, string> = { to_growpefy: "Store paid Growpefy", to_store: "Growpefy gave the store" };
+
+async function sendProfitEmail(to: string, store: Store, code: string, creator: string, amountPaise: number, direction: PaymentDirection) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return false;
   const text = [
     "A direct payment needs your confirmation in Growpefy.",
     "Store: " + store.name,
+    "Payment: " + DIRECTION_TEXT[direction],
     "Reported by: " + creator,
     "Amount: " + formatINR(amountPaise),
     "Confirmation code: " + code,
@@ -54,14 +58,14 @@ async function sendProfitEmail(to: string, store: Store, code: string, creator: 
     headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: process.env.MAIL_FROM || "Growpefy <no-reply@growpefy.com>",
-      to: [to], subject: "Confirm direct payment · " + store.name, text,
+      to: [to], subject: (direction === "to_store" ? "Confirm money given by Growpefy · " : "Confirm direct payment · ") + store.name, text,
     }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => null);
   return Boolean(res?.ok);
 }
 
-async function sendProfitOtp(store: Store, recipient: { phone: string | null; email: string | null }, code: string, creator: string, amountPaise: number) {
+async function sendProfitOtp(store: Store, recipient: { phone: string | null; email: string | null }, code: string, creator: string, amountPaise: number, direction: PaymentDirection) {
   const m = await messaging();
   const sends: Promise<boolean>[] = [];
   if (recipient.phone && m.waPhoneNumberId && m.waToken && m.profitOtpTemplate) {
@@ -71,7 +75,7 @@ async function sendProfitOtp(store: Store, recipient: { phone: string | null; em
         headers: { Authorization: "Bearer " + m.waToken, "Content-Type": "application/json" },
         body: JSON.stringify({
           messaging_product: "whatsapp", to: "91" + recipient.phone, type: "template",
-          template: { name: m.profitOtpTemplate, language: { code: m.waLang || "en" }, components: [{ type: "body", parameters: [store.name, creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }] },
+          template: { name: m.profitOtpTemplate, language: { code: m.waLang || "en" }, components: [{ type: "body", parameters: [store.name, direction === "to_store" ? `${creator} (given to the store)` : creator, formatINR(amountPaise), code].map((text) => ({ type: "text", text: text.slice(0, 60) })) }] },
         }),
         signal: AbortSignal.timeout(10_000),
       }).catch(() => null);
@@ -80,13 +84,17 @@ async function sendProfitOtp(store: Store, recipient: { phone: string | null; em
       return Boolean(res.ok && body.messages?.length);
     })());
   }
-  if (recipient.email) sends.push(sendProfitEmail(recipient.email, store, code, creator, amountPaise));
+  if (recipient.email) sends.push(sendProfitEmail(recipient.email, store, code, creator, amountPaise, direction));
   const results = await Promise.all(sends.map((p) => p.catch(() => false)));
   if (!results.some(Boolean)) throw new Error("Couldn't send the confirmation code. Set a valid email with RESEND_API_KEY or configure WhatsApp and its approved template.");
 }
 
-/** Creates a pending direct-payment entry; it affects profit balance only after the other party confirms. */
-export async function createProfitPayment(store: Store, input: { amountPaise: number; paymentDate: string; note: string | null; role: "admin" | "owner"; name: string }) {
+/**
+ * Creates a pending direct-payment entry; it affects the balance only after the other party confirms.
+ * to_growpefy (store paid its share) lowers what Growpefy is owed; to_store (Growpefy gave the store money) raises it.
+ */
+export async function createProfitPayment(store: Store, input: { amountPaise: number; paymentDate: string; note: string | null; role: "admin" | "owner"; name: string; direction: PaymentDirection }) {
+  if (input.direction !== "to_growpefy" && input.direction !== "to_store") throw new Error("Choose who paid whom.");
   if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0 || input.amountPaise > 2_147_483_647) throw new Error("Enter a valid payment amount.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate) || input.paymentDate > istToday()) throw new Error("Choose a valid payment date (today or earlier).");
   if (new Date(input.paymentDate + "T00:00:00Z").toISOString().slice(0, 10) !== input.paymentDate) throw new Error("Choose a real calendar date.");
@@ -105,10 +113,10 @@ export async function createProfitPayment(store: Store, input: { amountPaise: nu
   if (!recipient.phone && !recipient.email) throw new Error(targetRole === "admin" ? "Set the Super Admin email or WhatsApp number in All wallets → Settings → Messaging first." : "This store owner has no valid mobile number or email on their account, so confirmation can't be sent.");
   const id = crypto.randomUUID();
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
-  await sendProfitOtp(store, recipient, code, input.role === "admin" ? "Growpefy Super Admin" : "The store", input.amountPaise);
+  await sendProfitOtp(store, recipient, code, input.role === "admin" ? "Growpefy Super Admin" : "The store", input.amountPaise, input.direction);
   const expiresAt = new Date(Date.now() + PAYMENT_OTP_TTL_MS);
   await db.insert(profitPayments).values({
-    id, storeId: store.id, amountPaise: input.amountPaise, paymentDate: input.paymentDate, note: input.note?.slice(0, 200) || null,
+    id, storeId: store.id, amountPaise: input.amountPaise, direction: input.direction, paymentDate: input.paymentDate, note: input.note?.slice(0, 200) || null,
     createdByRole: input.role, createdBy: input.name.slice(0, 120), confirmRole: targetRole,
     otpHash: paymentOtpHash(id, code), otpExpiresAt: expiresAt,
   });
@@ -248,7 +256,7 @@ export async function profitReport(store: Store) {
   }).from(shopifyNativeOrders).where(and(eq(shopifyNativeOrders.storeId, store.id), eq(shopifyNativeOrders.cancelled, false), gte(shopifyNativeOrders.createdAt, from), lt(shopifyNativeOrders.createdAt, to)))
     .groupBy(sql`1`) : [];
   const settlementRows = await db.select().from(profitSettlements).where(and(eq(profitSettlements.storeId, store.id), gte(profitSettlements.settlementDate, since), lt(profitSettlements.settlementDate, addDays(until, 1))));
-  const paymentRows = await db.select({ paymentDate: profitPayments.paymentDate, amountPaise: profitPayments.amountPaise })
+  const paymentRows = await db.select({ paymentDate: profitPayments.paymentDate, amountPaise: profitPayments.amountPaise, direction: profitPayments.direction })
     .from(profitPayments).where(and(eq(profitPayments.storeId, store.id), eq(profitPayments.status, "confirmed"), gte(profitPayments.paymentDate, since), lt(profitPayments.paymentDate, addDays(until, 1))));
   const walletRows = await db.select({
     day: sql<string>`to_char(${walletTransactions.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`,
@@ -257,35 +265,38 @@ export async function profitReport(store: Store) {
     .where(and(eq(wallets.storeId, store.id), inArray(walletTransactions.type, ["dropship_product", "dropship_shipping", "dropship_packing", "dropship_rto", "dropship_refund"]), gte(walletTransactions.createdAt, from), lt(walletTransactions.createdAt, to)))
     .groupBy(sql`1`);
 
-  const map = new Map<string, { orders: number; revenue: number; settlement: number; adSpend: number; dropship: number; payments: number }>();
-  const rowFor = (d: string) => { const r = map.get(d) ?? { orders: 0, revenue: 0, settlement: 0, adSpend: 0, dropship: 0, payments: 0 }; map.set(d, r); return r; };
+  const map = new Map<string, { orders: number; revenue: number; settlement: number; adSpend: number; dropship: number; payments: number; advances: number }>();
+  const rowFor = (d: string) => { const r = map.get(d) ?? { orders: 0, revenue: 0, settlement: 0, adSpend: 0, dropship: 0, payments: 0, advances: 0 }; map.set(d, r); return r; };
   for (const s of localSales) { const r = rowFor(s.day); r.orders += Number(s.count); r.revenue += Number(s.revenue) / 100; }
   for (const s of nativeSales) { const r = rowFor(s.day); r.orders += Number(s.count); r.revenue += Number(s.revenue) / 100; }
   for (const s of settlementRows) rowFor(s.settlementDate).settlement += s.settlementAmount / 100;
   for (const [day, n] of Object.entries(metaResult?.series ?? {})) rowFor(day).adSpend += n;
   for (const [day, n] of Object.entries(googleResult?.series ?? {})) rowFor(day).adSpend += n;
   for (const w of walletRows) rowFor(w.day).dropship += Number(w.amount) / 100;
-  for (const p of paymentRows) rowFor(p.paymentDate).payments += p.amountPaise / 100;
+  for (const p of paymentRows) {
+    if (p.direction === "to_store") rowFor(p.paymentDate).advances += p.amountPaise / 100;
+    else rowFor(p.paymentDate).payments += p.amountPaise / 100;
+  }
 
   // Growpefy's share of net profit, set by the super admin (Store settings or Dropshipping)
   const share = store.profitShareBps / 10_000;
-  let cumulative = 0, paymentsReceived = 0;
+  let cumulative = 0, paymentsReceived = 0, advancesGiven = 0;
   const rows: DailyProfit[] = [];
   for (let day = since; day <= until; day = addDays(day, 1)) {
     const r = rowFor(day);
     const adCostWithGst = r.adSpend * 1.18;
     const net = r.settlement - adCostWithGst + r.dropship;
-    cumulative += net; paymentsReceived += r.payments;
+    cumulative += net; paymentsReceived += r.payments; advancesGiven += r.advances;
     const growpefyShare = cumulative * share;
-    rows.push({ day, orders: r.orders, revenue: round(r.revenue), settlement: round(r.settlement), adSpend: round(r.adSpend), adCostWithGst: round(adCostWithGst), dropship: round(r.dropship), payments: round(r.payments), net: round(net), cumulative: round(cumulative), growpefyShare: round(growpefyShare), growpefyBalance: round(growpefyShare - paymentsReceived), storeShare: round(cumulative * (1 - share)) });
+    rows.push({ day, orders: r.orders, revenue: round(r.revenue), settlement: round(r.settlement), adSpend: round(r.adSpend), adCostWithGst: round(adCostWithGst), dropship: round(r.dropship), payments: round(r.payments), advances: round(r.advances), net: round(net), cumulative: round(cumulative), growpefyShare: round(growpefyShare), growpefyBalance: round(growpefyShare - paymentsReceived + advancesGiven), storeShare: round(cumulative * (1 - share)) });
   }
   if (!metaResult && !googleResult) warnings.push("No Meta or Google ad account is connected; ads costs are not included.");
   if (!settlementRows.length && !settleWarn) warnings.push("No PayU settlement records were returned for this period yet.");
   const nativeFloor = addDays(until, -(NATIVE_HISTORY_DAYS - 1));
   if (store.platform === "shopify" && since < nativeFloor) warnings.push(`Shopify gives orders from its own checkout for the last ${NATIVE_HISTORY_DAYS} days only, so those orders show from ${nativeFloor}. Settlements and ad costs count from ${since}.`);
   const last = rows.at(-1);
-  const totals = rows.reduce((a, r) => ({ orders: a.orders + r.orders, revenue: a.revenue + r.revenue, settlement: a.settlement + r.settlement, adCostWithGst: a.adCostWithGst + r.adCostWithGst, payments: a.payments + r.payments }),
-    { orders: 0, revenue: 0, settlement: 0, adCostWithGst: 0, payments: 0 });
+  const totals = rows.reduce((a, r) => ({ orders: a.orders + r.orders, revenue: a.revenue + r.revenue, settlement: a.settlement + r.settlement, adCostWithGst: a.adCostWithGst + r.adCostWithGst, payments: a.payments + r.payments, advances: a.advances + r.advances }),
+    { orders: 0, revenue: 0, settlement: 0, adCostWithGst: 0, payments: 0, advances: 0 });
   const { upcoming, lastSettlement } = await upcomingSettlements(store, since, settlementRows.map((x) => x.settlementDate));
   const codDays = await db.select({ n: sql<number>`count(*)::int` }).from(orders)
     .where(and(eq(orders.storeId, store.id), inArray(orders.paymentMethod, ["cod", "partial"]), inArray(orders.status, ["cod_placed", "paid"]), gte(orders.createdAt, from)));

@@ -43,13 +43,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     lastSettlement: raw.lastSettlement, upcoming: raw.upcoming,
     nativeSyncedAt: raw.native?.at ?? null,
     overall: t ? {
-      cumulative: t.cumulative, storeShare: t.storeShare, payments: t.payments,
+      cumulative: t.cumulative, storeShare: t.storeShare, payments: t.payments, advances: t.advances,
       growpefyShare: admin ? t.growpefyShare : null, growpefyBalance: admin ? t.growpefyBalance : null,
     } : null,
     inRange,
     rows: rows.map((x) => ({ ...x, growpefyShare: admin ? x.growpefyShare : null, growpefyBalance: admin ? x.growpefyBalance : null })),
     payments: payments.map((p) => ({
-      id: p.id, amount: p.amountPaise, date: p.paymentDate, note: p.note, createdBy: p.createdBy, confirmedBy: p.confirmedBy,
+      id: p.id, amount: p.amountPaise, direction: p.direction === "to_store" ? "to_store" as const : "to_growpefy" as const, date: p.paymentDate, note: p.note, createdBy: p.createdBy, confirmedBy: p.confirmedBy,
       status: p.status, confirmRole: p.confirmRole,
       expired: p.status === "pending" && (!p.otpExpiresAt || p.otpExpiresAt.getTime() < Date.now()),
       canConfirm: canManage && p.status === "pending" && Boolean(p.otpExpiresAt && p.otpExpiresAt.getTime() >= Date.now()) && p.confirmRole === viewer.role,
@@ -69,6 +69,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const amountPaise = Math.round(Number(String(fd.get("amount") ?? "").replace(/[₹,\s]/g, "")) * 100);
       await createProfitPayment(store, {
         amountPaise, paymentDate: String(fd.get("paymentDate") ?? ""),
+        direction: fd.get("direction") === "to_store" ? "to_store" : "to_growpefy",
         note: String(fd.get("note") ?? "").trim().slice(0, 200) || null, role: viewer.role, name: viewer.name,
       });
       return json({ ok: "A 6-digit confirmation code was sent to the other party. The entry changes the balance only after they confirm.", error: null });
@@ -134,8 +135,8 @@ export default function ProfitShare() {
                 </p>
                 <p className="mt-3 text-sm text-white/75">
                   {d.admin
-                    ? <>Share earned {signed(o.growpefyShare ?? 0)} − paid directly {inr(o.payments)}</>
-                    : <>Your share of {(o.cumulative < 0 ? "−" : "") + inr(o.cumulative)} net profit since {dateLabel(d.since)}</>}
+                    ? <>Share earned {signed(o.growpefyShare ?? 0)} − paid directly {inr(o.payments)}{o.advances ? <> + given to the store {inr(o.advances)}</> : null}</>
+                    : <>Your share of {(o.cumulative < 0 ? "−" : "") + inr(o.cumulative)} net profit since {dateLabel(d.since)}{o.advances ? <> · received from Growpefy {inr(o.advances)}</> : null}</>}
                 </p>
               </div>
               <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
@@ -336,11 +337,21 @@ function Payments({ d }: { d: D }) {
     <section className="panel">
       <div className="border-b border-rule px-5 py-4">
         <h2 className="text-[15px] font-semibold">Direct payments between the store and Growpefy</h2>
-        <p className="mt-0.5 text-xs text-ink-faint">Only confirmed entries change the balance. The other side confirms with a 6-digit code sent on WhatsApp and email.</p>
+        <p className="mt-0.5 text-xs text-ink-faint">Both ways: the store paying Growpefy its share, or Growpefy giving the store money (it's added to what the store owes). Only confirmed entries change the balance. The other side confirms with a 6-digit code sent on WhatsApp and email.</p>
       </div>
       {d.canManage && (
         <Form method="post" className="grid gap-3 border-b border-rule p-5 sm:grid-cols-4">
           <input type="hidden" name="intent" value="createPayment" />
+          <fieldset className="sm:col-span-4">
+            <legend className="label">Who paid whom</legend>
+            <div className="flex flex-wrap gap-2">
+              {([["to_growpefy", "Store paid Growpefy"], ["to_store", "Growpefy gave the store"]] as const).map(([v, label], i) => (
+                <label key={v} className="flex cursor-pointer items-center gap-2 rounded-lg border border-rule px-3 py-2 text-sm has-[:checked]:border-pine has-[:checked]:bg-emerald-50">
+                  <input type="radio" name="direction" value={v} defaultChecked={i === 0} className="accent-[#0B5D4B]" />{label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <label className="block"><span className="label">Amount (₹)</span><input name="amount" type="number" min="0.01" step="0.01" required className="input" /></label>
           <label className="block"><span className="label">Payment date</span><input name="paymentDate" type="date" min={d.since} max={today} defaultValue={today} required className="input" /></label>
           <label className="block sm:col-span-2"><span className="label">Reference / note (optional)</span><input name="note" maxLength={200} className="input" placeholder="UPI / bank reference" /></label>
@@ -352,7 +363,11 @@ function Payments({ d }: { d: D }) {
           {d.payments.map((p) => (
             <div key={p.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
               <div className="min-w-0 flex-1">
-                <p className="num font-semibold">{paise(p.amount)} <span className="text-xs font-normal text-ink-faint">{dateLabel(p.date, true)}</span></p>
+                <p className="num font-semibold">
+                  <span className={p.direction === "to_store" ? "text-bad" : "text-good"}>{p.direction === "to_store" ? "↑ " : "↓ "}{paise(p.amount)}</span>{" "}
+                  <span className="text-xs font-normal text-ink-soft">{p.direction === "to_store" ? "Growpefy gave the store" : "Store paid Growpefy"}</span>{" "}
+                  <span className="text-xs font-normal text-ink-faint">{dateLabel(p.date, true)}</span>
+                </p>
                 <p className="text-xs text-ink-soft">Entered by {p.createdBy}{p.note ? ` · ${p.note}` : ""}</p>
                 <p className={`text-xs ${p.status === "confirmed" ? "text-good" : "text-amber-700"}`}>
                   {p.status === "confirmed" ? `Confirmed by ${p.confirmedBy ?? "the other side"}` : p.expired || p.status === "expired" ? "Code expired. Create a new entry to confirm." : `Waiting for ${p.confirmRole === "admin" ? "Growpefy" : "the store"} to confirm`}

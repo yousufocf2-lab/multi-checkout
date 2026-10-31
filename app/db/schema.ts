@@ -384,6 +384,8 @@ export const profitPayments = pgTable(
     id: text("id").primaryKey(),
     storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
     amountPaise: integer("amount_paise").notNull(),
+    // to_growpefy = the store paid Growpefy its share; to_store = Growpefy gave the store money (advance / loan)
+    direction: text("direction").notNull().default("to_growpefy"),
     paymentDate: text("payment_date").notNull(), // date the transfer was made
     note: text("note"),
     createdByRole: text("created_by_role").notNull(), // admin | owner
