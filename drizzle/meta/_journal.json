@@ -288,6 +288,13 @@
       "when": 1793440000400,
       "tag": "0040_profit_payment_whatsapp",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793440000500,
+      "tag": "0041_admin_whatsapp_inbox",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import { profitStart, syncNativeOrders, nativeSyncStatus, NATIVE_HISTORY_DAYS } 
 import { storeGateways } from "./gateways/index.server";
 import { env } from "./env.server";
 import { messaging, sendWhatsappText } from "./rto.server";
+import { logAdminOutbound } from "./admin-inbox.server";
 import { formatINR } from "./pricing";
 
 const istToday = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
@@ -92,9 +93,13 @@ async function sendProfitOtp(store: Store, recipient: { phone: string | null; em
           signal: AbortSignal.timeout(10_000),
         }).catch(() => null);
         if (!res) return false;
-        const body = await res.json().catch(() => ({})) as { messages?: unknown[]; error?: { message?: string } };
+        const body = await res.json().catch(() => ({})) as { messages?: { id: string }[]; error?: { message?: string } };
         if (!res.ok) console.warn("[profit] WhatsApp:", body.error?.message);
-        return Boolean(res.ok && body.messages?.length);
+        if (res.ok && body.messages?.length) {
+          await logAdminOutbound(recipient.phone!, { kind: "template", body: `Payment entry for ${store.name}: ${formatINR(entry.amountPaise)} · ${DIRECTION_TEXT[entry.direction]} · ${entryDate(entry.paymentDate)}${entry.note ? ` · ${entry.note}` : ""}`, waMessageId: body.messages[0].id, sentBy: `${creator} (automatic)` });
+          return true;
+        }
+        return false;
       };
       const amount = formatINR(entry.amountPaise);
       const buttons = [
@@ -181,7 +186,10 @@ export async function handleProfitReply(msg: { from?: string; button?: { payload
   const [, act, id] = p;
   const from = (msg.from ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
   const m = await messaging();
-  const reply = (text: string) => sendWhatsappText(m, "91" + from, text).catch(() => {});
+  const reply = async (text: string) => {
+    await sendWhatsappText(m, "91" + from, text).catch(() => {});
+    await logAdminOutbound(from, { kind: "auto", body: text, sentBy: "Growpefy (automatic)" });
+  };
   const [row] = await db.select().from(profitPayments).where(eq(profitPayments.id, id)).limit(1);
   if (!row || !row.waPhone || row.waPhone !== from) { console.warn(`[profit] reply for ${id} from a different number`); return true; }
   const [store] = await db.select({ name: stores.name }).from(stores).where(eq(stores.id, row.storeId)).limit(1);

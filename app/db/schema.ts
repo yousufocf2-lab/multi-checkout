@@ -127,6 +127,40 @@ export const waMessages = pgTable(
   (t) => [index("wa_msg_conv_idx").on(t.conversationId, t.createdAt), index("wa_msg_wamid_idx").on(t.waMessageId)],
 );
 
+/**
+ * Growpefy's own WhatsApp inbox (super admin): leads, signups and anyone else who messages Growpefy's number,
+ * plus what Growpefy sent them (welcome messages, payment entries, replies). Store order chats stay in wa_conversations.
+ */
+export const adminWaConversations = pgTable(
+  "admin_wa_conversations",
+  {
+    id: serial("id").primaryKey(),
+    phone: text("phone").notNull(), // 10 digits
+    name: text("name").notNull().default(""),
+    lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    unread: integer("unread").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("admin_wa_conv_phone_idx").on(t.phone), index("admin_wa_conv_last_idx").on(t.lastMessageAt)],
+);
+
+export const adminWaMessages = pgTable(
+  "admin_wa_messages",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id").notNull().references(() => adminWaConversations.id, { onDelete: "cascade" }),
+    direction: text("direction").notNull(), // in | out
+    kind: text("kind").notNull(), // template | text | button | auto | followup | media
+    body: text("body").notNull(),
+    waMessageId: text("wa_message_id"),
+    status: text("status"), // sent | delivered | read | failed
+    sentBy: text("sent_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("admin_wa_msg_conv_idx").on(t.conversationId, t.createdAt), index("admin_wa_msg_wamid_idx").on(t.waMessageId)],
+);
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 /** KYC documents (PAN card, GST certificate…) uploaded by store owners. Kept in the database, max 5 MB each. */

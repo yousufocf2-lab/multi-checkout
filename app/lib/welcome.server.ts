@@ -6,7 +6,8 @@ import { callbackRequests, db, leadMessages, metaLeads, users, type LeadMessage,
 import { getMarketing, saveMarketing } from "./marketing.server";
 import { messaging } from "./rto.server";
 import { syncMetaLeads } from "./leads.server";
-import { WELCOME_DEFAULTS, fillName, greetName } from "./welcome";
+import { WA_TEMPLATE_TEXT, WELCOME_DEFAULTS, fillName, greetName } from "./welcome";
+import { logAdminOutbound } from "./admin-inbox.server";
 import { appWelcomeEmail, welcomeEmail } from "./welcome-email.server";
 import { isAppLead } from "./leads";
 import { getPlatform } from "./wallet.server";
@@ -141,7 +142,11 @@ async function sendWhatsapp(row: LeadMessage, s: Awaited<ReturnType<typeof getWe
     signal: AbortSignal.timeout(10_000),
   }).catch((e) => ({ ok: false, status: 0, json: async () => ({ error: { message: e instanceof Error ? e.message : String(e) } }) }) as unknown as Response);
   const body = (await res.json().catch(() => ({}))) as { messages?: { id: string }[]; error?: { message?: string; code?: number } };
-  if (res.ok && body.messages?.length) return { ok: true, id: body.messages[0].id };
+  if (res.ok && body.messages?.length) {
+    const text = (WA_TEMPLATE_TEXT[row.msg as keyof typeof WA_TEMPLATE_TEXT] ?? "").replace(/\{\{1\}\}/g, greetName(row.name));
+    await logAdminOutbound(row.target, { kind: "template", body: text || `Welcome message (${template})`, waMessageId: body.messages[0].id, name: row.name, sentBy: "Growpefy (automatic)" });
+    return { ok: true, id: body.messages[0].id };
+  }
   const code = body.error?.code;
   const msg = `${code ? `(#${code}) ` : ""}${body.error?.message ?? `WhatsApp error ${res.status}`}`.slice(0, 300);
   // A wrong or non-WhatsApp number won't work later either; anything else (number or template not approved yet,

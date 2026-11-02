@@ -9,6 +9,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, waConversations, waMessages, type Store } from "~/db.server";
 import { messaging, waApproved, waReady } from "./rto.server";
 import { chargeUsage } from "./wallet.server";
+import { adminConvByPhone, adminMessageConv, recordAdminInbound, updateAdminStatus } from "./admin-inbox.server";
 
 export const WINDOW_MS = 24 * 3600_000;
 
@@ -57,7 +58,7 @@ function inboundBody(msg: InboundMessage) {
 /**
  * Saves a customer message to the right store's conversation:
  * the store whose message they replied to, else the store that messaged this number most recently.
- * Numbers Growpefy never messaged are ignored.
+ * Everything else (leads, signups, numbers no store messaged) goes to Growpefy's own inbox (admin-inbox.server.ts).
  */
 export async function recordInbound(msg: InboundMessage, profileName?: string) {
   const phone = (msg.from ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
@@ -65,17 +66,24 @@ export async function recordInbound(msg: InboundMessage, profileName?: string) {
   const [dupe] = await db.select({ id: waMessages.id }).from(waMessages).where(eq(waMessages.waMessageId, msg.id)).limit(1);
   if (dupe) return null; // Meta retries webhooks
 
+  const { kind, body } = inboundBody(msg);
   let convId: number | null = null;
   if (msg.context?.id) {
+    // A reply to something Growpefy's own inbox sent (welcome, payment entry, admin reply)
+    if (await adminMessageConv(msg.context.id)) { await recordAdminInbound(phone, msg.id, kind, body, profileName); return null; }
     const [replied] = await db.select({ conv: waMessages.conversationId }).from(waMessages).where(eq(waMessages.waMessageId, msg.context.id)).limit(1);
     convId = replied?.conv ?? null;
   }
   const [conv] = convId
     ? await db.select().from(waConversations).where(and(eq(waConversations.id, convId), eq(waConversations.phone, phone))).limit(1)
     : await db.select().from(waConversations).where(eq(waConversations.phone, phone)).orderBy(desc(waConversations.lastMessageAt)).limit(1);
-  if (!conv) return null;
+  // Not a store customer, or Growpefy talked to them more recently than any store: Growpefy's own inbox
+  if (!conv) { await recordAdminInbound(phone, msg.id, kind, body, profileName); return null; }
+  if (!convId) {
+    const admin = await adminConvByPhone(phone);
+    if (admin && admin.lastMessageAt > conv.lastMessageAt) { await recordAdminInbound(phone, msg.id, kind, body, profileName); return null; }
+  }
 
-  const { kind, body } = inboundBody(msg);
   await db.insert(waMessages).values({ conversationId: conv.id, storeId: conv.storeId, direction: "in", kind, body: body.slice(0, 4000) || "(empty)", waMessageId: msg.id });
   await db.update(waConversations).set({
     lastInboundAt: new Date(), lastMessageAt: new Date(), unread: sql`${waConversations.unread} + 1`,
@@ -89,7 +97,8 @@ const RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 4
 export async function updateStatus(waMessageId: string | undefined, status: string | undefined) {
   if (!waMessageId || !status || !RANK[status]) return;
   const [m] = await db.select({ id: waMessages.id, status: waMessages.status }).from(waMessages).where(eq(waMessages.waMessageId, waMessageId)).limit(1);
-  if (!m || (RANK[m.status ?? ""] ?? 0) >= RANK[status]) return;
+  if (!m) { await updateAdminStatus(waMessageId, status); return; }
+  if ((RANK[m.status ?? ""] ?? 0) >= RANK[status]) return;
   await db.update(waMessages).set({ status }).where(eq(waMessages.id, m.id));
 }
 

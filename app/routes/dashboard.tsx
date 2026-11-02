@@ -19,6 +19,7 @@ import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
 import { supportBadge } from "~/lib/support.server";
 import { upcomingDemos } from "~/lib/leads.server";
+import { adminUnread } from "~/lib/admin-inbox.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
 
@@ -53,13 +54,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
     ? await db.select({ n: sql<number>`count(*)::int` }).from(storesTable).where(sql`${storesTable.waVerify}->>'status' = 'submitted'`).then((r) => Number(r[0]?.n ?? 0)).catch(() => 0)
     : 0;
   const connectPending = admin && can(viewer, "stores") ? await pendingConnectCount().catch(() => 0) : 0;
+  // Growpefy's own WhatsApp inbox: super admin only
+  const adminWa = admin && !viewer.staff ? await adminUnread().catch(() => 0) : null;
   const support = can(viewer, "support") || viewer.role === "owner" ? await supportBadge(viewer).catch(() => 0) : 0;
   // Nearest scheduled sales demo → reminder card on every page (admin side, with access to leads)
   const demos = admin && can(viewer, "leads") ? await upcomingDemos(5).catch(() => []) : [];
   const nextDemo: NextDemo | null = demos[0] ? { ...demos[0], more: demos.length - 1 } : null;
   const team = viewer.role === "admin" ? viewer.staff : viewer.member;
   return json({
-    dropshipAlerts, waPending, connectPending, support, nextDemo, login: nextDemo ? await loginStamp(request) : "",
+    dropshipAlerts, waPending, connectPending, support, nextDemo, adminWa, login: nextDemo ? await loginStamp(request) : "",
     viewer: {
       role: viewer.role, name: viewer.name, email: viewer.email,
       person: team?.name ?? (admin ? "Super admin" : viewer.name),
@@ -88,7 +91,7 @@ type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][numbe
 const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/;
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login } = useLoaderData<typeof loader>();
+  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -186,6 +189,7 @@ export default function DashboardLayout() {
         {may("leads") && <Item to="/dashboard/leads" icon="target">Leads</Item>}
         {may("clients") && <Item to="/dashboard/clients" icon="users">Clients</Item>}
         {may("support") && <Item to="/dashboard/support" icon="help">{labelled("Support inbox", badge(support))}</Item>}
+        {adminWa !== null && <Item to="/dashboard/whatsapp-inbox" icon="chat">{labelled("WhatsApp inbox", badge(adminWa))}</Item>}
         {may("marketing") && <Item to="/dashboard/marketing" icon="trend">Marketing</Item>}
       </Group>
       {(may("stores") || may("billing") || may("clients") || may("fulfilment")) && (
