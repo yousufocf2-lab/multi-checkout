@@ -13,6 +13,8 @@ export const CALLBACK_REASONS = [
   { id: "ads", label: "Meta ads & analytics" },
   { id: "whatsapp", label: "WhatsApp messages & recovery" },
   { id: "offers", label: "Discounts, coupons & offers" },
+  { id: "app", label: "I want an app for my business" },
+  { id: "website", label: "I want an online store or website" },
   { id: "partnership", label: "Partnership" },
   { id: "other", label: "Something else" },
 ] as const;

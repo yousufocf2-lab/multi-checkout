@@ -90,6 +90,7 @@ const NAV = [
   { to: "/#platform", label: "Product" },
   { to: "/#integrations", label: "Integrations" },
   { to: "/pricing", label: "Pricing" },
+  { to: "/services", label: "Services" },
   { to: "/about", label: "About" },
   { to: "/contact", label: "Contact" },
 ];
@@ -189,7 +190,7 @@ export function SiteLayout({ loggedIn, company, children }: { loggedIn: boolean;
             <p className="mt-1.5 flex items-center gap-2 text-xs text-slate-400"><Icon name="clock" className="h-3.5 w-3.5" />{SUPPORT_HOURS}</p>
           </div>
           <FooterCol title="Product" links={[["Platform", "/#platform"], ["Integrations", "/#integrations"], ["Pricing", "/pricing"], ["Get started", "/signup"], ["Log in", "/login"]]} />
-          <FooterCol title="Company" links={[["About us", "/about"], ["Contact & callback", "/contact"], ["Terms & Conditions", "/terms"], ["Privacy Policy", "/privacy"]]} />
+          <FooterCol title="Company" links={[["About us", "/about"], ["Other services", "/services"], ["Contact & callback", "/contact"], ["Terms & Conditions", "/terms"], ["Privacy Policy", "/privacy"]]} />
           <FooterCol title="Policies" links={[["Refund & Cancellation", "/refund-policy"], ["Shipping & Delivery", "/shipping-policy"]]} />
         </div>
         <div className="relative border-t border-white/10">

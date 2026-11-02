@@ -147,7 +147,7 @@ export async function listLeads(limit = 400): Promise<LeadItem[]> {
       createdAt: l.createdAt.toISOString(),
     })),
     ...cbs.map((c) => withCrm({
-      key: `callback-${c.id}`, kind: "callback", id: String(c.id), biz: "growpefy", name: c.name, phone: c.phone, email: c.email,
+      key: `callback-${c.id}`, kind: "callback", id: String(c.id), biz: c.reason === "app" ? "app" : "growpefy", name: c.name, phone: c.phone, email: c.email,
       source: tagOf(c.attribution), via: touchSummary(c.attribution?.last ?? c.attribution?.first) || "Website", detail: reasonLabel(c.reason),
       createdAt: c.createdAt.toISOString(),
     })),

@@ -49,13 +49,13 @@ async function people(range: { from?: Date; before?: Date }): Promise<Person[]> 
     and(range.from ? gte(col, range.from) : undefined, range.before ? lt(col, range.before) : undefined);
   const [m, c, u] = await Promise.all([
     db.select({ id: metaLeads.id, name: metaLeads.name, phone: metaLeads.phone, email: metaLeads.email, at: metaLeads.createdAt, form: metaLeads.formName, campaign: metaLeads.campaignName }).from(metaLeads).where(w(metaLeads.createdAt)),
-    db.select({ id: callbackRequests.id, name: callbackRequests.name, phone: callbackRequests.phone, email: callbackRequests.email, at: callbackRequests.createdAt })
+    db.select({ id: callbackRequests.id, name: callbackRequests.name, phone: callbackRequests.phone, email: callbackRequests.email, at: callbackRequests.createdAt, reason: callbackRequests.reason })
       .from(callbackRequests).where(and(eq(callbackRequests.source, "website"), w(callbackRequests.createdAt))),
     db.select({ id: users.id, name: users.name, kyc: users.kyc, phone: users.phone, email: users.email, at: users.createdAt }).from(users).where(w(users.createdAt)),
   ]);
   return [
     ...m.map((x) => ({ msg: (isAppLead(x.form, x.campaign) ? "app" : "lead") as Msg, kind: "meta", refId: x.id, name: x.name ?? "", phone: phone10(x.phone), email: mail(x.email), createdAt: x.at })),
-    ...c.map((x) => ({ msg: "lead" as const, kind: "callback", refId: String(x.id), name: x.name, phone: phone10(x.phone), email: mail(x.email), createdAt: x.at })),
+    ...c.map((x) => ({ msg: (x.reason === "app" ? "app" : "lead") as Msg, kind: "callback", refId: String(x.id), name: x.name, phone: phone10(x.phone), email: mail(x.email), createdAt: x.at })),
     ...u.map((x) => ({ msg: "signup" as const, kind: "signup", refId: String(x.id), name: x.kyc.contactName || x.name, phone: phone10(x.phone ?? x.kyc.phone), email: mail(x.email ?? x.kyc.email), createdAt: x.at })),
   ];
 }

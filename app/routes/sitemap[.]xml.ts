@@ -2,10 +2,10 @@ import { SITE_URL } from "~/components/site/SiteLayout";
 
 // [path, change frequency, priority]
 const PAGES: [string, string, string][] = [
-  ["/", "weekly", "1.0"], ["/pricing", "monthly", "0.9"], ["/about", "monthly", "0.7"], ["/contact", "monthly", "0.7"],
+  ["/", "weekly", "1.0"], ["/pricing", "monthly", "0.9"], ["/about", "monthly", "0.7"], ["/services", "monthly", "0.8"], ["/contact", "monthly", "0.7"],
   ["/signup", "yearly", "0.6"], ["/terms", "yearly", "0.3"], ["/privacy", "yearly", "0.3"], ["/refund-policy", "yearly", "0.3"], ["/shipping-policy", "yearly", "0.3"],
 ];
-const UPDATED = "2026-10-24";
+const UPDATED = "2026-11-02";
 
 export const loader = () =>
   new Response(

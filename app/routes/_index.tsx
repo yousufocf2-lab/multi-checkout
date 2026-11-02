@@ -80,8 +80,39 @@ export default function Home() {
         </div>
       </section>
 
+      <OtherServices />
+
       <CtaBand loggedIn={d.loggedIn} />
     </SiteLayout>
+  );
+}
+
+// ---------------- Other services ----------------
+
+const OTHER: { icon: IconName; title: string; text: string }[] = [
+  { icon: "phone", title: "Custom Android apps", text: "Your own branded app with orders, payments and push notifications, live on the Play Store." },
+  { icon: "cart", title: "Shopify online stores", text: "A complete store set up to sell: design, products, payments, COD and shipping." },
+  { icon: "globe", title: "Business websites", text: "Fast, mobile-friendly websites that turn visitors into calls and enquiries." },
+  { icon: "chat", title: "WhatsApp and ads setup", text: "WhatsApp automation, Meta Pixel, Conversions API and Google Ads tracking done right." },
+];
+
+function OtherServices() {
+  return (
+    <section className="border-t border-rule bg-gradient-to-b from-paper/70 to-white">
+      <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
+        <SectionHead eyebrow="Other services" title="Need an app, a store or a website?" text="Beyond the checkout, our team builds the tools a growing business needs. Free call, fixed quote." />
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {OTHER.map((s, i) => (
+            <Link key={s.title} to="/services" className="group rounded-2xl border border-rule bg-white p-6 transition duration-300 hover:-translate-y-1 hover:shadow-lift" {...rv(i)}>
+              <IconTile icon={s.icon} tone={i === 0 ? "blue" : "mint"} />
+              <h3 className="mt-4 font-semibold">{s.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">{s.text}</p>
+            </Link>
+          ))}
+        </div>
+        <div className="mt-10 text-center" {...rv()}><Link to="/services" className="group inline-flex items-center gap-1.5 font-semibold text-pine hover:text-pine-dark">See all services<Icon name="arrow" className="nudge h-4 w-4" /></Link></div>
+      </div>
+    </section>
   );
 }
 
