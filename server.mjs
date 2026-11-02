@@ -27,6 +27,20 @@ app.use(compression());
 // the page's own links and forms clean (Shopify adds fresh ones on the next request anyway).
 const SHOPIFY_PARAMS = ["shop", "path_prefix", "timestamp", "signature", "logged_in_customer_id"];
 
+// The website lives on growpefy.com. People (and Google) sometimes reach it through Railway's own address or
+// www.: send page visits there with a permanent redirect. Only GET/HEAD, so webhooks, payment returns and the
+// health check keep working on any address.
+const CANONICAL = (process.env.APP_URL || "https://growpefy.com").replace(/\/+$/, "");
+const canonicalHost = new URL(CANONICAL).host;
+const isOtherHost = (h) => h.endsWith(".up.railway.app") || h === `www.${canonicalHost}`;
+app.use((req, res, next) => {
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
+  if ((req.method === "GET" || req.method === "HEAD") && host && host !== canonicalHost && isOtherHost(host) && req.path !== "/healthz") {
+    return res.redirect(301, CANONICAL + req.originalUrl);
+  }
+  next();
+});
+
 app.use((req, _res, next) => {
   if (PROXIED.test(req.url)) {
     const u = new URL(req.url, "http://x");
