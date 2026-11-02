@@ -172,3 +172,86 @@ export function welcomeEmail(kind: "lead" | "signup", rawName: string, rawBody: 
 
   return { html, text };
 }
+
+const APP_FEATURES = [
+  { title: "Your brand, your app", text: "Your business name, logo and colours, on your own Play Store listing." },
+  { title: "Orders and payments", text: "Customers browse, order and pay inside the app. You manage it all from one place." },
+  { title: "Push notifications", text: "Send offers straight to your customers' phones and bring them back to buy again." },
+  { title: "Launch and support", text: "We set it up until it's live on the Play Store, and stay with you after launch." },
+];
+
+/** Welcome email for App service leads (custom Android apps). Same look as the Growpefy emails, app content. */
+export function appWelcomeEmail(_kind: "lead" | "signup", rawName: string, rawBody: string, b: EmailBrand) {
+  const body = cleanBody(rawBody);
+  const name = greetName(rawName);
+  const hi = name === "there" ? "" : `, ${esc(name)}`;
+  const img = (f: string) => `${b.baseUrl}/brand/email/${f}`;
+  const wa = b.whatsapp ? `https://wa.me/${b.whatsapp}?text=${encodeURIComponent("Hi, I'd like to know more about getting an app for my business")}` : null;
+  const contact = wa ? { href: wa, label: "Chat on WhatsApp", bg: "#25D366" } : { href: `mailto:${b.supportEmail}`, label: "Email us", bg: G.green };
+  const card = (f: (typeof APP_FEATURES)[number]) => `
+<td width="50%" valign="top" style="padding:8px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid ${G.rule};border-radius:14px"><tr><td style="padding:18px">
+    <p style="margin:0 0 4px;font-family:${FONT};font-size:15px;font-weight:700;color:${G.ink}">${f.title}</p>
+    <p style="margin:0;font-family:${FONT};font-size:13px;line-height:1.55;color:${G.faint}">${f.text}</p>
+  </td></tr></table>
+</td>`;
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>Growpefy</title>
+<style>
+  @media (max-width:620px){
+    .wrap{width:100%!important} .px{padding-left:22px!important;padding-right:22px!important} .h1{font-size:24px!important}
+    .stack > td{display:block!important;width:auto!important;padding-left:0!important;padding-right:0!important}
+    .feat{padding-left:16px!important;padding-right:16px!important}
+  }
+</style></head>
+<body style="margin:0;padding:0;background:${G.page}">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">Thanks for your app enquiry. Our team will call you within 24 hours.&#8203;&nbsp;&#8203;&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${G.page}"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid ${G.rule}">
+  <tr><td class="px" style="padding:22px 36px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td><a href="${b.baseUrl}" target="_blank"><img src="${img("logo.png")}" height="34" alt="Growpefy" style="display:block;border:0;height:34px;width:auto"></a></td>
+      <td align="right" style="font-family:${FONT};font-size:12px;color:${G.faint}">Custom business apps</td>
+    </tr></table>
+  </td></tr>
+  <tr><td bgcolor="${G.green}" class="px" style="background:${G.green};background-image:linear-gradient(135deg,${G.dark} 0%,${G.green} 60%,#0F7A61 100%);padding:34px 36px">
+    <h1 class="h1" style="margin:0 0 10px;font-family:${FONT};font-size:28px;line-height:1.25;font-weight:800;color:#ffffff">Thanks for your enquiry${hi} 📱</h1>
+    <p style="margin:0 0 22px;font-family:${FONT};font-size:16px;line-height:1.6;color:#CFE6DE">Your own Android app, built for your business, from design to Play Store launch.</p>
+    ${button(contact.href, contact.label, "#ffffff", G.green)}
+  </td></tr>
+  <tr><td class="px" style="padding:30px 36px 10px">
+    <p style="margin:0 0 14px;font-family:${FONT};font-size:16px;font-weight:700;color:${G.ink}">Hi ${esc(name)},</p>
+    ${paragraphs(fillName(body, name))}
+  </td></tr>
+  <tr><td class="feat" style="padding:14px 28px 20px;background:${G.tint}">
+    <p class="px" style="margin:18px 8px 6px;font-family:${FONT};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${G.green}">What you get</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr class="stack">${card(APP_FEATURES[0])}${card(APP_FEATURES[1])}</tr>
+      <tr class="stack">${card(APP_FEATURES[2])}${card(APP_FEATURES[3])}</tr>
+    </table>
+  </td></tr>
+  <tr><td class="px" style="padding:28px 36px 30px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${G.rule};border-radius:14px"><tr><td style="padding:22px 22px 20px">
+      <p style="margin:0 0 4px;font-family:${FONT};font-size:17px;font-weight:800;color:${G.ink}">Want to talk sooner?</p>
+      <p style="margin:0 0 16px;font-family:${FONT};font-size:14px;line-height:1.6;color:${G.soft}">Tell us about your business and we'll suggest the right app, with the cost and timeline. Message us on WhatsApp or just reply to this email.</p>
+      ${button(contact.href, contact.label, contact.bg)}
+    </td></tr></table>
+    <p style="margin:24px 0 0;font-family:${FONT};font-size:15px;line-height:1.5;color:${G.soft}">Cheers,<br><b style="color:${G.ink}">${esc(b.fromName)}</b><br><span style="font-size:13px;color:${G.faint}">Growpefy · Custom business apps</span></p>
+  </td></tr>
+  <tr><td bgcolor="${G.dark}" class="px" style="background:${G.dark};padding:26px 36px">
+    <p style="margin:0 0 10px;font-family:${FONT};font-size:12px;line-height:1.7;color:#A9C9BE">
+      <a href="mailto:${esc(b.supportEmail)}" style="color:#A9C9BE">${esc(b.supportEmail)}</a>${b.whatsapp ? ` · WhatsApp ${phoneLabel(b.whatsapp)}` : ""}${b.address ? `<br>${esc(b.address)}` : ""}
+    </p>
+    <p style="margin:0;font-family:${FONT};font-size:11px;line-height:1.6;color:#7FA79A">You're getting this email because you asked us about an app for your business. © ${new Date().getFullYear()} Growpefy.</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+  const text = [
+    `Hi ${name},`, "", fillName(body, name), "",
+    wa ? `Chat with us on WhatsApp: ${wa}` : `Email us: ${b.supportEmail}`,
+    "", "What you get:", ...APP_FEATURES.map((f) => `- ${f.title}: ${f.text}`),
+    "", "Cheers,", b.fromName, "", `Growpefy · ${b.supportEmail}`,
+  ].join("\n");
+  return { html, text };
+}

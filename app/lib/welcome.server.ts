@@ -7,7 +7,8 @@ import { getMarketing, saveMarketing } from "./marketing.server";
 import { messaging } from "./rto.server";
 import { syncMetaLeads } from "./leads.server";
 import { WELCOME_DEFAULTS, fillName, greetName } from "./welcome";
-import { welcomeEmail } from "./welcome-email.server";
+import { appWelcomeEmail, welcomeEmail } from "./welcome-email.server";
+import { isAppLead } from "./leads";
 import { getPlatform } from "./wallet.server";
 
 /** Message texts from before the designed email (they had their own greeting, steps and sign-off). */
@@ -38,7 +39,8 @@ export async function whatsappReady() {
 
 // ---------------- who to send to ----------------
 
-type Person = { msg: "lead" | "signup"; kind: string; refId: string; name: string; phone: string | null; email: string | null; createdAt: Date };
+type Msg = "lead" | "signup" | "app";
+type Person = { msg: Msg; kind: string; refId: string; name: string; phone: string | null; email: string | null; createdAt: Date };
 const phone10 = (p: string | null | undefined) => { const d = (p ?? "").replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, ""); return /^[6-9]\d{9}$/.test(d) ? d : null; };
 const mail = (e: string | null | undefined) => { const x = (e ?? "").trim().toLowerCase(); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x) ? x : null; };
 
@@ -46,13 +48,13 @@ async function people(range: { from?: Date; before?: Date }): Promise<Person[]> 
   const w = (col: typeof metaLeads.createdAt | typeof callbackRequests.createdAt | typeof users.createdAt) =>
     and(range.from ? gte(col, range.from) : undefined, range.before ? lt(col, range.before) : undefined);
   const [m, c, u] = await Promise.all([
-    db.select({ id: metaLeads.id, name: metaLeads.name, phone: metaLeads.phone, email: metaLeads.email, at: metaLeads.createdAt }).from(metaLeads).where(w(metaLeads.createdAt)),
+    db.select({ id: metaLeads.id, name: metaLeads.name, phone: metaLeads.phone, email: metaLeads.email, at: metaLeads.createdAt, form: metaLeads.formName, campaign: metaLeads.campaignName }).from(metaLeads).where(w(metaLeads.createdAt)),
     db.select({ id: callbackRequests.id, name: callbackRequests.name, phone: callbackRequests.phone, email: callbackRequests.email, at: callbackRequests.createdAt })
       .from(callbackRequests).where(and(eq(callbackRequests.source, "website"), w(callbackRequests.createdAt))),
     db.select({ id: users.id, name: users.name, kyc: users.kyc, phone: users.phone, email: users.email, at: users.createdAt }).from(users).where(w(users.createdAt)),
   ]);
   return [
-    ...m.map((x) => ({ msg: "lead" as const, kind: "meta", refId: x.id, name: x.name ?? "", phone: phone10(x.phone), email: mail(x.email), createdAt: x.at })),
+    ...m.map((x) => ({ msg: (isAppLead(x.form, x.campaign) ? "app" : "lead") as Msg, kind: "meta", refId: x.id, name: x.name ?? "", phone: phone10(x.phone), email: mail(x.email), createdAt: x.at })),
     ...c.map((x) => ({ msg: "lead" as const, kind: "callback", refId: String(x.id), name: x.name, phone: phone10(x.phone), email: mail(x.email), createdAt: x.at })),
     ...u.map((x) => ({ msg: "signup" as const, kind: "signup", refId: String(x.id), name: x.kyc.contactName || x.name, phone: phone10(x.phone ?? x.kyc.phone), email: mail(x.email ?? x.kyc.email), createdAt: x.at })),
   ];
@@ -122,9 +124,9 @@ type Result = { ok: true; id: string | null } | { ok: false; retry: boolean; err
 async function sendWhatsapp(row: LeadMessage, s: Awaited<ReturnType<typeof getWelcome>>): Promise<Result> {
   const m = await messaging();
   if (!m.waPhoneNumberId || !m.waToken) return { ok: false, retry: true, error: "WhatsApp isn't set up in Messaging settings" };
-  const template = row.msg === "lead" ? s.waLeadTemplate : s.waSignupTemplate;
+  const template = row.msg === "app" ? s.waAppTemplate : row.msg === "lead" ? s.waLeadTemplate : s.waSignupTemplate;
   // A template with an image header must get the image with every message, or WhatsApp rejects it (#132012)
-  const img = (row.msg === "lead" ? s.waLeadImage : s.waSignupImage).trim();
+  const img = (row.msg === "app" ? s.waAppImage : row.msg === "lead" ? s.waLeadImage : s.waSignupImage).trim();
   const imageLink = !img || /^none$/i.test(img) ? null
     : img.startsWith("/") ? `${(process.env.APP_URL || "https://growpefy.com").replace(/\/+$/, "")}${img}` : img;
   const components: unknown[] = [{ type: "body", parameters: [{ type: "text", text: greetName(row.name) }] }];
@@ -149,13 +151,13 @@ async function sendWhatsapp(row: LeadMessage, s: Awaited<ReturnType<typeof getWe
 }
 
 /** Subject, HTML and plain text for one welcome email. */
-export async function renderWelcome(kind: "lead" | "signup", rawName: string, s?: Awaited<ReturnType<typeof getWelcome>>) {
+export async function renderWelcome(kind: Msg, rawName: string, s?: Awaited<ReturnType<typeof getWelcome>>) {
   s ??= await getWelcome();
   const p = await getPlatform();
   const name = greetName(rawName);
-  const subject = fillName(kind === "lead" ? s.leadSubject : s.signupSubject, name).replace(/, there(?=\W*$)/, "");
+  const subject = fillName(kind === "app" ? s.appSubject : kind === "lead" ? s.leadSubject : s.signupSubject, name).replace(/, there(?=\W*$)/, "");
   const wa = (s.whatsappNumber || p.billing?.phone || "").replace(/\D/g, "");
-  const { html, text } = welcomeEmail(kind, rawName, kind === "lead" ? s.leadBody : s.signupBody, {
+  const { html, text } = (kind === "app" ? appWelcomeEmail : welcomeEmail)(kind === "app" ? "lead" : kind, rawName, kind === "app" ? s.appBody : kind === "lead" ? s.leadBody : s.signupBody, {
     baseUrl: (process.env.APP_URL || "https://growpefy.com").replace(/\/+$/, ""),
     fromName: s.fromName || "Growpefy",
     whatsapp: wa ? (wa.length === 10 ? `91${wa}` : wa) : null,
@@ -166,7 +168,7 @@ export async function renderWelcome(kind: "lead" | "signup", rawName: string, s?
 }
 
 async function sendEmail(row: LeadMessage, s: Awaited<ReturnType<typeof getWelcome>>, subjectPrefix = ""): Promise<Result> {
-  const { subject: sub, html, text } = await renderWelcome(row.msg, row.name, s);
+  const { subject: sub, html, text } = await renderWelcome(row.msg as Msg, row.name, s);
   const subject = subjectPrefix + sub;
   if (emailTestMode()) { console.log(`[welcome] test mode, email to ${row.target}: ${subject}`); return { ok: true, id: null }; }
   if (!process.env.RESEND_API_KEY) return { ok: false, retry: true, error: "Email isn't set up (RESEND_API_KEY)" };
@@ -220,9 +222,10 @@ export async function sendDue(limit = 25) {
 export async function sendTestEmails(to: string) {
   const s = await getWelcome();
   const out: string[] = [];
-  for (const msg of ["lead", "signup"] as const) {
+  const label = { lead: "Lead", signup: "Signup", app: "App lead" } as const;
+  for (const msg of ["lead", "signup", "app"] as const) {
     const r = await sendEmail({ id: 0, msg, channel: "email", target: to, kind: "test", refId: "0", name: "Rahul Sharma", status: "queued", attempts: 0, error: null, providerId: null, nextAttemptAt: new Date(), sentAt: null, createdAt: new Date() }, s, "[Test] ");
-    out.push(r.ok ? `${msg === "lead" ? "Lead" : "Signup"} email sent` : `${msg === "lead" ? "Lead" : "Signup"} email failed: ${r.error}`);
+    out.push(r.ok ? `${label[msg]} email sent` : `${label[msg]} email failed: ${r.error}`);
   }
   return out.join(" · ");
 }

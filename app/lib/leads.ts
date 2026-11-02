@@ -21,6 +21,11 @@ export const DEMO_MINUTES = 30;
 export const slotsClash = (a: Date, b: Date) => Math.abs(a.getTime() - b.getTime()) <= DEMO_MINUTES * 60_000;
 
 export type LeadKind = "meta" | "callback" | "signup";
+
+/** Which business a lead is for. App service leads come from Meta forms / campaigns with the word "App" in the name. */
+export type LeadBiz = "growpefy" | "app";
+export const BIZ_LABEL: Record<LeadBiz, string> = { growpefy: "Growpefy", app: "App service" };
+export const isAppLead = (...names: (string | null | undefined)[]) => names.some((n) => /\bapp\b/i.test(n ?? ""));
 export const KIND_LABEL: Record<LeadKind, string> = { meta: "Meta lead form", callback: "Website callback", signup: "Signup" };
 
 /** "meta-123", "callback-45", "signup-7" ⇄ kind + id */
@@ -66,16 +71,18 @@ export function leadTab(l: { status: string; notesCount: number }): Exclude<Lead
   return "followup";
 }
 
-export type LeadFilter = { tab: LeadTab; st: string; src: string; k: string; q: string };
+export type LeadFilter = { tab: LeadTab; st: string; src: string; k: string; q: string; b: LeadBiz };
 export function readLeadFilter(sp: URLSearchParams): LeadFilter {
   const tab = sp.get("tab");
   return {
     tab: LEAD_TABS.some((t) => t.id === tab) ? (tab as LeadTab) : "new",
     st: sp.get("st") ?? "all", src: sp.get("src") ?? "all", k: sp.get("k") ?? "all", q: (sp.get("q") ?? "").trim().toLowerCase(),
+    b: sp.get("b") === "app" ? "app" : "growpefy",
   };
 }
-export function matchLead(l: { status: string; notesCount: number; source: string; kind: string; name: string; phone: string | null; email: string | null }, f: LeadFilter, ignoreTab = false) {
-  return (ignoreTab || f.tab === "all" || leadTab(l) === f.tab) &&
+export function matchLead(l: { status: string; notesCount: number; source: string; kind: string; name: string; phone: string | null; email: string | null; biz?: LeadBiz }, f: LeadFilter, ignoreTab = false) {
+  return (l.biz ?? "growpefy") === f.b &&
+    (ignoreTab || f.tab === "all" || leadTab(l) === f.tab) &&
     (f.st === "all" || l.status === f.st) &&
     (f.src === "all" || l.source === f.src) &&
     (f.k === "all" || l.kind === f.k) &&

@@ -813,6 +813,7 @@ export type WelcomeSettings = {
   waLeadTemplate?: string; waSignupTemplate?: string; waLang?: string; // templates: {{1}} = name
   waLeadImage?: string; waSignupImage?: string; // header image link ("/..." = on Growpefy's site), "none" = no image
   leadSubject?: string; leadBody?: string; signupSubject?: string; signupBody?: string; // {{name}} placeholder
+  waAppTemplate?: string; waAppImage?: string; appSubject?: string; appBody?: string; // App service leads
   fromName?: string; fromEmail?: string; replyTo?: string; // who the welcome emails come from
   whatsappNumber?: string; // for the "Chat on WhatsApp" button, digits with country code
 };
@@ -997,7 +998,7 @@ export const leadMessages = pgTable(
   "lead_messages",
   {
     id: serial("id").primaryKey(),
-    msg: text("msg").$type<"lead" | "signup">().notNull(),
+    msg: text("msg").$type<"lead" | "signup" | "app">().notNull(), // app = App service lead
     channel: text("channel").$type<"whatsapp" | "email">().notNull(),
     target: text("target").notNull(), // 10-digit phone or lowercase email
     kind: text("kind").notNull(), // lead kind it was queued for: meta | callback | signup

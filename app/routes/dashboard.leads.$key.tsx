@@ -36,6 +36,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const lead = await getLead(k.kind, k.id);
   if (!lead) throw new Response("Lead not found", { status: 404 });
   const sp = new URL(request.url).searchParams;
+  if ("biz" in lead && lead.biz === "app") sp.set("b", "app");
   return json({
     key: params.key!, lead: { ...lead, crm: lead.crm ? { ...lead.crm, demoAt: lead.crm.demoAt?.toISOString() ?? null, updatedAt: lead.crm.updatedAt.toISOString() } : null },
     booked: await bookedSlots(params.key),
@@ -227,7 +228,7 @@ function LeadView() {
                   return (
                     <li key={m.id} className="flex flex-wrap items-center gap-2 text-sm">
                       <Icon name={m.channel === "whatsapp" ? "chat" : "mail"} className="h-4 w-4 text-ink-soft" />
-                      <span>{MSG_LABEL[m.msg as "lead" | "signup"]} · {m.channel === "whatsapp" ? "WhatsApp" : "Email"}</span>
+                      <span>{MSG_LABEL[m.msg as keyof typeof MSG_LABEL] ?? m.msg} · {m.channel === "whatsapp" ? "WhatsApp" : "Email"}</span>
                       <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${st.tone}`}>{st.label}</span>
                       <span className="ml-auto text-[11px] text-ink-faint">{when(m.at)}</span>
                       {m.error && m.status !== "sent" && <p className="w-full pl-6 text-xs text-bad">{m.error}</p>}

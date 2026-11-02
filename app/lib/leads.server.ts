@@ -7,7 +7,7 @@ import { getMarketing, saveMarketing } from "./marketing.server";
 import { scrubToken } from "./meta.server";
 import { reasonLabel } from "./support";
 import { profileFacts } from "./clients";
-import { DEMO_MINUTES, demoLabel, isLeadStatus, slotsClash, type LeadKind, type SourceTag } from "./leads";
+import { DEMO_MINUTES, demoLabel, isAppLead, isLeadStatus, slotsClash, type LeadBiz, type LeadKind, type SourceTag } from "./leads";
 
 const META_VERSION = () => process.env.META_API_VERSION || "v23.0";
 const phone10 = (v: string | null | undefined) => {
@@ -100,7 +100,7 @@ export async function syncMetaLeads(force = false): Promise<{ added: number; err
 // ---------------- unified list ----------------
 
 export type LeadItem = {
-  key: string; kind: LeadKind; id: string;
+  key: string; kind: LeadKind; id: string; biz: LeadBiz;
   name: string; phone: string | null; email: string | null;
   source: SourceTag; via: string; detail: string;
   createdAt: string;
@@ -142,17 +142,17 @@ export async function listLeads(limit = 400): Promise<LeadItem[]> {
   };
   const items: LeadItem[] = [
     ...meta.map((l) => withCrm({
-      key: `meta-${l.id}`, kind: "meta", id: l.id, name: l.name ?? "Meta lead", phone: l.phone, email: l.email,
+      key: `meta-${l.id}`, kind: "meta", id: l.id, biz: isAppLead(l.formName, l.campaignName) ? "app" : "growpefy", name: l.name ?? "Meta lead", phone: l.phone, email: l.email,
       source: "meta", via: [l.campaignName, l.adName].filter(Boolean).join(" · ") || "Instant form", detail: l.formName ?? "Lead form",
       createdAt: l.createdAt.toISOString(),
     })),
     ...cbs.map((c) => withCrm({
-      key: `callback-${c.id}`, kind: "callback", id: String(c.id), name: c.name, phone: c.phone, email: c.email,
+      key: `callback-${c.id}`, kind: "callback", id: String(c.id), biz: "growpefy", name: c.name, phone: c.phone, email: c.email,
       source: tagOf(c.attribution), via: touchSummary(c.attribution?.last ?? c.attribution?.first) || "Website", detail: reasonLabel(c.reason),
       createdAt: c.createdAt.toISOString(),
     })),
     ...sus.map((u) => withCrm({
-      key: `signup-${u.id}`, kind: "signup", id: String(u.id), name: u.name, phone: u.phone, email: u.email,
+      key: `signup-${u.id}`, kind: "signup", id: String(u.id), biz: "growpefy", name: u.name, phone: u.phone, email: u.email,
       source: tagOf(u.attribution), via: touchSummary(u.attribution?.last ?? u.attribution?.first) || "Website", detail: u.kycStatus === "pending" ? "Signed up · KYC pending" : `Signed up · KYC ${u.kycStatus}`,
       createdAt: u.createdAt.toISOString(),
     }, u.id)),
@@ -170,7 +170,7 @@ export async function getLead(kind: LeadKind, id: string) {
     if (!l) return null;
     const owner = l.phone ? owners.byPhone.get(l.phone) : undefined;
     return {
-      kind, id, name: l.name ?? "Meta lead", phone: l.phone, email: l.email, source: "meta" as SourceTag,
+      kind, id, biz: (isAppLead(l.formName, l.campaignName) ? "app" : "growpefy") as LeadBiz, name: l.name ?? "Meta lead", phone: l.phone, email: l.email, source: "meta" as SourceTag,
       createdAt: l.createdAt.toISOString(),
       facts: [["Form", l.formName], ["Campaign", l.campaignName], ["Ad", l.adName], ["Platform", l.platform === "ig" ? "Instagram" : l.platform === "fb" ? "Facebook" : l.platform]].filter((x) => x[1]) as [string, string][],
       answers: l.answers, crm: c ?? null, owner: owner ?? null,

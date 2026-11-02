@@ -17,10 +17,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   startWelcomeWatcher();
   const [s, stats, recent, pending, wa] = await Promise.all([getWelcome(), welcomeStats(), recentMessages(40), existingNotSent(), whatsappReady()]);
-  const [pLead, pSignup] = await Promise.all([renderWelcome("lead", "Rahul Sharma", s), renderWelcome("signup", "Rahul Sharma", s)]);
+  const [pLead, pSignup, pApp] = await Promise.all([renderWelcome("lead", "Rahul Sharma", s), renderWelcome("signup", "Rahul Sharma", s), renderWelcome("app", "Rahul Sharma", s)]);
   return json({
     s, stats, wa, email: emailReady(),
-    preview: { lead: { subject: pLead.subject, html: pLead.html }, signup: { subject: pSignup.subject, html: pSignup.html } },
+    preview: { lead: { subject: pLead.subject, html: pLead.html }, signup: { subject: pSignup.subject, html: pSignup.html }, app: { subject: pApp.subject, html: pApp.html } },
     pending: { whatsapp: pending.whatsapp, email: pending.email, leads: pending.leads, signups: pending.signups },
     recent: recent.map((r) => ({ id: r.id, msg: r.msg, channel: r.channel, target: r.target, name: r.name, kind: r.kind, refId: r.refId, status: r.status, error: r.error, attempts: r.attempts, at: (r.sentAt ?? r.createdAt).toISOString() })),
   });
@@ -37,6 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
       auto: fd.get("auto") === "on", whatsapp: fd.get("whatsapp") === "on", email: fd.get("email") === "on",
       waLeadTemplate: tpl("waLeadTemplate"), waSignupTemplate: tpl("waSignupTemplate"), waLang: t("waLang", 10) || "en",
       waLeadImage: t("waLeadImage", 500), waSignupImage: t("waSignupImage", 500),
+      waAppTemplate: tpl("waAppTemplate"), waAppImage: t("waAppImage", 500), appSubject: t("appSubject", 200), appBody: t("appBody"),
       leadSubject: t("leadSubject", 200), leadBody: t("leadBody"), signupSubject: t("signupSubject", 200), signupBody: t("signupBody"),
       fromName: t("fromName", 60).replace(/[<>"]/g, ""), fromEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t("fromEmail")) ? t("fromEmail", 120).toLowerCase() : undefined,
       replyTo: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t("replyTo")) ? t("replyTo", 120).toLowerCase() : undefined,
@@ -122,11 +123,13 @@ export default function Welcome() {
             </div>
           </Section>
 
-          <Section title="WhatsApp templates" description="Create these two templates in WhatsApp Manager → Message templates (category Marketing, language English). Use the exact names, and {{1}} for the person's name.">
+          <Section title="WhatsApp templates" description="Create these templates in WhatsApp Manager → Message templates (category Marketing, language English). Use the exact names, and {{1}} for the person's name.">
             <div className="grid gap-4 lg:grid-cols-2">
               <TemplateBox title="For leads" name="waLeadTemplate" value={s.waLeadTemplate} text={WA_TEMPLATE_TEXT.lead} imageName="waLeadImage" image={s.waLeadImage} />
               <TemplateBox title="For signups" name="waSignupTemplate" value={s.waSignupTemplate} text={WA_TEMPLATE_TEXT.signup} imageName="waSignupImage" image={s.waSignupImage} />
+              <TemplateBox title="For App service leads" name="waAppTemplate" value={s.waAppTemplate} text={WA_TEMPLATE_TEXT.app} imageName="waAppImage" image={s.waAppImage} />
             </div>
+            <p className="mt-3 text-xs text-ink-faint">App service leads = Meta leads whose form or campaign name has the word “App” in it (e.g. form “App Enquiry”, campaign “App Service - Leads”).</p>
             <div className="mt-4 max-w-[180px]"><TextField label="Template language code" name="waLang" defaultValue={s.waLang} hint="en for English" /></div>
           </Section>
 
@@ -143,6 +146,7 @@ export default function Welcome() {
             <div className="grid gap-5 lg:grid-cols-2">
               <EmailBox title="For leads" sKey="leadSubject" bKey="leadBody" subject={s.leadSubject} body={s.leadBody} defSubject={WELCOME_DEFAULTS.leadSubject} defBody={WELCOME_DEFAULTS.leadBody} />
               <EmailBox title="For signups" sKey="signupSubject" bKey="signupBody" subject={s.signupSubject} body={s.signupBody} defSubject={WELCOME_DEFAULTS.signupSubject} defBody={WELCOME_DEFAULTS.signupBody} />
+              <EmailBox title="For App service leads" sKey="appSubject" bKey="appBody" subject={s.appSubject} body={s.appBody} defSubject={WELCOME_DEFAULTS.appSubject} defBody={WELCOME_DEFAULTS.appBody} />
             </div>
           </Section>
           <SubmitButton intent="save" busyText="Saving">Save</SubmitButton>
@@ -161,7 +165,7 @@ export default function Welcome() {
                     <Icon name={m.channel === "whatsapp" ? "chat" : "mail"} className="h-4 w-4 text-ink-soft" />
                     <Link to={`/dashboard/leads/${m.kind}-${m.refId}`} className="font-medium hover:underline">{m.name || m.target}</Link>
                     <span className="num text-xs text-ink-soft">{m.channel === "whatsapp" ? `+91 ${m.target}` : m.target}</span>
-                    <span className="text-xs text-ink-faint">{MSG_LABEL[m.msg as "lead" | "signup"]}</span>
+                    <span className="text-xs text-ink-faint">{MSG_LABEL[m.msg as keyof typeof MSG_LABEL] ?? m.msg}</span>
                     <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium ${st.tone}`}>{st.label}{m.attempts > 1 ? ` · ${m.attempts} tries` : ""}</span>
                     <span className="w-24 text-right text-[11px] text-ink-faint">{when(m.at)}</span>
                     {m.error && m.status !== "sent" && <p className="w-full pl-7 text-xs text-bad">{m.error}</p>}
@@ -215,7 +219,7 @@ function EmailBox({ title, sKey, bKey, subject, body, defSubject, defBody }: { t
 }
 
 function EmailPreview({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> }) {
-  const [tab, setTab] = useState<"lead" | "signup">("lead");
+  const [tab, setTab] = useState<"lead" | "signup" | "app">("lead");
   const [wide, setWide] = useState(true);
   const p = d.preview[tab];
   return (
@@ -223,7 +227,7 @@ function EmailPreview({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>
       <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-3">
         <h2 className="mr-auto text-sm font-semibold">Email preview</h2>
         <div className="flex rounded-lg bg-paper-sunk p-0.5 text-xs font-medium">
-          {(["lead", "signup"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 ${tab === k ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{k === "lead" ? "For leads" : "For signups"}</button>)}
+          {(["lead", "signup", "app"] as const).map((k) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 ${tab === k ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{k === "lead" ? "For leads" : k === "signup" ? "For signups" : "App leads"}</button>)}
         </div>
         <div className="flex rounded-lg bg-paper-sunk p-0.5 text-xs font-medium">
           {([[true, "Computer"], [false, "Phone"]] as const).map(([v, l]) => <button key={l} type="button" onClick={() => setWide(v)} className={`rounded-md px-3 py-1.5 ${wide === v ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{l}</button>)}
@@ -234,7 +238,7 @@ function EmailPreview({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>
         <iframe title="Email preview" srcDoc={p.html} className="h-[900px] rounded-lg border border-rule bg-white transition-all" style={{ width: wide ? 680 : 390, maxWidth: "100%" }} />
       </div>
       <Form method="post" className="flex flex-wrap items-end gap-2 border-t border-rule px-5 py-4">
-        <div className="min-w-0 flex-1"><TextField label="Send both emails to yourself as a test" name="testTo" type="email" placeholder="you@gmail.com" /></div>
+        <div className="min-w-0 flex-1"><TextField label="Send all three emails to yourself as a test" name="testTo" type="email" placeholder="you@gmail.com" /></div>
         <SubmitButton intent="test" className="btn-secondary mb-[22px]" busyText="Sending"><Icon name="send" className="h-4 w-4" />Send test</SubmitButton>
       </Form>
     </section>

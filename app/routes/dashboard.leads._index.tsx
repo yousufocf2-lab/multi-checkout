@@ -7,7 +7,7 @@ import { Icon } from "~/components/Icons";
 import { SourceTagChip, StatusChip } from "~/components/LeadChips";
 import { Notice, PageHeader, SubmitButton } from "~/components/ui";
 import { requireAdmin } from "~/lib/auth.server";
-import { KIND_LABEL, LEAD_STATUSES, LEAD_TABS, SOURCE_TAGS, agoLabel, demoLabel, leadTab, matchLead, readLeadFilter, type LeadKind } from "~/lib/leads";
+import { BIZ_LABEL, KIND_LABEL, LEAD_STATUSES, LEAD_TABS, SOURCE_TAGS, agoLabel, demoLabel, leadTab, matchLead, readLeadFilter, type LeadBiz, type LeadKind } from "~/lib/leads";
 import { listLeads, syncMetaLeads, upcomingDemos } from "~/lib/leads.server";
 
 export const meta: MetaFunction = () => [{ title: "Leads · Growpefy" }];
@@ -46,7 +46,10 @@ export default function Leads() {
   const qs = sp.toString() ? `?${sp}` : "";
   const count = (s: string) => d.leads.filter((l) => matchLead(l, { ...f, src: s })).length;
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
-  const newToday = d.leads.filter((l) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(l.createdAt)) === today).length;
+  // Growpefy leads and App service leads are kept apart; the KPIs follow the one you're looking at
+  const pool = d.leads.filter((l) => l.biz === f.b);
+  const bizCount = (b: LeadBiz) => d.leads.filter((l) => l.biz === b).length;
+  const newToday = pool.filter((l) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(l.createdAt)) === today).length;
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -60,11 +63,20 @@ export default function Leads() {
         {a?.message && <Notice tone={a.ok ? "success" : "error"}>{a.message}</Notice>}
         {d.syncError && !a && <Notice tone="warning"><b>Meta leads:</b> {d.syncError}</Notice>}
 
+        <div className="flex w-fit rounded-xl bg-paper-sunk p-1 text-sm font-medium" role="tablist" aria-label="Business">
+          {(["growpefy", "app"] as const).map((b) => (
+            <button key={b} type="button" role="tab" aria-selected={f.b === b} onClick={() => { const n = new URLSearchParams(); if (b === "app") n.set("b", "app"); setSp(n, { preventScrollReset: true, replace: true }); }}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 transition ${f.b === b ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"}`}>
+              {BIZ_LABEL[b]} leads<span className={`num rounded-full px-1.5 text-[11px] font-semibold ${f.b === b ? "bg-ink text-white" : "bg-white text-ink-soft"}`}>{bizCount(b)}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi label="All leads" value={d.leads.length} note={`${newToday} today`} />
-          <Kpi label="To call" value={d.leads.filter((l) => l.status === "new").length} note="Status: New" />
+          <Kpi label="All leads" value={pool.length} note={`${newToday} today`} />
+          <Kpi label="To call" value={pool.filter((l) => l.status === "new").length} note="Status: New" />
           <Kpi label="Demos booked" value={d.demos.length} note={d.demos[0] ? `Next: ${demoLabel(d.demos[0].demoAt)}` : "None upcoming"} />
-          <Kpi label="Customers" value={d.leads.filter((l) => l.status === "customer" || (l.signedUp && (l.stores ?? 0) > 0)).length} note="Connected a store" />
+          <Kpi label="Customers" value={pool.filter((l) => l.status === "customer" || (l.signedUp && (l.stores ?? 0) > 0)).length} note={f.b === "app" ? "Status: became a customer" : "Connected a store"} />
         </div>
 
         {d.demos.length > 0 && (

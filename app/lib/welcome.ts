@@ -11,6 +11,15 @@ export const WELCOME_DEFAULTS: Required<Omit<WelcomeSettings, "autoFrom">> = {
   // Header image of each template (both templates have one in WhatsApp Manager). "none" = template without an image.
   waLeadImage: "/wa/lead-welcome.jpg",
   waSignupImage: "/wa/signup-welcome.jpg",
+  // App service leads (Meta forms / campaigns with "App" in the name)
+  waAppTemplate: "growpefy_app_welcome",
+  waAppImage: "none",
+  appSubject: "Thanks for your app enquiry, {{name}}",
+  appBody: `Thanks for telling us about your business. We build custom Android apps for businesses, with your brand name and logo, orders and payments, push notifications, and full setup until it's live on the Play Store.
+
+Our team will call you within 24 hours to understand what you need and share the cost and timeline.
+
+Want to talk sooner? Message us on WhatsApp or reply to this email.`,
   leadSubject: "Thanks for your interest in Growpefy, {{name}}",
   leadBody: `Thanks for reaching out to Growpefy. Our team will call you shortly to understand your store and show you how the checkout works for your products.
 
@@ -42,9 +51,16 @@ Your account is ready. To go live:
 3. Recharge your wallet and switch on the checkout
 
 Log in at growpefy.com/login. Need help? Reply to this message and our team will set it up with you.`,
+  app: `Hi {{1}}, thanks for your app enquiry! 📱
+
+We build custom Android apps for businesses: your brand and logo, orders and payments, push notifications, and full setup until it's live on the Play Store.
+
+Our team will call you within 24 hours to understand your needs and share the cost and timeline.
+
+Reply here if you'd like to talk sooner.`,
 };
 
-export const MSG_LABEL = { lead: "Lead welcome", signup: "Signup welcome" } as const;
+export const MSG_LABEL = { lead: "Lead welcome", signup: "Signup welcome", app: "App lead welcome" } as const;
 export const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
   queued: { label: "Waiting to send", tone: "bg-sky-50 text-sky-800" },
   sent: { label: "Sent", tone: "bg-emerald-50 text-good" },
