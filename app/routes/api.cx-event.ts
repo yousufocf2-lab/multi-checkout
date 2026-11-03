@@ -37,6 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const raw = b.d && typeof b.d === "object" ? JSON.stringify(b.d) : null;
     const data = raw ? (raw.length <= 1500 ? (b.d as Record<string, unknown>) : { text: raw.slice(0, 1500) }) : null;
     await db.insert(checkoutEvents).values({ sessionId, storeId, orderId, type, data });
+    if (type === "js_error") console.error(`[checkout-crash] store ${storeId} session ${sessionId}:`, JSON.stringify(b.d).slice(0, 1500));
   } catch (e) {
     console.error("[cx-event]", e instanceof Error ? e.message : e);
   }
