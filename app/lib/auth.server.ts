@@ -270,6 +270,12 @@ export async function createUser(input: { name: string; email: string; password:
   return u;
 }
 
+/** Same as startSession, but returns the cookie and where to go (for logins done with fetch, e.g. passkeys). */
+export async function sessionCookie(request: Request, who: LoginResult, next = "/dashboard") {
+  const r = await startSession(request, who, next);
+  return { cookie: r.headers.get("Set-Cookie") ?? "", to: r.headers.get("Location") ?? "/dashboard" };
+}
+
 export async function startSession(request: Request, who: LoginResult, next = "/dashboard") {
   const st = getStorage();
   const s = await st.getSession(request.headers.get("Cookie"));

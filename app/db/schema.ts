@@ -75,6 +75,27 @@ export const teamMembers = pgTable(
 );
 
 /** OTPs for store owner signup / login (hashed). */
+/**
+ * Passkeys: log in to the dashboard with Face ID / fingerprint / screen lock (WebAuthn).
+ * kind + refId = who it logs in as: "admin" (super admin, refId 0), "user" (store owner), "member" (team login).
+ */
+export const passkeys = pgTable(
+  "passkeys",
+  {
+    id: serial("id").primaryKey(),
+    credentialId: text("credential_id").notNull(), // base64url
+    publicKey: text("public_key").notNull(), // base64url (COSE)
+    counter: bigint("counter", { mode: "number" }).notNull().default(0),
+    transports: jsonb("transports").$type<string[]>(),
+    kind: text("kind").$type<"admin" | "user" | "member">().notNull(),
+    refId: integer("ref_id").notNull(),
+    device: text("device").notNull().default(""), // "iPhone · Safari" etc., from the browser that added it
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("passkeys_credential_idx").on(t.credentialId), index("passkeys_owner_idx").on(t.kind, t.refId)],
+);
+
 export const ownerOtps = pgTable(
   "owner_otps",
   {

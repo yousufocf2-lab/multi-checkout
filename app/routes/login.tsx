@@ -6,6 +6,7 @@ import { BusyOverlay } from "~/components/Brand";
 import { AuthShell } from "~/components/AuthShell";
 import { ContactInput, OtpStep } from "~/components/OtpAuth";
 import { Notice, SubmitButton, TextField } from "~/components/ui";
+import { PasskeyLogin } from "~/components/Passkey";
 import { findOwner, getViewer, login, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { clientIp } from "~/lib/orders.server";
@@ -82,6 +83,7 @@ export default function Login() {
             {data?.error && <Notice tone="error">{data.error}</Notice>}
             <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} />
             <SubmitButton className="btn-primary w-full py-3" busyText="Sending code">Get OTP</SubmitButton>
+            <PasskeyLogin next={next} />
             <button type="button" onClick={() => setStage("password")} className="w-full text-center text-sm text-ink-soft hover:text-ink">Log in with password instead</button>
           </Form>
         )}

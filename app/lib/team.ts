@@ -65,7 +65,7 @@ const STORE_SECTION: Record<string, string> = {
 
 function needFor(scope: Scope, path: string): Need {
   const p = path.replace(/\/+$/, "") || "/";
-  if (p === "/dashboard" || p === "/dashboard/account" || p === "/dashboard/select") return "open";
+  if (p === "/dashboard" || p === "/dashboard/account" || p === "/dashboard/security" || p === "/dashboard/select") return "open";
   if (p === "/dashboard/team") return "team";
   const store = p.match(/^\/dashboard\/stores\/(\d+)(?:\/([^/]+))?/);
 
