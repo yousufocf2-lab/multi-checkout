@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, useActionData, useFetcher, useLoaderData, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
+import { Form, isRouteErrorResponse, useActionData, type ClientActionFunctionArgs, useFetcher, useLoaderData, useNavigation, useRouteError, type ShouldRevalidateFunction } from "@remix-run/react";
+import { isNetworkError, reportCrash } from "~/lib/crash-report";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MetaPixel } from "~/components/MetaPixel";
@@ -376,7 +377,82 @@ export async function action({ request, params }: ActionFunctionArgs) {
   return embedded ? json({ top: abs(payUrl(store, order.id)) }) : redirect(payUrl(store, order.id));
 }
 
+/**
+ * Browser side of every form request. A background request that loses its connection (phone switched to the SMS
+ * app for the OTP, in-app browser paused, network dropped) used to crash the whole checkout with an error page.
+ * Now it comes back as a normal "try again" answer and the customer stays on the page. Placing the order is not
+ * repeated or faked: if that one loses its connection, the error page reloads the checkout.
+ */
+export async function clientAction({ request, serverAction }: ClientActionFunctionArgs) {
+  const fd = await request.clone().formData();
+  const intent = String(fd.get("intent") ?? "");
+  try {
+    return await serverAction();
+  } catch (e) {
+    if (!isNetworkError(e) || intent === "place" || !intent) throw e;
+    reportCrash(Object.assign(new Error(`network (${intent}): ${String((e as Error)?.message ?? e)}`), { stack: "" }));
+    const again = "Connection lost. Please try again.";
+    switch (intent) {
+      case "draft": return { saved: false };
+      case "eligibility": return null;
+      case "addr_lookup": return { phone: normalizePhoneClient(String(fd.get("phone") ?? "")), addresses: [] };
+      case "addr_reveal": return { address: null, error: again };
+      case "coupon": return { error: again };
+      case "cart": return { cart: false };
+      case "otp_send": case "otp_verify": case "otp_widget": return { ok: false, error: again };
+      case "otp_widget_sent": return { ok: false };
+      default: throw e;
+    }
+  }
+}
+const normalizePhoneClient = (p: string) => { const d = p.replace(/\D/g, ""); return d.length > 10 ? d.slice(-10) : d; };
+
 // ======================= UI =======================
+
+/**
+ * Checkout crashed. Most often a background request (saving the form, COD check, saved address, OTP) lost its
+ * connection: the phone switched to the SMS app for the OTP, the in-app browser paused, or the network dropped.
+ * Never send the customer away: reload the checkout once by itself (the form comes back from the saved draft),
+ * otherwise offer a button to reload it.
+ */
+export function ErrorBoundary() {
+  const error = useRouteError();
+  const net = isNetworkError(error);
+  const [auto, setAuto] = useState(false);
+  useEffect(() => {
+    if (!isRouteErrorResponse(error)) reportCrash(error);
+    if (isRouteErrorResponse(error)) return;
+    try {
+      const k = `cx_reload_${location.pathname}`;
+      const last = Number(sessionStorage.getItem(k) || 0);
+      if (Date.now() - last > 20_000) {
+        sessionStorage.setItem(k, String(Date.now()));
+        setAuto(true);
+        const go = () => location.reload();
+        // Back from the background (OTP from SMS): reload as soon as the page is visible again
+        if (document.visibilityState === "visible") setTimeout(go, net ? 400 : 900);
+        else document.addEventListener("visibilitychange", function on() { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", on); go(); } });
+      }
+    } catch { setTimeout(() => location.reload(), 900); }
+  }, [error, net]);
+  if (isRouteErrorResponse(error)) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 text-center">
+        <h1 className="text-xl font-semibold">{error.status === 404 ? "This checkout has expired" : "Checkout unavailable"}</h1>
+        <p className="mt-2 text-sm text-ink-soft">{typeof error.data === "string" && error.data ? error.data : "Go back to the store and press Buy now again."}</p>
+        <button type="button" onClick={() => history.back()} className="btn-secondary mx-auto mt-6">Back to the store</button>
+      </main>
+    );
+  }
+  return (
+    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center">
+      {auto ? <Spinner /> : null}
+      <h1 className="mt-4 text-lg font-semibold">{auto ? "Reconnecting…" : "Connection lost"}</h1>
+      <p className="mt-2 text-sm text-ink-soft">{auto ? "Your details are saved. Taking you back to checkout." : "Your details are saved. Tap below to continue your order."}</p>
+      {!auto && <button type="button" onClick={() => location.reload()} className="btn-primary mt-6">Continue checkout</button>}
+    </main>
+  );
+}
 
 const EMPTY: OrderCustomer = { firstName: "", lastName: "", phone: "", email: "", address1: "", address2: "", city: "", state: "", pincode: "", label: "home" };
 const LS_KEY = "cx_customer_v1";
