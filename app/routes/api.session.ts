@@ -6,6 +6,7 @@ import { storeBaseUrl } from "~/lib/urls.server";
 import { clientIp } from "~/lib/orders.server";
 import { wooVerify } from "~/lib/woo.server";
 import { startWelcomeWatcher } from "~/lib/welcome.server";
+import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { PROXY_PATH, proxyCheckoutReady } from "~/lib/proxy-checkout.server";
 
 const cors = {
@@ -23,6 +24,7 @@ export const loader = () => reply({ error: "POST only" }, 405);
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   startWelcomeWatcher(); // keeps lead welcomes going even when nobody has the dashboard open
+  startPaymentRecheck(); // catches online payments whose customer never came back from the gateway
 
   let body: { store?: string; items?: { variantId?: unknown; quantity?: unknown }[]; fbp?: unknown; fbc?: unknown; url?: unknown; gclid?: unknown; gbraid?: unknown; wbraid?: unknown; ip?: unknown; ua?: unknown };
   const raw = await request.text();

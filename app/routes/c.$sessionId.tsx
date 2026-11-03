@@ -29,6 +29,7 @@ import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
 import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.server";
+import { env } from "~/lib/env.server";
 import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.server";
 import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 
@@ -139,6 +140,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   return json({
+    // Checkout diagnostics: where events from this page go, and which checkout they belong to
+    cx: { url: `${env.appUrl.replace(/\/+$/, "")}/api/cx-event`, s: session.id },
     store: {
       name: store.name, logoUrl: store.logoUrl, primaryColor: store.primaryColor, storefrontUrl: store.storefrontUrl,
       supportPhone: store.supportPhone, codEnabled: store.codEnabled, payuReady,
@@ -384,7 +387,7 @@ type Eligibility = { cod: CodStatus; block: "cod" | "all" | null; message: strin
 type OtpPurpose = "order" | "start" | "start_next" | { reveal: number };
 
 export default function Checkout() {
-  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers, base } = useLoaderData<typeof loader>();
+  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers, base, cx: cxCfg } = useLoaderData<typeof loader>();
   // The store domain the customer is on (only used when the checkout runs through the App Proxy)
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(window.location.origin), []);
@@ -396,6 +399,40 @@ export default function Checkout() {
   const embedded = useEmbedded();
   useEffect(() => { if (actionData && "top" in actionData && actionData.top) goTop(actionData.top); }, [actionData]);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // ---- Checkout diagnostics: what the customer did here (sent quietly, never blocks the page) ----
+  const cx = useRef((e: string, d?: Record<string, unknown>) => {
+    try {
+      const body = JSON.stringify({ s: cxCfg.s, e, d });
+      if (!navigator.sendBeacon?.(cxCfg.url, body)) void fetch(cxCfg.url, { method: "POST", body, keepalive: true, mode: "no-cors" });
+    } catch { /* diagnostics only */ }
+  }).current;
+  const stepRef = useRef(step);
+  useEffect(() => {
+    let inFrame = false;
+    try { inFrame = window.self !== window.top; } catch { inFrame = true; }
+    cx("load", { ua: navigator.userAgent.slice(0, 220), host: location.host, inFrame, w: window.innerWidth, h: window.innerHeight, layout: theme.layout });
+    const vis = () => cx(document.visibilityState === "hidden" ? "hidden" : "visible", { step: stepRef.current });
+    const err = (ev: ErrorEvent) => cx("js_error", { m: String(ev.message).slice(0, 200), src: String(ev.filename ?? "").slice(-120), line: ev.lineno });
+    const rej = (ev: PromiseRejectionEvent) => cx("js_error", { m: String((ev.reason as Error)?.message ?? ev.reason).slice(0, 200), kind: "promise" });
+    document.addEventListener("visibilitychange", vis);
+    window.addEventListener("error", err);
+    window.addEventListener("unhandledrejection", rej);
+    return () => { document.removeEventListener("visibilitychange", vis); window.removeEventListener("error", err); window.removeEventListener("unhandledrejection", rej); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (stepRef.current !== step) cx("step", { step }); stepRef.current = step; }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (nav.state !== "submitting" || !nav.formData) return;
+    const intent = String(nav.formData.get("intent") ?? "");
+    if (intent === "place") cx("submit", { method: String(nav.formData.get("method") ?? "") });
+  }, [nav.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!actionData) return;
+    if ("top" in actionData && actionData.top) cx("to_pay", { to: String(actionData.top).includes("/pay/") ? "payment" : "thank_you" });
+    else if ("errors" in actionData && actionData.errors) {
+      const e = actionData.errors as Record<string, string>;
+      cx("error", { form: e.form ? String(e.form).slice(0, 200) : null, fields: Object.keys(e).filter((k) => k !== "form") });
+    }
+  }, [actionData]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stepError, setStepError] = useState<Partial<Record<keyof OrderCustomer, string>>>({});
   const autoAdvanceRequestedPhone = useRef<string | null>(null);
 

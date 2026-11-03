@@ -20,6 +20,7 @@ import { stateOf, walletsFor } from "~/lib/wallet.server";
 import { supportBadge } from "~/lib/support.server";
 import { upcomingDemos } from "~/lib/leads.server";
 import { adminUnread } from "~/lib/admin-inbox.server";
+import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
 
@@ -33,6 +34,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startRecoveryWatcher();
   startWelcomeWatcher();
   startNativeOrdersWatcher();
+  startPaymentRecheck();
   const viewer = await requireViewer(request);
   // New owners finish the 3-step KYC before anything else
   if (needsKyc(viewer)) throw redirect("/onboarding");
@@ -131,6 +133,7 @@ export default function DashboardLayout() {
         {may("ads") && <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>}
         {(isAdmin || focus?.profitEnabled) && <Item to={storeHref("profit")} icon="trend" match={/\/profit$/}>Profit share</Item>}
         {may("orders") && <Item to={storeHref("funnel")} icon="filter" match={/\/funnel$|next=funnel/}>Checkout funnel</Item>}
+        {viewer.role === "admin" && <Item to={storeHref("diagnostics")} icon="alert" match={/\/diagnostics$|next=diagnostics/}>Checkout diagnostics</Item>}
         {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
       </Group>
       {(may("inbox") || may("settings") || may("offers") || may("rto")) && (

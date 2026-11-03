@@ -2,7 +2,7 @@
 //  - Fallback 1: if the primary can't start a payment (down, bad keys, timeout), the next one starts it.
 //  - Fallback 2: if the customer's payment fails, "Try again" opens the next gateway.
 // Every result is confirmed with the gateway server to server (or by its signed return) before an order is marked paid.
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, orders, stores, type Order, type PayAttempt, type Store, type StoreGateway } from "~/db.server";
 import { env } from "../env.server";
@@ -107,13 +107,19 @@ export function payPage(store: Store, order: Order, out: StartOutcome, backUrl: 
   const amount = payNowPaise(order);
   const rest = order.paymentMethod === "partial" ? order.total - amount : 0;
   const head = store.logoUrl ? `<img class="l" src="${esc(store.logoUrl)}" alt="${esc(store.name)}">` : `<div class="n">${esc(store.name)}</div>`;
-  let body = "";
+  // Checkout diagnostics: payment page opened, customer left for the gateway / UPI app, came back with "back"
+  const cxUrl = `${env.appUrl.replace(/\/+$/, "")}/api/cx-event`;
+  const cx = `<script>(function(){var U=${JSON.stringify(cxUrl)},O=${JSON.stringify(order.id)};function cx(e,d){try{var b=JSON.stringify({o:O,e:e,d:d||null});if(!(navigator.sendBeacon&&navigator.sendBeacon(U,b)))fetch(U,{method:"POST",body:b,keepalive:true,mode:"no-cors"})}catch(x){}}
+${out.ok ? `cx("pay_page",{gw:${JSON.stringify(out.gateway.id)},mode:${JSON.stringify(out.gateway.mode)},amount:${amount},ua:navigator.userAgent.slice(0,220)});` : `cx("pay_error",{error:${JSON.stringify(out.ok ? "" : out.error.slice(0, 200))}});`}
+document.addEventListener("visibilitychange",function(){cx(document.visibilityState==="hidden"?"pay_hidden":"pay_visible")});
+window.addEventListener("pageshow",function(e){if(e.persisted)cx("pay_back")});})()</script>`;
+  let body = cx;
   if (!out.ok) {
-    body = `<div class="n">Payment couldn't start</div><p>${esc(out.error)}</p><p><a class="b" href="${esc(backUrl)}">Back to checkout</a></p>`;
+    body += `<div class="n">Payment couldn't start</div><p>${esc(out.error)}</p><p><a class="b" href="${esc(backUrl)}">Back to checkout</a></p>`;
   } else {
     const r = out.result;
     const by = gatewayById(out.gateway.id)?.short ?? "our payment partner";
-    body = `<div class="s" role="status" aria-label="Opening payment"></div><div class="n">Opening secure payment for ${esc(formatINR(amount))}</div>
+    body += `<div class="s" role="status" aria-label="Opening payment"></div><div class="n">Opening secure payment for ${esc(formatINR(amount))}</div>
 ${rest > 0 ? `<p>Advance now. The remaining ${esc(formatINR(rest))} is paid in cash on delivery.</p>` : ""}<p>Don't close this page or press back.</p>`;
     if (r.type === "form") {
       body += `<form id="f" method="post" action="${esc(r.action)}">${Object.entries(r.fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(String(v))}">`).join("")}<noscript><button class="b">Continue to payment</button></noscript></form><script>document.getElementById("f").submit()</script>`;
@@ -173,6 +179,7 @@ export async function handleReturn(gatewayId: string, txn: string, params: Recor
   let v = adapter.fromReturn?.(cfg, params, txn) ?? null;
   if (!v || v.status !== "failure") {
     try { v = await adapter.verify(cfg, txn, attempt?.ref); } catch (e) { console.error(`[pay] verify ${gatewayId} ${txn}:`, e instanceof Error ? e.message : e); }
+    if (v) await logPaymentEvent({ storeId: store.id, orderId: order.id, source: `${gatewayId}-${source}`, kind: "verify", status: v.status, payload: { txn, ...gatewayDetail(v.raw) } });
   }
   if (!v) return order;
   if (v.status === "success") order = await markPaid(store, order, gatewayId, txn, v, `${gatewayId}-${source}`);
@@ -192,7 +199,7 @@ export async function syncOrderPayment(store: Store, order: Order, source: strin
     if (!cfg || !ADAPTERS[t.g]) continue;
     try {
       const v = await ADAPTERS[t.g].verify(cfg, t.txn, t.ref);
-      await logPaymentEvent({ storeId: store.id, orderId: order.id, source: `${t.g}-${source}`, kind: "verify", status: v.status, payload: { txn: t.txn } });
+      await logPaymentEvent({ storeId: store.id, orderId: order.id, source: `${t.g}-${source}`, kind: "verify", status: v.status, payload: { txn: t.txn, ...gatewayDetail(v.raw) } });
       if (v.status === "success") return markPaid(store, order, t.g, t.txn, v, `${t.g}-${source}`);
       latest ??= v.status;
     } catch (e) {
@@ -202,6 +209,45 @@ export async function syncOrderPayment(store: Store, order: Order, source: strin
   }
   if (latest === "failure" && order.status === "pending_payment") return markFailed(order, "Payment didn't go through");
   return order;
+}
+
+/** The parts of a gateway's answer that explain what happened (PayU: unmappedstatus, error_Message, field9, mode…). */
+export function gatewayDetail(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object") return out;
+  const KEYS = ["status", "unmappedstatus", "error_Message", "error_message", "error", "field9", "mode", "bankcode", "PG_TYPE", "pg_type", "addedon", "net_amount_debit", "message", "msg"];
+  for (const k of KEYS) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (v != null && v !== "" && (typeof v === "string" || typeof v === "number")) out[k] = String(v).slice(0, 200);
+  }
+  return out;
+}
+
+let recheckTimer: ReturnType<typeof setInterval> | null = null;
+/**
+ * Every 5 minutes: online-payment orders still waiting 10 minutes to 2 days after they were placed are checked with
+ * the gateway. Catches payments that went through when the customer never came back to the thank-you page
+ * (closed the UPI app, lost network, a redirect that didn't arrive) and no webhook reached us.
+ */
+export function startPaymentRecheck() {
+  if (recheckTimer || !process.env.DATABASE_URL) return;
+  const run = async () => {
+    try {
+      const rows = await db.select({ order: orders, store: stores }).from(orders).innerJoin(stores, eq(orders.storeId, stores.id))
+        .where(and(eq(orders.status, "pending_payment"), sql`${orders.createdAt} < now() - interval '10 minutes'`, sql`${orders.createdAt} > now() - interval '2 days'`))
+        .orderBy(desc(orders.createdAt)).limit(40);
+      for (const r of rows) {
+        const before = r.order.status;
+        const after = await syncOrderPayment(r.store, r.order, "recheck");
+        if (after.status !== before) console.log(`[pay] recheck ${r.order.id}: ${before} → ${after.status}`);
+      }
+    } catch (e) {
+      console.error("[pay] recheck:", e instanceof Error ? e.message : e);
+    }
+  };
+  recheckTimer = setInterval(() => void run(), 5 * 60_000);
+  recheckTimer.unref?.();
+  setTimeout(() => void run(), 30_000).unref?.();
 }
 
 /** A gateway's webhook: find our transaction and re-check it with the gateway (the body itself is never trusted). */

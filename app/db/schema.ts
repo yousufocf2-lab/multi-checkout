@@ -644,6 +644,24 @@ export const checkoutSessions = pgTable("checkout_sessions", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * What happened inside one checkout, from the customer's browser: page opened, step reached, errors shown,
+ * "Pay" pressed, payment page opened, left for the gateway / UPI app, came back. For Checkout diagnostics.
+ */
+export const checkoutEvents = pgTable(
+  "checkout_events",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    orderId: text("order_id"),
+    type: text("type").notNull(),
+    data: jsonb("data").$type<Record<string, unknown>>(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("checkout_events_store_idx").on(t.storeId, t.at), index("checkout_events_session_idx").on(t.sessionId, t.at)],
+);
+
 /** Store shipping rules. The cheapest matching rule applies; no rules = free delivery. */
 export const shippingRates = pgTable("shipping_rates", {
   id: serial("id").primaryKey(),
