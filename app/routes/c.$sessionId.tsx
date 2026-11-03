@@ -85,8 +85,11 @@ async function shippingRulesFor(storeId: number): Promise<ShipRule[]> {
 }
 
 /** Small background requests (draft save, COD check, coupon) don't need to reload the cart. */
-export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, defaultShouldRevalidate }) => {
+export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, actionResult, defaultShouldRevalidate }) => {
   const intent = formData?.get("intent");
+  // Order placed: the page is about to leave for the payment / thank-you page. Reloading the checkout's data now
+  // would be cut off by that navigation ("Load failed") and used to crash the page.
+  if (actionResult && typeof actionResult === "object" && "top" in actionResult && (actionResult as { top?: unknown }).top) return false;
   if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify" || intent === "otp_widget" || intent === "otp_widget_sent" || intent === "addr_lookup" || intent === "addr_reveal") return false;
   return defaultShouldRevalidate;
 };
@@ -419,7 +422,11 @@ export function ErrorBoundary() {
   const error = useRouteError();
   const net = isNetworkError(error);
   const [auto, setAuto] = useState(false);
+  // The page is already on its way to the payment / thank-you page: a request cut off by that is not a problem,
+  // and reloading here would cancel the payment page.
+  const leaving = typeof window !== "undefined" && Date.now() - ((window as Window & { __cxLeaving?: number }).__cxLeaving ?? 0) < 30_000;
   useEffect(() => {
+    if (leaving) return;
     if (!isRouteErrorResponse(error)) reportCrash(error);
     if (isRouteErrorResponse(error)) return;
     try {
@@ -434,7 +441,16 @@ export function ErrorBoundary() {
         else document.addEventListener("visibilitychange", function on() { if (document.visibilityState === "visible") { document.removeEventListener("visibilitychange", on); go(); } });
       }
     } catch { setTimeout(() => location.reload(), 900); }
-  }, [error, net]);
+  }, [error, net, leaving]);
+  if (leaving) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 text-center">
+        <Spinner />
+        <h1 className="mt-4 text-lg font-semibold">Opening secure payment…</h1>
+        <p className="mt-2 text-sm text-ink-soft">Please don't press back.</p>
+      </main>
+    );
+  }
   if (isRouteErrorResponse(error)) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 text-center">
@@ -1211,6 +1227,7 @@ const tellParent = (msg: Record<string, unknown>) => {
 
 /** Leaves the popup: the store's page opens the URL in its own tab (payment, thank-you page). */
 function goTop(url: string) {
+  (window as Window & { __cxLeaving?: number }).__cxLeaving = Date.now();
   let inFrame = false;
   try { inFrame = window.self !== window.top; } catch { inFrame = true; }
   if (!inFrame) { window.location.href = url; return; }
