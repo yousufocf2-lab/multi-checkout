@@ -3,6 +3,7 @@
 import { and, asc, desc, eq, gte, inArray, lt } from "drizzle-orm";
 import { bankOffers, checkoutEvents, checkoutSessions, db, orders, paymentEvents, type Store } from "~/db.server";
 import { storeGateways, syncOrderPayment } from "./gateways/index.server";
+import { resolvePaymentMethods } from "./payment-methods";
 
 export type Device = { os: "android" | "ios" | "desktop" | "other"; app: "instagram" | "facebook" | "browser" };
 export function deviceOf(ua: string | null | undefined): Device {
@@ -128,7 +129,7 @@ export async function recheckOnline(store: Store, days: number, limit = 60) {
   return { checked: rows.length, paid };
 }
 
-let funnelLogged = false;
+let funnelLogged = false; // once per start
 /** Once after each start: a compact last-24-hours checkout summary per store in the server logs. */
 export async function logFunnelAudit() {
   if (funnelLogged) return;
@@ -148,7 +149,13 @@ export async function logFunnelAudit() {
         sessions: d.sessions, devices: d.devices.map((r) => `${r.label}: ${r.sessions} open, ${r.phone} phone, ${r.address} addr, ${r.tried} pay-press, ${r.orders} orders (${r.prepaid} online)`),
         tracked: d.browser.tracked, stepsReached: steps, submits: byMethod, toPayOrThanks: d.browser.toPay, payPage: d.browser.payPage, payBack: d.browser.payBack,
         errorsShown: d.browser.errors, jsErrors: d.browser.jsErrors.slice(0, 5),
-        cod: { on: s.codEnabled }, otp: { timing: s.otpTiming },
+        cod: { on: s.codEnabled }, otp: { timing: s.otpTiming, prepaid: s.otpPrepaid, cod: s.otpCod },
+        payMethods: (() => { const pm = resolvePaymentMethods(s.paymentMethods, s); return {
+          prepaid: { on: pm.prepaid.on, adjust: pm.prepaid.adjust, type: pm.prepaid.type, value: pm.prepaid.value, rules: pm.prepaid.rules.length },
+          cod: { on: pm.cod.on, adjust: pm.cod.adjust, type: pm.cod.type, value: pm.cod.value, rules: pm.cod.rules },
+          partial: { on: pm.partial.on, adv: `${pm.partial.advanceValue}${pm.partial.advanceType === "percent" ? "%" : "rs"}` },
+          limits: { qty: pm.quantityLimits.filter((l) => l.on).length, value: pm.cartValueLimits.filter((l) => l.on).map((l) => `${l.methods.join("/")}<=${l.maxRupees}`) },
+        }; })(),
       })}`);
     }
   } catch (e) {
