@@ -147,7 +147,8 @@ export async function logFunnelAudit() {
       const steps = ev.filter((e) => e.type === "step").reduce<Record<string, number>>((a, e) => { const k = String((e.data as { step?: number } | null)?.step ?? "?"); a[k] = (a[k] ?? 0) + 1; return a; }, {});
       console.log(`[funnel-audit] store ${s.id} ${s.name}: ${JSON.stringify({
         sessions: d.sessions, devices: d.devices.map((r) => `${r.label}: ${r.sessions} open, ${r.phone} phone, ${r.address} addr, ${r.tried} pay-press, ${r.orders} orders (${r.prepaid} online)`),
-        tracked: d.browser.tracked, stepsReached: steps, submits: byMethod, toPayOrThanks: d.browser.toPay, payPage: d.browser.payPage, payBack: d.browser.payBack,
+        tracked: d.browser.tracked, stepsReached: steps,
+        otpFlow: ["otp_open", "otp_sent", "otp_verified", "otp_close", "otp_error"].map((t) => `${t}:${new Set(ev.filter((e) => e.type === t).map((_, i) => i)).size}`).join(" "), submits: byMethod, toPayOrThanks: d.browser.toPay, payPage: d.browser.payPage, payBack: d.browser.payBack,
         errorsShown: d.browser.errors, jsErrors: d.browser.jsErrors.slice(0, 5),
         cod: { on: s.codEnabled }, otp: { timing: s.otpTiming, prepaid: s.otpPrepaid, cod: s.otpCod },
         payMethods: (() => { const pm = resolvePaymentMethods(s.paymentMethods, s); return {

@@ -7,7 +7,7 @@ import { checkoutEvents, checkoutSessions, db, orders } from "~/db.server";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 const ok = () => new Response(null, { status: 204, headers: cors });
 
-export const TYPES = new Set(["load", "step", "otp_sent", "otp_error", "submit", "error", "to_pay", "hidden", "visible", "js_error", "pay_page", "pay_hidden", "pay_visible", "pay_back", "pay_error"]);
+export const TYPES = new Set(["load", "step", "otp_open", "otp_sent", "otp_error", "otp_verified", "otp_close", "submit", "error", "to_pay", "hidden", "visible", "js_error", "pay_page", "pay_hidden", "pay_visible", "pay_back", "pay_error"]);
 const MAX_PER_SESSION = 120;
 
 export const loader = () => ok();

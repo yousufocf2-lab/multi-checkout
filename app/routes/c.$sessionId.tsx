@@ -499,6 +499,7 @@ export default function Checkout() {
     } catch { /* diagnostics only */ }
   }).current;
   const stepRef = useRef(step);
+  useEffect(() => { (window as Window & { __cx?: typeof cx }).__cx = cx; }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let inFrame = false;
     try { inFrame = window.self !== window.top; } catch { inFrame = true; }
@@ -1557,17 +1558,25 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   const [w, setW] = useState<{ reqId: string | null; busy: "send" | "verify" | null; error: string | null }>({ reqId: null, busy: null, error: null });
   const input = useRef<HTMLInputElement>(null);
   const len = codeLength(widget);
+  const track = (e: string, d?: Record<string, unknown>) => { try { (window as Window & { __cx?: (e: string, d?: Record<string, unknown>) => void }).__cx?.(e, d); } catch { /* diagnostics only */ } };
+  const opened = useRef(Date.now());
+  useEffect(() => { track("otp_open", { widget: Boolean(widget) }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const sendOtp = () => {
     if (!widget) { send.submit({ intent: "otp_send", phone }, { method: "post" }); return; }
     setW((x) => ({ ...x, busy: "send", error: null }));
     (w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!) : widgetSend(widget, phone))
-      .then((reqId) => { setW({ reqId, busy: null, error: null }); setWait(30); sent.submit({ intent: "otp_widget_sent", phone }, { method: "post" }); })
-      .catch((e: Error) => setW((x) => ({ ...x, busy: null, error: e.message })));
+      .then((reqId) => { setW({ reqId, busy: null, error: null }); setWait(30); track("otp_sent", { widget: true }); sent.submit({ intent: "otp_widget_sent", phone }, { method: "post" }); })
+      .catch((e: Error) => { track("otp_error", { stage: "send", m: e.message.slice(0, 120) }); setW((x) => ({ ...x, busy: null, error: e.message })); });
   };
   useEffect(() => { sendOtp(); input.current?.focus(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => { if (send.data?.resendIn) setWait(send.data.resendIn); }, [send.data]);
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((x) => x - 1), 1000); return () => clearTimeout(t); }, [wait]);
-  useEffect(() => { if (verify.data?.ok) onVerified(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [verify.data]);
+  useEffect(() => {
+    if (verify.data?.ok) { track("otp_verified", { secs: Math.round((Date.now() - opened.current) / 1000) }); onVerified(); }
+    else if (verify.data && !verify.data.ok) track("otp_error", { stage: "verify", m: String(verify.data.error ?? "").slice(0, 120) });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [verify.data]);
+  useEffect(() => { if (send.data) track(send.data.ok ? "otp_sent" : "otp_error", send.data.ok ? { widget: false } : { stage: "send", m: String(send.data.error ?? "").slice(0, 120) }); }, [send.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = (v = code) => {
     if (v.length !== len) return;
     if (!widget) { verify.submit({ intent: "otp_verify", phone, code: v }, { method: "post" }); return; }
@@ -1575,7 +1584,7 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
     setW((x) => ({ ...x, busy: "verify", error: null }));
     widgetVerify(widget, v, w.reqId, phone)
       .then((token) => { setW((x) => ({ ...x, busy: null })); verify.submit({ intent: "otp_widget", phone, token }, { method: "post" }); })
-      .catch((e: Error) => setW((x) => ({ ...x, busy: null, error: e.message })));
+      .catch((e: Error) => { track("otp_error", { stage: "verify", m: e.message.slice(0, 120) }); setW((x) => ({ ...x, busy: null, error: e.message })); });
   };
   const error = w.error ?? (verify.data && !verify.data.ok ? verify.data.error : send.data && !send.data.ok && !send.data.resendIn ? send.data.error : null);
   const sending = send.state !== "idle" || w.busy === "send";
@@ -1588,7 +1597,7 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
             <h2 id="otp-title" className="text-lg font-semibold">Verify your mobile number</h2>
             <p className="mt-1 text-sm text-ink-soft">{sending ? `Sending a ${len}-digit code to` : `Enter the ${len}-digit code sent to`} <b className="num text-ink">+91 {phone}</b></p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-ink-faint hover:text-ink" aria-label="Close">✕</button>
+          <button type="button" onClick={() => { track("otp_close", { secs: Math.round((Date.now() - opened.current) / 1000) }); onClose(); }} className="rounded-lg p-1 text-ink-faint hover:text-ink" aria-label="Close">✕</button>
         </div>
         <input ref={input} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={len} aria-label="OTP"
           onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, len); setCode(v); if (v.length === len) submit(v); }}
