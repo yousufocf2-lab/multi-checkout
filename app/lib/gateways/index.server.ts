@@ -2,7 +2,7 @@
 //  - Fallback 1: if the primary can't start a payment (down, bad keys, timeout), the next one starts it.
 //  - Fallback 2: if the customer's payment fails, "Try again" opens the next gateway.
 // Every result is confirmed with the gateway server to server (or by its signed return) before an order is marked paid.
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, orders, stores, type Order, type PayAttempt, type Store, type StoreGateway } from "~/db.server";
 import { env } from "../env.server";
@@ -224,6 +224,30 @@ export function gatewayDetail(raw: unknown): Record<string, string> {
 }
 
 let recheckTimer: ReturnType<typeof setInterval> | null = null;
+let audited = false;
+
+/** Logs the gateway's own answer (status, reason, payment mode, UA) for unpaid online orders of the last 36 hours. */
+async function auditRecent() {
+  const rows = await db.select({ order: orders, store: stores }).from(orders).innerJoin(stores, eq(orders.storeId, stores.id))
+    .where(and(inArray(orders.status, ["failed", "pending_payment"]), inArray(orders.paymentMethod, ["prepaid", "partial"]), sql`${orders.createdAt} > now() - interval '36 hours'`))
+    .orderBy(desc(orders.createdAt)).limit(80);
+  for (const r of rows) {
+    for (const t of [...r.order.payAttempts].reverse().slice(0, 2)) {
+      const cfg = storeGateways(r.store).find((g) => g.id === t.g);
+      if (!cfg || !ADAPTERS[t.g]) continue;
+      try {
+        const v = await ADAPTERS[t.g].verify(cfg, t.txn, t.ref);
+        const ua = r.order.tracking?.ua ?? "";
+        const app = /instagram/i.test(ua) ? "IG" : /FBAN|FBAV|FB_IAB|FB4A|FBIOS/i.test(ua) ? "FB" : "browser";
+        const os = /android/i.test(ua) ? "android" : /iphone|ipad/i.test(ua) ? "ios" : "other";
+        console.log(`[pay-audit] store ${r.store.id} ${r.order.id} ${t.g}/${cfg.mode} ${os}/${app} amount ${r.order.total} → ${v.status} ${JSON.stringify(gatewayDetail(v.raw))}`);
+        if (v.status === "success") await syncOrderPayment(r.store, r.order, "audit");
+      } catch (e) {
+        console.log(`[pay-audit] ${r.order.id} ${t.g}: error ${e instanceof Error ? e.message : e}`);
+      }
+    }
+  }
+}
 /**
  * Every 5 minutes: online-payment orders still waiting 10 minutes to 2 days after they were placed are checked with
  * the gateway. Catches payments that went through when the customer never came back to the thank-you page
@@ -241,6 +265,8 @@ export function startPaymentRecheck() {
         const after = await syncOrderPayment(r.store, r.order, "recheck");
         if (after.status !== before) console.log(`[pay] recheck ${r.order.id}: ${before} → ${after.status}`);
       }
+      // Once after each start: what the gateway says about recent unpaid online orders (reasons in the logs)
+      if (!audited) { audited = true; await auditRecent(); }
     } catch (e) {
       console.error("[pay] recheck:", e instanceof Error ? e.message : e);
     }
