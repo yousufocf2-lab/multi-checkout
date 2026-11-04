@@ -66,5 +66,9 @@ app.all("*", createRequestHandler({ build, mode: process.env.NODE_ENV }));
 
 const port = Number(process.env.PORT) || 3000;
 const server = process.env.HOST ? app.listen(port, process.env.HOST, ready) : app.listen(port, ready);
-function ready() { console.log(`[server] http://localhost:${port}`); }
+function ready() {
+  console.log(`[server] http://localhost:${port}`);
+  // Wake the background jobs (payment recheck) right away instead of waiting for the first visitor
+  setTimeout(() => { fetch(`http://127.0.0.1:${port}/healthz`).catch(() => {}); }, 3000).unref?.();
+}
 ["SIGTERM", "SIGINT"].forEach((s) => process.once(s, () => server.close(console.error)));
