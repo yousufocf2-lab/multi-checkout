@@ -127,3 +127,31 @@ export async function recheckOnline(store: Store, days: number, limit = 60) {
   }
   return { checked: rows.length, paid };
 }
+
+let funnelLogged = false;
+/** Once after each start: a compact last-24-hours checkout summary per store in the server logs. */
+export async function logFunnelAudit() {
+  if (funnelLogged) return;
+  funnelLogged = true;
+  try {
+    const { stores } = await import("~/db.server");
+    const list = await db.select().from(stores);
+    for (const s of list) {
+      const d = await diagnostics(s, 1);
+      if (!d.sessions) continue;
+      const ev = await db.select({ type: checkoutEvents.type, data: checkoutEvents.data }).from(checkoutEvents)
+        .where(and(eq(checkoutEvents.storeId, s.id), gte(checkoutEvents.at, new Date(Date.now() - 86400_000))));
+      const submits = ev.filter((e) => e.type === "submit");
+      const byMethod = submits.reduce<Record<string, number>>((a, e) => { const m = String((e.data as { method?: string } | null)?.method ?? "?"); a[m] = (a[m] ?? 0) + 1; return a; }, {});
+      const steps = ev.filter((e) => e.type === "step").reduce<Record<string, number>>((a, e) => { const k = String((e.data as { step?: number } | null)?.step ?? "?"); a[k] = (a[k] ?? 0) + 1; return a; }, {});
+      console.log(`[funnel-audit] store ${s.id} ${s.name}: ${JSON.stringify({
+        sessions: d.sessions, devices: d.devices.map((r) => `${r.label}: ${r.sessions} open, ${r.phone} phone, ${r.address} addr, ${r.tried} pay-press, ${r.orders} orders (${r.prepaid} online)`),
+        tracked: d.browser.tracked, stepsReached: steps, submits: byMethod, toPayOrThanks: d.browser.toPay, payPage: d.browser.payPage, payBack: d.browser.payBack,
+        errorsShown: d.browser.errors, jsErrors: d.browser.jsErrors.slice(0, 5),
+        cod: { on: s.codEnabled }, otp: { timing: s.otpTiming },
+      })}`);
+    }
+  } catch (e) {
+    console.error("[funnel-audit]", e instanceof Error ? e.message : e);
+  }
+}
