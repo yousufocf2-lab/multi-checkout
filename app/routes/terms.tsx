@@ -18,7 +18,7 @@ export default function Page() {
       <LegalPage title="Terms & Conditions" updated={UPDATED}>
         <p>These Terms &amp; Conditions ("Terms") govern your use of Growpefy, including the website growpefy.com, the merchant dashboard, the hosted checkout and related services (together, the "Service"), operated by <strong>{c.name}</strong> ("Growpefy", "we", "us"). By creating an account or using the Service you agree to these Terms.</p>
         <h2>1. The Service</h2>
-        <p>Growpefy provides a hosted checkout and dashboard for online stores built on platforms such as Shopify, WooCommerce or custom websites. It includes checkout pages, discount and offer tools, cash-on-delivery and RTO protection tools, analytics, order syncing to your store and optional OTP and WhatsApp messaging. Payments from your customers are processed by your own payment gateway account; Growpefy does not hold or settle your customers' money.</p>
+        <p>Growpefy provides a hosted checkout and dashboard for online stores and websites. It includes checkout pages, discount and offer tools, cash-on-delivery and RTO protection tools, analytics, order syncing to your store and optional OTP and WhatsApp messaging. Payments from your customers are processed by your own payment gateway account; Growpefy does not hold or settle your customers' money.</p>
         <h2>2. Your account</h2>
         <ul>
           <li>You must be at least 18 years old and able to enter a binding contract, and you must give accurate business details.</li>
@@ -40,7 +40,7 @@ export default function Page() {
           <li>You must not use the Service for prohibited or illegal goods, fraud, spam, or to interfere with the security or operation of the Service.</li>
         </ul>
         <h2>5. Third-party services</h2>
-        <p>The Service connects to third-party platforms such as store platforms (e.g. Shopify, WooCommerce), payment gateways, Meta and messaging providers. Their availability, fees and terms are outside our control, and we are not responsible for their acts or outages. Payment disputes, chargebacks and settlements are handled between you, your customers and your payment gateway.</p>
+        <p>The Service connects to third-party platforms such as store platforms, payment gateways, Meta and messaging providers. Their availability, fees and terms are outside our control, and we are not responsible for their acts or outages. Payment disputes, chargebacks and settlements are handled between you, your customers and your payment gateway.</p>
         <h2>6. Data</h2>
         <p>You own your store and customer data. You authorise us to process it to provide the Service, as described in our <Link to="/privacy">Privacy Policy</Link>. You are responsible for having a lawful basis and any notices needed to share your customers' data with us.</p>
         <h2>7. Availability and changes</h2>

@@ -257,7 +257,7 @@ function ComplaintForm({ d }: { d: D }) {
         </label>
         <StoreSelect d={d} />
       </div>
-      <label className="block"><span className="label">Subject</span><input name="subject" className="input" maxLength={120} placeholder="e.g. Order not created in Shopify" aria-invalid={Boolean(e.subject) || undefined} />{e.subject && <span className="error-text">{e.subject}</span>}</label>
+      <label className="block"><span className="label">Subject</span><input name="subject" className="input" maxLength={120} placeholder="e.g. Order not showing in my store" aria-invalid={Boolean(e.subject) || undefined} />{e.subject && <span className="error-text">{e.subject}</span>}</label>
       <label className="block"><span className="label">What happened?</span>
         <textarea name="body" rows={5} className="input" maxLength={4000} placeholder="Order number, what you expected and what happened instead. Steps to repeat it help us fix it faster." aria-invalid={Boolean(e.body) || undefined} />
         {e.body && <span className="error-text">{e.body}</span>}

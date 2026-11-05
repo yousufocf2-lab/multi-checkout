@@ -11,10 +11,15 @@ import { parseShopInput, slugify } from "~/lib/connect";
 import { requestConnect, shopExists } from "~/lib/connect.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 
+/** Only Growpefy's team adds Shopify / WooCommerce stores now (kept for existing clients). Plain boolean on purpose: no type narrowing. */
+const teamOnly = (role: string): boolean => role === "admin";
+
 /** Websites the owner gave at signup that aren't connected yet: the first one pre-fills the form. */
 export async function loader({ request }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const isAdmin = viewer.role === "admin";
+  // New stores are set up by Growpefy's team (Shopify / WooCommerce are no longer offered to new signups)
+  if (!teamOnly(viewer.role)) throw redirect("/dashboard/stores");
   if (viewer.role !== "owner") return json({ suggestions: [], brand: "", isAdmin });
   const [u] = await db.select({ signup: users.signup, name: users.name }).from(users).where(eq(users.id, viewer.userId)).limit(1);
   const mine = await db.select({ url: stores.storefrontUrl }).from(stores).where(eq(stores.ownerId, viewer.userId));
@@ -26,6 +31,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 export async function action({ request }: ActionFunctionArgs) {
   const viewer = await requireViewer(request);
+  if (!teamOnly(viewer.role)) throw redirect("/dashboard/stores");
   const fd = await request.formData();
 
   // Shopify: the owner only gives the .myshopify.com address; Growpefy's team makes the app

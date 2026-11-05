@@ -1,13 +1,13 @@
-// Signup: websites (with platform), where they run ads, what they want to improve, and how soon.
+// Signup: websites, where they run ads, what they want to improve, and how soon.
 import { useState } from "react";
 import { Icon } from "~/components/Icons";
-import { AD_CHANNELS, GOALS, SITE_PLATFORMS, URGENCY } from "~/lib/clients";
+import { AD_CHANNELS, GOALS, URGENCY } from "~/lib/clients";
 import type { SignupProfile } from "~/db/schema";
 
 type Site = { url: string; platform: "shopify" | "woocommerce" | "other"; other?: string };
 
 export function SignupQuestions({ initial, error }: { initial?: SignupProfile | null; error?: string }) {
-  const [sites, setSites] = useState<Site[]>(initial?.websites?.length ? initial.websites : [{ url: "", platform: "shopify" }]);
+  const [sites, setSites] = useState<Site[]>(initial?.websites?.length ? initial.websites : [{ url: "", platform: "other" }]);
   const [ads, setAds] = useState<string[]>(initial?.adChannels ?? []);
   const [adOther, setAdOther] = useState(initial?.adOther ?? "");
   const [goals, setGoals] = useState<string[]>(initial?.goals ?? []);
@@ -22,29 +22,22 @@ export function SignupQuestions({ initial, error }: { initial?: SignupProfile | 
       <input type="hidden" name="profile" value={JSON.stringify(profile)} />
 
       <fieldset>
-        <legend className="label">Your website</legend>
+        <legend className="label">Your website <span className="font-normal text-ink-faint">if you have one</span></legend>
         <div className="space-y-2">
           {sites.map((s, i) => (
             <div key={i} className="rounded-xl border border-rule p-2.5">
               <div className="flex gap-2">
                 <input value={s.url} onChange={(e) => edit(i, { url: e.target.value })} placeholder="yourbrand.com" inputMode="url" autoComplete="url"
                   className="input min-w-0 flex-1" aria-label={`Website ${i + 1}`} />
-                <select value={s.platform} onChange={(e) => edit(i, { platform: e.target.value as Site["platform"] })} className="input w-[132px] shrink-0" aria-label="Built on">
-                  {SITE_PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-                </select>
                 {sites.length > 1 && (
                   <button type="button" onClick={() => setSites(sites.filter((_, j) => j !== i))} className="shrink-0 rounded-lg px-2 text-ink-faint hover:text-bad" aria-label="Remove website"><Icon name="close" className="h-4 w-4" /></button>
                 )}
               </div>
-              {s.platform === "other" && (
-                <input value={s.other ?? ""} onChange={(e) => edit(i, { other: e.target.value })} placeholder="What is it built on? e.g. custom code, Wix, Dukaan"
-                  className="input mt-2" aria-label="Describe your platform" />
-              )}
             </div>
           ))}
         </div>
         {sites.length < 5 && (
-          <button type="button" onClick={() => setSites([...sites, { url: "", platform: "shopify" }])} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-pine hover:underline">
+          <button type="button" onClick={() => setSites([...sites, { url: "", platform: "other" }])} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-pine hover:underline">
             <Icon name="plus" className="h-3.5 w-3.5" />Add another website
           </button>
         )}

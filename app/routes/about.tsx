@@ -47,7 +47,7 @@ export default function About() {
             <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-[40px] sm:leading-[1.1]">Started by people who run online stores.</h2>
           </div>
           <div className="space-y-5 text-[17px] leading-relaxed text-ink-soft" {...rv(1)}>
-            <p>Growpefy started inside a D2C business. Running Shopify stores day to day, we kept hitting the same walls: a checkout that didn't feel like our brand, COD parcels coming back unopened, a failed payment with no backup gateway to fall back on, and courier data stuck in spreadsheets.</p>
+            <p>Growpefy started inside a D2C business. Running online stores day to day, we kept hitting the same walls: a checkout that didn't feel like our brand, COD parcels coming back unopened, a failed payment with no backup gateway to fall back on, and courier data stuck in spreadsheets.</p>
             <p>Every fix meant another app, another login and another monthly bill, and none of them talked to each other. So we built the tools we needed in one place, first for our own stores, then for other brands facing the same problems.</p>
             <p className="font-medium text-ink">Today Growpefy helps stores configure checkout, offer smarter payment options, manage COD risk and see how every order performs.</p>
           </div>

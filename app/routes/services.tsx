@@ -9,7 +9,7 @@ import { siteData } from "~/lib/site.server";
 
 export const meta: MetaFunction = () => siteMeta(
   "Other services · Apps, online stores & websites · Growpefy",
-  "Beyond checkout, the Growpefy team builds custom Android apps, Shopify online stores and business websites, and sets up payments, WhatsApp and ads tracking for growing businesses.",
+  "Beyond checkout, the Growpefy team builds custom Android apps, online stores and business websites, and sets up payments, WhatsApp and ads tracking for growing businesses.",
   "/services",
   { ld: [crumbLd("Other services", "/services")] },
 );
@@ -26,7 +26,7 @@ const SERVICES: Service[] = [
   },
   {
     icon: "cart", tone: "mint", reason: "website",
-    title: "Shopify online stores",
+    title: "Online stores",
     text: "A complete store that's ready to sell: design, products, payments and shipping, set up the way Indian shoppers buy.",
     points: ["Theme design for your brand", "Product, collection and page setup", "Payment gateway, COD and prepaid offers", "Shipping, courier and policy pages", "Growpefy checkout connected, if you want it"],
   },

@@ -69,7 +69,7 @@ export function cleanSite(raw: string) {
   }
 }
 
-/** Checks the signup answers (sent as JSON). Website and urgency are required; ads and goals are optional. */
+/** Checks the signup answers (sent as JSON). Urgency is required; website, ads and goals are optional. */
 export function parseProfile(raw: string): { profile: SignupProfile; error: string | null } {
   let p: SignupProfile = {};
   try { p = JSON.parse(raw || "{}") ?? {}; } catch { p = {}; }
@@ -80,10 +80,8 @@ export function parseProfile(raw: string): { profile: SignupProfile; error: stri
     const url = cleanSite(w.url);
     if (!url) { error = `"${w.url.slice(0, 60)}" doesn't look like a website address`; continue; }
     const platform = (["shopify", "woocommerce", "other"] as const).includes(w.platform) ? w.platform : "other";
-    if (platform === "other" && !String(w.other ?? "").trim()) { error = `Tell us what ${url.replace(/^https?:\/\//, "")} is built on`; }
     if (!sites.some((s) => s.url === url)) sites.push({ url, platform, ...(platform === "other" ? { other: String(w.other ?? "").trim().slice(0, 120) } : {}) });
   }
-  if (!sites.length && !error) error = "Add your website";
   const pick = <T extends string>(list: unknown, allowed: readonly T[]) => (Array.isArray(list) ? allowed.filter((a) => list.includes(a)) : []);
   const adChannels = pick(p.adChannels, ["meta", "google", "other"] as const);
   const goals = pick(p.goals, GOALS.map((g) => g.id));

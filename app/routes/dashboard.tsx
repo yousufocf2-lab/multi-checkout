@@ -202,7 +202,6 @@ export default function DashboardLayout() {
               {may("settings") && <Item to={storeHref("settings")} icon="stores" match={/\/settings$|next=settings/} small>Store settings</Item>}
               {may("settings") && <Item to={storeHref("design")} icon="design" match={/\/design$|next=design/} small>Checkout design</Item>}
               {may("settings") && <Item to={storeHref("install")} icon="setup" match={/\/install$|next=install/} small>Setup</Item>}
-              {!isAdmin && may("settings") && <Item to="/dashboard/stores/new" icon="plus" small>Connect store</Item>}
               {!isAdmin && <Item to="/dashboard/stores" icon="stores" match={(p, q) => p === "/dashboard/stores" && !q.includes("next=")} small>All stores</Item>}
               {!isAdmin && may("team") && <Item to="/dashboard/team" icon="users" small>Team</Item>}
             </div>

@@ -118,8 +118,8 @@ function StoreHome() {
     return (
       <>
         <h1 className="mb-6 text-2xl font-semibold tracking-tight">Welcome, {viewerName}</h1>
-        <EmptyState title="No stores yet" action={<Link to="/dashboard/stores/new" className="btn-primary">Connect a store</Link>}>
-          You'll need your store's .myshopify.com domain and a Shopify app's Client ID and secret. It takes about 10 minutes.
+        <EmptyState title="Let's set up your store" action={<Link to="/dashboard/support" className="btn-primary">Talk to our team</Link>}>
+          Our team sets up your store, checkout and payments with you on a call. Tell us a good time and we'll call you.
         </EmptyState>
       </>
     );
