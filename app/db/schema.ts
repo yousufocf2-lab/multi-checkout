@@ -314,6 +314,9 @@ export const stores = pgTable("stores", {
   // Own website domain (www.brand.com) and the DNS target Railway gave for it (CNAME); status: pending | live
   storefrontDomain: text("storefront_domain").unique(),
   storefrontDnsTarget: text("storefront_dns_target"),
+  // Custom integration: every new order is POSTed to this URL, signed with the secret (X-Growpefy-Signature)
+  orderWebhookUrl: text("order_webhook_url"),
+  orderWebhookSecret: text("order_webhook_secret"),
   storefrontDomainStatus: text("storefront_domain_status").$type<"requested" | "dns" | "live">(),
   country: text("country").notNull().default("IN"),
   currency: text("currency").notNull().default("INR"),
@@ -486,7 +489,9 @@ export const blockedCustomers = pgTable(
 
 /** Courier accounts connected by a store (API token from the courier's own panel). */
 /** Courier login. Passwords are sealed (AES-GCM) before saving. Shopify-tracked couriers have no creds. */
-export type CourierCreds = { token?: string; clientName?: string; email?: string; password?: string; clientId?: string; username?: string; label?: string; viaShopify?: boolean };
+export type CourierCreds = { token?: string; clientName?: string; email?: string; password?: string; clientId?: string; username?: string; label?: string; viaShopify?: boolean;
+  /** Book shipments for website orders automatically (Delhivery: registered pickup location / warehouse name). */
+  pickupName?: string };
 export const courierAccounts = pgTable(
   "courier_accounts",
   {
@@ -787,6 +792,8 @@ export const orders = pgTable(
     total: integer("total").notNull(), // amount sent to PayU / collected on COD (items + shipping)
     // WhatsApp order confirmation: sent | confirmed | cancelled
     confirmStatus: text("confirm_status"),
+    shipError: text("ship_error"), // last automatic shipment booking error (website orders)
+    shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
     confirmAt: timestamp("confirm_at", { withTimezone: true }),
     waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery

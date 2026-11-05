@@ -1,5 +1,5 @@
 // Growpefy Store orders (kept in Growpefy, "gp:" ids): what is ready to ship, marking shipped, and the Shipnex feed.
-import { and, asc, eq, gt, inArray, isNull, like } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, like, ne, or } from "drizzle-orm";
 import { db, orders, type Order } from "~/db.server";
 import { catalogSkus } from "./catalog.server";
 import type { Store } from "~/db.server";
@@ -12,7 +12,7 @@ export const codAmount = (o: Pick<Order, "paymentMethod" | "total" | "advance">)
 
 export async function ordersToShip(storeId: number, since?: Date) {
   return db.select().from(orders)
-    .where(and(eq(orders.storeId, storeId), inArray(orders.status, READY), like(orders.shopifyOrderId, "gp:%"), isNull(orders.awb), since ? gt(orders.createdAt, since) : undefined))
+    .where(and(eq(orders.storeId, storeId), inArray(orders.status, READY), like(orders.shopifyOrderId, "gp:%"), isNull(orders.awb), or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")), since ? gt(orders.createdAt, since) : undefined))
     .orderBy(asc(orders.createdAt)).limit(500);
 }
 

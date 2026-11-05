@@ -95,6 +95,8 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
   }
   // WhatsApp order confirmation (RTO Suite), after Shopify so it can quote the order number
   void sendOrderConfirmation(store, pushed ?? updated);
+  // Custom integration (the store's own URL), if set
+  void import("./order-webhook.server").then((m) => m.sendOrderWebhook(store, pushed ?? updated));
   return pushed;
 }
 

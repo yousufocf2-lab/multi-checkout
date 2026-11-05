@@ -150,6 +150,7 @@ export default function DashboardLayout() {
           <Item to={storeHref("catalog")} icon="box" match={/\/catalog(\/|$)|next=catalog/}>{packOf(focus?.businessType).items}</Item>
           <Item to={storeHref("to-ship")} icon="shipping" match={/\/to-ship$|next=to-ship/}>Orders to ship</Item>
           <Item to={storeHref("pages")} icon="layers" match={/\/pages(\/|$)|next=pages/}>Pages</Item>
+          <Item to={storeHref("integrations")} icon="plug" match={/\/integrations$|next=integrations/}>Integrations</Item>
           <Item to={storeHref("website")} icon="globe" match={/\/website$|next=website/}>Website & domain</Item>
         </Group>
       )}

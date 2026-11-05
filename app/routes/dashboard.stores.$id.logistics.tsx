@@ -37,6 +37,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       viaShopify: Boolean(a.creds.viaShopify),
       who: a.courier === "shipnex" ? null : a.creds.viaShopify ? `Tracked from ${platformName(store)}` : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
       clientName: a.creds.clientName ?? a.creds.label ?? null,
+      pickupName: a.creds.pickupName ?? null,
       secret: a.courier === "shipnex" ? a.creds.token ?? null : null,
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
     })),
@@ -57,7 +58,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const name = COURIERS.find((c) => c.id === courier)?.name ?? "Courier";
   if (intent === "connect") {
     const get = (k: string) => String(fd.get(k) ?? "");
-    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode") });
+    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode"), pickupName: get("pickupName") });
     if (!r.ok) return json<R>({ ok: null, error: r.error, courier }, { status: 400 });
     return json<R>({ ok: "connected", error: null, courier });
   }
@@ -313,7 +314,7 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
                 <span className="mb-1 block text-xs font-medium">{f.label}{f.optional && <span className="font-normal text-ink-faint"> · optional</span>}</span>
                 <PwOrText name={f.name} type={f.type ?? "text"} className={`input h-10 text-sm ${f.name === "token" ? "font-mono text-[12px]" : ""}`}
                   placeholder={f.name === "password" && a ? "Leave empty to keep the saved password" : f.placeholder}
-                  defaultValue={f.name === "label" ? a?.clientName ?? "" : ""}
+                  defaultValue={f.name === "label" ? a?.clientName ?? "" : f.name === "pickupName" ? a?.pickupName ?? "" : ""}
                   autoComplete={f.type === "password" ? "new-password" : "off"} spellCheck={false} required={!f.optional && !(f.name === "password" && a)} />
                 {f.hint && <span className="mt-1 block text-[11px] text-ink-faint">{f.hint}</span>}
               </label>

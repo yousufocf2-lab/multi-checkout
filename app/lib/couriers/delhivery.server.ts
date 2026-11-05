@@ -51,3 +51,55 @@ export async function trackDelhivery(token: string, awbs: string[]): Promise<Tra
     return { awb: String(sh.AWB ?? ""), status: mapDelhivery(st.Status ?? "", st.StatusType ?? ""), raw: [st.StatusType, st.Status].filter(Boolean).join(" · "), at: at && !isNaN(at.getTime()) ? at : null };
   }).filter((r) => r.awb);
 }
+
+export type DelhiveryShipment = {
+  order: string; name: string; phone: string; address: string; city: string; state: string; pin: string;
+  cod: boolean; codAmount: number; total: number; products: string; quantity: number; weightGrams: number; email?: string;
+};
+
+/**
+ * Creates one forward shipment in Delhivery (manifest). Delhivery assigns the AWB (waybill).
+ * pickup = the pickup location (warehouse) name exactly as registered in Delhivery One.
+ */
+export async function createDelhiveryShipment(token: string, pickup: string, s: DelhiveryShipment): Promise<{ ok: true; awb: string } | { ok: false; error: string }> {
+  const data = {
+    shipments: [{
+      name: s.name.slice(0, 100), add: s.address.slice(0, 250), pin: s.pin, city: s.city, state: s.state, country: "India", phone: s.phone,
+      order: s.order, payment_mode: s.cod ? "COD" : "Prepaid", cod_amount: s.cod ? s.codAmount.toFixed(2) : "0", total_amount: s.total.toFixed(2),
+      products_desc: s.products.slice(0, 250), quantity: String(s.quantity), weight: String(Math.max(1, Math.round(s.weightGrams))),
+      shipping_mode: "Surface", ...(s.email ? { email: s.email } : {}),
+    }],
+    pickup_location: { name: pickup },
+  };
+  try {
+    const res = await fetch(`${BASE()}/api/cmu/create.json`, {
+      method: "POST",
+      headers: { ...headers(token), "Content-Type": "application/x-www-form-urlencoded" },
+      body: `format=json&data=${encodeURIComponent(JSON.stringify(data))}`,
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, error: "Delhivery token was rejected. Reconnect Delhivery." };
+    const body = (await res.json().catch(() => null)) as { success?: boolean; rmk?: string; packages?: { waybill?: string; status?: string; remarks?: string[] | string }[] } | null;
+    const pkg = body?.packages?.[0];
+    if (pkg?.waybill && String(pkg.status ?? "").toLowerCase() === "success") return { ok: true, awb: String(pkg.waybill) };
+    const why = [pkg?.remarks, body?.rmk].flat().filter(Boolean).join(" ").slice(0, 300);
+    return { ok: false, error: why || `Delhivery couldn't create the shipment (${res.status}).` };
+  } catch (e) {
+    return { ok: false, error: `Couldn't reach Delhivery: ${e instanceof Error ? e.message : "network error"}` };
+  }
+}
+
+/** Cancels a shipment that hasn't been picked up yet. */
+export async function cancelDelhiveryShipment(token: string, awb: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${BASE()}/api/p/edit`, {
+      method: "POST", headers: { ...headers(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ waybill: awb, cancellation: "true" }), signal: AbortSignal.timeout(20_000),
+    });
+    const body = (await res.json().catch(() => null)) as { status?: boolean | string; remark?: string; error?: string } | null;
+    if (res.ok && (body?.status === true || String(body?.status).toLowerCase() === "true")) return { ok: true };
+    return { ok: false, error: String(body?.remark ?? body?.error ?? `Delhivery error ${res.status}`).slice(0, 200) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+  }
+}

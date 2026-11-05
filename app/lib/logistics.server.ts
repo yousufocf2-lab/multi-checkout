@@ -20,7 +20,7 @@ export async function hasCourier(storeId: number) {
   return Number(r?.n ?? 0) > 0;
 }
 
-type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode", string>>;
+type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode" | "pickupName", string>>;
 
 export async function connectCourier(store: Store, courierId: string, input: Input): Promise<{ ok: true } | { ok: false; error: string }> {
   const info = courierById(courierId);
@@ -39,7 +39,7 @@ export async function connectCourier(store: Store, courierId: string, input: Inp
     if (info.id === "delhivery") {
       const token = v("token").replace(/^Token\s+/i, "");
       if (token.length < 10) return { ok: false, error: "Paste the full API token" };
-      creds = { token, clientName: v("clientName").slice(0, 80) || undefined };
+      creds = { token, clientName: v("clientName").slice(0, 80) || undefined, pickupName: v("pickupName").slice(0, 80) || undefined };
     } else {
       creds = {
         email: v("email").toLowerCase() || undefined,

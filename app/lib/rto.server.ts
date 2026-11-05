@@ -369,6 +369,11 @@ export async function handleWhatsappReply(msg: WaMessage) {
   }
 
   await db.update(orders).set({ confirmStatus: status, confirmAt: new Date(), updatedAt: new Date() }).where(eq(orders.id, row.id));
+  // Website order already booked with Delhivery: cancel that shipment too
+  if (action === "cancel" && row.paymentMethod === "cod" && row.awb) {
+    const { cancelBookedShipment } = await import("./auto-ship.server");
+    await cancelBookedShipment(store.id, row).catch((e) => console.error("[whatsapp] courier cancel:", e));
+  }
   if (row.shopifyOrderId) {
     const err = await tagStoreOrder(store, row.shopifyOrderId, [action === "confirm" ? "WA Confirmed" : "WA Cancelled"]);
     if (err) console.error(`[whatsapp] tag ${row.id}:`, err);

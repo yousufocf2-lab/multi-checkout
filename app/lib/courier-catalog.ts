@@ -8,7 +8,7 @@
 export type CourierKind = "api" | "shopify" | "push";
 
 export type CourierField = {
-  name: "token" | "clientName" | "email" | "password" | "clientId" | "username" | "label";
+  name: "token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "pickupName";
   label: string;
   placeholder: string;
   type?: "text" | "password" | "email";
@@ -52,6 +52,7 @@ export const COURIERS: CourierInfo[] = [
     fields: [
       { name: "token", label: "API token", placeholder: "Paste your Delhivery live API token" },
       { name: "clientName", label: "Client name", placeholder: "As shown in Delhivery One", hint: "Helps when you have more than one Delhivery account.", optional: true },
+      { name: "pickupName", label: "Pickup location name", placeholder: "Exactly as in Delhivery One → Warehouses", hint: "Fill this to create shipments in Delhivery automatically for your website orders (AWB and tracking come back by themselves).", optional: true },
     ],
   },
   {
