@@ -124,6 +124,11 @@ export default function DashboardLayout() {
   const [settingsOpen, setSettingsOpen] = useState(inSettings);
   useEffect(() => { if (inSettings) setSettingsOpen(true); }, [inSettings]);
 
+  // Discounts, coupons, bank offers and free gifts sit under one "Discounts" menu
+  const inOffers = /\/(discounts|coupons|offers|gifts)$/.test(location.pathname) || /next=(discounts|coupons|offers|gifts)\b/.test(location.search);
+  const [offersOpen, setOffersOpen] = useState(inOffers);
+  useEffect(() => { if (inOffers) setOffersOpen(true); }, [inOffers]);
+
   const badge = (n: number, tone = "bg-emerald-400/20 text-emerald-200") => n > 0 && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${tone}`}>{n}</span>;
   const labelled = (text: string, n: React.ReactNode) => <span className="flex flex-1 items-center justify-between gap-2">{text}{n}</span>;
 
@@ -143,10 +148,24 @@ export default function DashboardLayout() {
         <Group label="Sell more">
           {may("inbox") && <Item to={storeHref("inbox")} icon="chat" match={/\/inbox$|\/whatsapp$|next=inbox/}>WhatsApp inbox</Item>}
           {may("settings") && <Item to={storeHref("payments")} icon="rupee" match={/\/payments$|next=payments/}>Payment methods</Item>}
-          {may("offers") && <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/}>Discounts</Item>}
-          {may("offers") && <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/}>Coupons</Item>}
-          {may("offers") && <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/}>Bank offers</Item>}
-          {may("offers") && <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/}>Free gifts</Item>}
+          {may("offers") && (
+            <div>
+              <button type="button" onClick={() => setOffersOpen((o) => !o)} aria-expanded={offersOpen}
+                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition hover:bg-white/5 hover:text-white ${inOffers ? "text-white" : ""}`}>
+                <Icon name="discounts" />
+                <span className="flex-1 text-left">Discounts</span>
+                <Icon name="chevron" className={`h-4 w-4 transition ${offersOpen ? "rotate-180" : ""}`} />
+              </button>
+              {offersOpen && (
+                <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-night-line pl-2.5">
+                  <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/} small>Product discounts</Item>
+                  <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/} small>Coupon codes</Item>
+                  <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/} small>Bank & card offers</Item>
+                  <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/} small>Free gifts</Item>
+                </div>
+              )}
+            </div>
+          )}
           {may("rto") && <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>}
         </Group>
       )}
