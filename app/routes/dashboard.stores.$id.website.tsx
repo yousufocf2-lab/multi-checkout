@@ -112,10 +112,10 @@ export default function Website() {
       {isAdmin && domain && (
         <section className="panel space-y-3 border-dashed p-5">
           <h2 className="text-[15px] font-semibold">Growpefy team</h2>
-          <p className="text-xs text-ink-soft">Add <b>{domain}</b> as a custom domain on the Railway service, paste the CNAME target Railway shows, and tick Live once Railway says the domain is verified.</p>
+          <p className="text-xs text-ink-soft">Add <b>{domain}</b> on the hosting side, paste the CNAME target here, and tick Live once it is verified. Only the Growpefy team sees this box.</p>
           <Form method="post" className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="intent" value="target" />
-            <input name="target" defaultValue={target ?? ""} placeholder="abcd1234.up.railway.app" className="input min-w-0 flex-1" aria-label="CNAME target" />
+            <input name="target" defaultValue={target ?? ""} placeholder="CNAME target" className="input min-w-0 flex-1" aria-label="CNAME target" />
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="live" defaultChecked={status === "live"} />Live</label>
             <SubmitButton className="btn-secondary" busyText="Saving">Save</SubmitButton>
           </Form>
