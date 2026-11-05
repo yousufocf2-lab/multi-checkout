@@ -495,3 +495,36 @@ export async function fulfilShopifyOrder(store: Store, shopifyOrderId: string, t
   if (err || !d.fulfillmentCreate.fulfillment) return { ok: false, error: err ?? "fulfillmentCreate failed" };
   return { ok: true, already: false };
 }
+
+// ---------- catalog import (Growpefy Store) ----------
+
+export type ShopifyCatalogProduct = {
+  id: string; title: string; handle: string; descriptionHtml: string; status: string; vendor: string | null; productType: string | null;
+  tags: string[]; seo: { title: string | null; description: string | null };
+  options: { name: string; optionValues: { name: string }[] }[];
+  media: { nodes: { image?: { url: string; altText: string | null } | null }[] };
+  variants: { nodes: { id: string; title: string; sku: string | null; price: string; compareAtPrice: string | null; inventoryQuantity: number | null; position: number; selectedOptions: { name: string; value: string }[]; image: { url: string } | null; inventoryItem: { tracked: boolean } | null }[] };
+  collections: { nodes: { id: string; title: string; handle: string }[] };
+};
+
+/** One page (10 products) of the store's Shopify catalog, with variants, photos and collections. Kept small to stay under Shopify's query cost limit. */
+export async function fetchCatalogPage(store: Store, after: string | null) {
+  const data = await adminGraphql<{ products: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: ShopifyCatalogProduct[] } }>(
+    store,
+    `query($after: String) {
+      products(first: 10, after: $after, sortKey: CREATED_AT) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id title handle descriptionHtml status vendor productType tags
+          seo { title description }
+          options { name optionValues { name } }
+          media(first: 10) { nodes { ... on MediaImage { image { url altText } } } }
+          variants(first: 50) { nodes { id title sku price compareAtPrice inventoryQuantity position selectedOptions { name value } image { url } inventoryItem { tracked } } }
+          collections(first: 10) { nodes { id title handle } }
+        }
+      }
+    }`,
+    { after },
+  );
+  return data.products;
+}

@@ -20,6 +20,7 @@ import { stateOf, walletsFor } from "~/lib/wallet.server";
 import { supportBadge } from "~/lib/support.server";
 import { upcomingDemos } from "~/lib/leads.server";
 import { adminUnread } from "~/lib/admin-inbox.server";
+import { packOf } from "~/lib/business-types";
 import { listPasskeys } from "~/lib/passkeys.server";
 import { PasskeyPrompt } from "~/components/Passkey";
 import { startPaymentRecheck } from "~/lib/gateways/index.server";
@@ -76,7 +77,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, businessType: s.businessType })),
     selected,
   }, { headers });
 }
@@ -144,6 +145,11 @@ export default function DashboardLayout() {
         {viewer.role === "admin" && <Item to={storeHref("diagnostics")} icon="alert" match={/\/diagnostics$|next=diagnostics/}>Checkout diagnostics</Item>}
         {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
       </Group>
+      {(isAdmin || focus?.storefront) && may("settings") && (
+        <Group label="Growpefy Store (pilot)">
+          <Item to={storeHref("catalog")} icon="box" match={/\/catalog(\/|$)|next=catalog/}>{packOf(focus?.businessType).items}</Item>
+        </Group>
+      )}
       {(may("inbox") || may("settings") || may("offers") || may("rto")) && (
         <Group label="Sell more">
           {may("inbox") && <Item to={storeHref("inbox")} icon="chat" match={/\/inbox$|\/whatsapp$|next=inbox/}>WhatsApp inbox</Item>}

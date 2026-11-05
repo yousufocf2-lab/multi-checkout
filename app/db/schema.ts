@@ -308,6 +308,11 @@ export const stores = pgTable("stores", {
   // Partnership start (YYYY-MM-DD, IST). Can be in the past: profit, settlements and Shopify orders count from here.
   profitStartDate: text("profit_start_date"),
   profitSettledFrom: text("profit_settled_from"), // PayU settlements are fetched for every day from this date (YYYY-MM-DD)
+  // Growpefy Store (own storefront platform): what the business sells and where
+  businessType: text("business_type").$type<BusinessType>().notNull().default("store"),
+  storefrontEnabled: boolean("storefront_enabled").notNull().default(false),
+  country: text("country").notNull().default("IN"),
+  currency: text("currency").notNull().default("INR"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1116,3 +1121,96 @@ export type Order = typeof orders.$inferSelect;
 export type DropshipOrder = typeof dropshipOrders.$inferSelect;
 export type DropshipSku = typeof dropshipSkus.$inferSelect;
 export type StoreDocument = typeof storeDocuments.$inferSelect;
+
+
+// ---------- Growpefy Store: catalog (own storefront platform) ----------
+
+/** What the business sells: decides menu names, item fields and themes (lib/business-types.ts). */
+export type BusinessType = "store" | "restaurant" | "coaching" | "hotel" | "services" | "events";
+export type ItemImage = { url: string; alt?: string };
+export type ItemOption = { name: string; values: string[] };
+
+/** Something the business sells: a product, dish, course, room, service or event (kind follows the business type). */
+export const catalogItems = pgTable(
+  "catalog_items",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<BusinessType>().notNull().default("store"),
+    title: text("title").notNull(),
+    handle: text("handle").notNull(), // URL part: /products/<handle>
+    descriptionHtml: text("description_html").notNull().default(""),
+    status: text("status").$type<"active" | "draft" | "archived">().notNull().default("draft"),
+    vendor: text("vendor"),
+    productType: text("product_type"),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    images: jsonb("images").$type<ItemImage[]>().notNull().default([]),
+    options: jsonb("options").$type<ItemOption[]>().notNull().default([]),
+    /** Pack-specific fields (veg, prep time, batch dates, room capacity, duration...). */
+    extra: jsonb("extra").$type<Record<string, unknown>>().notNull().default({}),
+    seoTitle: text("seo_title"),
+    seoDescription: text("seo_description"),
+    source: text("source").$type<"manual" | "shopify">().notNull().default("manual"),
+    sourceId: text("source_id"), // gid://shopify/Product/123 when imported
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("catalog_items_handle_idx").on(t.storeId, t.handle),
+    uniqueIndex("catalog_items_source_idx").on(t.storeId, t.sourceId),
+    index("catalog_items_store_idx").on(t.storeId, t.status),
+  ],
+);
+
+/** One buyable version of an item (size / colour / half-full). Every item has at least one. Prices in paise. */
+export const catalogVariants = pgTable(
+  "catalog_variants",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id").notNull().references(() => catalogItems.id, { onDelete: "cascade" }),
+    storeId: integer("store_id").notNull(),
+    title: text("title").notNull().default("Default"),
+    optionValues: jsonb("option_values").$type<string[]>().notNull().default([]),
+    sku: text("sku"),
+    pricePaise: integer("price_paise").notNull().default(0),
+    compareAtPaise: integer("compare_at_paise"),
+    stock: integer("stock"), // null = not tracked
+    weightGrams: integer("weight_grams"),
+    imageUrl: text("image_url"),
+    position: integer("position").notNull().default(0),
+    sourceId: text("source_id"),
+  },
+  (t) => [index("catalog_variants_item_idx").on(t.itemId), index("catalog_variants_sku_idx").on(t.storeId, t.sku)],
+);
+
+/** Categories (Shopify: collections). */
+export const catalogCategories = pgTable(
+  "catalog_categories",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    handle: text("handle").notNull(),
+    description: text("description").notNull().default(""),
+    imageUrl: text("image_url"),
+    position: integer("position").notNull().default(0),
+    source: text("source").$type<"manual" | "shopify">().notNull().default("manual"),
+    sourceId: text("source_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("catalog_categories_handle_idx").on(t.storeId, t.handle), uniqueIndex("catalog_categories_source_idx").on(t.storeId, t.sourceId)],
+);
+
+export const catalogCategoryItems = pgTable(
+  "catalog_category_items",
+  {
+    categoryId: integer("category_id").notNull().references(() => catalogCategories.id, { onDelete: "cascade" }),
+    itemId: integer("item_id").notNull().references(() => catalogItems.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.categoryId, t.itemId] }), index("catalog_category_items_item_idx").on(t.itemId)],
+);
+
+export type CatalogItem = typeof catalogItems.$inferSelect;
+export type CatalogVariant = typeof catalogVariants.$inferSelect;
+export type CatalogCategory = typeof catalogCategories.$inferSelect;
