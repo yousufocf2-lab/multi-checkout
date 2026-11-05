@@ -3,7 +3,7 @@ import { and, asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, type ItemImage, type ItemOption, type Store } from "~/db.server";
 import type { Viewer } from "./auth.server";
 import { toHandle } from "./business-types";
-import { rupeesToPaise } from "./pricing";
+import { rupeesToPaise, type PricedLine } from "./pricing";
 import { fetchCatalogPage } from "./shopify.server";
 
 export type ItemStatus = "active" | "draft" | "archived";
@@ -197,4 +197,56 @@ export async function importFromShopify(store: Store) {
   }
   console.log(`[catalog-import] store=${store.id} items=${items} variants=${variants} categories=${categories} in ${Math.round((Date.now() - started) / 1000)}s`);
   return { items, variants, categories };
+}
+
+// ---------- checkout (Growpefy Store orders) ----------
+// Checkout lines from a Growpefy Store carry variant ids like "gp:123" (catalog_variants.id), so the same checkout
+// can price them from our own catalog and keep the order in Growpefy instead of creating it on Shopify.
+
+export const GP_PREFIX = "gp:";
+export const isCatalogVariant = (id: string) => id.startsWith(GP_PREFIX);
+const gpNum = (id: string) => Number(id.slice(GP_PREFIX.length)) || 0;
+
+/** Live prices from the catalog (never from the browser). Sold-out or hidden items are left out. */
+export async function catalogLines(store: Store, items: { variantId: string; quantity: number }[]): Promise<PricedLine[]> {
+  const ids = items.map((i) => gpNum(i.variantId)).filter(Boolean);
+  if (!ids.length) return [];
+  const rows = await db.select({ v: catalogVariants, i: catalogItems }).from(catalogVariants)
+    .innerJoin(catalogItems, eq(catalogItems.id, catalogVariants.itemId))
+    .where(and(eq(catalogVariants.storeId, store.id), inArray(catalogVariants.id, ids), eq(catalogItems.status, "active")));
+  const by = new Map(rows.map((r) => [r.v.id, r]));
+  const out: PricedLine[] = [];
+  for (const it of items) {
+    const r = by.get(gpNum(it.variantId));
+    if (!r) continue;
+    const qty = r.v.stock == null ? it.quantity : Math.min(it.quantity, Math.max(0, r.v.stock));
+    if (qty <= 0) continue;
+    out.push({
+      variantId: it.variantId, productId: `${GP_PREFIX}${r.i.id}`, title: r.i.title,
+      variantTitle: r.v.title === "Default" ? null : r.v.title,
+      image: r.v.imageUrl ?? r.i.images[0]?.url ?? null, quantity: qty,
+      pricePaise: r.v.pricePaise, comparePaise: r.v.compareAtPaise && r.v.compareAtPaise > r.v.pricePaise ? r.v.compareAtPaise : null,
+    });
+  }
+  return out;
+}
+
+export async function catalogSkus(store: Store, variantIds: string[]) {
+  const ids = variantIds.filter(isCatalogVariant).map(gpNum).filter(Boolean);
+  const out = new Map<string, string>();
+  if (!ids.length) return out;
+  const rows = await db.select({ id: catalogVariants.id, sku: catalogVariants.sku }).from(catalogVariants).where(and(eq(catalogVariants.storeId, store.id), inArray(catalogVariants.id, ids)));
+  for (const r of rows) out.set(`${GP_PREFIX}${r.id}`, r.sku ?? "");
+  return out;
+}
+
+/** "Creates" a Growpefy Store order: it already lives in Growpefy, so this only takes the stock and names it. */
+export async function placeCatalogOrder(store: Store, order: { id: string; items: { variantId: string; quantity: number }[] }) {
+  for (const l of order.items) {
+    if (!isCatalogVariant(l.variantId)) continue;
+    await db.update(catalogVariants)
+      .set({ stock: sql`greatest(0, ${catalogVariants.stock} - ${l.quantity})` })
+      .where(and(eq(catalogVariants.id, gpNum(l.variantId)), eq(catalogVariants.storeId, store.id), sql`${catalogVariants.stock} is not null`));
+  }
+  return { id: `${GP_PREFIX}${order.id}`, name: `#GP${order.id.slice(0, 6).toUpperCase()}` };
 }

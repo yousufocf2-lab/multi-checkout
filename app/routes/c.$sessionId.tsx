@@ -130,7 +130,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }).where(eq(checkoutSessions.id, session.id));
 
   let upsell: { productId: string; title: string; image: string | null; variants: { id: string; title: string; pricePaise: number; comparePaise: number | null }[] }[] = [];
-  if (store.upsellEnabled && (store.platform === "woocommerce" ? store.wooSecret : store.adminToken)) {
+  const ownStore = session.items.some((i) => i.variantId.startsWith("gp:")); // Growpefy Store cart: upsell comes from Shopify, so skip it
+  if (!ownStore && store.upsellEnabled && (store.platform === "woocommerce" ? store.wooSecret : store.adminToken)) {
     const inCart = new Set(lines.map((l) => l.productId));
     try {
       const products = await fetchUpsellProducts(store, store.upsellProducts.map((p) => p.id));
@@ -250,7 +251,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   if (intent === "cart") {
-    const variantId = String(fd.get("variantId") ?? "").replace(/\D/g, "");
+    const rawId = String(fd.get("variantId") ?? "");
+    const variantId = /^gp:\d+$/.test(rawId) ? rawId : rawId.replace(/\D/g, ""); // gp: = Growpefy Store item
     const op = String(fd.get("op") ?? "");
     if (!variantId) return json({ cart: false });
     const items = [...session.items];
