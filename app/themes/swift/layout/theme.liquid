@@ -14,7 +14,7 @@
   <style>:root{--brand:{{ shop.brand_color }};}</style>
   <style>{{ 'theme.css' | asset_content }}</style>
 </head>
-<body data-shop="{{ shop.slug }}" data-root="{{ routes.root }}">
+<body data-shop="{{ shop.slug }}" data-root="{{ routes.base }}">
   {% section 'announcement' %}
   {% section 'header' %}
   <main id="main">{{ content_for_layout }}</main>

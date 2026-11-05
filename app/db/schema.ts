@@ -311,6 +311,10 @@ export const stores = pgTable("stores", {
   // Growpefy Store (own storefront platform): what the business sells and where
   businessType: text("business_type").$type<BusinessType>().notNull().default("store"),
   storefrontEnabled: boolean("storefront_enabled").notNull().default(false),
+  // Own website domain (www.brand.com) and the DNS target Railway gave for it (CNAME); status: pending | live
+  storefrontDomain: text("storefront_domain").unique(),
+  storefrontDnsTarget: text("storefront_dns_target"),
+  storefrontDomainStatus: text("storefront_domain_status").$type<"requested" | "dns" | "live">(),
   country: text("country").notNull().default("IN"),
   currency: text("currency").notNull().default("INR"),
   active: boolean("active").notNull().default(true),

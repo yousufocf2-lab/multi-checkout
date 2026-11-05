@@ -41,6 +41,24 @@ app.use((req, res, next) => {
   next();
 });
 
+// A store's own website domain (www.brand.com): storefront paths go to the /sfhost routes, /admin to the dashboard.
+// Every other path (checkout /c, /pay, /order, /media, /api, /dashboard, /login, assets) works as on growpefy.com.
+const checkoutRootHost = String(process.env.CHECKOUT_DOMAIN || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "");
+const STOREFRONT_PATH = /^\/($|products\/|collections\/|cart\/?$|checkout\/?$)/;
+app.use((req, res, next) => {
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase().replace(/:\d+$/, "");
+  const ours = !host || host === canonicalHost || isOtherHost(host) || host === "localhost" || host === "127.0.0.1"
+    || (checkoutRootHost && (host === checkoutRootHost || host.endsWith("." + checkoutRootHost)));
+  if (!ours) {
+    if (req.path === "/admin" || req.path.startsWith("/admin/")) return res.redirect(302, "/dashboard");
+    if (STOREFRONT_PATH.test(req.path)) {
+      const rest = req.url === "/" ? "" : req.url.replace(/\/$/, "") ;
+      req.url = req.originalUrl = "/sfhost" + (rest.startsWith("/?") ? rest.slice(1) : rest);
+    }
+  }
+  next();
+});
+
 app.use((req, _res, next) => {
   if (PROXIED.test(req.url)) {
     const u = new URL(req.url, "http://x");

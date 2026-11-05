@@ -189,7 +189,7 @@ export async function baseScope(ctx: ShopContext) {
   const collections = await loadCategories(ctx);
   return {
     shop: { name: ctx.store.name, slug: ctx.store.slug, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
-    routes: { root: ctx.root || "/", all: `${ctx.root}/collections/all`, cart: `${ctx.root}/cart` },
+    routes: { root: ctx.root || "/", base: ctx.root, all: `${ctx.root}/collections/all`, cart: `${ctx.root}/cart` },
     collections, pages: [] as { title: string; url: string }[], preview: ctx.preview,
   };
 }
