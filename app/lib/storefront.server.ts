@@ -137,7 +137,7 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
   const compare = cheapest?.compare_at_price ?? 0;
   const url = `${ctx.root}/products/${item.handle}`;
   const drop = {
-    id: item.id, title: item.title, handle: item.handle, url, description: item.descriptionHtml, images, featured_image: cover, has_video: images.some((i) => i.type === "video"),
+    id: item.id, title: item.title, handle: item.handle, url, description: item.descriptionHtml, images, featured_image: cover, has_video: images.some((i) => i.type === "video"), featured_video: images.find((i) => i.type === "video")?.src ?? null,
     options: item.options, variants: variantDrops, price, compare_at_price: compare, available: variantDrops.some((v) => v.available),
     discount_pct: compare > price ? Math.round((1 - price / compare) * 100) : 0,
     seo_title: item.seoTitle, seo_description: item.seoDescription,

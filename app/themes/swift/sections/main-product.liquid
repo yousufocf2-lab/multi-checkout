@@ -4,7 +4,7 @@
       {%- for m in product.images -%}
       <div class="pdp__slide" id="m{{ forloop.index }}">
         {%- if m.type == 'video' -%}
-        <video src="{{ m.src }}" {% if m.poster %}poster="{{ m.poster | img_url: 1100 }}"{% endif %} muted playsinline loop controls preload="metadata" {% if forloop.first %}autoplay{% endif %}></video>
+        <video src="{{ m.src }}" {% if m.poster %}poster="{{ m.poster | img_url: 1100 }}"{% endif %} muted playsinline loop preload="metadata" data-inview-play></video>
         {%- else -%}
         <img {% if forloop.first %}id="pdp-main" fetchpriority="high"{% else %}loading="lazy"{% endif %} src="{{ m.src | img_url: 1100 }}" alt="{{ m.alt | escape }}">
         {%- endif -%}

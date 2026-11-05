@@ -19,6 +19,18 @@
   }
   paintCount();
 
+  // Product videos in grids: play silently on loop while on screen, pause when scrolled away (saves data)
+  var vids = document.querySelectorAll("video[data-inview-play]");
+  if (vids.length) {
+    vids.forEach(function (v) { v.muted = true; v.setAttribute("muted", ""); });
+    if ("IntersectionObserver" in window) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { var p = e.target.play(); if (p && p.catch) p.catch(function () {}); } else e.target.pause(); });
+      }, { threshold: 0.35 });
+      vids.forEach(function (v) { io.observe(v); });
+    } else vids.forEach(function (v) { v.autoplay = true; v.play && v.play().catch(function () {}); });
+  }
+
   // ---------- product page ----------
   var pj = document.getElementById("product-json");
   var form = document.querySelector("[data-product-form]");
