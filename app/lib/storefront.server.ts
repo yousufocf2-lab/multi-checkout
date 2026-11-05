@@ -4,6 +4,7 @@
 import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelToken } from "liquidjs";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
+import { footerPages } from "./store-pages.server";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, type CatalogItem, type CatalogVariant, type Store } from "~/db.server";
 
 // ---------- theme files ----------
@@ -186,11 +187,11 @@ export async function loadCategories(ctx: ShopContext) {
 
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
-  const collections = await loadCategories(ctx);
+  const [collections, pageRows] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id)]);
   return {
     shop: { name: ctx.store.name, slug: ctx.store.slug, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
     routes: { root: ctx.root || "/", base: ctx.root, all: `${ctx.root}/collections/all`, cart: `${ctx.root}/cart` },
-    collections, pages: [] as { title: string; url: string }[], preview: ctx.preview,
+    collections, pages: pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` })), preview: ctx.preview,
   };
 }
 

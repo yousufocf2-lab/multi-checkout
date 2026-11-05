@@ -148,6 +148,7 @@ export default function DashboardLayout() {
       {(isAdmin || focus?.storefront) && may("settings") && (
         <Group label="Growpefy Store (pilot)">
           <Item to={storeHref("catalog")} icon="box" match={/\/catalog(\/|$)|next=catalog/}>{packOf(focus?.businessType).items}</Item>
+          <Item to={storeHref("pages")} icon="layers" match={/\/pages(\/|$)|next=pages/}>Pages</Item>
           <Item to={storeHref("website")} icon="globe" match={/\/website$|next=website/}>Website & domain</Item>
         </Group>
       )}

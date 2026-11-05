@@ -4,6 +4,7 @@ import { eq, or } from "drizzle-orm";
 import { checkoutSessions, db, stores } from "~/db.server";
 import { catalogLines, GP_PREFIX } from "./catalog.server";
 import { clientIp } from "./orders.server";
+import { publishedPage } from "./store-pages.server";
 import { baseScope, html, loadProduct, loadProducts, renderPage, sectionData, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 
@@ -48,6 +49,13 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
   const products = await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
   return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title }, sectionData(ctx)));
+}
+
+export async function infoPage(ctx: ShopContext, handle: string) {
+  const page = await publishedPage(ctx.store.id, handle);
+  if (!page) throw new Response("Not found", { status: 404 });
+  const scope = await baseScope(ctx);
+  return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title }, sectionData(ctx)));
 }
 
 export async function cartPage(ctx: ShopContext) {

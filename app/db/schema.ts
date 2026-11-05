@@ -1219,3 +1219,21 @@ export const catalogCategoryItems = pgTable(
 export type CatalogItem = typeof catalogItems.$inferSelect;
 export type CatalogVariant = typeof catalogVariants.$inferSelect;
 export type CatalogCategory = typeof catalogCategories.$inferSelect;
+
+/** Website pages of a Growpefy Store: policies (shipping, returns, privacy, terms), about, contact. */
+export const storePages = pgTable(
+  "store_pages",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    handle: text("handle").notNull(),
+    bodyHtml: text("body_html").notNull().default(""),
+    published: boolean("published").notNull().default(false),
+    inFooter: boolean("in_footer").notNull().default(true),
+    position: integer("position").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("store_pages_handle_idx").on(t.storeId, t.handle)],
+);
+export type StorePage = typeof storePages.$inferSelect;
