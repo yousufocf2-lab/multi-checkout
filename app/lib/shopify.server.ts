@@ -502,7 +502,7 @@ export type ShopifyCatalogProduct = {
   id: string; title: string; handle: string; descriptionHtml: string; status: string; vendor: string | null; productType: string | null;
   tags: string[]; seo: { title: string | null; description: string | null };
   options: { name: string; optionValues: { name: string }[] }[];
-  media: { nodes: { image?: { url: string; altText: string | null } | null }[] };
+  media: { nodes: { image?: { url: string; altText: string | null } | null; sources?: { url: string; mimeType: string }[]; preview?: { image: { url: string } | null } | null }[] };
   variants: { nodes: { id: string; title: string; sku: string | null; price: string; compareAtPrice: string | null; inventoryQuantity: number | null; position: number; selectedOptions: { name: string; value: string }[]; image: { url: string } | null; inventoryItem: { tracked: boolean } | null }[] };
   collections: { nodes: { id: string; title: string; handle: string }[] };
 };
@@ -518,7 +518,7 @@ export async function fetchCatalogPage(store: Store, after: string | null) {
           id title handle descriptionHtml status vendor productType tags
           seo { title description }
           options { name optionValues { name } }
-          media(first: 10) { nodes { ... on MediaImage { image { url altText } } } }
+          media(first: 10) { nodes { ... on MediaImage { image { url altText } } ... on Video { sources { url mimeType } preview { image { url } } } } }
           variants(first: 50) { nodes { id title sku price compareAtPrice inventoryQuantity position selectedOptions { name value } image { url } inventoryItem { tracked } } }
           collections(first: 10) { nodes { id title handle } }
         }

@@ -8,6 +8,11 @@ import { fetchCatalogPage } from "./shopify.server";
 
 export type ItemStatus = "active" | "draft" | "archived";
 
+/** First photo of an item (a video's poster when it only has videos). */
+export function coverOf(media: ItemImage[]) {
+  return media.find((m) => m.type !== "video")?.url ?? media.find((m) => m.poster)?.poster ?? null;
+}
+
 /** Pilot: the own-store catalog is open to Growpefy's team, and to stores that have it switched on. */
 export function catalogAllowed(viewer: Viewer, store: Store) {
   return viewer.role === "admin" || store.storefrontEnabled;
@@ -34,7 +39,7 @@ export async function listItems(storeId: number, opts: { q?: string; status?: It
     .groupBy(catalogItems.id)
     .orderBy(desc(catalogItems.updatedAt))
     .limit(500);
-  return rows.map((r) => ({ ...r, image: r.images[0]?.url ?? null }));
+  return rows.map((r) => ({ ...r, image: coverOf(r.images) }));
 }
 
 export async function countByStatus(storeId: number) {
@@ -169,7 +174,11 @@ export async function importFromShopify(store: Store) {
       }
 
       const status: ItemStatus = p.status === "ACTIVE" ? "active" : p.status === "ARCHIVED" ? "archived" : "draft";
-      const images = p.media.nodes.flatMap((m) => (m.image ? [{ url: m.image.url, alt: m.image.altText ?? undefined }] : []));
+      const images = p.media.nodes.flatMap((m): ItemImage[] => {
+        if (m.image) return [{ url: m.image.url, alt: m.image.altText ?? undefined, type: "image" }];
+        const mp4 = m.sources?.find((s) => s.mimeType === "video/mp4") ?? m.sources?.[0];
+        return mp4 ? [{ url: mp4.url, type: "video", poster: m.preview?.image?.url }] : [];
+      });
       const options = p.options.filter((o) => !(o.name === "Title" && o.optionValues.length === 1 && o.optionValues[0].name === "Default Title"))
         .map((o) => ({ name: o.name, values: o.optionValues.map((v) => v.name) }));
       const vs: VariantInput[] = p.variants.nodes.map((v) => ({
@@ -224,7 +233,7 @@ export async function catalogLines(store: Store, items: { variantId: string; qua
     out.push({
       variantId: it.variantId, productId: `${GP_PREFIX}${r.i.id}`, title: r.i.title,
       variantTitle: r.v.title === "Default" ? null : r.v.title,
-      image: r.v.imageUrl ?? r.i.images[0]?.url ?? null, quantity: qty,
+      image: r.v.imageUrl ?? coverOf(r.i.images), quantity: qty,
       pricePaise: r.v.pricePaise, comparePaise: r.v.compareAtPaise && r.v.compareAtPaise > r.v.pricePaise ? r.v.compareAtPaise : null,
     });
   }

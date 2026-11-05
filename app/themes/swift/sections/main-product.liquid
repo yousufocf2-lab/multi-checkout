@@ -1,12 +1,24 @@
 <section class="pdp wrap">
   <div class="pdp__gallery">
-    <div class="pdp__main">
-      {%- if product.featured_image -%}<img id="pdp-main" src="{{ product.featured_image | img_url: 1100 }}" alt="{{ product.title | escape }}" fetchpriority="high">{%- endif -%}
+    <div class="pdp__slides" data-slides>
+      {%- for m in product.images -%}
+      <div class="pdp__slide" id="m{{ forloop.index }}">
+        {%- if m.type == 'video' -%}
+        <video src="{{ m.src }}" {% if m.poster %}poster="{{ m.poster | img_url: 1100 }}"{% endif %} muted playsinline loop controls preload="metadata" {% if forloop.first %}autoplay{% endif %}></video>
+        {%- else -%}
+        <img {% if forloop.first %}id="pdp-main" fetchpriority="high"{% else %}loading="lazy"{% endif %} src="{{ m.src | img_url: 1100 }}" alt="{{ m.alt | escape }}">
+        {%- endif -%}
+      </div>
+      {%- endfor -%}
     </div>
     {%- if product.images.size > 1 -%}
     <div class="pdp__thumbs">
-      {%- for img in product.images -%}
-      <button type="button" class="pdp__thumb" data-src="{{ img.src | img_url: 1100 }}" aria-label="Photo {{ forloop.index }}"><img src="{{ img.src | img_url: 160 }}" alt="" loading="lazy"></button>
+      {%- for m in product.images -%}
+      <button type="button" class="pdp__thumb" data-to="m{{ forloop.index }}" aria-label="{% if m.type == 'video' %}Video{% else %}Photo{% endif %} {{ forloop.index }}">
+        {%- assign t = m.src -%}{%- if m.type == 'video' -%}{%- assign t = m.poster -%}{%- endif -%}
+        {%- if t -%}<img src="{{ t | img_url: 160 }}" alt="" loading="lazy">{%- endif -%}
+        {%- if m.type == 'video' -%}<span class="pdp__play" aria-hidden="true">▶</span>{%- endif -%}
+      </button>
       {%- endfor -%}
     </div>
     {%- endif -%}

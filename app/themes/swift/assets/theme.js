@@ -40,7 +40,7 @@
       var out = !current.available;
       form.querySelectorAll("[data-buy],[data-add]").forEach(function (b) { b.disabled = out; });
       var so = form.querySelector("[data-soldout]"); if (so) so.hidden = !out;
-      if (current.image && main) main.src = current.image;
+      if (current.image && main) { main.src = current.image; if (slides) slides.scrollTo({ left: 0 }); }
     }
     form.addEventListener("change", paint);
     form.querySelectorAll("[data-qty]").forEach(function (b) {
@@ -63,14 +63,21 @@
       new IntersectionObserver(function (es) { sticky.classList.toggle("is-on", !es[0].isIntersecting); }).observe(buyBtn);
       sticky.querySelector("[data-sticky-buy]").addEventListener("click", function () { buyBtn.click(); });
     }
-    document.querySelectorAll(".pdp__thumb").forEach(function (t, i) {
+    var slides = document.querySelector("[data-slides]");
+    var thumbs = document.querySelectorAll(".pdp__thumb");
+    function mark(i) { thumbs.forEach(function (x, j) { if (j === i) x.setAttribute("aria-current", "true"); else x.removeAttribute("aria-current"); }); }
+    thumbs.forEach(function (t, i) {
       if (i === 0) t.setAttribute("aria-current", "true");
       t.addEventListener("click", function () {
-        if (main) main.src = t.getAttribute("data-src");
-        document.querySelectorAll(".pdp__thumb").forEach(function (x) { x.removeAttribute("aria-current"); });
-        t.setAttribute("aria-current", "true");
+        var el = document.getElementById(t.getAttribute("data-to"));
+        if (el && slides) slides.scrollTo({ left: el.offsetLeft - slides.offsetLeft, behavior: "smooth" });
+        mark(i);
       });
     });
+    if (slides) slides.addEventListener("scroll", function () {
+      var i = Math.round(slides.scrollLeft / slides.clientWidth); mark(i);
+      slides.querySelectorAll("video").forEach(function (v) { var r = v.getBoundingClientRect(), s = slides.getBoundingClientRect(); if (Math.abs(r.left - s.left) < 10) { v.play && v.play().catch(function () {}); } else v.pause && v.pause(); });
+    }, { passive: true });
     paint();
   }
 

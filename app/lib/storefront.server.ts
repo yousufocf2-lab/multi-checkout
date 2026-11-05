@@ -3,6 +3,7 @@
 // Themes ship in app/themes/<name>; later a store's own copy (edited in "Edit code") will live in the database.
 import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelToken } from "liquidjs";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { coverOf } from "./catalog.server";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, type CatalogItem, type CatalogVariant, type Store } from "~/db.server";
 
 // ---------- theme files ----------
@@ -125,7 +126,8 @@ export async function storeBySlug(slug: string) {
 
 function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVariant[]) {
   const vs = variants.slice().sort((a, b) => a.position - b.position);
-  const images = item.images.map((i) => ({ src: i.url, alt: i.alt ?? item.title }));
+  const images = item.images.map((i) => ({ src: i.url, alt: i.alt ?? item.title, type: i.type ?? "image", poster: i.poster ?? null }));
+  const cover = coverOf(item.images);
   const variantDrops = vs.map((v) => ({
     id: v.id, title: v.title, option_values: v.optionValues, price: v.pricePaise, compare_at_price: v.compareAtPaise ?? 0,
     available: v.stock == null || v.stock > 0, image: v.imageUrl ? imgUrl(v.imageUrl, 1100) : null, sku: v.sku,
@@ -135,13 +137,13 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
   const compare = cheapest?.compare_at_price ?? 0;
   const url = `${ctx.root}/products/${item.handle}`;
   const drop = {
-    id: item.id, title: item.title, handle: item.handle, url, description: item.descriptionHtml, images, featured_image: images[0]?.src ?? null,
+    id: item.id, title: item.title, handle: item.handle, url, description: item.descriptionHtml, images, featured_image: cover, has_video: images.some((i) => i.type === "video"),
     options: item.options, variants: variantDrops, price, compare_at_price: compare, available: variantDrops.some((v) => v.available),
     discount_pct: compare > price ? Math.round((1 - price / compare) * 100) : 0,
     seo_title: item.seoTitle, seo_description: item.seoDescription,
   };
   // For the product page script (safe inside <script>)
-  const json = JSON.stringify({ id: drop.id, title: drop.title, url, image: images[0] ? imgUrl(images[0].src, 300) : null, options: drop.options, variants: variantDrops }).replace(/</g, "\\u003c");
+  const json = JSON.stringify({ id: drop.id, title: drop.title, url, image: cover ? imgUrl(cover, 300) : null, options: drop.options, variants: variantDrops }).replace(/</g, "\\u003c");
   return { ...drop, json };
 }
 
