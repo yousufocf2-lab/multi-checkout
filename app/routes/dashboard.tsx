@@ -239,6 +239,7 @@ export default function DashboardLayout() {
         <Group label="Settings">
           {may("team") && <Item to="/dashboard/team" icon="users">Team</Item>}
           {may("clients") && <Item to="/dashboard/owners" icon="lock">Owner accounts</Item>}
+          {!viewer.isTeam && <Item to="/dashboard/cloudflare" icon="globe">Store domains</Item>}
         </Group>
       )}
     </>

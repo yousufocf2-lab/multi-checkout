@@ -30,6 +30,23 @@ const SHOPIFY_PARAMS = ["shop", "path_prefix", "timestamp", "signature", "logged
 // The website lives on growpefy.com. People (and Google) sometimes reach it through Railway's own address or
 // www.: send page visits there with a permanent redirect. Only GET/HEAD, so webhooks, payment returns and the
 // health check keep working on any address.
+// Store domains come in through Cloudflare (Worker "growpefy-domains"): the shopper's domain is in X-GP-Host and the
+// request carries our shared key. Only then do we treat it as that host; anyone else's X-GP-* headers are dropped.
+const PROXY_KEY = process.env.CF_PROXY_KEY || "";
+app.use((req, _res, next) => {
+  const key = req.headers["x-gp-key"];
+  const host = String(req.headers["x-gp-host"] || "").toLowerCase();
+  if (PROXY_KEY && key && key === PROXY_KEY && /^[a-z0-9.-]{3,253}$/.test(host)) {
+    req.headers.host = host;
+    req.headers["x-forwarded-host"] = host;
+    req.headers["x-forwarded-proto"] = "https";
+    const ip = String(req.headers["x-gp-ip"] || "");
+    if (/^[\d.:a-fA-F]{3,45}$/.test(ip)) req.headers["x-forwarded-for"] = ip;
+  }
+  delete req.headers["x-gp-key"]; delete req.headers["x-gp-host"]; delete req.headers["x-gp-ip"];
+  next();
+});
+
 const CANONICAL = (process.env.APP_URL || "https://growpefy.com").replace(/\/+$/, "");
 const canonicalHost = new URL(CANONICAL).host;
 const isOtherHost = (h) => h.endsWith(".up.railway.app") || h === `www.${canonicalHost}`;

@@ -8,6 +8,7 @@ import { db, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { env } from "~/lib/env.server";
+import { addHostname, cfConfigured, CONNECT_HOST, hostnameState, removeHostname } from "~/lib/cloudflare.server";
 
 /** "https://Brand.com/" -> "www.brand.com"; "shop.brand.com" stays as it is. Null when it isn't a domain. */
 function cleanDomain(raw: string) {
@@ -21,10 +22,26 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
+  // Cloudflare mode: check the domain's state with Cloudflare while it isn't live yet
+  let detail: string | null = null;
+  if (cfConfigured() && store.storefrontDomain && store.storefrontDomainStatus !== "live") {
+    try {
+      const st = await hostnameState(store.storefrontDomain);
+      if (st.state === "missing") await addHostname(store.storefrontDomain);
+      if (st.state === "live") {
+        await db.update(stores).set({ storefrontDomainStatus: "live" }).where(eq(stores.id, store.id));
+        store.storefrontDomainStatus = "live";
+      }
+      detail = st.detail;
+    } catch (e) {
+      console.error("[domain] cloudflare:", e instanceof Error ? e.message : e);
+    }
+  }
   return json({
+    auto: cfConfigured(), detail,
     isAdmin: viewer.role === "admin",
     preview: `${env.appUrl}/s/${store.slug}`,
-    domain: store.storefrontDomain, target: store.storefrontDnsTarget, status: store.storefrontDomainStatus,
+    domain: store.storefrontDomain, target: cfConfigured() ? CONNECT_HOST() : store.storefrontDnsTarget, status: store.storefrontDomainStatus,
   });
 }
 
@@ -39,11 +56,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (!d) return json({ ok: null, error: "That doesn't look like a domain. Type it like brand.com" }, { status: 400 });
     const [taken] = await db.select({ id: stores.id }).from(stores).where(and(eq(stores.storefrontDomain, d), ne(stores.id, store.id))).limit(1);
     if (taken) return json({ ok: null, error: "This domain is already connected to another store." }, { status: 400 });
-    await db.update(stores).set({ storefrontDomain: d, storefrontDomainStatus: "requested", storefrontDnsTarget: null }).where(eq(stores.id, store.id));
+    if (cfConfigured()) {
+      try { await addHostname(d); } catch (e) { return json({ ok: null, error: e instanceof Error ? e.message : "Couldn't add the domain" }, { status: 400 }); }
+    }
+    await db.update(stores).set({ storefrontDomain: d, storefrontDomainStatus: cfConfigured() ? "dns" : "requested", storefrontDnsTarget: null }).where(eq(stores.id, store.id));
     console.log(`[domain] store=${store.id} requested ${d}`);
-    return json({ ok: `Got it. We're preparing ${d}; you'll see the DNS record to add here shortly.`, error: null });
+    return json({ ok: cfConfigured() ? `Now add the record below where you bought ${d.replace(/^www\./, "")}.` : `Got it. We're preparing ${d}; you'll see the DNS record to add here shortly.`, error: null });
   }
   if (intent === "remove") {
+    if (cfConfigured() && store.storefrontDomain) await removeHostname(store.storefrontDomain).catch((e) => console.error("[domain] remove:", e));
     await db.update(stores).set({ storefrontDomain: null, storefrontDomainStatus: null, storefrontDnsTarget: null }).where(eq(stores.id, store.id));
     return json({ ok: "Domain removed. Your website is still on the preview link.", error: null });
   }
@@ -57,7 +78,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function Website() {
-  const { isAdmin, preview, domain, target, status } = useLoaderData<typeof loader>();
+  const { isAdmin, preview, domain, target, status, auto, detail } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const bare = domain?.replace(/^www\./, "");
   return (
@@ -97,7 +118,8 @@ export default function Website() {
                   <CopyField label="Value / Points to" value={target} />
                 </div>
                 {domain.startsWith("www.") && <p className="text-ink-soft">Then turn on <b>forwarding</b> from {bare} to https://{domain} in the same place, so both addresses open your store. Delete any old A or CNAME records for www first.</p>}
-                <p className="text-ink-soft">It usually starts working within 30 minutes (sometimes a few hours). The secure lock (https) is added automatically.</p>
+                <p className="text-ink-soft">It usually starts working within 30 minutes (sometimes a few hours). The secure lock (https) is added automatically. Refresh this page to check.</p>
+                {detail && <p className="text-xs text-ink-faint">Status: {detail}</p>}
               </div>
             )}
             {status === "live" && <p className="text-sm text-ink-soft">Your admin opens at <b>{domain}/admin</b>.</p>}
@@ -109,7 +131,7 @@ export default function Website() {
         )}
       </section>
 
-      {isAdmin && domain && (
+      {isAdmin && domain && !auto && (
         <section className="panel space-y-3 border-dashed p-5">
           <h2 className="text-[15px] font-semibold">Growpefy team</h2>
           <p className="text-xs text-ink-soft">Add <b>{domain}</b> on the hosting side, paste the CNAME target here, and tick Live once it is verified. Only the Growpefy team sees this box.</p>
