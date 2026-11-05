@@ -1,0 +1,19 @@
+<section class="block">
+  <div class="wrap">
+    <div class="block__head">
+      <h1>{{ collection.title }}</h1>
+      <span class="muted">{{ collection.products.size }} products</span>
+    </div>
+    {%- if collection.description != blank -%}<div class="rte muted">{{ collection.description }}</div>{%- endif -%}
+    {%- if collection.products.size > 0 -%}
+    <div class="grid">
+      {%- for product in collection.products -%}{% render 'snippets/product-card', product: product %}{%- endfor -%}
+    </div>
+    {%- else -%}
+    <p class="empty">Nothing here yet. <a href="{{ routes.all }}" class="link">See all products</a></p>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Category page", "settings": [] }
+{% endschema %}

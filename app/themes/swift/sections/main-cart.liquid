@@ -1,0 +1,16 @@
+<section class="block">
+  <div class="wrap cart">
+    <h1>Your cart</h1>
+    <div data-cart-items class="cart__items"></div>
+    <p data-cart-empty class="empty" hidden>Your cart is empty. <a href="{{ routes.all }}" class="link">Start shopping</a></p>
+    <div data-cart-summary class="cart__summary" hidden>
+      <div class="cart__row"><span>Subtotal</span><b data-cart-subtotal></b></div>
+      <p class="muted">Delivery and online-payment discount are shown at checkout.</p>
+      <button type="button" class="btn btn--primary btn--block" data-checkout>Checkout</button>
+      <p class="muted center" data-checkout-note hidden></p>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Cart page", "settings": [] }
+{% endschema %}

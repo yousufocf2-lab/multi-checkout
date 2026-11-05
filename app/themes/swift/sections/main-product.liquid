@@ -1,0 +1,64 @@
+<section class="pdp wrap">
+  <div class="pdp__gallery">
+    <div class="pdp__main">
+      {%- if product.featured_image -%}<img id="pdp-main" src="{{ product.featured_image | img_url: 1100 }}" alt="{{ product.title | escape }}" fetchpriority="high">{%- endif -%}
+    </div>
+    {%- if product.images.size > 1 -%}
+    <div class="pdp__thumbs">
+      {%- for img in product.images -%}
+      <button type="button" class="pdp__thumb" data-src="{{ img.src | img_url: 1100 }}" aria-label="Photo {{ forloop.index }}"><img src="{{ img.src | img_url: 160 }}" alt="" loading="lazy"></button>
+      {%- endfor -%}
+    </div>
+    {%- endif -%}
+  </div>
+
+  <div class="pdp__info">
+    <h1 class="pdp__title">{{ product.title }}</h1>
+    <div class="pdp__price" data-price>{% render 'snippets/price', price: product.price, compare: product.compare_at_price %}</div>
+    {%- if product.discount_pct > 0 -%}<p class="save" data-save>You save {{ product.compare_at_price | minus: product.price | money }} ({{ product.discount_pct }}%)</p>{%- endif -%}
+
+    <form class="pdp__form" data-product-form>
+      {%- for option in product.options -%}
+      <fieldset class="opt">
+        <legend>{{ option.name }}</legend>
+        <div class="opt__values">
+          {%- assign oi = forloop.index0 -%}
+          {%- for value in option.values -%}
+          <label class="pill"><input type="radio" name="option{{ oi }}" value="{{ value | escape }}" {% if forloop.first %}checked{% endif %}><span>{{ value }}</span></label>
+          {%- endfor -%}
+        </div>
+      </fieldset>
+      {%- endfor -%}
+
+      <div class="qty" aria-label="Quantity">
+        <button type="button" data-qty="-1" aria-label="Less">−</button>
+        <input type="number" name="qty" value="1" min="1" max="20" inputmode="numeric" aria-label="Quantity">
+        <button type="button" data-qty="1" aria-label="More">+</button>
+      </div>
+
+      <div class="pdp__buttons">
+        <button type="submit" name="buy" value="now" class="btn btn--primary btn--block" data-buy>Buy now</button>
+        <button type="submit" name="buy" value="cart" class="btn btn--ghost btn--block" data-add>Add to cart</button>
+      </div>
+      <p class="pdp__soldout" data-soldout hidden>This option is sold out.</p>
+    </form>
+
+    <ul class="pdp__points">
+      <li>Cash on delivery available</li>
+      <li>Extra discount when you pay online</li>
+      <li>Ships within 24 hours</li>
+    </ul>
+
+    {%- if product.description != blank -%}
+    <details class="pdp__desc" open><summary>Description</summary><div class="rte">{{ product.description }}</div></details>
+    {%- endif -%}
+  </div>
+</section>
+<script type="application/json" id="product-json">{{ product.json }}</script>
+<div class="sticky-buy" data-sticky>
+  <div><p class="sticky-buy__title">{{ product.title }}</p><p class="sticky-buy__price" data-sticky-price>{{ product.price | money }}</p></div>
+  <button type="button" class="btn btn--primary" data-sticky-buy>Buy now</button>
+</div>
+{% schema %}
+{ "name": "Product page", "settings": [] }
+{% endschema %}

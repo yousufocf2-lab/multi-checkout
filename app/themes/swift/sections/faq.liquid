@@ -1,0 +1,23 @@
+<section class="block">
+  <div class="wrap wrap--narrow">
+    <h2>{{ section.settings.heading }}</h2>
+    <div class="faq">
+      {%- for q in section.settings.items -%}
+      <details><summary>{{ q.q }}</summary><p>{{ q.a }}</p></details>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{
+  "name": "FAQ",
+  "settings": [
+    { "id": "heading", "type": "text", "label": "Heading", "default": "Questions" },
+    { "id": "items", "type": "list", "label": "Questions", "default": [
+      { "q": "Is cash on delivery available?", "a": "Yes, across most pincodes in India. Pay online to get an extra discount." },
+      { "q": "How long does delivery take?", "a": "Orders ship within 24 hours and usually arrive in 3 to 6 days." },
+      { "q": "Can I return my order?", "a": "Yes, within 7 days of delivery if the item is unused and in its original box." }
+    ] }
+  ]
+}
+{% endschema %}

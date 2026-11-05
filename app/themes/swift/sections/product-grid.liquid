@@ -1,0 +1,24 @@
+{%- assign list = section.products -%}
+{%- if list.size > 0 -%}
+<section class="block">
+  <div class="wrap">
+    <div class="block__head">
+      <h2>{{ section.settings.heading }}</h2>
+      <a href="{{ section.collection_url | default: routes.all }}" class="link">View all</a>
+    </div>
+    <div class="grid">
+      {%- for product in list -%}{% render 'snippets/product-card', product: product %}{%- endfor -%}
+    </div>
+  </div>
+</section>
+{%- endif -%}
+{% schema %}
+{
+  "name": "Product grid",
+  "settings": [
+    { "id": "heading", "type": "text", "label": "Heading", "default": "Bestsellers" },
+    { "id": "collection", "type": "collection", "label": "Category (empty = all)", "default": "" },
+    { "id": "limit", "type": "range", "label": "Products to show", "default": 8, "min": 2, "max": 24 }
+  ]
+}
+{% endschema %}

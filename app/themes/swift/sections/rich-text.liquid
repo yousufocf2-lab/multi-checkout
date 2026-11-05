@@ -1,0 +1,9 @@
+<section class="block block--center">
+  <div class="wrap wrap--narrow">
+    {%- if section.settings.heading != blank -%}<h2>{{ section.settings.heading }}</h2>{%- endif -%}
+    <div class="rte">{{ section.settings.text }}</div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Rich text", "settings": [ { "id": "heading", "type": "text", "label": "Heading", "default": "" }, { "id": "text", "type": "richtext", "label": "Text", "default": "" } ] }
+{% endschema %}

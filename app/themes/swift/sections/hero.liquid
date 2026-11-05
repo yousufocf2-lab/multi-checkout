@@ -1,0 +1,27 @@
+<section class="hero">
+  <div class="wrap hero__grid">
+    <div class="hero__copy">
+      {%- if section.settings.eyebrow != blank -%}<p class="eyebrow">{{ section.settings.eyebrow }}</p>{%- endif -%}
+      <h1>{{ section.settings.heading | default: shop.name }}</h1>
+      {%- if section.settings.text != blank -%}<p class="hero__text">{{ section.settings.text }}</p>{%- endif -%}
+      <a class="btn btn--primary" href="{{ section.settings.button_link | default: routes.all }}">{{ section.settings.button_label }}</a>
+    </div>
+    {%- assign img = section.settings.image | default: hero_image -%}
+    {%- if img -%}
+    <div class="hero__media"><img src="{{ img | img_url: 1200 }}" alt="" fetchpriority="high"></div>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{
+  "name": "Hero banner",
+  "settings": [
+    { "id": "eyebrow", "type": "text", "label": "Small text above", "default": "New season" },
+    { "id": "heading", "type": "text", "label": "Heading", "default": "" },
+    { "id": "text", "type": "textarea", "label": "Text", "default": "Quality you can feel. Delivered fast, with cash on delivery across India." },
+    { "id": "button_label", "type": "text", "label": "Button", "default": "Shop now" },
+    { "id": "button_link", "type": "url", "label": "Button link" },
+    { "id": "image", "type": "image", "label": "Image" }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,9 @@
+{
+  "sections": {
+    "hero": { "type": "hero", "settings": {} },
+    "trust": { "type": "trust-badges", "settings": {} },
+    "bestsellers": { "type": "product-grid", "settings": { "heading": "Bestsellers", "limit": 8 } },
+    "faq": { "type": "faq", "settings": {} }
+  },
+  "order": ["hero", "trust", "bestsellers", "faq"]
+}

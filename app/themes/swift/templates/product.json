@@ -1,0 +1,8 @@
+{
+  "sections": {
+    "main": { "type": "main-product", "settings": {} },
+    "trust": { "type": "trust-badges", "settings": {} },
+    "related": { "type": "product-grid", "settings": { "heading": "You may also like", "limit": 4 } }
+  },
+  "order": ["main", "trust", "related"]
+}

@@ -21,7 +21,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const [items, counts, categories] = await Promise.all([listItems(store.id, { q, status }), countByStatus(store.id), listCategories(store.id)]);
   const imp = imports.get(store.id);
   return json({
-    store: { id: store.id, name: store.name, platform: store.platform, shopify: store.platform === "shopify" && Boolean(store.adminToken || store.clientId) },
+    store: { id: store.id, slug: store.slug, name: store.name, platform: store.platform, shopify: store.platform === "shopify" && Boolean(store.adminToken || store.clientId) },
     pack: packOf(store.businessType), status, q, counts, categories,
     items: items.map((i) => ({ ...i, updatedAt: i.updatedAt.toISOString() })),
     importing: imp && !imp.done && !imp.error ? Math.round((Date.now() - imp.startedAt) / 1000) : null,
@@ -76,6 +76,7 @@ export default function Catalog() {
             <SubmitButton className="btn-secondary" busyText="Starting">Import from Shopify</SubmitButton>
           </Form>
         )}
+        <a href={`/s/${store.slug}`} target="_blank" rel="noreferrer" className="btn-secondary">View website</a>
         <Link to="new" className="btn-primary">Add {pack.item}</Link>
       </div>
 

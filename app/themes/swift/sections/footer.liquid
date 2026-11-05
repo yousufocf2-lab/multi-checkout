@@ -1,0 +1,23 @@
+<footer class="footer">
+  <div class="wrap footer__grid">
+    <div>
+      <p class="footer__brand">{{ shop.name }}</p>
+      {%- if shop.phone -%}<p class="muted">Help: <a href="tel:{{ shop.phone }}">{{ shop.phone }}</a></p>{%- endif -%}
+    </div>
+    <div>
+      <p class="footer__head">Shop</p>
+      <a href="{{ routes.all }}">All products</a>
+      {%- for c in collections limit: 5 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}
+    </div>
+    {%- if pages.size > 0 -%}
+    <div>
+      <p class="footer__head">Help</p>
+      {%- for p in pages -%}<a href="{{ p.url }}">{{ p.title }}</a>{%- endfor -%}
+    </div>
+    {%- endif -%}
+  </div>
+  <p class="wrap footer__copy">© {{ 'now' | date: '%Y' }} {{ shop.name }} · Powered by Growpefy</p>
+</footer>
+{% schema %}
+{ "name": "Footer", "settings": [] }
+{% endschema %}

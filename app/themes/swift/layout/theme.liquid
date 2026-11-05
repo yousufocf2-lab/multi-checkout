@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title | default: shop.name }}{% if page_title and page_title != shop.name %} · {{ shop.name }}{% endif %}</title>
+  {% if page_description %}<meta name="description" content="{{ page_description | strip_html | truncate: 160 | escape }}">{% endif %}
+  {% if preview %}<meta name="robots" content="noindex">{% endif %}
+  <meta property="og:title" content="{{ page_title | default: shop.name | escape }}">
+  {% if og_image %}<meta property="og:image" content="{{ og_image | img_url: 1200 }}">{% endif %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+  <style>:root{--brand:{{ shop.brand_color }};}</style>
+  <style>{{ 'theme.css' | asset_content }}</style>
+</head>
+<body data-shop="{{ shop.slug }}" data-root="{{ routes.root }}">
+  {% section 'announcement' %}
+  {% section 'header' %}
+  <main id="main">{{ content_for_layout }}</main>
+  {% section 'footer' %}
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>{{ 'theme.js' | asset_content }}</script>
+</body>
+</html>
