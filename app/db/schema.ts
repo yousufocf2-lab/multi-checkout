@@ -1266,3 +1266,28 @@ export const storeThemes = pgTable("store_themes", {
   publishedAt: timestamp("published_at", { withTimezone: true }),
 });
 export type StoreTheme = typeof storeThemes.$inferSelect;
+
+/** A line on a draft order: a product variant from the store, or a custom item typed by the owner. */
+export type DraftLine = { variantId: string; productId?: string; title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number; comparePaise: number | null; custom?: boolean };
+export type DraftDiscount = { type: "percent" | "flat"; value: number; reason?: string };
+
+/** Draft orders: made by the store owner (phone / WhatsApp / Instagram orders), then sent as a checkout link or turned into an order. */
+export const draftOrders = pgTable("draft_orders", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  number: integer("number").notNull(), // #D1001, per store
+  status: text("status").$type<"open" | "link_sent" | "completed" | "cancelled">().notNull().default("open"),
+  items: jsonb("items").$type<DraftLine[]>().notNull().default([]),
+  customer: jsonb("customer").$type<Partial<OrderCustomer>>().notNull().default({}),
+  discount: jsonb("discount").$type<DraftDiscount | null>(),
+  shippingPaise: integer("shipping_paise").notNull().default(0),
+  shippingTitle: text("shipping_title"),
+  note: text("note"),
+  tags: jsonb("tags").$type<string[]>().notNull().default([]),
+  orderId: text("order_id"), // set when it became an order
+  sessionId: text("session_id"), // checkout link sent to the customer
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("draft_orders_number_idx").on(t.storeId, t.number), index("draft_orders_store_idx").on(t.storeId, t.status)]);
+export type DraftOrder = typeof draftOrders.$inferSelect;

@@ -138,7 +138,8 @@ export default function DashboardLayout() {
   // ---- main menu (store tools) ----
   const storeMain: NavNode[] = [
     { label: "Home", to: "/dashboard", icon: "home", end: true, show: may("orders") },
-    { label: "Orders", to: "/dashboard/orders", icon: "inbox", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship/, show: may("orders"), children: [
+    { label: "Orders", to: "/dashboard/orders", icon: "inbox", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship|\/drafts(\/|$)|next=drafts/, show: may("orders"), children: [
+      { label: "Drafts", to: storeHref("drafts"), match: /\/drafts(\/|$)|next=drafts/, show: Boolean(focus) || !isAdmin },
       { label: "Abandoned checkouts", to: "/dashboard/orders/abandoned", show: true },
       { label: "Orders to ship", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: Boolean(site) },
     ] },

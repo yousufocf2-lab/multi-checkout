@@ -148,6 +148,16 @@ export const GUIDES: Record<string, Guide> = {
     title: "Pages",
     intro: "Shipping, returns, privacy and terms pages. Payment gateways need these before approving your website.",
   },
+  drafts: {
+    title: "Draft orders",
+    intro: "Make an order yourself for a customer who ordered on phone, WhatsApp or Instagram.",
+    steps: [
+      { title: "Add products", text: "Search your products, or add a custom item with your own name and price (own website only)." },
+      { title: "Add the customer", text: "Mobile number, name and delivery address. Add a discount or shipping charge if needed." },
+      { title: "Send a checkout link", text: "The customer opens it with everything filled in and pays online or picks COD." },
+      { title: "Or create the order now", text: "Choose “Create COD order” or “Mark as paid” (UPI, bank transfer, cash). It becomes a normal order and ships like any other." },
+    ],
+  },
   abandoned: {
     title: "Abandoned checkouts",
     intro: "Shoppers who started checkout, left their phone number, but didn't place the order. Each has a link that reopens their cart.",
