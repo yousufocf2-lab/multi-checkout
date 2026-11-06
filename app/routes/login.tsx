@@ -7,6 +7,8 @@ import { AuthShell } from "~/components/AuthShell";
 import { ContactInput, OtpStep } from "~/components/OtpAuth";
 import { Notice, SubmitButton, TextField } from "~/components/ui";
 import { PasskeyLogin } from "~/components/Passkey";
+import { SocialLogin } from "~/components/SocialLogin";
+import { socialProviders } from "~/lib/social-login.server";
 import { findOwner, getViewer, login, signupOpen, startSession } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { clientIp } from "~/lib/orders.server";
@@ -17,7 +19,7 @@ export const meta: MetaFunction = () => [{ title: "Log in · Growpefy" }, { name
 export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);
   if (await getViewer(request)) throw redirect("/dashboard");
-  return json({ signup: signupOpen() });
+  return json({ signup: signupOpen(), social: socialProviders(), oauthError: new URL(request.url).searchParams.get("oauth_error") });
 }
 
 type Data = { stage: "start" | "otp" | "password"; contact: string; shown?: string; resendIn?: number; error?: string; codeError?: string; widget?: { widgetId: string; tokenAuth: string } | null; phone?: string };
@@ -55,7 +57,7 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function Login() {
-  const { signup } = useLoaderData<typeof loader>();
+  const { signup, social, oauthError } = useLoaderData<typeof loader>();
   const data = useActionData<typeof action>();
   const [params] = useSearchParams();
   const nav = useNavigation();
@@ -78,6 +80,7 @@ export default function Login() {
 
         {stage === "start" && (
           <Form method="post" className="space-y-4" noValidate>
+            <SocialLogin google={social.google} facebook={social.facebook} next={next} error={oauthError} />
             <input type="hidden" name="intent" value="send" />
             <input type="hidden" name="next" value={next} />
             {data?.error && <Notice tone="error">{data.error}</Notice>}

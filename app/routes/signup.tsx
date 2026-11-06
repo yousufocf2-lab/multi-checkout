@@ -1,6 +1,8 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useNavigation } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
+import { SocialLogin } from "~/components/SocialLogin";
+import { socialProviders } from "~/lib/social-login.server";
 import { useEffect, useState } from "react";
 import { BusyOverlay } from "~/components/Brand";
 import { AuthShell } from "~/components/AuthShell";
@@ -23,7 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   requireAppHost(request);
   if (!signupOpen()) throw redirect("/login");
   if (await getViewer(request)) throw redirect("/dashboard");
-  return null;
+  return json({ social: socialProviders() });
 }
 
 type Data = {
@@ -81,6 +83,7 @@ export default function Signup() {
   const nav = useNavigation();
   const e = data?.errors ?? {};
   const [mode, setMode] = useState<"phone" | "email">("phone");
+  const { social } = useLoaderData<typeof loader>();
   const [stage, setStage] = useState<"start" | "otp">(data?.stage ?? "start");
   useEffect(() => { if (data?.stage) setStage(data.stage); }, [data]);
   const verifying = nav.state !== "idle" && nav.formData?.get("intent") === "verify";
@@ -95,6 +98,7 @@ export default function Signup() {
       >
         {stage === "start" ? (
           <Form method="post" className="space-y-4" noValidate>
+            <SocialLogin google={social.google} facebook={social.facebook} next="/onboarding?welcome=1" />
             <input type="hidden" name="intent" value="send" />
             {e.form && <Notice tone="error">{e.form}</Notice>}
             <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
