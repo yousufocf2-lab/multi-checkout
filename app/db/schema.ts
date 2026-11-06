@@ -1044,6 +1044,63 @@ export const walletRecharges = pgTable(
   (t) => [index("wallet_recharges_wallet_idx").on(t.walletId, t.createdAt)],
 );
 
+/** Monthly subscription billing. Wallets remain available only where a separate fulfilment workflow needs them. */
+export const billingAccounts = pgTable("billing_accounts", {
+  storeId: integer("store_id").primaryKey().references(() => stores.id, { onDelete: "cascade" }),
+  planId: text("plan_id").$type<"starter" | "growth" | "pro">().notNull(),
+  status: text("status").$type<"active" | "paused" | "cancelled">().notNull().default("active"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  nextInvoiceAt: timestamp("next_invoice_at", { withTimezone: true }).notNull(),
+  /** Unused old wallet principal + its already-paid GST, applied to later invoices. */
+  creditPaise: bigint("credit_paise", { mode: "number" }).notNull().default(0),
+  creditGstPaise: bigint("credit_gst_paise", { mode: "number" }).notNull().default(0),
+  legacyDebtPaise: bigint("legacy_debt_paise", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type BillingLine = { label: string; amountPaise: number };
+export const billingInvoices = pgTable("billing_invoices", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  invoiceNo: text("invoice_no").notNull().unique(),
+  planId: text("plan_id").$type<"starter" | "growth" | "pro">().notNull(),
+  periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+  periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+  lines: jsonb("lines").$type<BillingLine[]>().notNull().default([]),
+  subtotalPaise: bigint("subtotal_paise", { mode: "number" }).notNull(),
+  gstPaise: bigint("gst_paise", { mode: "number" }).notNull(),
+  creditPaise: bigint("credit_paise", { mode: "number" }).notNull().default(0),
+  creditGstPaise: bigint("credit_gst_paise", { mode: "number" }).notNull().default(0),
+  totalPaise: bigint("total_paise", { mode: "number" }).notNull(),
+  duePaise: bigint("due_paise", { mode: "number" }).notNull(),
+  status: text("status").$type<"open" | "paid" | "void">().notNull().default("open"),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  paymentTxnid: text("payment_txnid").unique(),
+  paymentMihpayid: text("payment_mihpayid"),
+  billing: jsonb("billing").$type<BillingDetails & { taxType?: "igst" | "cgst_sgst" }>(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("billing_invoice_period_idx").on(t.storeId, t.periodStart),
+  index("billing_invoice_due_idx").on(t.storeId, t.status, t.dueAt),
+]);
+
+/** Order and message charges queued for the next monthly invoice. Amounts are before GST. */
+export const billingUsage = pgTable("billing_usage", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  invoiceId: integer("invoice_id").references(() => billingInvoices.id, { onDelete: "set null" }),
+  type: text("type").notNull(),
+  amountPaise: bigint("amount_paise", { mode: "number" }).notNull(),
+  refType: text("ref_type").notNull(),
+  refId: text("ref_id").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("billing_usage_ref_idx").on(t.type, t.refType, t.refId),
+  index("billing_usage_period_idx").on(t.storeId, t.invoiceId, t.createdAt),
+]);
+
 /** "Call me back" requests from the website contact page and the store dashboard. */
 export const callbackRequests = pgTable(
   "callback_requests",
@@ -1179,6 +1236,9 @@ export type BlockedCustomer = typeof blockedCustomers.$inferSelect;
 export type Wallet = typeof wallets.$inferSelect;
 export type WalletTransaction = typeof walletTransactions.$inferSelect;
 export type WalletRecharge = typeof walletRecharges.$inferSelect;
+export type BillingAccount = typeof billingAccounts.$inferSelect;
+export type BillingInvoice = typeof billingInvoices.$inferSelect;
+export type BillingUsage = typeof billingUsage.$inferSelect;
 export type PlatformSettings = typeof platformSettings.$inferSelect;
 export type MetaRecharge = typeof metaRecharges.$inferSelect;
 export type FreeOffer = typeof freeOffers.$inferSelect;

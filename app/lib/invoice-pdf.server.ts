@@ -187,3 +187,59 @@ export function invoicePdf(d: InvoiceData): Promise<Buffer> {
     doc.end();
   });
 }
+
+export type MonthlyInvoiceData = {
+  no: string; date: Date; periodStart: Date; periodEnd: Date; dueAt: Date; paidAt: Date | null;
+  seller: BillingDetails; buyer: BillingDetails; store: string; lines: { label: string; amountPaise: number }[];
+  subtotalPaise: number; gstPaise: number; creditPaise: number; creditGstPaise: number; totalPaise: number; duePaise: number;
+  taxType: "igst" | "cgst_sgst";
+};
+
+/** PDF for monthly service invoices, including prior wallet credits and invoice balance. */
+export function monthlyInvoicePdf(d: MonthlyInvoiceData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 44, info: { Title: `Growpefy invoice ${d.no}`, Author: d.seller.name || "Growpefy" } });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c)); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject);
+    doc.font("Helvetica");
+    const money = (n: number) => `INR ${(n / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const date = (v: Date) => v.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+    const W = doc.page.width - 88;
+    doc.rect(0, 0, doc.page.width, 7).fill("#0B5D4B");
+    doc.fillColor("#0B5D4B").font("Helvetica-Bold").fontSize(21).text("GROWPEFY", 44, 38);
+    doc.fillColor("#0B5D4B").fontSize(18).text("TAX INVOICE", 300, 38, { width: W - 256, align: "right" });
+    doc.fillColor("#4A5753").font("Helvetica").fontSize(9).text(`Invoice: ${d.no}\nDate: ${date(d.date)}\nPeriod: ${date(d.periodStart)} – ${date(d.periodEnd)}\nStatus: ${d.paidAt ? `Paid ${date(d.paidAt)}` : `Due ${date(d.dueAt)}`}`, 300, 66, { width: W - 256, align: "right", lineGap: 4 });
+    let y = 128;
+    const party = (label: string, x: number, b: BillingDetails, width: number) => {
+      doc.fillColor("#0B5D4B").font("Helvetica-Bold").fontSize(9).text(label.toUpperCase(), x, y, { width });
+      doc.fillColor("#0B1513").fontSize(11).text(b.name || "—", x, y + 16, { width });
+      const lines = [b.address, b.state, b.gstin ? `GSTIN: ${b.gstin}` : null, b.email, b.phone].filter(Boolean).join("\n");
+      doc.fillColor("#4A5753").font("Helvetica").fontSize(9).text(lines, x, y + 33, { width, lineGap: 3 });
+    };
+    party("Supplier", 44, d.seller, 230); party("Bill to", 315, { ...d.buyer, name: d.buyer.name || d.store }, 230);
+    y = Math.max(doc.y, 230) + 20;
+    doc.roundedRect(44, y, W, 24, 4).fill("#0B5D4B");
+    doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(9).text("Description", 54, y + 7, { width: W - 150 });
+    doc.text("Amount", 400, y + 7, { width: W - 366, align: "right" }); y += 24;
+    for (const line of d.lines) {
+      const h = Math.max(32, doc.heightOfString(line.label, { width: W - 170 }) + 18);
+      doc.rect(44, y, W, h).fill(y % 2 ? "#FFFFFF" : "#F6F8F7");
+      doc.fillColor("#0B1513").font("Helvetica").fontSize(9).text(line.label, 54, y + 10, { width: W - 170 });
+      doc.font("Helvetica-Bold").text(money(line.amountPaise), 400, y + 10, { width: W - 366, align: "right" }); y += h;
+    }
+    y += 14;
+    const row = (label: string, value: number, bold = false) => { doc.fillColor(bold ? "#0B1513" : "#4A5753").font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 11 : 9.5).text(label, 300, y, { width: 145 }); doc.text(money(value), 445, y, { width: 106, align: "right" }); y += bold ? 21 : 17; };
+    row("Taxable subtotal", d.subtotalPaise);
+    if (d.taxType === "cgst_sgst") { row("CGST @ 9%", Math.round(d.gstPaise / 2)); row("SGST @ 9%", d.gstPaise - Math.round(d.gstPaise / 2)); }
+    else row("IGST @ 18%", d.gstPaise);
+    if (d.creditPaise) row("Previously paid wallet principal credit", -d.creditPaise);
+    if (d.creditGstPaise) row("Previously paid GST credit", -d.creditGstPaise);
+    row("Invoice total", d.totalPaise, true);
+    doc.roundedRect(300, y + 2, 251, 34, 6).fill("#0B5D4B");
+    doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(12).text(d.paidAt ? "Paid" : "Balance due", 312, y + 12, { width: 120 });
+    doc.text(money(d.duePaise), 432, y + 12, { width: 107, align: "right" });
+    y += 58;
+    doc.fillColor("#4A5753").font("Helvetica").fontSize(8.5).text(`GSTIN: ${d.seller.gstin || "—"}   ·   Place of supply: ${d.buyer.state || "—"}   ·   Computer-generated tax invoice`, 44, y, { width: W, align: "center" });
+    doc.end();
+  });
+}

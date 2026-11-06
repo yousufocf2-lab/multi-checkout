@@ -6,17 +6,18 @@ import { useEffect, useRef, useState } from "react";
 import { CourierLogo } from "~/components/CourierLogo";
 import { Icon, type IconName } from "~/components/Icons";
 import {
-  API_COURIERS, BrandLogo, CourierRow, CtaBand, Faq, GATEWAY_TILES, GatewayFallback, GatewayTile, IconTile, RateCard, SectionHead, StatusPill, WalletDemo,
+  API_COURIERS, BrandLogo, CourierRow, CtaBand, Faq, GATEWAY_TILES, GatewayFallback, GatewayTile, IconTile, SectionHead, StatusPill,
 } from "~/components/site/Blocks";
 import { SiteLayout, faqLd, productLd, rv, siteMeta, verifyMeta } from "~/components/site/SiteLayout";
 import { db, stores } from "~/db.server";
 import { env } from "~/lib/env.server";
 import { siteData } from "~/lib/site.server";
 import { checkoutRoot, isAppHost, requestHost, slugFromHost } from "~/lib/urls.server";
+import { PLANS, feePct, rupeesLabel } from "~/lib/plans";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [
   ...siteMeta("Growpefy · Checkout and store platform with COD & RTO control",
-    "One-page checkout for D2C brands in India: COD verification and RTO control, up to 3 payment gateways with automatic backup, prepaid offers, WhatsApp cart recovery and Meta + Google Ads analytics. No monthly fee.",
+    "One-page checkout for D2C brands in India with monthly plans, COD verification, RTO controls, payment gateways, prepaid offers and ads analytics.",
     "/", { ld: [productLd, faqLd(FAQ)] }),
   ...verifyMeta(data?.verify),
 ];
@@ -38,10 +39,10 @@ const FAQ: [string, string][] = [
   ["Can I keep my current website?", "Yes. Our team connects your existing store to the Growpefy checkout, and every order is created back in your store with items, discounts and stock. Growpefy Store, to run your whole website on Growpefy, is launching soon."],
   ["Can I see my Meta and Google ads in Growpefy?", "Yes. Connect Meta Ads and Google Ads to see spend, cost per order and ROAS next to your real checkout orders, and which platform is working better. Purchases are sent back to Meta (Conversions API) and Google Ads so both can optimise."],
   ["Which payment gateways can I connect?", "PayU, Razorpay, Cashfree Payments, PhonePe, Paytm, Easebuzz and CCAvenue, using your own merchant account so money settles straight to your bank. You can connect up to three and choose the order: if the primary can't take a payment, the next one is used."],
-  ["What does Growpefy charge?", "There's no monthly plan or setup fee. You recharge a prepaid wallet and a small fee is deducted per order placed through the checkout. OTPs and WhatsApp messages are charged only when sent. The full rate card is on the pricing page."],
-  ["How do wallet credits and GST work?", "You pay the recharge amount plus 18% GST, and the full recharge amount is added to your wallet. Every recharge comes with a GST tax invoice you can download from the dashboard."],
-  ["What happens if my wallet runs low?", "Your checkout keeps taking orders. The wallet can go slightly below zero; past that limit, promotional messages pause and some dashboard tools lock until you recharge. You get low-balance alerts before that."],
-  ["Can I cancel?", "Yes, any time. There's no contract: ask us and your store goes back to its old checkout the same day. See the refund policy for unused wallet balance."],
+  ["What does Growpefy charge?", "Plans start at ₹1,000 per month. Smart Checkout transaction fees and OTP or WhatsApp message usage are itemized on a monthly invoice, with 18% GST shown separately."],
+  ["How do monthly invoices work?", "Invoices follow the date your plan starts and can be paid through a secure PayU link in your dashboard. Unused prepaid wallet balance and its previously paid GST can be credited to future invoices."],
+  ["What happens if an invoice is overdue?", "You have the invoice due period and a further 7-day grace period to pay. After that, checkout pauses until the overdue invoice is paid."],
+  ["Can I change my plan?", "Contact Growpefy support to change or cancel a plan. The dashboard shows the active plan, invoices and payment status."],
   ["How does Growpefy help with COD risk?", "With rules you control: OTP before COD, a wait time between COD orders, block lists by number, pincode, city or state, WhatsApp order confirmation, and, when you connect your courier, each customer's delivery history to hide COD for repeat refusers."],
 ];
 
@@ -58,15 +59,15 @@ export default function Home() {
       <Integrations />
       <AdsBand />
 
-      {/* Wallet & pricing */}
+      {/* Plans & pricing */}
       <section className="border-y border-rule bg-paper/70">
-        <div className="mx-auto grid max-w-6xl items-start gap-10 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[1fr_1.05fr]">
+        <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
           <div>
-            <SectionHead align="left" eyebrow="Wallet & pricing" title="Know exactly what you pay, before you pay." text="No monthly plan. Recharge a prepaid wallet and see the recharge amount, GST and total upfront. Fees come out only when orders are placed or messages are sent." />
-            <div className="mt-8" {...rv(1)}><RateCard rates={d.rates} /></div>
-            <Link to="/pricing" className="group mt-6 inline-flex items-center gap-1.5 font-semibold text-pine hover:text-pine-dark" {...rv(2)}>See plans and usage charges<Icon name="arrow" className="nudge h-4 w-4" /></Link>
+            <SectionHead eyebrow="Plans & pricing" title="Clear monthly billing as your store grows." text="Choose a plan for your order volume. Transaction fees and message usage are itemized monthly; GST is shown separately." />
           </div>
-          <div className="lg:sticky lg:top-24" {...rv(1)}><WalletDemo minRecharge={d.minRecharge} /></div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">{PLANS.map((p) => <article key={p.id} className="rounded-2xl border border-rule bg-white p-5" {...rv(1)}><p className="font-semibold">{p.name}</p><p className="num mt-2 text-2xl font-semibold">{rupeesLabel(p.monthlyRupees)}<span className="ml-1 text-xs font-normal text-ink-soft">/ month</span></p><p className="mt-2 text-sm text-ink-soft">{feePct(p)} Smart Checkout transaction fee</p></article>)}</div>
+          <p className="mt-4 text-center text-xs text-ink-faint">18% GST added to monthly invoices · Usage-based messaging charges · Pay securely through PayU</p>
+          <div className="mt-6 text-center"><Link to="/pricing" className="group inline-flex items-center gap-1.5 font-semibold text-pine hover:text-pine-dark" {...rv(2)}>Compare plans and billing details<Icon name="arrow" className="nudge h-4 w-4" /></Link></div>
         </div>
       </section>
 

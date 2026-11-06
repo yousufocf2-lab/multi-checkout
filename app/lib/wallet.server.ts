@@ -1,12 +1,14 @@
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import {
-  db, platformSettings, walletRecharges, walletTransactions, wallets,
+  billingUsage, db, platformSettings, walletRecharges, walletTransactions, wallets,
   type BillingDetails, type Order, type PlatformSettings, type Store, type Wallet, type WalletRates,
 } from "~/db.server";
 import { storeBilling } from "./billing.server";
 import { payuEndpoint, sha512, verifyPayment, verifyPayuResponse, type PayuCreds } from "./payu.server";
 import { orderValuePaise } from "./payment-methods";
+import { accountFor, recordBillingUsage } from "./subscription-billing.server";
+import { planById } from "./plans";
 import {
   DEFAULT_RATES, USAGE_RATE_KEY, financialYear, mergeRates, rechargeBreakup, saleFeeFor, walletState,
   type TxType, type UsageType,
@@ -92,6 +94,18 @@ async function postWithin(tx: Tx, input: PostInput) {
 export async function chargeSaleFee(store: Store, order: Order) {
   try {
     if (order.status !== "paid" && order.status !== "cod_placed") return null;
+    const billingAccount = await accountFor(store.id);
+    if (billingAccount) {
+      if (!store.smartCheckout) return null;
+      const plan = planById(billingAccount.planId);
+      const base = orderValuePaise(order);
+      const fee = plan ? saleFeeFor(base, plan.feeBps) : 0;
+      if (fee <= 0) return null;
+      return await recordBillingUsage({
+        storeId: store.id, type: "sale_fee", amountPaise: fee, refType: "order", refId: order.id,
+        note: `${(plan!.feeBps / 100).toFixed(2)}% of ₹${(base / 100).toFixed(2)} · ${order.paymentMethod === "cod" ? "COD" : order.paymentMethod === "partial" ? "Partial COD" : "Prepaid"}${order.shopifyOrderName ? ` · ${order.shopifyOrderName}` : ""}`,
+      });
+    }
     const w = await getWallet(store.id);
     const rates = await ratesFor(w);
     const base = orderValuePaise(order);
@@ -110,6 +124,16 @@ export async function chargeSaleFee(store: Store, order: Order) {
 /** Gives the sale fee back after a full refund, if the store's wallet allows it. */
 export async function reverseSaleFee(store: Store, order: Order) {
   try {
+    const billingAccount = await accountFor(store.id);
+    if (billingAccount) {
+      const wallet = await getWallet(store.id);
+      if (!wallet.reverseFeeOnRefund) return null;
+      const [fee] = await db.select().from(billingUsage).where(and(
+        eq(billingUsage.storeId, store.id), eq(billingUsage.type, "sale_fee"), eq(billingUsage.refType, "order"), eq(billingUsage.refId, order.id),
+      )).limit(1);
+      if (!fee) return null;
+      return await recordBillingUsage({ storeId: store.id, type: "sale_fee_reversal", amountPaise: -fee.amountPaise, refType: "order", refId: order.id, note: "Full refund · transaction fee reversed" });
+    }
     const w = await getWallet(store.id);
     if (!w.reverseFeeOnRefund) return null;
     const [fee] = await db.select().from(walletTransactions)
@@ -126,6 +150,7 @@ export async function reverseSaleFee(store: Store, order: Order) {
 
 /** Whether a message type may be sent. Past the negative limit only OTP and order confirmations go out. */
 export async function canUse(storeId: number, type: UsageType) {
+  if (await accountFor(storeId)) return true;
   const w = await getWallet(storeId);
   if (w.status === "suspended") return type === "otp" || type === "wa_confirm";
   if (stateOf(w) === "locked") return type === "otp" || type === "wa_confirm";
@@ -140,6 +165,9 @@ export async function chargeUsage(storeId: number, type: UsageType, refId: strin
   const w = await getWallet(storeId);
   const rate = (await ratesFor(w))[USAGE_RATE_KEY[type]] ?? 0;
   if (rate <= 0) return null;
+  if (await accountFor(storeId)) {
+    return recordBillingUsage({ storeId, type, amountPaise: rate, refType: "message", refId, note });
+  }
   return postTransaction({ walletId: w.id, type, amountPaise: -rate, refType: "message", refId, note });
 }
 

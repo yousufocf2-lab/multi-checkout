@@ -1,14 +1,13 @@
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
-import { useState } from "react";
 import { Icon } from "~/components/Icons";
-import { CtaBand, Faq, RateCard, WalletDemo } from "~/components/site/Blocks";
+import { CtaBand, Faq } from "~/components/site/Blocks";
 import { SiteLayout, crumbLd, faqLd, productLd, rv, siteMeta } from "~/components/site/SiteLayout";
 import { siteData } from "~/lib/site.server";
-import { rupees } from "~/lib/wallet";
+import { PLANS, feePct, rupeesLabel } from "~/lib/plans";
 
-export const meta: MetaFunction = () => siteMeta("Pricing · Growpefy checkout · No monthly fee", "No setup fee or monthly plan. Recharge a prepaid wallet and pay a small fee only on orders placed through your checkout. See the rate card, GST and wallet credit before you pay.", "/pricing", { ld: [productLd, faqLd(BILLING_FAQ), crumbLd("Pricing", "/pricing")] });
+export const meta: MetaFunction = () => siteMeta("Plans & pricing · Growpefy", "Choose a Growpefy monthly plan with a clear transaction fee. Monthly invoices include order and messaging usage, with GST shown separately.", "/pricing", { ld: [productLd, faqLd(BILLING_FAQ), crumbLd("Pricing", "/pricing")] });
 
 export const loader = async ({ request }: LoaderFunctionArgs) => json(await siteData(request));
 
@@ -26,41 +25,48 @@ const INCLUDED = [
 ];
 
 const BILLING_FAQ: [string, string][] = [
-  ["Is GST included in the recharge amount?", "No. GST at 18% is added on top of the recharge amount. The full recharge amount goes into your wallet, and you get a GST tax invoice for every recharge."],
-  ["When are fees deducted?", "The order fee is deducted when an order is placed through the checkout. OTP and WhatsApp charges are deducted only when a message is actually sent."],
-  ["Is the wallet shared between my stores?", "Each store has its own wallet, so you can see costs per store and recharge them separately."],
-  ["Can I get unused balance back?", "Refunds of unused wallet balance follow our refund and cancellation policy. Contact us and we'll walk you through it."],
+  ["When does my plan renew?", "Your billing period follows the date you started the plan. A monthly invoice is created on that date each month."],
+  ["How are order fees calculated?", "The transaction fee shown for your plan applies to orders placed through Smart Checkout. OTP and WhatsApp usage is listed separately when a message is sent."],
+  ["Is GST included in the plan price?", "No. GST at 18% is added to the taxable invoice amount and shown separately."],
+  ["How do I pay an invoice?", "Open Plan & billing in your dashboard and pay an open invoice securely through PayU. Invoices can be downloaded as PDFs."],
+  ["What happens if an invoice stays unpaid?", "You can pay during the invoice due period and the following 7-day grace period. After that, checkout pauses until the overdue invoice is paid."],
+  ["What happens to my old wallet balance?", "Unused wallet balance and its previously paid GST are moved to your monthly billing account when you start a plan. A dropshipping wallet remains available for fulfilment charges."],
 ];
 
 export default function Pricing() {
   const d = useLoaderData<typeof loader>();
-  const min = d.minRecharge;
   return (
     <SiteLayout loggedIn={d.loggedIn} company={d.company}>
       <section className="relative overflow-hidden border-b border-rule">
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(50%_60%_at_50%_0%,rgba(11,93,75,.12),transparent_70%)]" />
         <div className="relative mx-auto max-w-3xl px-4 pb-14 pt-16 text-center sm:px-6 sm:pt-20">
-          <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine">Pricing</p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">Pay only when you sell.</h1>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-ink-soft">No setup fee. No monthly plan. Recharge a prepaid wallet and a small fee is deducted when an order is placed.</p>
+          <p className="text-xs font-semibold uppercase tracking-[.14em] text-pine">Plans & pricing</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">A plan that fits your next stage.</h1>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-ink-soft">One clear monthly invoice for your plan, checkout transaction fees and the messages you use.</p>
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-6xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-[1.1fr_1fr]">
-        <div>
-          <h2 className="text-xl font-semibold">Rate card</h2>
-          <p className="mt-1 text-sm text-ink-soft">Same for every store. Volume pricing available, <Link to="/contact" className="font-medium text-pine underline underline-offset-2">talk to us</Link>.</p>
-          <div className="mt-5"><RateCard rates={d.rates} /></div>
-          <div className="mt-6" {...rv(1)}><WalletDemo minRecharge={min} /></div>
+      <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-16">
+        <div className="grid gap-5 md:grid-cols-3">
+          {PLANS.map((p, i) => (
+            <article key={p.id} className={`relative flex flex-col rounded-2xl border bg-white p-6 shadow-sm ${i === 1 ? "border-pine/40 ring-2 ring-pine/10" : "border-rule"}`}>
+              {i === 1 && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-pine px-3 py-1 text-[11px] font-semibold text-white">Popular choice</span>}
+              <p className="text-sm font-semibold text-pine">{p.name}</p>
+              <h2 className="mt-3 flex items-baseline gap-1"><span className="num text-4xl font-semibold tracking-tight">{rupeesLabel(p.monthlyRupees)}</span><span className="text-sm text-ink-soft">/ month</span></h2>
+              <p className="mt-2 min-h-10 text-sm text-ink-soft">{p.tagline}</p>
+              <div className="mt-5 rounded-xl bg-paper px-4 py-3"><p className="text-xs text-ink-soft">Smart Checkout transaction fee</p><p className="num mt-1 text-2xl font-semibold text-pine">{feePct(p)}</p><p className="text-xs text-ink-faint">per order</p></div>
+              <ul className="mt-5 flex-1 space-y-2.5 text-sm">
+                {[...p.highlights, ...INCLUDED.slice(0, 7)].map((t, n) => <li key={`${n}-${t}`} className="flex gap-2.5"><Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-pine" />{t}</li>)}
+              </ul>
+              <Link to={d.loggedIn ? "/dashboard" : "/signup"} className={`${i === 1 ? "btn-primary" : "btn-secondary"} mt-6 w-full py-3 text-center`}>{d.loggedIn ? "Choose in dashboard" : "Get started"}</Link>
+            </article>
+          ))}
         </div>
-        <div className="space-y-6">
-          <Calculator bps={d.rates.saleFeeBps} />
-          <div className="spot rounded-2xl border border-rule bg-white p-6">
-            <h3 className="font-semibold">Everything included</h3>
-            <ul className="mt-4 grid gap-2.5 text-sm">
-              {INCLUDED.map((t) => <li key={t} className="flex gap-3"><Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{t}</li>)}
-            </ul>
-            <Link to={d.loggedIn ? "/dashboard" : "/signup"} className="btn-primary mt-6 w-full py-3">{d.loggedIn ? "Go to dashboard" : "Get started"}</Link>
+        <p className="mt-5 text-center text-xs text-ink-soft">GST at 18% is added to the invoice and shown separately. OTP and WhatsApp charges are billed monthly by actual usage.</p>
+        <div className="mx-auto mt-12 max-w-4xl rounded-2xl border border-rule bg-white p-6 sm:p-8" {...rv(1)}>
+          <div className="grid gap-6 md:grid-cols-[.8fr_1.2fr] md:items-center">
+            <div><h2 className="text-xl font-semibold">Everything you need to grow</h2><p className="mt-2 text-sm text-ink-soft">All three plans include the Growpefy commerce toolkit.</p><Link to={d.loggedIn ? "/dashboard" : "/signup"} className="btn-primary mt-5 inline-flex">{d.loggedIn ? "Go to dashboard" : "Get started"}</Link></div>
+            <ul className="grid gap-2.5 text-sm sm:grid-cols-2">{INCLUDED.map((t) => <li key={t} className="flex gap-2.5"><Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-pine" />{t}</li>)}</ul>
           </div>
         </div>
       </section>
@@ -74,34 +80,5 @@ export default function Pricing() {
 
       <CtaBand loggedIn={d.loggedIn} />
     </SiteLayout>
-  );
-}
-
-function Calculator({ bps }: { bps: number }) {
-  const [orders, setOrders] = useState(1000);
-  const [aov, setAov] = useState(1200);
-  const fee = Math.round(orders * aov * bps) / 100; // paise
-  return (
-    <div className="rounded-2xl border-2 border-pine/15 bg-gradient-to-b from-emerald-50/70 to-white p-6">
-      <h3 className="font-semibold">Estimate your monthly cost</h3>
-      <div className="mt-5 space-y-5">
-        <Slider label="Orders per month" value={orders} min={50} max={20000} step={50} onChange={setOrders} format={(v) => v.toLocaleString("en-IN")} />
-        <Slider label="Average order value" value={aov} min={199} max={5000} step={50} onChange={setAov} format={(v) => `₹${v.toLocaleString("en-IN")}`} />
-      </div>
-      <div className="mt-6 rounded-xl bg-white p-4 shadow-sm">
-        <p className="text-sm text-ink-soft">Order fees per month</p>
-        <p className="num mt-1 text-3xl font-semibold text-pine">{rupees(fee, 0)}</p>
-        <p className="mt-1 text-xs text-ink-faint">{(bps / 100)}% of {rupees(orders * aov * 100, 0)} sales, plus GST. Messages extra, only if you use them.</p>
-      </div>
-    </div>
-  );
-}
-
-function Slider({ label, value, min, max, step, onChange, format }: { label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; format: (v: number) => string }) {
-  return (
-    <label className="block">
-      <span className="flex items-center justify-between text-sm"><span className="text-ink-soft">{label}</span><span className="num font-semibold">{format(value)}</span></span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="mt-2 w-full accent-[rgb(var(--brand))]" />
-    </label>
   );
 }

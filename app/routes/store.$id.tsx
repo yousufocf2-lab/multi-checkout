@@ -38,7 +38,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
   logistics: { title: "Shipments", description: "Connect couriers to track shipments and unlock RTO Shield.", icon: "shipping", guide: "logistics" },
   "rto-shield": { title: "RTO Shield", description: "Block COD based on a customer's delivery history.", icon: "shield", guide: "rto-shield" },
-  wallet: { title: "Plan & wallet", description: "Balance for sale fees, OTP and WhatsApp messages.", icon: "wallet", guide: "wallet" },
+  wallet: { title: "Plan & billing", description: "Plans, monthly invoices and payment history.", icon: "wallet", guide: "wallet" },
   install: { title: "Store connection", description: "Connect your store, payments, webhooks and the checkout button.", icon: "setup", guide: "install" },
 };
 

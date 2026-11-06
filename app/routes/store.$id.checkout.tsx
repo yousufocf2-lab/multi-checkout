@@ -15,14 +15,17 @@ import { otpReady, messaging } from "~/lib/rto.server";
 import { SMART_FEATURES, SMART_TERMS, SMART_TERMS_VERSION, resolveRules, resolveTipping } from "~/lib/smart-checkout";
 import { storePath } from "~/lib/store-code";
 import { resolveTheme } from "~/lib/theme";
+import { accountFor } from "~/lib/subscription-billing.server";
 
 const actor = (v: Viewer) => (v.role === "admin" ? v.staff?.name ?? "Growpefy team" : v.member?.name ?? v.name);
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const theme = resolveTheme(store.theme);
+  const account = await accountFor(store.id);
   return json({
     storeId: store.id, name: store.name,
+    billingPlan: account ? account.planId : null,
     smart: store.smartCheckout, activatedAt: store.smartActivatedAt?.toISOString() ?? null, consent: store.smartConsent ?? null,
     fields: resolveRules(store.checkoutRules, theme.showEmail),
     tipping: resolveTipping(store.tipping),
@@ -38,6 +41,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const on = (k: string) => fd.get(k) === "on";
 
   if (intent === "activate") {
+    if (!await accountFor(store.id)) return json({ ok: null, error: "Choose a monthly plan in Plan & billing before activating Smart Checkout.", intent }, { status: 400 });
     if (!on("agree")) return json({ ok: null, error: "Tick “I agree” to activate Smart Checkout.", intent }, { status: 400 });
     await db.update(stores).set({
       smartCheckout: true, smartActivatedAt: new Date(),
@@ -100,6 +104,7 @@ export default function CheckoutSettings() {
     <div className="max-w-3xl space-y-4">
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
       {a?.error && a.intent !== "activate" && <Notice tone="error">{a.error}</Notice>}
+      {!d.smart && !d.billingPlan && <Notice tone="warning">Choose a monthly plan before activating Smart Checkout. <Link className="ml-1 underline" to={`${storePath(d.storeId)}/wallet`}>Open Plan & billing</Link></Notice>}
 
       {/* Smart Checkout */}
       <section className={`panel overflow-hidden ${d.smart ? "" : "shadow-[0_0_0_1.5px_#303030]"}`} id="smart">
@@ -171,7 +176,7 @@ function ActivateForm({ error, busy, onCancel }: { error: string | null; busy: b
       <div>
         <p className="text-[13px] font-semibold">How it works</p>
         <ol className="mt-2 grid gap-2 sm:grid-cols-3">
-          {["Activate here and agree to the terms.", "Choose OTP, prepaid discount, COD fee and Partial COD.", "Every order through checkout is charged the Smart Checkout fee of your plan."].map((t, i) => (
+          {["Activate here and agree to the terms.", "Choose OTP, prepaid discount, COD fee and Partial COD.", "Your plan fee and Smart Checkout transaction fees appear on your monthly invoice."].map((t, i) => (
             <li key={t} className="rounded-lg bg-[#f7f7f7] px-3 py-2.5 text-[12.5px]"><span className="num mb-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#303030] text-[11px] font-semibold text-white">{i + 1}</span>{t}</li>
           ))}
         </ol>
@@ -181,7 +186,7 @@ function ActivateForm({ error, busy, onCancel }: { error: string | null; busy: b
         <p className="text-[13px] font-semibold">Fees</p>
         <div className="mt-2 overflow-hidden rounded-lg shadow-[0_0_0_1px_#ebebeb]">
           <table className="w-full text-[12.5px]">
-            <thead><tr className="bg-[#f7f7f7] text-left text-ink-soft"><th className="px-3 py-1.5 font-medium">Plan</th><th className="px-3 py-1.5 font-medium">Monthly</th><th className="px-3 py-1.5 text-right font-medium">Fee on every order</th></tr></thead>
+            <thead><tr className="bg-[#f7f7f7] text-left text-ink-soft"><th className="px-3 py-1.5 font-medium">Plan</th><th className="px-3 py-1.5 font-medium">Monthly</th><th className="px-3 py-1.5 text-right font-medium">Smart Checkout fee</th></tr></thead>
             <tbody className="divide-y divide-rule">
               {PLANS.map((p) => (
                 <tr key={p.id}><td className="px-3 py-2 font-medium">{p.name}</td><td className="num px-3 py-2">{rupeesLabel(p.monthlyRupees)}/month</td><td className="num px-3 py-2 text-right font-semibold">{feePct(p)}</td></tr>

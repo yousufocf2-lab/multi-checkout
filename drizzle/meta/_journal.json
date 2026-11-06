@@ -379,6 +379,13 @@
       "when": 1793440001700,
       "tag": "0053_smart_checkout",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793987042823,
+      "tag": "0054_monthly_billing",
+      "breakpoints": true
     }
   ]
 }

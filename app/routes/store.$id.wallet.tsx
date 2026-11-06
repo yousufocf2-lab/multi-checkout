@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
 import { Notice, SubmitButton } from "~/components/ui";
-import { db, walletTransactions, wallets } from "~/db.server";
+import { db, stores, walletTransactions, wallets } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { addDays, istToday, resolveRange } from "~/lib/dates";
 import { INDIAN_STATES } from "~/lib/states";
@@ -18,6 +18,8 @@ import {
 import { storeBilling } from "~/lib/billing.server";
 import { BILLING_FIELDS, BILLING_LABEL, type BillingField } from "~/lib/billing";
 import { storePath } from "~/lib/store-code";
+import { accountFor, invoicesFor, startSubscription, PLANS } from "~/lib/subscription-billing.server";
+import { planById, feePct, rupeesLabel } from "~/lib/plans";
 
 const PAGE = 50;
 
@@ -39,19 +41,28 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const monthStart = new Date(`${istToday().slice(0, 7)}-01T00:00:00+05:30`);
   const isAdmin = viewer.role === "admin";
-  const [rows, usage, recharges, rates, billing, adjustments] = await Promise.all([
+  const [rows, usage, recharges, rates, billing, adjustments, accountRow] = await Promise.all([
     db.select().from(walletTransactions).where(and(...where)).orderBy(desc(walletTransactions.createdAt), desc(walletTransactions.id)).limit(PAGE + 1).offset((page - 1) * PAGE),
     usageSummary([w.id], monthStart, new Date(Date.now() + 60_000)),
     recentRecharges(w.id, 30),
     ratesFor(w),
     storeBilling(store.id),
     isAdmin ? adminAdjustments(w.id) : Promise.resolve([]),
+    accountFor(store.id),
   ]);
+  const invoices = accountRow ? await invoicesFor(store.id) : [];
+  const account = accountRow ? await accountFor(store.id) : null;
+  const plan = account ? planById(account.planId) : null;
+  const dropship = (await db.select({ dropshipEnabled: stores.dropshipEnabled }).from(stores).where(eq(stores.id, store.id)).limit(1))[0]?.dropshipEnabled ?? false;
   const creds = platformPayu(p);
 
   return json({
     storeId: store.id,
     storeName: store.name,
+    dropship,
+    account: account ? { planId: account.planId, status: account.status, startedAt: account.startedAt.toISOString(), nextInvoiceAt: account.nextInvoiceAt.toISOString(), creditPaise: account.creditPaise, creditGstPaise: account.creditGstPaise, legacyDebtPaise: account.legacyDebtPaise, planName: plan?.name ?? account.planId } : null,
+    plans: PLANS,
+    invoices: invoices.map((i) => ({ id: i.id, invoiceNo: i.invoiceNo, planId: i.planId, periodStart: i.periodStart.toISOString(), periodEnd: i.periodEnd.toISOString(), lines: i.lines, subtotalPaise: i.subtotalPaise, gstPaise: i.gstPaise, creditPaise: i.creditPaise, creditGstPaise: i.creditGstPaise, totalPaise: i.totalPaise, duePaise: i.duePaise, status: i.status, dueAt: i.dueAt.toISOString(), paidAt: i.paidAt?.toISOString() ?? null })),
     isAdmin: viewer.role === "admin",
     wallet: {
       balance: w.balancePaise, state: stateOf(w), negativeLimit: w.negativeLimitPaise, lowAlert: w.lowAlertPaise,
@@ -86,7 +97,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   try {
     switch (intent) {
+      case "subscribe": {
+        if (await accountFor(store.id)) return fail("A billing plan is already active for this store. Contact Growpefy to change it.");
+        const planId = s("planId");
+        if (!planById(planId)) return fail("Choose a Growpefy plan.");
+        if (fd.get("agree") !== "on") return fail("Confirm the monthly plan and billing terms to continue.");
+        await startSubscription(store.id, planId);
+        return json({ ok: "Plan started. Your first invoice will be created on your monthly billing date.", error: null, field: intent });
+      }
       case "recharge": {
+        if (await accountFor(store.id) && !store.dropshipEnabled) return fail("This store now uses monthly billing. Open an invoice below to pay.");
         { const g = kycGate(viewer, "adding money to your wallet"); if (g) return fail(g); }
         const credit = paise(fd.get("amount"));
         if (!Number.isFinite(credit) || credit <= 0) return fail("Enter the amount to add");
@@ -179,6 +199,7 @@ export default function WalletPage() {
   const res = useActionData<typeof action>();
   const [params] = useSearchParams();
   const rc = params.get("recharge");
+  const invoiceNotice = params.get("invoice");
   const st = STATE_UI[d.wallet.state];
   const spentMonth = d.usage.filter((u) => u.type !== "recharge" && u.type !== "manual_credit" && u.type !== "manual_debit").reduce((n, u) => n - u.amount, 0);
 
@@ -187,6 +208,10 @@ export default function WalletPage() {
       {rc === "success" && <Notice tone="success">Recharge successful. The amount has been added to your wallet.</Notice>}
       {rc === "failed" && <Notice tone="error">The payment didn't go through. No money was added. You can try again.</Notice>}
       {rc === "pending" && <Notice tone="warning">We're waiting for PayU to confirm your payment. It usually takes a minute. Use “Check status” below.</Notice>}
+      {invoiceNotice === "success" && <Notice tone="success">Invoice payment confirmed. Your billing status has been updated.</Notice>}
+      {invoiceNotice === "pending" && <Notice tone="warning">PayU is still confirming this invoice payment. Refresh shortly; the invoice will update after verification.</Notice>}
+      {invoiceNotice === "failed" && <Notice tone="error">PayU did not confirm the invoice payment. The invoice remains open; you can try again.</Notice>}
+      {invoiceNotice === "mismatch" && <Notice tone="error">The received payment amount did not match the invoice. Contact Growpefy support before retrying.</Notice>}
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
       {res?.error && <Notice tone="error">{res.error}</Notice>}
       {d.wallet.status === "suspended" && <Notice tone="error">This wallet is suspended by the admin. Only OTP and order confirmation messages go out.</Notice>}
@@ -197,8 +222,9 @@ export default function WalletPage() {
         </Notice>
       )}
 
-      {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
+      <SubscriptionPanel d={d} />
+      {/* Existing wallet remains the fulfilment wallet for dropshipping stores. */}
+      {(d.dropship || !d.account) && <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
         <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl" />
         <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
@@ -216,9 +242,9 @@ export default function WalletPage() {
             <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Low balance alert</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(d.wallet.lowAlert, 0)}</dd></div>
           </dl>
         </div>
-      </section>
+      </section>}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      {(d.dropship || !d.account) && <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <RechargeCard d={d} />
         <section className="panel">
           <h2 className="border-b border-rule px-5 py-4 text-[15px] font-semibold">Your rates</h2>
@@ -240,15 +266,38 @@ export default function WalletPage() {
           </ul>
           <p className="border-t border-rule px-5 py-2.5 text-xs text-ink-faint">Messages are charged only when they're delivered to WhatsApp / the SMS provider. Failed sends are free.</p>
         </section>
-      </div>
+      </div>}
 
-      <UsageCard usage={d.usage} />
+      {(d.dropship || !d.account) && <UsageCard usage={d.usage} />}
       <Ledger d={d} />
       <Recharges d={d} />
       <Billing d={d} field={res?.field} />
       {d.isAdmin && <AdminPanel d={d} />}
     </div>
   );
+}
+
+function SubscriptionPanel({ d }: { d: D }) {
+  const [planId, setPlanId] = useState("growth");
+  const account = d.account;
+  const money = (n: number) => rupees(n);
+  return <section className="panel overflow-hidden">
+    <div className="border-b border-rule px-5 py-4"><h2 className="text-[15px] font-semibold">Plan & monthly billing</h2><p className="mt-1 text-xs text-ink-soft">Monthly plan, checkout fees and message usage appear on one GST invoice.</p></div>
+    {account ? <div className="space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl bg-paper p-4">
+        <div><p className="text-xs text-ink-soft">Current plan</p><p className="mt-1 text-lg font-semibold">{account.planName} · {rupeesLabel(d.plans.find((p) => p.id === account.planId)?.monthlyRupees ?? 0)}/month</p><p className="mt-1 text-sm text-ink-soft">{feePct(d.plans.find((p) => p.id === account.planId) ?? { feeBps: 0 })} Smart Checkout transaction fee · Renews {new Date(account.nextInvoiceAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })}</p></div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${account.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{account.status}</span>
+      </div>
+      {(account.creditPaise + account.creditGstPaise > 0 || account.legacyDebtPaise > 0) && <p className="text-sm text-ink-soft">Invoice credit remaining: <b>{money(account.creditPaise + account.creditGstPaise)}</b>{account.legacyDebtPaise > 0 ? ` · Previous wallet balance due: ${money(account.legacyDebtPaise)}` : ""}</p>}
+      <div><h3 className="mb-2 text-sm font-semibold">Invoices</h3>{d.invoices.length ? <div className="divide-y divide-rule rounded-xl border border-rule">{d.invoices.map((i) => <div key={i.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div><p className="text-sm font-medium">{i.invoiceNo} <span className="ml-1 text-xs text-ink-faint">· {new Date(i.periodStart).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}</span></p><p className="mt-0.5 text-xs text-ink-soft">Total {money(i.totalPaise)} · {i.status === "paid" ? "Paid" : `Due ${money(i.duePaise)} by ${new Date(i.dueAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" })}`}</p></div>
+        <div className="flex gap-2">{i.status !== "paid" && <Link className="btn-primary btn" to={storePath(d.storeId, `billing/pay/${i.id}`)}>Pay invoice</Link>}<a className="btn-secondary btn" href={storePath(d.storeId, `billing/invoice/${i.id}`)}>Download PDF</a></div>
+      </div>)}</div> : <p className="text-sm text-ink-soft">No invoice yet. Your first invoice is created on your monthly billing date.</p>}</div>
+    </div> : <div className="p-5"><p className="mb-4 max-w-2xl text-sm text-ink-soft">Choose a plan to start monthly billing. Any unused wallet balance and its previously paid GST will be credited to future invoices. Dropshipping fulfilment balances remain in the wallet.</p>
+      <Form method="post" className="space-y-4"><div className="grid gap-3 md:grid-cols-3">{d.plans.map((p) => <label key={p.id} className={`cursor-pointer rounded-xl border p-4 ${planId === p.id ? "border-pine ring-2 ring-pine/15" : "border-rule"}`}><input type="radio" name="planId" value={p.id} checked={planId === p.id} onChange={() => setPlanId(p.id)} className="sr-only"/><span className="text-sm font-semibold">{p.name}</span><span className="mt-1 block text-xl font-semibold">{rupeesLabel(p.monthlyRupees)}<small className="ml-1 text-xs font-normal text-ink-soft">/month</small></span><span className="mt-1 block text-xs text-ink-soft">{feePct(p)} per Smart Checkout order</span></label>)}</div>
+      <label className="flex items-start gap-2 text-xs text-ink-soft"><input type="checkbox" name="agree" className="mt-0.5"/><span>I agree to the monthly plan fee, transaction and message usage charges, 18% GST, PayU invoice payments, and the 7-day grace period.</span></label><SubmitButton intent="subscribe" busyText="Starting plan…">Start monthly plan</SubmitButton></Form>
+    </div>}
+  </section>;
 }
 
 function RechargeCard({ d }: { d: D }) {

@@ -101,9 +101,9 @@ export const GUIDES: Record<string, Guide> = {
     ],
   },
   wallet: {
-    title: "Plan & wallet",
-    intro: "Your wallet pays for sale fees, OTP and WhatsApp messages. Recharge any time; GST invoices are made automatically.",
-    tips: ["Checkout, OTP and order confirmations keep working even if the balance goes slightly below zero."],
+    title: "Plan & billing",
+    intro: "Choose a monthly plan, review usage and pay GST invoices through PayU. A previous wallet balance can be applied as credit to future invoices.",
+    tips: ["Dropshipping stores keep their separate fulfilment wallet. An overdue monthly invoice pauses checkout after the 7-day grace period."],
   },
   general: {
     title: "Store settings",

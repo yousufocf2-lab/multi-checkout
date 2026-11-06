@@ -35,6 +35,7 @@ import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.se
 import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 import { smartView } from "~/lib/smart.server";
 import { maxTipPaise, resolveRules, resolveTipping } from "~/lib/smart-checkout";
+import { billingBlocked } from "~/lib/subscription-billing.server";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_QTY = 9999;
@@ -47,6 +48,7 @@ async function loadSession(sessionId: string) {
     .where(eq(checkoutSessions.id, sessionId))
     .limit(1);
   if (!row || !row.store.active) throw new Response("This checkout link isn't valid. Go back to the store and check out again.", { status: 404 });
+  if (await billingBlocked(row.store.id)) throw new Response("This store is temporarily unable to accept orders. Please contact the store for help.", { status: 503 });
   if (Date.now() - row.session.createdAt.getTime() > SESSION_TTL_MS) {
     throw new Response("This checkout link has expired. Go back to the store and check out again.", { status: 410 });
   }

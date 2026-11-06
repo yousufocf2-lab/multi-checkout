@@ -27,6 +27,7 @@ import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
 import { storeIdFromCode, storePath } from "~/lib/store-code";
+import { startBillingWatcher } from "~/lib/subscription-billing.server";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -43,6 +44,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startRecoveryWatcher();
   startWelcomeWatcher();
   startNativeOrdersWatcher();
+  startBillingWatcher();
   startPaymentRecheck();
   const viewer = await requireViewer(request);
   const list = await viewerStores(viewer);
@@ -173,7 +175,7 @@ export default function DashboardLayout() {
   // ---- store settings navigation ----
   const storeSettings: NavNode[] = [
     { label: "Business profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
-    { label: "Plan & wallet", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
+    { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
     { label: "Checkout experience", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },

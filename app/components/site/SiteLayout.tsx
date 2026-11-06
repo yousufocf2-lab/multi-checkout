@@ -42,7 +42,7 @@ export const productLd: Ld = {
   applicationCategory: "BusinessApplication", applicationSubCategory: "Ecommerce checkout",
   operatingSystem: "Web", url: SITE_URL, image: `${SITE_URL}/brand/og-image.jpg`, publisher: { "@id": ORG_ID },
   description: "One-page checkout for D2C brands with COD and RTO controls, up to three payment gateways with automatic backup, offers, abandoned cart recovery and Meta and Google ads analytics.",
-  offers: { "@type": "Offer", price: "0", priceCurrency: "INR", description: "No setup fee or monthly plan. Prepaid wallet with a small fee per order." },
+  offers: { "@type": "Offer", price: "1000", priceCurrency: "INR", description: "Growpefy plans start at ₹1,000 per month, plus transaction and messaging usage and applicable GST." },
   featureList: [
     "One-page checkout", "COD verification with OTP", "RTO Shield using courier history", "Up to 3 payment gateways with automatic backup",
     "Prepaid discounts, partial COD, coupons and bank offers", "Abandoned checkout recovery on WhatsApp", "Meta and Google ads analytics", "Multi-store dashboard",
