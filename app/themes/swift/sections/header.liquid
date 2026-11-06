@@ -1,11 +1,12 @@
 <header class="header">
   <div class="wrap header__row">
     <a href="{{ routes.root }}" class="header__logo" aria-label="{{ shop.name }} home">
-      {%- if shop.logo -%}<img src="{{ shop.logo }}" alt="{{ shop.name }}" height="36">{%- else -%}{{ shop.name }}{%- endif -%}
+      {%- assign logo = settings.logo | default: shop.logo -%}
+      {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" style="width:var(--logo-width);height:auto">{%- else -%}{{ shop.name }}{%- endif -%}
     </a>
     <nav class="header__nav" aria-label="Main">
-      <a href="{{ routes.all }}">Shop all</a>
-      {%- for c in collections limit: 4 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}
+      {%- if section.settings.show_all -%}<a href="{{ routes.all }}">{{ section.settings.all_label }}</a>{%- endif -%}
+      {%- for c in collections limit: section.settings.menu_count -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}
     </nav>
     <a href="{{ routes.cart }}" class="header__cart" aria-label="Cart">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6h15l-2 9H8L6 3H3"/><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/></svg>
@@ -14,5 +15,9 @@
   </div>
 </header>
 {% schema %}
-{ "name": "Header", "settings": [] }
+{ "name": "Header", "settings": [
+  { "id": "show_all", "type": "checkbox", "label": "Show “Shop all” link", "default": true },
+  { "id": "all_label", "type": "text", "label": "“Shop all” text", "default": "Shop all" },
+  { "id": "menu_count", "type": "range", "label": "Categories in the menu", "min": 0, "max": 8, "step": 1, "default": 4 }
+] }
 {% endschema %}

@@ -1,0 +1,50 @@
+[
+  { "name": "Logo and favicon", "settings": [
+    { "id": "logo", "type": "image", "label": "Logo" },
+    { "id": "logo_width", "type": "range", "label": "Logo width", "min": 60, "max": 280, "step": 10, "unit": "px", "default": 140 },
+    { "id": "favicon", "type": "image", "label": "Favicon (square, 32×32 or bigger)" }
+  ] },
+  { "name": "Colors", "settings": [
+    { "id": "color_brand", "type": "color", "label": "Brand color (buttons, links, badges)", "default": "" },
+    { "id": "color_button_text", "type": "color", "label": "Button text", "default": "#ffffff" },
+    { "id": "color_bg", "type": "color", "label": "Background", "default": "#ffffff" },
+    { "id": "color_text", "type": "color", "label": "Text", "default": "#14171a" },
+    { "id": "color_muted", "type": "color", "label": "Light text", "default": "#5a6169" },
+    { "id": "color_soft", "type": "color", "label": "Soft background (cards, banners)", "default": "#f5f6f7" },
+    { "id": "color_announce_bg", "type": "color", "label": "Announcement bar background", "default": "#14171a" },
+    { "id": "color_announce_text", "type": "color", "label": "Announcement bar text", "default": "#ffffff" }
+  ] },
+  { "name": "Typography", "settings": [
+    { "id": "font_heading", "type": "select", "label": "Heading font", "default": "DM Sans", "options": ["DM Sans", "Inter", "Poppins", "Montserrat", "Outfit", "Manrope", "Playfair Display", "Lora", "Bebas Neue", "Space Grotesk"] },
+    { "id": "font_body", "type": "select", "label": "Body font", "default": "DM Sans", "options": ["DM Sans", "Inter", "Poppins", "Montserrat", "Outfit", "Manrope", "Lora", "Space Grotesk"] },
+    { "id": "heading_scale", "type": "range", "label": "Heading size", "min": 80, "max": 130, "step": 5, "unit": "%", "default": 100 },
+    { "id": "heading_uppercase", "type": "checkbox", "label": "Headings in capital letters", "default": false }
+  ] },
+  { "name": "Buttons", "settings": [
+    { "id": "button_radius", "type": "range", "label": "Corner roundness", "min": 0, "max": 30, "step": 1, "unit": "px", "default": 12 },
+    { "id": "button_height", "type": "range", "label": "Height", "min": 40, "max": 60, "step": 2, "unit": "px", "default": 48 }
+  ] },
+  { "name": "Product cards", "settings": [
+    { "id": "card_ratio", "type": "select", "label": "Photo shape", "default": "square", "options": ["square", "portrait", "landscape"] },
+    { "id": "card_radius", "type": "range", "label": "Photo corner roundness", "min": 0, "max": 28, "step": 1, "unit": "px", "default": 14 },
+    { "id": "card_show_discount", "type": "checkbox", "label": "Show “% off” badge", "default": true },
+    { "id": "card_show_quick_add", "type": "checkbox", "label": "Show “Add to cart” button on cards", "default": false }
+  ] },
+  { "name": "Product page", "settings": [
+    { "id": "pdp_points", "type": "textarea", "label": "Highlights under Buy now (one per line)", "default": "Cash on delivery available\nExtra discount when you pay online\nShips within 24 hours" },
+    { "id": "pdp_sticky_buy", "type": "checkbox", "label": "Sticky “Buy now” bar on phones", "default": true }
+  ] },
+  { "name": "Cart", "settings": [
+    { "id": "cart_after_add", "type": "select", "label": "After “Add to cart”", "default": "stay", "options": ["stay", "cart"] },
+    { "id": "cart_note", "type": "text", "label": "Line under the subtotal", "default": "Delivery and online-payment discount are shown at checkout." }
+  ] },
+  { "name": "Social media and WhatsApp", "settings": [
+    { "id": "whatsapp_number", "type": "text", "label": "WhatsApp number (shows a chat button)", "default": "" },
+    { "id": "social_instagram", "type": "url", "label": "Instagram link" },
+    { "id": "social_facebook", "type": "url", "label": "Facebook link" },
+    { "id": "social_youtube", "type": "url", "label": "YouTube link" }
+  ] },
+  { "name": "Custom CSS", "settings": [
+    { "id": "custom_css", "type": "textarea", "label": "CSS added to every page", "default": "" }
+  ] }
+]

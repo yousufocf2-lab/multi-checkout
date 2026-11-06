@@ -1246,3 +1246,23 @@ export const storePages = pgTable(
   (t) => [uniqueIndex("store_pages_handle_idx").on(t.storeId, t.handle)],
 );
 export type StorePage = typeof storePages.$inferSelect;
+
+/** One theme section placed on a page: its type (sections/<type>.liquid), settings, and whether it's hidden. */
+export type ThemeSection = { type: string; settings?: Record<string, unknown>; disabled?: boolean };
+export type ThemeTemplate = { sections: Record<string, ThemeSection>; order: string[] };
+/** A store's own copy of its theme: global settings, page templates and the header/footer groups. */
+export type ThemeData = { settings: Record<string, unknown>; templates: Record<string, ThemeTemplate>; groups: Record<"header" | "footer", ThemeTemplate> };
+export type ThemeVersion = { at: string; by: string | null; data: ThemeData };
+
+/** Growpefy Store website design: the live (published) version, the draft being edited, and the last few versions. */
+export const storeThemes = pgTable("store_themes", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().unique().references(() => stores.id, { onDelete: "cascade" }),
+  theme: text("theme").notNull().default("swift"),
+  live: jsonb("live").$type<ThemeData>(),
+  draft: jsonb("draft").$type<ThemeData>(),
+  history: jsonb("history").$type<ThemeVersion[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+});
+export type StoreTheme = typeof storeThemes.$inferSelect;

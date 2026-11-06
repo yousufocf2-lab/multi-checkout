@@ -1,0 +1,22 @@
+<section class="block">
+  <div class="wrap iwt{% if section.settings.image_right %} iwt--reverse{% endif %}">
+    <div class="iwt__media">
+      {%- if section.settings.image != blank -%}<img src="{{ section.settings.image | img_url: 1000 }}" alt="{{ section.settings.heading | escape }}" loading="lazy">{%- else -%}<div class="iwt__ph">Add an image</div>{%- endif -%}
+    </div>
+    <div class="iwt__copy">
+      {%- if section.settings.heading != blank -%}<h2>{{ section.settings.heading }}</h2>{%- endif -%}
+      {%- if section.settings.text != blank -%}<div class="rte muted">{{ section.settings.text }}</div>{%- endif -%}
+      {%- if section.settings.button_label != blank -%}<a class="btn btn--primary" href="{{ section.settings.button_link | default: routes.all }}">{{ section.settings.button_label }}</a>{%- endif -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Image with text", "settings": [
+  { "id": "image", "type": "image", "label": "Image" },
+  { "id": "image_right", "type": "checkbox", "label": "Image on the right", "default": false },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Made with care" },
+  { "id": "text", "type": "richtext", "label": "Text", "default": "<p>Tell shoppers what makes your brand special.</p>" },
+  { "id": "button_label", "type": "text", "label": "Button", "default": "Shop now" },
+  { "id": "button_link", "type": "url", "label": "Button link" }
+] }
+{% endschema %}

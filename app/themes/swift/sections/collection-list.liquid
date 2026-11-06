@@ -1,0 +1,21 @@
+<section class="block">
+  <div class="wrap">
+    {%- if section.settings.heading != blank -%}<h2>{{ section.settings.heading }}</h2>{%- endif -%}
+    <div class="cats" style="margin-top:20px">
+      {%- for c in collections limit: section.settings.limit -%}
+      <a class="cat" href="{{ c.url }}">
+        <div class="cat__media">{%- if c.image -%}<img src="{{ c.image | img_url: 500 }}" alt="{{ c.title | escape }}" loading="lazy">{%- else -%}{{ c.title | slice: 0 }}{%- endif -%}</div>
+        <p class="cat__title">{{ c.title }}</p>
+      </a>
+      {%- else -%}
+      <p class="muted">Your categories show here once you add them.</p>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Category list", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Shop by category" },
+  { "id": "limit", "type": "range", "label": "How many", "min": 2, "max": 12, "step": 1, "default": 4 }
+] }
+{% endschema %}

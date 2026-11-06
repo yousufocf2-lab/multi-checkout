@@ -5,7 +5,7 @@ import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelTo
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
 import { footerPages } from "./store-pages.server";
-import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, type CatalogItem, type CatalogVariant, type Store } from "~/db.server";
+import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, storeThemes, type CatalogItem, type CatalogVariant, type Store, type ThemeData, type ThemeTemplate } from "~/db.server";
 
 // ---------- theme files ----------
 
@@ -88,6 +88,8 @@ export function imgUrl(url: string, width: number) {
   return url + (url.includes("?") ? "&" : "?") + `width=${width}`;
 }
 
+type Look = { data?: ThemeData | null; editor?: boolean };
+
 async function renderSection(theme: string, type: string, id: string, settings: Record<string, unknown>, scope: Record<string, unknown>, extra: Record<string, unknown> = {}) {
   const files = THEMES[theme];
   const src = files[`sections/${type}.liquid`];
@@ -97,28 +99,80 @@ async function renderSection(theme: string, type: string, id: string, settings: 
   return liquid.renderFile(`sections/${type}`, { ...scope, section: { id, type, settings: { ...defaults, ...settings }, ...extra } });
 }
 
-type TemplateJson = { sections: Record<string, { type: string; settings?: Record<string, unknown> }>; order: string[] };
-
 /** Extra data a section needs before it renders (product grids load their products). */
 type SectionData = (type: string, settings: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
-export async function renderPage(theme: string, template: string, scope: Record<string, unknown>, data: SectionData) {
+const parseJson = <T,>(text: string | undefined, fallback: T): T => { try { return text ? (JSON.parse(text) as T) : fallback; } catch { return fallback; } };
+const EMPTY: ThemeTemplate = { sections: {}, order: [] };
+export const TEMPLATES = ["index", "product", "collection", "cart", "page"] as const;
+
+type SettingDef = { id: string; type: string; label?: string; default?: unknown; [k: string]: unknown };
+export type SettingGroup = { name: string; settings: SettingDef[] };
+export type SectionKind = { type: string; name: string; settings: SettingDef[]; where: "template" | "header" | "footer" | "fixed" };
+
+/** Everything the theme editor needs to know about a theme: global settings, the sections it can add, and its defaults. */
+export function themeManifest(theme: string) {
   const files = THEMES[theme];
-  const tpl = JSON.parse(files[`templates/${template}.json`] ?? '{"sections":{},"order":[]}') as TemplateJson;
+  if (!files) throw new Error(`Theme not found: ${theme}`);
+  const settingsSchema = parseJson<SettingGroup[]>(files["config/settings_schema.json"], []);
+  const sections: SectionKind[] = Object.keys(files).filter((f) => /^sections\/[^/]+\.liquid$/.test(f)).map((f) => {
+    const type = f.slice(9, -7);
+    const sc = schemaOf(files[f]);
+    const where = type.startsWith("main-") ? "fixed" : type === "header" || type === "announcement" ? "header" : type === "footer" ? "footer" : "template";
+    return { type, name: sc.name ?? type, settings: (sc.settings ?? []) as SettingDef[], where };
+  });
+  return { settingsSchema, sections, defaults: defaultThemeData(theme) };
+}
+
+export function defaultThemeData(theme: string): ThemeData {
+  const files = THEMES[theme];
+  const settings: Record<string, unknown> = {};
+  for (const g of parseJson<SettingGroup[]>(files["config/settings_schema.json"], [])) for (const s of g.settings) if (s.default !== undefined) settings[s.id] = s.default;
+  const templates = Object.fromEntries(TEMPLATES.map((t) => [t, parseJson<ThemeTemplate>(files[`templates/${t}.json`], EMPTY)]));
+  return {
+    settings, templates,
+    groups: { header: parseJson<ThemeTemplate>(files["sections/header-group.json"], EMPTY), footer: parseJson<ThemeTemplate>(files["sections/footer-group.json"], EMPTY) },
+  };
+}
+
+async function renderList(theme: string, list: ThemeTemplate, group: string, scope: Record<string, unknown>, data: SectionData, editor: boolean) {
   const parts: string[] = [];
-  for (const id of tpl.order) {
-    const s = tpl.sections[id];
-    if (!s) continue;
+  for (const id of list.order) {
+    const s = list.sections[id];
+    if (!s || s.disabled) continue;
     const settings = s.settings ?? {};
-    const extra = await data(s.type, settings);
-    parts.push(await renderSection(theme, s.type, id, settings, scope, extra));
+    const html = await renderSection(theme, s.type, id, settings, scope, await data(s.type, settings));
+    parts.push(editor ? `<div data-gp-section="${group}/${id}" data-gp-group="${group}">${html}</div>` : html);
   }
-  return engineFor(theme).renderFile("layout/theme", { ...scope, content_for_layout: parts.join("\n") });
+  return parts.join("\n");
+}
+
+/** Renders one page: header group + the template's sections + footer group inside layout/theme.liquid. */
+export async function renderPage(theme: string, template: string, scope: Record<string, unknown>, data: SectionData, look: Look = {}) {
+  const base = defaultThemeData(theme);
+  const saved = look.data ?? null;
+  const tpl = saved?.templates?.[template] ?? base.templates[template] ?? EMPTY;
+  const groups = { header: saved?.groups?.header ?? base.groups.header, footer: saved?.groups?.footer ?? base.groups.footer };
+  const editor = Boolean(look.editor);
+  const full = { ...scope, settings: { ...base.settings, ...(saved?.settings ?? {}) }, editor };
+  const [content, head, foot] = await Promise.all([
+    renderList(theme, tpl, "template", full, data, editor),
+    renderList(theme, groups.header, "header", full, data, editor),
+    renderList(theme, groups.footer, "footer", full, data, editor),
+  ]);
+  return engineFor(theme).renderFile("layout/theme", { ...full, content_for_layout: content, content_for_header_group: head, content_for_footer_group: foot });
 }
 
 // ---------- data (Liquid "drops") ----------
 
-export type ShopContext = { store: Store; root: string; preview: boolean };
+export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look };
+
+/** The store's saved design: live for shoppers, the draft for the editor. */
+export async function themeLook(storeId: number, mode: "live" | "draft" | "editor" = "live"): Promise<Look> {
+  const [row] = await db.select({ live: storeThemes.live, draft: storeThemes.draft }).from(storeThemes).where(eq(storeThemes.storeId, storeId)).limit(1);
+  if (mode === "live") return { data: row?.live ?? null };
+  return { data: row?.draft ?? row?.live ?? null, editor: mode === "editor" };
+}
 
 export async function storeBySlug(slug: string) {
   const [s] = await db.select().from(stores).where(eq(stores.slug, slug)).limit(1);
@@ -213,10 +267,15 @@ export function html(body: string, status = 200) {
 export async function previewContext(request: Request, slug: string | undefined): Promise<ShopContext> {
   const store = slug ? await storeBySlug(slug) : null;
   if (!store || !store.active) throw new Response("Not found", { status: 404 });
-  if (!store.storefrontEnabled) {
-    const { getViewer } = await import("./auth.server");
+  const sp = new URL(request.url).searchParams;
+  const mode = sp.get("gp_editor") === "1" ? "editor" : sp.get("gp_draft") === "1" ? "draft" : "live";
+  // Owners (and their team) see their own store's preview and its unpublished draft; shoppers only a switched-on store.
+  if (mode !== "live" || !store.storefrontEnabled) {
+    const { getViewer, requireStore } = await import("./auth.server");
     const viewer = await getViewer(request);
-    if (viewer?.role !== "admin") throw new Response("Not found", { status: 404 });
+    const canEdit = viewer ? await requireStore(viewer, store.id).then(() => true, () => false) : false;
+    if (!canEdit && !store.storefrontEnabled) throw new Response("Not found", { status: 404 });
+    if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id, mode) };
   }
-  return { store, root: `/s/${store.slug}`, preview: true };
+  return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id) };
 }

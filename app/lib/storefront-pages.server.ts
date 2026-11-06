@@ -5,7 +5,7 @@ import { checkoutSessions, db, stores } from "~/db.server";
 import { catalogLines, GP_PREFIX } from "./catalog.server";
 import { clientIp } from "./orders.server";
 import { publishedPage } from "./store-pages.server";
-import { baseScope, html, loadProduct, loadProducts, renderPage, sectionData, type ShopContext } from "./storefront.server";
+import { baseScope, html, loadProduct, loadProducts, renderPage, sectionData, themeLook, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 
 const THEME = "swift";
@@ -22,14 +22,14 @@ export async function domainContext(request: Request): Promise<ShopContext | nul
     const u = new URL(request.url);
     throw new Response(null, { status: 301, headers: { Location: `https://${store.storefrontDomain}${u.pathname.replace(/^\/sfhost/, "")}${u.search}` } });
   }
-  return { store, root: "", preview: false };
+  return { store, root: "", preview: false, look: await themeLook(store.id) };
 }
 
 export async function homePage(ctx: ShopContext) {
   const [scope, first] = await Promise.all([baseScope(ctx), loadProducts(ctx, { limit: 1 })]);
   return html(await renderPage(THEME, "index", {
     ...scope, template: "index", page_title: ctx.store.name, hero_image: first[0]?.featured_image ?? null, og_image: first[0]?.featured_image ?? null,
-  }, sectionData(ctx)));
+  }, sectionData(ctx), ctx.look));
 }
 
 export async function productPage(ctx: ShopContext, handle: string) {
@@ -39,7 +39,7 @@ export async function productPage(ctx: ShopContext, handle: string) {
   return html(await renderPage(THEME, "product", {
     ...scope, template: "product", product,
     page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image,
-  }, sectionData(ctx, { exclude: product.id })));
+  }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }
 
 export async function collectionPage(ctx: ShopContext, handle: string) {
@@ -48,19 +48,19 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
   if (handle !== "all" && !cat) throw new Response("Not found", { status: 404 });
   const products = await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
-  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title }, sectionData(ctx)));
+  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title }, sectionData(ctx), ctx.look));
 }
 
 export async function infoPage(ctx: ShopContext, handle: string) {
   const page = await publishedPage(ctx.store.id, handle);
   if (!page) throw new Response("Not found", { status: 404 });
   const scope = await baseScope(ctx);
-  return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title }, sectionData(ctx)));
+  return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title }, sectionData(ctx), ctx.look));
 }
 
 export async function cartPage(ctx: ShopContext) {
   const scope = await baseScope(ctx);
-  return html(await renderPage(THEME, "cart", { ...scope, template: "cart", page_title: "Cart" }, sectionData(ctx)));
+  return html(await renderPage(THEME, "cart", { ...scope, template: "cart", page_title: "Cart" }, sectionData(ctx), ctx.look));
 }
 
 /**

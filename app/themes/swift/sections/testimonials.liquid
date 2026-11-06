@@ -1,0 +1,29 @@
+<section class="block">
+  <div class="wrap">
+    {%- if section.settings.heading != blank -%}<h2 class="center">{{ section.settings.heading }}</h2>{%- endif -%}
+    <div class="reviews">
+      {%- for r in section.settings.items -%}
+      <figure class="review">
+        <span class="review__stars">{% for i in (1..5) %}{% if i <= r.stars %}★{% else %}☆{% endif %}{% endfor %}</span>
+        <p>{{ r.text }}</p>
+        <figcaption class="muted">— {{ r.name }}{% if r.city != blank %}, {{ r.city }}{% endif %}</figcaption>
+      </figure>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Customer reviews", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "What customers say" },
+  { "id": "items", "type": "list", "label": "Reviews", "fields": [
+    { "id": "name", "type": "text", "label": "Name" },
+    { "id": "city", "type": "text", "label": "City" },
+    { "id": "stars", "type": "range", "label": "Stars", "min": 1, "max": 5, "step": 1 },
+    { "id": "text", "type": "textarea", "label": "Review" }
+  ], "default": [
+    { "name": "Customer name", "city": "City", "stars": 5, "text": "Write a real review from one of your customers here." },
+    { "name": "Customer name", "city": "City", "stars": 5, "text": "Write a real review from one of your customers here." },
+    { "name": "Customer name", "city": "City", "stars": 5, "text": "Write a real review from one of your customers here." }
+  ] }
+] }
+{% endschema %}

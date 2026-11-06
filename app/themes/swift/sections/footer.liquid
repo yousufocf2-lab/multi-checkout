@@ -2,7 +2,13 @@
   <div class="wrap footer__grid">
     <div>
       <p class="footer__brand">{{ shop.name }}</p>
+      {%- if section.settings.about != blank -%}<p class="muted">{{ section.settings.about }}</p>{%- endif -%}
       {%- if shop.phone -%}<p class="muted">Help: <a href="tel:{{ shop.phone }}">{{ shop.phone }}</a></p>{%- endif -%}
+      <p class="footer__social">
+        {%- if settings.social_instagram != blank -%}<a href="{{ settings.social_instagram }}" target="_blank" rel="noopener">Instagram</a>{%- endif -%}
+        {%- if settings.social_facebook != blank -%}<a href="{{ settings.social_facebook }}" target="_blank" rel="noopener">Facebook</a>{%- endif -%}
+        {%- if settings.social_youtube != blank -%}<a href="{{ settings.social_youtube }}" target="_blank" rel="noopener">YouTube</a>{%- endif -%}
+      </p>
     </div>
     <div>
       <p class="footer__head">Shop</p>
@@ -16,8 +22,11 @@
     </div>
     {%- endif -%}
   </div>
-  <p class="wrap footer__copy">© {{ 'now' | date: '%Y' }} {{ shop.name }} · Powered by Growpefy</p>
+  <p class="wrap footer__copy">© {{ 'now' | date: '%Y' }} {{ shop.name }}{% if section.settings.show_powered %} · Powered by Growpefy{% endif %}</p>
 </footer>
 {% schema %}
-{ "name": "Footer", "settings": [] }
+{ "name": "Footer", "settings": [
+  { "id": "about", "type": "textarea", "label": "Short line about your brand", "default": "" },
+  { "id": "show_powered", "type": "checkbox", "label": "Show “Powered by Growpefy”", "default": true }
+] }
 {% endschema %}

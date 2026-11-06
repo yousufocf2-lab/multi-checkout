@@ -55,11 +55,12 @@
       <p class="pdp__soldout" data-soldout hidden>This option is sold out.</p>
     </form>
 
+    {%- assign points = settings.pdp_points | newline_to_br | split: '<br />' -%}
+    {%- if settings.pdp_points != blank -%}
     <ul class="pdp__points">
-      <li>Cash on delivery available</li>
-      <li>Extra discount when you pay online</li>
-      <li>Ships within 24 hours</li>
+      {%- for p in points -%}{%- assign t = p | strip -%}{%- if t != '' -%}<li>{{ t }}</li>{%- endif -%}{%- endfor -%}
     </ul>
+    {%- endif -%}
 
     {%- if product.description != blank -%}
     <details class="pdp__desc" open><summary>Description</summary><div class="rte">{{ product.description }}</div></details>
@@ -67,10 +68,10 @@
   </div>
 </section>
 <script type="application/json" id="product-json">{{ product.json }}</script>
-<div class="sticky-buy" data-sticky>
+{%- if settings.pdp_sticky_buy != false -%}<div class="sticky-buy" data-sticky>
   <div><p class="sticky-buy__title">{{ product.title }}</p><p class="sticky-buy__price" data-sticky-price>{{ product.price | money }}</p></div>
   <button type="button" class="btn btn--primary" data-sticky-buy>Buy now</button>
-</div>
+</div>{%- endif -%}
 {% schema %}
 { "name": "Product page", "settings": [] }
 {% endschema %}

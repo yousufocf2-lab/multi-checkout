@@ -1,0 +1,17 @@
+<section class="vbanner">
+  {%- if section.settings.video != blank -%}
+  <video src="{{ section.settings.video }}" autoplay muted loop playsinline preload="metadata"></video>
+  {%- else -%}<div style="height:clamp(320px,50vw,520px);background:#222"></div>{%- endif -%}
+  <div class="vbanner__copy"><div class="wrap" style="width:100%;display:flex;flex-direction:column;gap:14px;align-items:flex-start">
+    {%- if section.settings.heading != blank -%}<h2>{{ section.settings.heading }}</h2>{%- endif -%}
+    {%- if section.settings.button_label != blank -%}<a class="btn btn--primary" href="{{ section.settings.button_link | default: routes.all }}">{{ section.settings.button_label }}</a>{%- endif -%}
+  </div></div>
+</section>
+{% schema %}
+{ "name": "Video banner", "settings": [
+  { "id": "video", "type": "video", "label": "Video (plays muted, on loop)" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "See it in action" },
+  { "id": "button_label", "type": "text", "label": "Button", "default": "Shop now" },
+  { "id": "button_link", "type": "url", "label": "Button link" }
+] }
+{% endschema %}
