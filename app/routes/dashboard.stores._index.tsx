@@ -39,7 +39,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 const SECTIONS: Record<string, string> = {
   promotions: "discounts", discounts: "product discounts", coupons: "coupons", offers: "bank offers", gifts: "free gifts", shipping: "shipping",
-  settings: "settings", design: "checkout design", install: "setup", wallet: "wallet", rto: "RTO Suite",
+  settings: "store profile", locations: "locations", design: "checkout design", install: "setup", wallet: "wallet", rto: "RTO Suite",
   logistics: "logistics", "rto-shield": "RTO Shield", funnel: "checkout funnel", profit: "sales and profit", drafts: "draft orders",
   catalog: "products", collections: "collections", inventory: "inventory", themes: "themes", pages: "pages", website: "domains", integrations: "integrations", "to-ship": "orders to ship",
 };

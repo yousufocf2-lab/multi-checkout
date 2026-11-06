@@ -171,15 +171,16 @@ export default function DashboardLayout() {
   ];
   // ---- settings (opens its own menu, like Shopify) ----
   const storeSettings: NavNode[] = [
-    { label: "General", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
+    { label: "Store profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
     { label: "Plan & wallet", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
-    { label: "Users & permissions", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
+    { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
     { label: "Checkout", to: storeHref("design"), icon: "cart", match: /\/design$|next=design/, show: may("settings") },
-    { label: "Shipping and delivery", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
+    { label: "Shipping & delivery", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
+    { label: "Warehouses & locations", to: storeHref("locations"), icon: "box", match: /\/locations$|next=locations\b/, show: may("settings") },
     { label: "WhatsApp", to: storeHref("whatsapp"), icon: "chat", match: /\/whatsapp$|next=whatsapp/, show: may("inbox") || may("settings") },
     { label: "WhatsApp inbox", to: storeHref("inbox"), icon: "inbox", match: /\/inbox$|next=inbox/, show: may("inbox") },
-    { label: "Domains", to: storeHref("website"), icon: "globe", match: /\/website$|next=website/, show: Boolean(site) },
+    { label: "Domains", to: storeHref("website"), icon: "globe", match: /\/website$|next=website/, show: may("settings") },
     { label: "Integrations", to: storeHref("integrations"), icon: "plug", match: /\/integrations$|next=integrations/, show: Boolean(site) },
     { label: "Store connection", to: storeHref("install"), icon: "setup", match: /\/install$|next=install/, show: may("settings") && !own },
     { label: "Stores", to: "/dashboard/stores", icon: "layers", match: (p, q) => (p === "/dashboard/stores" && !q.includes("next=")) || p === "/dashboard/stores/new" || p === "/dashboard/stores/create", show: !isAdmin },

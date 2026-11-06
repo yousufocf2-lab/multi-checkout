@@ -2,8 +2,12 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData } from "@remix-run/react";
+import { useEffect, useState } from "react";
+import { Icon } from "~/components/Icons";
+import { Card, Dialog } from "~/components/settings-ui";
+import { storeHost } from "~/lib/urls.server";
 import { and, eq, ne } from "drizzle-orm";
-import { CopyField, Notice, SubmitButton, LearnMore } from "~/components/ui";
+import { CopyField, Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
@@ -21,10 +25,10 @@ function cleanDomain(raw: string) {
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
-  if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
+  const site = catalogAllowed(viewer, store);
   // Cloudflare mode: check the domain's state with Cloudflare while it isn't live yet
   let detail: string | null = null;
-  if (cfConfigured() && store.storefrontDomain && store.storefrontDomainStatus !== "live") {
+  if (site && cfConfigured() && store.storefrontDomain && store.storefrontDomainStatus !== "live") {
     try {
       const st = await hostnameState(store.storefrontDomain);
       if (st.state === "missing") await addHostname(store.storefrontDomain);
@@ -40,7 +44,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   return json({
     auto: cfConfigured(), detail,
     isAdmin: viewer.role === "admin",
-    preview: `${env.appUrl}/s/${store.slug}`,
+    preview: `${env.appUrl}/s/${store.slug}`, site,
+    platformHost: new URL(env.appUrl).host,
+    checkoutHost: storeHost(store),
+    checkoutDomain: store.checkoutDomain,
+    storeWebsite: store.platform !== "growpefy" ? store.storefrontUrl?.replace(/^https?:\/\//, "").replace(/\/+$/, "") ?? null : null,
+    platform: store.platform,
     domain: store.storefrontDomain, target: cfConfigured() ? CONNECT_HOST() : store.storefrontDnsTarget, status: store.storefrontDomainStatus,
   });
 }
@@ -79,71 +88,109 @@ export async function action({ request, params }: ActionFunctionArgs) {
   return json({ ok: null, error: null });
 }
 
+type Row = { host: string; href: string; kind: string; note: string; status: "connected" | "pending" | "dns"; primary?: boolean; remove?: boolean };
+
 export default function Website() {
-  const { isAdmin, preview, domain, target, status, auto, detail } = useLoaderData<typeof loader>();
+  const d = useLoaderData<typeof loader>();
+  const { isAdmin, preview, domain, target, status, auto, detail, site } = d;
   const a = useActionData<typeof action>();
+  const [connect, setConnect] = useState(false);
+  useEffect(() => { if (a?.ok) setConnect(false); }, [a]);
   const bare = domain?.replace(/^www\./, "");
+  const live = status === "live";
+  const previewHost = preview.replace(/^https?:\/\//, "");
+
+  const rows: Row[] = [];
+  if (site) {
+    if (domain) rows.push({ host: domain, href: `https://${domain}`, kind: "Your domain", note: live ? "Customers see this address" : status === "dns" ? "Waiting for the DNS record" : "Being prepared", status: live ? "connected" : status === "dns" ? "dns" : "pending", primary: live, remove: true });
+    rows.push({ host: previewHost, href: preview, kind: "Growpefy address", note: live ? "Free address, opens the same website" : "Free address that always works", status: "connected", primary: !live });
+  } else if (d.storeWebsite) {
+    rows.push({ host: d.storeWebsite, href: `https://${d.storeWebsite}`, kind: `${d.platform === "woocommerce" ? "WooCommerce" : "Shopify"} website`, note: "Your online store", status: "connected", primary: true });
+  }
+  if (d.checkoutHost) rows.push({ host: d.checkoutHost, href: `https://${d.checkoutHost}`, kind: d.checkoutDomain ? "Checkout domain" : "Growpefy checkout address", note: "Checkout and payment pages open here", status: "connected" });
+
   return (
-    <div className="max-w-3xl space-y-5">
-      <div className="flex items-center gap-2"><h1 className="flex-1 text-[22px] font-semibold tracking-tight">Domains</h1><LearnMore topic="domains" /></div>
+    <div className="max-w-3xl space-y-4">
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
       {a?.error && <Notice tone="error">{a.error}</Notice>}
 
-      <section className="panel space-y-3 p-5">
-        <h2 className="text-[15px] font-semibold">Preview</h2>
-        <CopyField label="Preview link (not shown on Google)" value={preview} />
-        <a href={preview} target="_blank" rel="noreferrer" className="btn-secondary inline-flex">Open website</a>
-      </section>
-
-      <section className="panel space-y-4 p-5">
-        <div className="flex items-center gap-2">
-          <h2 className="flex-1 text-[15px] font-semibold">Your domain</h2>
-          {status && <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${status === "live" ? "bg-emerald-50 text-good" : "bg-amber-50 text-amber-800"}`}>{status === "live" ? "Live" : status === "dns" ? "Add the DNS record" : "Being prepared"}</span>}
-        </div>
-
-        {!domain ? (
-          <Form method="post" className="flex flex-wrap gap-2">
-            <input type="hidden" name="intent" value="domain" />
-            <input name="domain" required placeholder="brand.com" className="input min-w-0 flex-1" aria-label="Your domain" />
-            <SubmitButton className="btn-primary" busyText="Saving">Connect domain</SubmitButton>
-          </Form>
-        ) : (
-          <>
-            <p className="text-sm">Website address: <b>{domain}</b>{status === "live" && <> · <a className="font-semibold text-pine underline" href={`https://${domain}`} target="_blank" rel="noreferrer">Open</a></>}</p>
-            {status === "requested" && <p className="text-sm text-ink-soft">We're setting up your domain on Growpefy. The record to add will appear here, usually within a few hours.</p>}
-            {target && status !== "live" && (
-              <div className="space-y-3 rounded-xl bg-paper p-4 text-sm">
-                <p className="font-semibold">Add this record where you bought the domain (GoDaddy, Hostinger, Cloudflare...)</p>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <CopyField label="Type" value="CNAME" />
-                  <CopyField label="Name / Host" value={domain.split(".").length > 2 ? domain.split(".").slice(0, -2).join(".") : "@"} />
-                  <CopyField label="Value / Points to" value={target} />
+      <Card title="Domains" description="Every address your store and checkout open on. The primary domain is the one customers see."
+        action={site && !domain ? <button type="button" className="btn-primary btn shrink-0" onClick={() => setConnect(true)}>Connect your domain</button> : undefined} flush>
+        <div className="border-t border-rule">
+          <div className="hidden grid-cols-[minmax(0,1fr)_180px_110px] gap-3 bg-[#f7f7f7] px-4 py-1.5 text-[12px] font-medium text-ink-soft sm:grid">
+            <span>Domain</span><span>Type</span><span className="text-right">Status</span>
+          </div>
+          <ul className="divide-y divide-rule">
+            {rows.map((r) => (
+              <li key={r.host} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_180px_110px]">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Icon name="globe" className="h-4 w-4 shrink-0 text-ink-faint" />
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-1.5 text-[13px]">
+                      <a href={r.href} target="_blank" rel="noreferrer" className="truncate font-medium hover:underline">{r.host}</a>
+                      {r.primary && <span className="rounded-md bg-[#f1f1f1] px-1.5 py-px text-[11px] font-medium text-ink-soft">Primary</span>}
+                    </p>
+                    <p className="truncate text-[11.5px] text-ink-faint">{r.note}</p>
+                  </div>
                 </div>
-                {domain.startsWith("www.") && <p className="text-ink-soft">Then turn on <b>forwarding</b> from {bare} to https://{domain} in the same place, so both addresses open your store. Delete any old A or CNAME records for www first.</p>}
-                <p className="text-ink-soft">It usually starts working within 30 minutes (sometimes a few hours). The secure lock (https) is added automatically. Refresh this page to check.</p>
-                {detail && <p className="text-xs text-ink-faint">Status: {detail}</p>}
+                <span className="col-start-1 row-start-2 pl-[26px] text-[12px] text-ink-soft sm:col-start-2 sm:row-start-1 sm:pl-0 sm:text-[12.5px]">{r.kind}</span>
+                <span className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-2 sm:col-start-3 sm:row-span-1">
+                  <span className={`whitespace-nowrap rounded-md px-1.5 py-px text-[11.5px] font-medium ${r.status === "connected" ? "bg-[#cdfee1] text-[#0c5132]" : "bg-[#fff1e3] text-[#5e4200]"}`}>
+                    {r.status === "connected" ? "Connected" : r.status === "dns" ? "Action needed" : "Pending"}
+                  </span>
+                  {r.remove && (
+                    <Form method="post" onSubmit={(e) => { if (!confirm(`Remove ${r.host}? Your website stays on ${previewHost}.`)) e.preventDefault(); }}>
+                      <input type="hidden" name="intent" value="remove" />
+                      <button className="flex h-6 w-6 items-center justify-center rounded-md text-ink-faint hover:bg-black/5 hover:text-[#8e1f0b]" aria-label={`Remove ${r.host}`} title="Remove domain"><Icon name="trash" className="h-3.5 w-3.5" /></button>
+                    </Form>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {!site && <p className="border-t border-rule px-4 py-2.5 text-[12px] text-ink-faint">Your website domain is managed in {d.platform === "woocommerce" ? "WordPress" : "Shopify"}. For a checkout on your own domain, talk to the Growpefy team.</p>}
+      </Card>
+
+      {site && domain && !live && (
+        <Card title={status === "requested" ? "We're preparing your domain" : `Point ${bare} to Growpefy`}
+          description={status === "requested" ? "The record to add will appear here, usually within a few hours." : "Add this record where you bought the domain (GoDaddy, Hostinger, Cloudflare and others)."}>
+          {target && (
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <CopyField label="Type" value="CNAME" />
+                <CopyField label="Name / Host" value={domain.split(".").length > 2 ? domain.split(".").slice(0, -2).join(".") : "@"} />
+                <CopyField label="Value / Points to" value={target} />
               </div>
-            )}
-            {status === "live" && <p className="text-sm text-ink-soft">Your admin opens at <b>{domain}/admin</b>.</p>}
-            <Form method="post" onSubmit={(e) => { if (!confirm("Remove this domain? Your website stays on the preview link.")) e.preventDefault(); }}>
-              <input type="hidden" name="intent" value="remove" />
-              <button className="text-sm text-bad underline">Remove domain</button>
-            </Form>
-          </>
-        )}
-      </section>
+              {domain.startsWith("www.") && <p className="text-[12.5px] text-ink-soft">Then turn on <b>forwarding</b> from {bare} to https://{domain} in the same place, so both addresses open your store. Delete any old A or CNAME records for www first.</p>}
+              <p className="text-[12.5px] text-ink-soft">It usually starts working within 30 minutes (sometimes a few hours). The secure lock (https) is added automatically. Refresh this page to check.</p>
+              {detail && <p className="text-[11.5px] text-ink-faint">Status: {detail}</p>}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {site && live && <p className="px-1 text-[12px] text-ink-faint">Your admin also opens at <b className="text-ink-soft">{domain}/admin</b>.</p>}
+
+      <Dialog open={connect} onClose={() => setConnect(false)} title="Connect your domain"
+        footer={<><button type="button" className="btn-secondary btn" onClick={() => setConnect(false)}>Cancel</button><SubmitButton form="gp-domain" intent="domain" className="btn-primary btn" busyText="Connecting">Next</SubmitButton></>}>
+        <Form method="post" id="gp-domain" className="space-y-2">
+          <label className="block"><span className="label block">Domain</span>
+            <input name="domain" required placeholder="yourbrand.com" className="input" autoComplete="off" />
+          </label>
+          <p className="text-[12px] text-ink-faint">A domain you already own. We'll show the one record to add where you bought it. The secure lock (https) is free.</p>
+        </Form>
+      </Dialog>
 
       {isAdmin && domain && !auto && (
-        <section className="panel space-y-3 border-dashed p-5">
-          <h2 className="text-[15px] font-semibold">Growpefy team</h2>
-          <p className="text-xs text-ink-soft">Add <b>{domain}</b> on the hosting side, paste the CNAME target here, and tick Live once it is verified. Only the Growpefy team sees this box.</p>
+        <Card title="Growpefy team" description={`Add ${domain} on the hosting side, paste the CNAME target here, and tick Live once it is verified. Only the Growpefy team sees this box.`} className="border-dashed">
           <Form method="post" className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="intent" value="target" />
             <input name="target" defaultValue={target ?? ""} placeholder="CNAME target" className="input min-w-0 flex-1" aria-label="CNAME target" />
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="live" defaultChecked={status === "live"} />Live</label>
             <SubmitButton className="btn-secondary" busyText="Saving">Save</SubmitButton>
           </Form>
-        </section>
+        </Card>
       )}
     </div>
   );

@@ -323,9 +323,46 @@ export const stores = pgTable("stores", {
   storefrontDomainStatus: text("storefront_domain_status").$type<"requested" | "dns" | "live">(),
   country: text("country").notNull().default("IN"),
   currency: text("currency").notNull().default("INR"),
+  // Store profile: legal business details (invoices, taxes), public contact and defaults
+  business: jsonb("business").$type<BusinessProfile>(),
+  contactEmail: text("contact_email"),
+  timezone: text("timezone").notNull().default("Asia/Kolkata"),
+  unitSystem: text("unit_system").$type<"metric" | "imperial">().notNull().default("metric"),
+  weightUnit: text("weight_unit").$type<"kg" | "g" | "lb" | "oz">().notNull().default("kg"),
+  // Order IDs on Growpefy Store orders: prefix + number + suffix. Numbers start at orderStart (1001); orderSeq is the last one used.
+  orderPrefix: text("order_prefix").notNull().default(""),
+  orderSuffix: text("order_suffix").notNull().default(""),
+  orderStart: integer("order_start").notNull().default(1001),
+  orderSeq: integer("order_seq"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export type EntityType = "individual" | "sole_proprietorship" | "partnership" | "llp" | "private_limited" | "public_limited" | "trust_society" | "other";
+export type PostalAddress = { line1?: string; line2?: string; city?: string; state?: string; pincode?: string; country?: string };
+export type BusinessProfile = {
+  type?: EntityType; legalName?: string; gstin?: string; pan?: string; phone?: string; email?: string; address?: PostalAddress;
+};
+
+/** Warehouses, shops and other places a store keeps stock or ships from. */
+export const storeLocations = pgTable(
+  "store_locations",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references((): AnyPgColumn => stores.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind").$type<"warehouse" | "shop" | "office" | "partner">().notNull().default("warehouse"),
+    address: jsonb("address").$type<PostalAddress>().notNull().default({}),
+    phone: text("phone"),
+    fulfilsOnline: boolean("fulfils_online").notNull().default(true),
+    pickup: boolean("pickup").notNull().default(false),
+    isDefault: boolean("is_default").notNull().default(false),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("store_locations_store_idx").on(t.storeId)],
+);
+export type StoreLocation = typeof storeLocations.$inferSelect;
 
 export type WaVerifyStatus = "requested" | "submitted" | "approved" | "rejected";
 /** Store verification for WhatsApp messages. No status = not started. */

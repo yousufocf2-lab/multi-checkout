@@ -1,10 +1,11 @@
 // Growpefy Store catalog: items (products / dishes / courses ...), their variants and categories.
 import { and, asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
-import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, type ItemImage, type ItemOption, type Store } from "~/db.server";
+import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, type ItemImage, type ItemOption, type Store } from "~/db.server";
 import type { Viewer } from "./auth.server";
 import { toHandle } from "./business-types";
 import { rupeesToPaise, type PricedLine } from "./pricing";
 import { fetchCatalogPage } from "./shopify.server";
+import { orderName } from "./store-profile";
 
 export type ItemStatus = "active" | "draft" | "archived";
 
@@ -336,5 +337,11 @@ export async function placeCatalogOrder(store: Store, order: { id: string; items
       .set({ stock: sql`greatest(0, ${catalogVariants.stock} - ${l.quantity})` })
       .where(and(eq(catalogVariants.id, gpNum(l.variantId)), eq(catalogVariants.storeId, store.id), sql`${catalogVariants.stock} is not null`));
   }
-  return { id: `${GP_PREFIX}${order.id}`, name: `#GP${order.id.slice(0, 6).toUpperCase()}` };
+  // Next order number for this store: prefix + number + suffix, numbers from the store's start (1001 by default)
+  const [seq] = await db.update(stores)
+    .set({ orderSeq: sql`greatest(coalesce(${stores.orderSeq}, ${stores.orderStart} - 1) + 1, ${stores.orderStart})` })
+    .where(eq(stores.id, store.id))
+    .returning({ n: stores.orderSeq, prefix: stores.orderPrefix, suffix: stores.orderSuffix });
+  const name = seq?.n ? orderName(seq.prefix, seq.n, seq.suffix) : `#GP${order.id.slice(0, 6).toUpperCase()}`;
+  return { id: `${GP_PREFIX}${order.id}`, name };
 }
