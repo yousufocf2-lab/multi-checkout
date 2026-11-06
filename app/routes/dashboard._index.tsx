@@ -86,7 +86,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
   // A store employee without access to orders starts on the first page they can use
   if (viewer.role === "owner" && viewer.member && !can(viewer, "orders")) {
-    const first = ([["inbox", "/dashboard/stores?next=inbox"], ["ads", "/dashboard/ads"], ["offers", "/dashboard/stores?next=discounts"], ["rto", "/dashboard/stores?next=shipping"],
+    const first = ([["inbox", "/dashboard/stores?next=inbox"], ["ads", "/dashboard/ads"], ["offers", "/dashboard/stores?next=promotions"], ["rto", "/dashboard/stores?next=shipping"],
       ["billing", "/dashboard/stores?next=wallet"], ["settings", "/dashboard/stores?next=settings"], ["team", "/dashboard/team"]] as const).find(([p]) => can(viewer, p));
     throw redirect(first?.[1] ?? "/dashboard/support");
   }

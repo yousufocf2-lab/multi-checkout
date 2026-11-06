@@ -1,5 +1,7 @@
-import { Form, useNavigation } from "@remix-run/react";
-import { useState } from "react";
+import { Form, Link, useNavigation } from "@remix-run/react";
+import { useEffect, useState } from "react";
+import { Icon, type IconName } from "~/components/Icons";
+import { guideFor } from "~/lib/guides";
 
 export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -90,27 +92,92 @@ export function Toggle({ name, label, description, defaultChecked }: { name: str
 export function Section({ title, description, children, aside, id }: { title: string; description?: React.ReactNode; children: React.ReactNode; aside?: React.ReactNode; id?: string }) {
   return (
     <section className="panel scroll-mt-6" id={id}>
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-rule px-5 py-4">
+      <header className="flex flex-wrap items-start justify-between gap-3 px-4 pb-1 pt-4">
         <div>
-          <h2 className="text-[15px] font-semibold">{title}</h2>
-          {description && <p className="mt-0.5 max-w-prose text-sm text-ink-soft">{description}</p>}
+          <h2 className="text-[13.5px] font-semibold">{title}</h2>
+          {description && <p className="mt-0.5 max-w-prose text-[12.5px] text-ink-soft">{description}</p>}
         </div>
         {aside}
       </header>
-      <div className="p-5">{children}</div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }
 
-export function PageHeader({ title, description, actions }: { title: string; description?: React.ReactNode; actions?: React.ReactNode }) {
+export function PageHeader({ title, description, actions, icon, back, guide }: { title: string; description?: React.ReactNode; actions?: React.ReactNode; icon?: IconName; back?: string; guide?: string }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <h1 className="text-[22px] font-semibold leading-tight tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-ink-soft">{description}</p>}
+    <div className="mb-4 flex min-h-[32px] flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {back && <Link to={back} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>}
+        {icon && !back && <Icon name={icon} className="h-4 w-4 shrink-0 text-ink" strokeWidth={1.9} />}
+        <h1 className="truncate text-[15px] font-semibold leading-tight tracking-tight">{title}</h1>
+        {description && <p className="hidden min-w-0 truncate text-[12.5px] text-ink-faint md:block">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {(actions || guide) && <div className="flex flex-wrap items-center gap-2">{guide && <LearnMore topic={guide} />}{actions}</div>}
     </div>
+  );
+}
+
+/** “Learn more”: opens a side panel with a short step-by-step guide for this page. */
+export function LearnMore({ topic, label = "Learn more", className = "" }: { topic: string; label?: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const g = guideFor(topic);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+  if (!g) return null;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={`inline-flex h-[30px] items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium text-ink-soft hover:bg-black/5 hover:text-ink ${className}`}>
+        <Icon name="book" className="h-4 w-4" />{label}
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-[80] flex justify-end" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+          <button type="button" className="absolute inset-0 animate-fadein bg-black/25" onClick={() => setOpen(false)} aria-label="Close guide" />
+          <aside className="relative flex h-full w-full max-w-[420px] animate-fadein flex-col bg-white shadow-[0_0_0_1px_rgba(0,0,0,.06),-24px_0_48px_-24px_rgba(0,0,0,.35)]">
+            <header className="flex items-center gap-2 border-b border-rule px-4 py-3">
+              <Icon name="book" className="h-4 w-4 text-ink-soft" />
+              <h2 id="guide-title" className="flex-1 text-[14px] font-semibold">{g.title}</h2>
+              <button type="button" onClick={() => setOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>
+            </header>
+            <div className="flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-relaxed">
+              <p className="text-ink-soft">{g.intro}</p>
+              {g.steps && (
+                <ol className="mt-5 space-y-4">
+                  {g.steps.map((s, i) => (
+                    <li key={s.title} className="flex gap-3">
+                      <span className="num flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-paper-sunk text-[12px] font-semibold">{i + 1}</span>
+                      <div><p className="font-semibold text-ink">{s.title}</p><p className="mt-0.5 text-ink-soft">{s.text}</p></div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {g.tips && (
+                <div className="mt-6 rounded-xl bg-paper-sunk p-4">
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-faint">Tips</p>
+                  <ul className="mt-2 space-y-2">{g.tips.map((t) => <li key={t} className="flex gap-2 text-ink-soft"><span aria-hidden className="text-ink-faint">•</span>{t}</li>)}</ul>
+                </div>
+              )}
+              {g.links && (
+                <div className="mt-6 space-y-1">
+                  {g.links.map((l) => (
+                    <a key={l.href} href={l.href} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg px-3 py-2 font-medium text-ink shadow-[inset_0_0_0_1px_rgb(var(--rule))] hover:bg-paper">
+                      {l.label}<Icon name="external" className="h-4 w-4 text-ink-faint" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+            <footer className="border-t border-rule px-5 py-3 text-[12.5px] text-ink-soft">
+              Still stuck? <Link to="/dashboard/support" className="font-medium text-ink underline underline-offset-2" onClick={() => setOpen(false)}>Ask Growpefy support</Link>
+            </footer>
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -136,12 +203,12 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
 
 export function Notice({ tone = "info", children }: { tone?: "info" | "success" | "error" | "warning"; children: React.ReactNode }) {
   const cls = {
-    info: "border-rule bg-paper-raised text-ink-soft",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    error: "border-red-200 bg-red-50 text-red-900",
-    warning: "border-amber-200 bg-amber-50 text-amber-900",
+    info: "border-transparent bg-[#eaf4ff] text-[#00366c] shadow-[0_0_0_1px_rgba(0,91,211,.18)]",
+    success: "border-transparent bg-[#e4f9ec] text-[#0c5132] shadow-[0_0_0_1px_rgba(12,81,50,.18)]",
+    error: "border-transparent bg-[#fee9e8] text-[#8e1f0b] shadow-[0_0_0_1px_rgba(142,31,11,.18)]",
+    warning: "border-transparent bg-[#fff1e3] text-[#5e4200] shadow-[0_0_0_1px_rgba(178,132,0,.25)]",
   }[tone];
-  return <div role={tone === "error" ? "alert" : "status"} className={`break-words rounded-lg border px-4 py-3 text-sm ${cls}`}>{children}</div>;
+  return <div role={tone === "error" ? "alert" : "status"} className={`break-words rounded-xl border px-4 py-2.5 text-sm ${cls}`}>{children}</div>;
 }
 
 export function EmptyState({ title, children, action }: { title: string; children?: React.ReactNode; action?: React.ReactNode }) {

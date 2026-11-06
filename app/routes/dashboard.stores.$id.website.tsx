@@ -3,7 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import { and, eq, ne } from "drizzle-orm";
-import { CopyField, Notice, SubmitButton } from "~/components/ui";
+import { CopyField, Notice, SubmitButton, LearnMore } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
@@ -85,7 +85,7 @@ export default function Website() {
   const bare = domain?.replace(/^www\./, "");
   return (
     <div className="max-w-3xl space-y-5">
-      <h1 className="text-[22px] font-semibold tracking-tight">Website & domain</h1>
+      <div className="flex items-center gap-2"><h1 className="flex-1 text-[22px] font-semibold tracking-tight">Domains</h1><LearnMore topic="domains" /></div>
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
       {a?.error && <Notice tone="error">{a.error}</Notice>}
 

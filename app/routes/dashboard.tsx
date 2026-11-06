@@ -1,6 +1,6 @@
-import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import type { HeadersFunction, LinksFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
+import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigate, useNavigation, type ShouldRevalidateFunction } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { BrandIcon, BrandLockup, BusyOverlay } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
@@ -26,6 +26,11 @@ import { PasskeyPrompt } from "~/components/Passkey";
 import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
+
+export const links: LinksFunction = () => [
+  { rel: "preconnect", href: "https://fonts.googleapis.com" },
+  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700&display=swap" },
+];
 
 export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -104,8 +109,9 @@ const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/
 export default function DashboardLayout() {
   const { kycPending, viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
+  const [palette, setPalette] = useState(false);
   const location = useLocation();
-  useEffect(() => setOpen(false), [location.pathname, location.search]);
+  useEffect(() => { setOpen(false); setPalette(false); }, [location.pathname, location.search]);
 
   const isAdmin = viewer.role === "admin";
   const may = (perm: string) => viewer.perms == null || viewer.perms.includes(perm);
@@ -125,218 +131,187 @@ export default function DashboardLayout() {
   const worst = [...wallets].filter((w) => liveIds.has(w.storeId)).sort((a, b) => RANK[b.state] - RANK[a.state])[0] ?? null;
   const alertWallet = !may("billing") ? null : focus ? (focus.live ? focusWallet : null) : isAdmin ? null : worst;
   const alertStore = alertWallet ? stores.find((s) => s.id === alertWallet.storeId) ?? null : null;
+  const own = focus?.platform === "growpefy";
+  const site = (isAdmin || focus?.storefront) && may("settings");
 
-  const settingsPaths = ["/settings", "/design", "/install", "/payments", "/dashboard/stores/new", "/dashboard/team"];
-  const inSettings = settingsPaths.some((p) => location.pathname.endsWith(p)) || location.pathname === "/dashboard/stores";
-  const [settingsOpen, setSettingsOpen] = useState(inSettings);
-  useEffect(() => { if (inSettings) setSettingsOpen(true); }, [inSettings]);
-
-  // Discounts, coupons, bank offers and free gifts sit under one "Discounts" menu
-  const inOffers = /\/(discounts|coupons|offers|gifts)$/.test(location.pathname) || /next=(discounts|coupons|offers|gifts)\b/.test(location.search);
-  const [offersOpen, setOffersOpen] = useState(inOffers);
-  useEffect(() => { if (inOffers) setOffersOpen(true); }, [inOffers]);
-
-  const badge = (n: number, tone = "bg-emerald-400/20 text-emerald-200") => n > 0 && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${tone}`}>{n}</span>;
-  const labelled = (text: string, n: React.ReactNode) => <span className="flex flex-1 items-center justify-between gap-2">{text}{n}</span>;
-
-  // ---- one store's tools (store owners, their team, and admin inside a client's store) ----
-  const storeNav = (
-    <>
-      <Group label="Analytics">
-        {may("orders") && <Item to="/dashboard" end icon="overview">Overview</Item>}
-        {may("orders") && <Item to="/dashboard/orders" icon="orders">Orders</Item>}
-        {may("ads") && <Item to={adsHref} icon="ads" match={/\/ads$/}>Ads</Item>}
-        {(isAdmin || focus?.profitEnabled) && <Item to={storeHref("profit")} icon="trend" match={/\/profit$/}>Profit share</Item>}
-        {may("orders") && <Item to={storeHref("funnel")} icon="filter" match={/\/funnel$|next=funnel/}>Checkout funnel</Item>}
-        {viewer.role === "admin" && <Item to={storeHref("diagnostics")} icon="alert" match={/\/diagnostics$|next=diagnostics/}>Checkout diagnostics</Item>}
-        {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
-      </Group>
-      {(isAdmin || focus?.storefront) && may("settings") && (
-        <Group label={focus?.platform === "growpefy" ? "Your website" : "Growpefy Store (pilot)"}>
-          <Item to={storeHref("catalog")} icon="box" match={/\/catalog(\/|$)|next=catalog/}>{packOf(focus?.businessType).items}</Item>
-          <Item to={storeHref("to-ship")} icon="shipping" match={/\/to-ship$|next=to-ship/}>Orders to ship</Item>
-          <Item to={storeHref("themes")} icon="design" match={/\/themes$|\/editor$|next=themes/}>Themes & design</Item>
-          <Item to={storeHref("pages")} icon="layers" match={/\/pages(\/|$)|next=pages/}>Pages</Item>
-          <Item to={storeHref("integrations")} icon="plug" match={/\/integrations$|next=integrations/}>Integrations</Item>
-          <Item to={storeHref("website")} icon="globe" match={/\/website$|next=website/}>Website & domain</Item>
-        </Group>
-      )}
-      {(may("inbox") || may("settings") || may("offers") || may("rto")) && (
-        <Group label="Sell more">
-          {may("inbox") && <Item to={storeHref("inbox")} icon="chat" match={/\/inbox$|\/whatsapp$|next=inbox/}>WhatsApp inbox</Item>}
-          {may("settings") && <Item to={storeHref("payments")} icon="rupee" match={/\/payments$|next=payments/}>Payment methods</Item>}
-          {may("offers") && (
-            <div>
-              <button type="button" onClick={() => setOffersOpen((o) => !o)} aria-expanded={offersOpen}
-                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition hover:bg-white/5 hover:text-white ${inOffers ? "text-white" : ""}`}>
-                <Icon name="discounts" />
-                <span className="flex-1 text-left">Discounts</span>
-                <Icon name="chevron" className={`h-4 w-4 transition ${offersOpen ? "rotate-180" : ""}`} />
-              </button>
-              {offersOpen && (
-                <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-night-line pl-2.5">
-                  <Item to={storeHref("discounts")} icon="discounts" match={/\/discounts$|next=discounts/} small>Product discounts</Item>
-                  <Item to={storeHref("coupons")} icon="coupons" match={/\/coupons$|next=coupons/} small>Coupon codes</Item>
-                  <Item to={storeHref("offers")} icon="offers" match={/\/offers$|next=offers/} small>Bank & card offers</Item>
-                  <Item to={storeHref("gifts")} icon="gift" match={/\/gifts$|next=gifts/} small>Free gifts</Item>
-                </div>
-              )}
-            </div>
-          )}
-          {may("rto") && <Item to={storeHref("shipping")} icon="shipping" match={/\/shipping$|next=shipping/}>Shipping</Item>}
-        </Group>
-      )}
-      {may("rto") && (
-        <Group label="Protect">
-          <Item to={storeHref("logistics")} icon="shipping" match={/\/logistics$|next=logistics/}>Logistics</Item>
-          <Item to={storeHref("rto-shield")} icon="shield" match={/\/rto-shield$|next=rto-shield/}>RTO Shield</Item>
-          <Item to={storeHref("rto")} icon="shield" match={/\/rto$|next=rto/}>RTO Suite</Item>
-        </Group>
-      )}
-      {may("billing") && (
-        <Group label="Billing">
-          <Item to={storeHref("wallet")} icon="wallet" match={/\/wallet$|next=wallet/}>
-            {labelled("Wallet", focusWallet && <span className={`num rounded-md px-1.5 py-px text-[11px] font-semibold ${focusWallet.state === "ok" ? "bg-white/10 text-night-text" : focusWallet.state === "low" ? "bg-amber-400/20 text-amber-200" : "bg-red-400/20 text-red-200"}`}>{rupees(focusWallet.balance, 0)}</span>)}
-          </Item>
-        </Group>
-      )}
-      {(may("settings") || (!isAdmin && may("team"))) && (
-        <div>
-          <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-expanded={settingsOpen}
-            className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition hover:bg-white/5 hover:text-white ${inSettings ? "text-white" : ""}`}>
-            <Icon name="settings" />
-            <span className="flex-1 text-left">Settings</span>
-            <Icon name="chevron" className={`h-4 w-4 transition ${settingsOpen ? "rotate-180" : ""}`} />
-          </button>
-          {settingsOpen && (
-            <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-night-line pl-2.5">
-              {may("settings") && <Item to={storeHref("settings")} icon="stores" match={/\/settings$|next=settings/} small>Store settings</Item>}
-              {may("settings") && <Item to={storeHref("design")} icon="design" match={/\/design$|next=design/} small>Checkout design</Item>}
-              {may("settings") && focus?.platform !== "growpefy" && <Item to={storeHref("install")} icon="setup" match={/\/install$|next=install/} small>Setup</Item>}
-              {!isAdmin && <Item to="/dashboard/stores" icon="stores" match={(p, q) => p === "/dashboard/stores" && !q.includes("next=")} small>All stores</Item>}
-              {!isAdmin && may("team") && <Item to="/dashboard/team" icon="users" small>Team</Item>}
-            </div>
-          )}
-        </div>
-      )}
-    </>
-  );
+  // ---- main menu (store tools) ----
+  const storeMain: NavNode[] = [
+    { label: "Home", to: "/dashboard", icon: "home", end: true, show: may("orders") },
+    { label: "Orders", to: "/dashboard/orders", icon: "inbox", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship/, show: may("orders"), children: [
+      { label: "Abandoned checkouts", to: "/dashboard/orders/abandoned", show: true },
+      { label: "Orders to ship", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: Boolean(site) },
+    ] },
+    { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/catalog(\/|$)|next=catalog/, show: Boolean(site) },
+    { label: "Discounts", to: storeHref("promotions"), icon: "discounts", match: /\/(promotions|discounts|coupons|offers|gifts)$|next=(promotions|discounts|coupons|offers|gifts)\b/, show: may("offers") },
+    { label: "Marketing", to: adsHref, icon: "ads", match: /\/ads$|\/profit$|\/compare$/, show: may("ads"), children: [
+      { label: "Ads", to: adsHref, match: /\/ads$/, show: true },
+      { label: "Profit share", to: storeHref("profit"), match: /\/profit$/, show: isAdmin || Boolean(focus?.profitEnabled) },
+      { label: "Compare stores", to: "/dashboard/compare", show: !isAdmin && stores.length > 1 },
+    ] },
+    { label: "Shipping & RTO", to: storeHref("logistics"), icon: "shipping", match: /\/(logistics|rto-shield|rto)$|next=(logistics|rto-shield|rto)\b/, show: may("rto"), children: [
+      { label: "Shipments", to: storeHref("logistics"), match: /\/logistics$|next=logistics/, show: true },
+      { label: "RTO Shield", to: storeHref("rto-shield"), match: /\/rto-shield$|next=rto-shield/, show: true },
+      { label: "RTO Suite", to: storeHref("rto"), match: /\/rto$|next=rto\b/, show: true },
+    ] },
+    { label: "Analytics", to: storeHref("funnel"), icon: "chart", match: /\/(funnel|diagnostics)$|next=(funnel|diagnostics)\b/, show: may("orders"), children: [
+      { label: "Checkout funnel", to: storeHref("funnel"), match: /\/funnel$|next=funnel/, show: true },
+      { label: "Checkout diagnostics", to: storeHref("diagnostics"), match: /\/diagnostics$|next=diagnostics/, show: isAdmin },
+    ] },
+  ];
+  const storeChannels: NavNode[] = [
+    { label: "Online Store", to: storeHref("themes"), icon: "stores", match: /\/(themes|pages(\/\d+)?)$|next=(themes|pages)\b/, show: Boolean(site), children: [
+      { label: "Themes", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
+      { label: "Pages", to: storeHref("pages"), match: /\/pages(\/|$)|next=pages/, show: true },
+    ] },
+  ];
+  // ---- settings (opens its own menu, like Shopify) ----
+  const storeSettings: NavNode[] = [
+    { label: "General", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
+    { label: "Plan & wallet", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
+    { label: "Users & permissions", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
+    { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
+    { label: "Checkout", to: storeHref("design"), icon: "cart", match: /\/design$|next=design/, show: may("settings") },
+    { label: "Shipping and delivery", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
+    { label: "WhatsApp", to: storeHref("whatsapp"), icon: "chat", match: /\/whatsapp$|next=whatsapp/, show: may("inbox") || may("settings") },
+    { label: "WhatsApp inbox", to: storeHref("inbox"), icon: "inbox", match: /\/inbox$|next=inbox/, show: may("inbox") },
+    { label: "Domains", to: storeHref("website"), icon: "globe", match: /\/website$|next=website/, show: Boolean(site) },
+    { label: "Integrations", to: storeHref("integrations"), icon: "plug", match: /\/integrations$|next=integrations/, show: Boolean(site) },
+    { label: "Store connection", to: storeHref("install"), icon: "setup", match: /\/install$|next=install/, show: may("settings") && !own },
+    { label: "Stores", to: "/dashboard/stores", icon: "layers", match: (p, q) => (p === "/dashboard/stores" && !q.includes("next=")) || p === "/dashboard/stores/new" || p === "/dashboard/stores/create", show: !isAdmin },
+    { label: "Login & security", to: "/dashboard/security", icon: "lock", show: true },
+    { label: "My account", to: "/dashboard/account", icon: "user", show: viewer.isTeam },
+  ];
 
   // ---- Growpefy admin panel ----
-  const adminNav = (
-    <>
-      <Group label="Growpefy">
-        <Item to={adminHome} icon="overview" match={(p) => p === "/dashboard"}>Overview</Item>
-        {may("leads") && <Item to="/dashboard/leads" icon="target">Leads</Item>}
-        {may("clients") && <Item to="/dashboard/clients" icon="users">Clients</Item>}
-        {may("support") && <Item to="/dashboard/support" icon="help">{labelled("Support inbox", badge(support))}</Item>}
-        {adminWa !== null && <Item to="/dashboard/whatsapp-inbox" icon="chat">{labelled("WhatsApp inbox", badge(adminWa))}</Item>}
-        {may("marketing") && <Item to="/dashboard/marketing" icon="trend">Marketing</Item>}
-      </Group>
-      {(may("stores") || may("billing") || may("clients") || may("fulfilment")) && (
-        <Group label="Operations">
-          {may("stores") && <Item to="/dashboard/stores" icon="stores" match={(p) => p === "/dashboard/stores"}>Client stores</Item>}
-          {may("stores") && <Item to="/dashboard/connect-requests" icon="plus">{labelled("Connect requests", badge(connectPending, "bg-amber-400/20 text-amber-200"))}</Item>}
-          {may("billing") && <Item to="/dashboard/wallets" icon="rupee">Wallets</Item>}
-          {may("clients") && <Item to="/dashboard/wa-verify" icon="shield">{labelled("WhatsApp approvals", badge(waPending, "bg-amber-400/20 text-amber-200"))}</Item>}
-          {may("fulfilment") && <Item to="/dashboard/dropship" icon="box">{labelled("Dropshipping", badge(dropshipAlerts, "bg-red-400/20 text-red-200"))}</Item>}
-        </Group>
-      )}
-      {(may("team") || may("clients")) && (
-        <Group label="Settings">
-          {may("team") && <Item to="/dashboard/team" icon="users">Team</Item>}
-          {may("clients") && <Item to="/dashboard/owners" icon="lock">Owner accounts</Item>}
-          {!viewer.isTeam && <Item to="/dashboard/cloudflare" icon="globe">Store domains</Item>}
-        </Group>
-      )}
-    </>
-  );
+  const adminMain: NavNode[] = [
+    { label: "Home", to: adminHome, icon: "home", match: (p) => p === "/dashboard", show: true },
+    { label: "Leads", to: "/dashboard/leads", icon: "target", show: may("leads") },
+    { label: "Clients", to: "/dashboard/clients", icon: "users", show: may("clients") },
+    { label: "Support inbox", to: "/dashboard/support", icon: "help", show: may("support"), badge: support || undefined },
+    { label: "WhatsApp inbox", to: "/dashboard/whatsapp-inbox", icon: "chat", show: adminWa !== null, badge: adminWa || undefined },
+    { label: "Marketing", to: "/dashboard/marketing", icon: "trend", show: may("marketing") },
+    { label: "Client stores", to: "/dashboard/stores", icon: "stores", match: (p) => p === "/dashboard/stores", show: may("stores") },
+    { label: "Connect requests", to: "/dashboard/connect-requests", icon: "plus", show: may("stores"), badge: connectPending || undefined },
+    { label: "Wallets", to: "/dashboard/wallets", icon: "rupee", show: may("billing") },
+    { label: "WhatsApp approvals", to: "/dashboard/wa-verify", icon: "shield", show: may("clients"), badge: waPending || undefined },
+    { label: "Dropshipping", to: "/dashboard/dropship", icon: "box", show: may("fulfilment"), badge: dropshipAlerts || undefined },
+  ];
+  const adminSettings: NavNode[] = [
+    { label: "Team", to: "/dashboard/team", icon: "users", show: may("team") },
+    { label: "Owner accounts", to: "/dashboard/owners", icon: "lock", show: may("clients") },
+    { label: "Store domains", to: "/dashboard/cloudflare", icon: "globe", show: !viewer.isTeam },
+    { label: "Login & security", to: "/dashboard/security", icon: "shield", show: true },
+    { label: "My account", to: "/dashboard/account", icon: "user", show: viewer.isTeam },
+  ];
+
+  const settingsList = (storeMode ? storeSettings : adminSettings).filter((n) => n.show);
+  const inSettings = settingsList.some((n) => isActive(n, location.pathname, location.search));
+  const mainList = (storeMode ? storeMain : adminMain).filter((n) => n.show);
+  const channelList = storeMode ? storeChannels.filter((n) => n.show) : [];
+  const settingsHome = settingsList[0]?.to ?? "/dashboard/security";
+
+  // Ctrl/Cmd + K opens search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette((p) => !p); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const searchable = [
+    ...mainList.flatMap((n) => [{ label: n.label, to: n.to, group: "Menu" }, ...(n.children ?? []).filter((c) => c.show).map((c) => ({ label: c.label, to: c.to, group: n.label }))]),
+    ...channelList.flatMap((n) => [{ label: n.label, to: n.to, group: "Sales channels" }, ...(n.children ?? []).filter((c) => c.show).map((c) => ({ label: c.label, to: c.to, group: n.label }))]),
+    ...settingsList.map((n) => ({ label: n.label, to: n.to, group: "Settings" })),
+  ];
 
   const nav = (
-    <nav className="flex h-full flex-col bg-night text-night-text">
-      <div className="px-5 pb-4 pt-5">
-        <Link to={isAdmin ? adminHome : "/dashboard"} aria-label="Growpefy home" className="inline-block"><BrandLockup tone="light" className="h-[30px]" /></Link>
-        <div className="mt-2">
-          {isAdmin
-            ? <p className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-emerald-400/20 to-sky-400/20 px-2 py-px text-[11px] font-medium text-emerald-200"><Icon name="sparkle" className="h-3 w-3" />{viewer.isTeam ? "Growpefy team" : "Super admin"}</p>
-            : <p className="text-[11px] text-night-faint">Store dashboard</p>}
+    <nav className="gp-nav flex h-full flex-col bg-[#1a1a1a] text-[#e3e3e3]">
+      {inSettings ? (
+        <div className="px-3 pb-2 pt-3">
+          <Link to={storeMode ? (may("orders") ? "/dashboard" : storeHref("catalog")) : adminHome} className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-semibold text-white hover:bg-white/[.06]">
+            <Icon name="arrow" className="h-4 w-4 rotate-180 text-[#b5b5b5]" />Settings
+          </Link>
         </div>
-      </div>
-
-      {storeMode && (
-        <div className="px-3 pb-3">
-          {isAdmin && (
-            <Link to={adminHome} className="mb-2 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-emerald-200 hover:bg-white/5">
-              <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" />Back to admin panel
-            </Link>
-          )}
-          <StoreSwitcher stores={stores} current={current} here={here} allowAll={!isAdmin} />
+      ) : (
+        <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
+          <Link to={isAdmin && !storeMode ? adminHome : "/dashboard"} aria-label="Growpefy home" className="inline-flex"><BrandLockup tone="light" className="h-[22px]" /></Link>
+          {isAdmin && <span className="rounded-md bg-white/[.08] px-1.5 py-0.5 text-[10.5px] font-medium text-[#b5b5b5]">{viewer.isTeam ? "Team" : "Admin"}</span>}
         </div>
       )}
 
-      <div className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-        {storeMode ? storeNav : adminNav}
+      <div className="px-3 pb-2">
+        <button type="button" onClick={() => setPalette(true)} className="flex h-8 w-full items-center gap-2 rounded-lg border border-white/[.08] bg-white/[.06] px-2.5 text-[13px] text-[#a6a6a6] transition hover:bg-white/[.09]">
+          <Icon name="search" className="h-4 w-4" /><span className="flex-1 text-left">{inSettings ? "Search settings" : "Search"}</span>
+          <kbd className="font-sans text-[11px] text-[#8a8a8a]">Ctrl K</kbd>
+        </button>
       </div>
 
-      {!isAdmin && (
-        <div className="border-t border-night-line px-3 py-2">
-          <Item to="/dashboard/support" icon="help">{labelled("Help & support", badge(support))}</Item>
+      {inSettings && storeMode && focus && (
+        <div className="px-3 pb-2">
+          <div className="flex items-center gap-2.5 rounded-lg bg-white/[.06] px-2 py-2">
+            <Avatar store={focus} />
+            <span className="min-w-0"><span className="block truncate text-[13px] font-medium text-white">{focus.name}</span><span className="block truncate text-[11px] text-[#8a8a8a]">{focus.domain}</span></span>
+          </div>
         </div>
       )}
-      <div className="flex items-center gap-3 border-t border-night-line px-4 py-3.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-sky-500 text-sm font-semibold text-white">{viewer.person.slice(0, 1).toUpperCase()}</span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">{viewer.person}</p>
-          {viewer.isTeam
-            ? <Link to="/dashboard/account" className="block truncate text-xs text-night-faint hover:text-white">{viewer.email} · My account</Link>
-            : <p className="truncate text-xs text-night-faint">{viewer.email}</p>}
-          <Link to="/dashboard/security" className="block truncate text-xs text-night-faint hover:text-white">Face ID / fingerprint login</Link>
-        </div>
-        <Form method="post" action="/logout">
-          <button className="rounded-lg p-2 text-night-faint hover:bg-white/5 hover:text-white" aria-label="Log out" title="Log out"><Icon name="logout" /></button>
-        </Form>
+
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        {isAdmin && storeMode && !inSettings && (
+          <Link to={adminHome} className="mb-1 flex h-[30px] items-center gap-2 rounded-lg px-2 text-[12.5px] font-medium text-[#8fd6b5] hover:bg-white/[.06]">
+            <Icon name="arrow" className="h-3.5 w-3.5 rotate-180" />Back to admin panel
+          </Link>
+        )}
+        {inSettings ? (
+          <NavList items={settingsList} />
+        ) : (
+          <>
+            <NavList items={mainList} />
+            {channelList.length > 0 && (
+              <>
+                <p className="mb-1 mt-4 px-2 text-[12px] font-medium text-[#8a8a8a]">Sales channels</p>
+                <NavList items={channelList} />
+              </>
+            )}
+          </>
+        )}
       </div>
+
+      <div className="space-y-0.5 px-3 pb-2">
+        {!inSettings && settingsList.length > 0 && <NavList items={[{ label: "Settings", to: settingsHome, icon: "settings", show: true, match: () => false }]} />}
+        {!isAdmin && !inSettings && <NavList items={[{ label: "Help & support", to: "/dashboard/support", icon: "help", show: true, badge: support || undefined }]} />}
+      </div>
+      <AccountMenu stores={stores} current={storeMode ? current ?? only : null} here={here} isAdmin={isAdmin} viewer={viewer} />
     </nav>
   );
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="hidden bg-night lg:block"><div className="sticky top-0 h-screen">{nav}</div></aside>
+    <div className="admin min-h-screen bg-[#1a1a1a] lg:grid lg:h-screen lg:grid-cols-[240px_minmax(0,1fr)] lg:overflow-hidden">
+      <aside className="hidden lg:block"><div className="h-screen">{nav}</div></aside>
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-rule bg-paper/95 px-4 py-2.5 backdrop-blur lg:hidden">
-        <BrandIcon className="h-8 w-8" />
-        <button type="button" onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-          <span className="min-w-0">
-            <span className="block text-[11px] leading-tight text-ink-faint">{storeMode ? "Showing" : "Growpefy"}</span>
-            <span className="block truncate text-sm font-semibold leading-tight">{!storeMode ? (viewer.isTeam ? "Team panel" : "Admin panel") : current?.name ?? (only ? only.name : `All stores (${stores.length})`)}</span>
-          </span>
-          <Icon name="chevron" className="h-4 w-4 shrink-0 text-ink-faint" />
-        </button>
-        <button type="button" className="rounded-lg border border-rule-strong bg-surface p-2" onClick={() => setOpen(true)} aria-expanded={open} aria-label="Open menu"><Icon name="menu" /></button>
+      <header className="sticky top-0 z-30 flex h-12 items-center gap-3 bg-[#1a1a1a] px-3 text-white lg:hidden">
+        <button type="button" className="rounded-lg p-1.5 text-[#e3e3e3] hover:bg-white/10" onClick={() => setOpen(true)} aria-expanded={open} aria-label="Open menu"><Icon name="menu" className="h-5 w-5" /></button>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{!storeMode ? (viewer.isTeam ? "Team panel" : "Admin panel") : current?.name ?? (only ? only.name : `All stores (${stores.length})`)}</span>
+        <button type="button" className="rounded-lg p-1.5 text-[#e3e3e3] hover:bg-white/10" onClick={() => setPalette(true)} aria-label="Search"><Icon name="search" className="h-5 w-5" /></button>
       </header>
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <button className="absolute inset-0 bg-black/40" aria-label="Close menu" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[86%] max-w-[300px] animate-fadein shadow-lift">
-            {nav}
-            <button type="button" onClick={() => setOpen(false)} className="absolute right-3 top-5 rounded-lg p-1.5 text-night-faint hover:text-white" aria-label="Close menu"><Icon name="close" /></button>
-          </aside>
+          <button className="absolute inset-0 bg-black/50" aria-label="Close menu" onClick={() => setOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 w-[82%] max-w-[280px] animate-fadein shadow-lift">{nav}</aside>
         </div>
       )}
 
-      <main className="min-w-0 px-4 pb-28 pt-5 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">
+      <main className="min-h-[calc(100vh-48px)] min-w-0 bg-[#f1f1f1] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-xl">
         <ActionLoader stores={stores} />
         {nextDemo && <DemoBar demo={nextDemo} login={login} />}
         <IdleLogout idleMs={idleMs} />
-        <div className="mx-auto max-w-[1180px]">
+        <div className={`mx-auto px-4 pb-24 pt-4 sm:px-6 lg:pb-12 lg:pt-5 ${inSettings ? "max-w-[920px]" : "max-w-[1200px]"}`}>
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
           )}
           {kycPending && (
-            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-[#fff1e3] px-4 py-2.5 text-[13px] text-[#5e4200] shadow-[0_0_0_1px_rgba(178,132,0,.25)]">
+              <Icon name="alert" className="h-4 w-4 shrink-0" />
               <span className="flex-1">Complete your KYC to go live: connect your domain, add payment gateways and recharge your wallet.</span>
-              <Link to="/onboarding" className="btn-primary h-9">Complete KYC</Link>
+              <Link to="/onboarding" className="btn-primary">Complete KYC</Link>
             </div>
           )}
           {!location.pathname.startsWith("/dashboard/security") && <PasskeyPrompt has={hasPasskey} />}
@@ -344,23 +319,102 @@ export default function DashboardLayout() {
         </div>
       </main>
 
-      {/* Mobile tab bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-rule bg-surface/95 backdrop-blur lg:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom)" }} aria-label="Quick links">
-        {storeMode ? (
-          <>
-            <Tab to="/dashboard" end icon="overview" label="Overview" />
-            {may("orders") ? <Tab to="/dashboard/orders" icon="orders" label="Orders" /> : <Tab to={storeHref("inbox")} icon="chat" label="Inbox" />}
-            {may("ads") ? <Tab to={adsHref} icon="ads" label="Ads" /> : <Tab to="/dashboard/support" icon="help" label="Help" />}
-          </>
-        ) : (
-          <>
-            <Tab to={adminHome} end icon="overview" label="Overview" />
-            {may("leads") ? <Tab to="/dashboard/leads" icon="target" label="Leads" /> : <Tab to="/dashboard/support" icon="help" label="Support" />}
-            {may("clients") ? <Tab to="/dashboard/clients" icon="users" label="Clients" /> : <Tab to="/dashboard/stores" icon="stores" label="Stores" />}
-          </>
-        )}
-        <button type="button" onClick={() => setOpen(true)} className="flex flex-col items-center gap-0.5 py-2 text-[11px] text-ink-soft"><Icon name="menu" className="h-5 w-5" />More</button>
-      </nav>
+      {palette && <CommandPalette items={searchable} onClose={() => setPalette(false)} />}
+    </div>
+  );
+}
+
+type NavNode = {
+  label: string; to: string; icon?: IconName; end?: boolean; show: boolean; badge?: number | string;
+  match?: RegExp | ((pathname: string, search: string) => boolean); children?: NavNode[];
+};
+
+function isActive(n: NavNode, pathname: string, search: string) {
+  const path = n.to.split("?")[0];
+  if (typeof n.match === "function") return n.match(pathname, search);
+  if (n.match) return n.match.test(pathname) || n.match.test(search);
+  return n.end ? pathname === path : pathname === path || pathname.startsWith(`${path}/`);
+}
+
+function NavList({ items }: { items: NavNode[] }) {
+  const { pathname, search } = useLocation();
+  return (
+    <ul className="space-y-px">
+      {items.map((n) => {
+        const kids = (n.children ?? []).filter((c) => c.show);
+        const on = isActive(n, pathname, search);
+        const kidOn = kids.some((c) => isActive(c, pathname, search));
+        return (
+          <li key={n.label}>
+            <NavLink to={n.to} preventScrollReset
+              className={`flex h-[30px] items-center gap-2 rounded-lg px-2 text-[13px] font-medium transition ${on && !kidOn ? "bg-[#303030] text-white" : on ? "text-white" : "text-[#e3e3e3] hover:bg-white/[.06] hover:text-white"}`}>
+              {n.icon && <Icon name={n.icon} className={`h-4 w-4 ${on ? "text-white" : "text-[#b5b5b5]"}`} strokeWidth={1.9} />}
+              <span className="min-w-0 flex-1 truncate">{n.label}</span>
+              {n.badge != null && n.badge !== 0 && <span className="num rounded-md bg-white/[.12] px-1.5 text-[11px] font-semibold leading-[18px] text-white">{n.badge}</span>}
+            </NavLink>
+            {on && kids.length > 0 && (
+              <ul className="mt-px space-y-px">
+                {kids.map((c) => {
+                  const cOn = isActive(c, pathname, search);
+                  return (
+                    <li key={c.label}>
+                      <NavLink to={c.to} preventScrollReset className={`flex h-[28px] items-center rounded-lg pl-8 pr-2 text-[13px] transition ${cOn ? "bg-[#303030] font-semibold text-white" : "text-[#b5b5b5] hover:bg-white/[.06] hover:text-white"}`}>
+                        <span className="truncate">{c.label}</span>
+                      </NavLink>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Ctrl/Cmd + K: jump to any page by typing. */
+function CommandPalette({ items, onClose }: { items: { label: string; to: string; group: string }[]; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [i, setI] = useState(0);
+  const navigate = useNavigate();
+  const seen = new Set<string>();
+  const list = items.filter((x) => {
+    const key = `${x.label}|${x.to}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    const t = q.trim().toLowerCase();
+    return !t || x.label.toLowerCase().includes(t) || x.group.toLowerCase().includes(t);
+  }).slice(0, 12);
+  useEffect(() => setI(0), [q]);
+  const go = (to: string) => { onClose(); navigate(to); };
+  return (
+    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-black/30 px-4 pt-[12vh]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label="Search">
+      <div className="w-full max-w-[560px] animate-fadein overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgba(0,0,0,.08),0_24px_48px_-12px_rgba(0,0,0,.35)]">
+        <div className="flex items-center gap-2 border-b border-[#ebebeb] px-3.5">
+          <Icon name="search" className="h-4 w-4 text-[#8a8a8a]" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pages and settings"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") onClose();
+              else if (e.key === "ArrowDown") { e.preventDefault(); setI((v) => Math.min(v + 1, list.length - 1)); }
+              else if (e.key === "ArrowUp") { e.preventDefault(); setI((v) => Math.max(v - 1, 0)); }
+              else if (e.key === "Enter" && list[i]) go(list[i].to);
+            }}
+            className="h-11 flex-1 border-0 bg-transparent text-[14px] outline-none placeholder:text-[#8a8a8a]" aria-label="Search pages and settings" />
+          <kbd className="rounded border border-[#e3e3e3] px-1.5 font-sans text-[11px] text-[#8a8a8a]">Esc</kbd>
+        </div>
+        <ul className="max-h-[50vh] overflow-y-auto p-1.5">
+          {list.map((x, n) => (
+            <li key={`${x.label}|${x.to}`}>
+              <button type="button" onMouseEnter={() => setI(n)} onClick={() => go(x.to)} className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] ${n === i ? "bg-[#f1f1f1]" : ""}`}>
+                <span className="flex-1 font-medium text-[#303030]">{x.label}</span>
+                <span className="text-[12px] text-[#8a8a8a]">{x.group}</span>
+              </button>
+            </li>
+          ))}
+          {list.length === 0 && <li className="px-3 py-6 text-center text-[13px] text-[#8a8a8a]">Nothing found for “{q}”.</li>}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -440,20 +494,21 @@ function IdleLogout({ idleMs: IDLE_MS }: { idleMs: number }) {
 function WalletBanner({ state, balance, store, showStore, to }: { state: "low" | "negative" | "locked"; balance: number; store: string; showStore: boolean; to: string }) {
   const who = showStore ? `${store} wallet` : "Wallet";
   const copy = {
-    low: { tone: "border-amber-200 bg-amber-50 text-amber-900", text: `${who} balance is low (${rupees(balance)}). Recharge soon to keep everything running.` },
-    negative: { tone: "border-orange-200 bg-orange-50 text-orange-900", text: `${who} is below ₹0 (${rupees(balance)}). Checkout keeps working, but recharge before you reach the limit.` },
-    locked: { tone: "border-red-200 bg-red-50 text-red-900", text: `${who} has crossed its limit (${rupees(balance)}). Promo and tracking messages are paused and some features are locked. Checkout, OTP and order confirmations still work.` },
+    low: { tone: "bg-[#fff1e3] text-[#5e4200] shadow-[0_0_0_1px_rgba(178,132,0,.25)]", text: `${who} balance is low (${rupees(balance)}). Recharge soon to keep everything running.` },
+    negative: { tone: "bg-[#ffeedd] text-[#6a3200] shadow-[0_0_0_1px_rgba(200,90,0,.25)]", text: `${who} is below ₹0 (${rupees(balance)}). Checkout keeps working, but recharge before you reach the limit.` },
+    locked: { tone: "bg-[#fee9e8] text-[#8e1f0b] shadow-[0_0_0_1px_rgba(200,40,20,.25)]", text: `${who} has crossed its limit (${rupees(balance)}). Promo and tracking messages are paused and some features are locked. Checkout, OTP and order confirmations still work.` },
   }[state];
   return (
-    <div className={`mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm ${copy.tone}`} role="status">
-      <Icon name="wallet" className="h-5 w-5 shrink-0" />
+    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] ${copy.tone}`} role="status">
+      <Icon name="wallet" className="h-4 w-4 shrink-0" />
       <p className="min-w-0 flex-1">{copy.text}</p>
-      <Link to={to} className="btn-primary px-3 py-1.5 text-xs">Recharge</Link>
+      <Link to={to} className="btn-primary">Recharge</Link>
     </div>
   );
 }
 
-function StoreSwitcher({ stores, current, here, allowAll = true }: { stores: StoreItem[]; current: StoreItem | null; here: string; allowAll?: boolean }) {
+/** Bottom of the menu: the store (switch, connect another) and the person (account, security, log out). */
+function AccountMenu({ stores, current, here, isAdmin, viewer }: { stores: StoreItem[]; current: StoreItem | null; here: string; isAdmin: boolean; viewer: { person: string; email: string; isTeam: boolean } }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -467,47 +522,65 @@ function StoreSwitcher({ stores, current, here, allowAll = true }: { stores: Sto
   }, [open]);
   const to = (id: number | "all") => `/dashboard/select?store=${id}&to=${encodeURIComponent(here)}`;
   const list = stores.filter((s) => s.name.toLowerCase().includes(q.trim().toLowerCase()));
-  const single = stores.length === 1 ? stores[0] : null;
-  const shown = current ?? single;
+  const showStores = !isAdmin || Boolean(current);
+  const title = current ? current.name : isAdmin ? (viewer.isTeam ? "Growpefy team" : "Growpefy admin") : stores.length === 1 ? stores[0].name : `All stores (${stores.length})`;
 
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox"
-        className="flex w-full items-center gap-2.5 rounded-xl border border-night-line bg-night-soft px-2.5 py-2 text-left transition hover:border-white/20">
-        <Avatar store={shown} />
+    <div className="relative border-t border-white/[.08] p-2" ref={ref}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
+        className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-white/[.06]">
+        {current || !isAdmin ? <Avatar store={current ?? (stores.length === 1 ? stores[0] : null)} /> : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#2dd496] text-[12px] font-bold text-[#0b1513]">G</span>}
         <span className="min-w-0 flex-1">
-          <span className="block text-[11px] leading-tight text-night-faint">Store</span>
-          <span className="block truncate text-sm font-medium leading-tight text-white">{shown ? shown.name : `All stores (${stores.length})`}</span>
+          <span className="block truncate text-[13px] font-medium leading-tight text-white">{title}</span>
+          <span className="block truncate text-[11px] leading-tight text-[#8a8a8a]">{viewer.person}</span>
         </span>
-        <Icon name="chevron" className={`h-4 w-4 shrink-0 text-night-faint transition ${open ? "rotate-180" : ""}`} />
+        <Icon name="chevron" className={`h-3.5 w-3.5 shrink-0 text-[#8a8a8a] transition ${open ? "" : "rotate-180"}`} />
       </button>
       {open && (
-        <div className="absolute inset-x-0 z-40 mt-1.5 animate-fadein overflow-hidden rounded-xl border border-night-line bg-night-soft shadow-lift" role="listbox">
-          {stores.length > 6 && (
-            <div className="border-b border-night-line p-2">
-              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a store" aria-label="Find a store"
-                className="w-full rounded-lg border border-night-line bg-night px-2.5 py-1.5 text-sm text-white outline-none placeholder:text-night-faint focus:border-white/30" />
-            </div>
+        <div className="absolute bottom-full left-2 right-2 z-40 mb-1 animate-fadein overflow-hidden rounded-xl bg-white text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,.08),0_16px_40px -12px_rgba(0,0,0,.45)]" role="menu">
+          {showStores && stores.length > 0 && (
+            <>
+              {stores.length > 6 && (
+                <div className="border-b border-[#ebebeb] p-1.5">
+                  <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a store" aria-label="Find a store"
+                    className="h-8 w-full rounded-md border border-[#e3e3e3] px-2 text-[13px] outline-none focus:border-[#005bd3]" />
+                </div>
+              )}
+              <div className="max-h-60 overflow-y-auto p-1">
+                {!isAdmin && stores.length > 1 && (
+                  <Link to={to("all")} preventScrollReset className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[#f1f1f1]">
+                    <Avatar store={null} /><span className="flex-1">All stores</span>{!current && <Icon name="check" className="h-4 w-4" />}
+                  </Link>
+                )}
+                {list.map((s) => (
+                  <Link key={s.id} to={to(s.id)} preventScrollReset className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[#f1f1f1]">
+                    <Avatar store={s} />
+                    <span className="min-w-0 flex-1"><span className="block truncate font-medium">{s.name}</span><span className="block truncate text-[11px] text-[#8a8a8a]">{s.domain}</span></span>
+                    {current?.id === s.id && <Icon name="check" className="h-4 w-4" />}
+                  </Link>
+                ))}
+              </div>
+              {!isAdmin && (
+                <Link to="/dashboard/stores/new" className="flex items-center gap-2 border-t border-[#ebebeb] px-3 py-2 text-[13px] font-medium hover:bg-[#f7f7f7]"><Icon name="plus" className="h-4 w-4" />Add a store</Link>
+              )}
+            </>
           )}
-          <div className="scroll-thin max-h-72 overflow-y-auto p-1.5">
-            {allowAll && stores.length > 1 && (
-              <Link to={to("all")} preventScrollReset className={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-white/5 ${!current ? "text-white" : ""}`}>
-                <Avatar store={null} /><span className="flex-1">All stores</span>{!current && <Icon name="check" className="h-4 w-4 text-emerald-300" />}
-              </Link>
-            )}
-            {list.map((s) => (
-              <Link key={s.id} to={to(s.id)} preventScrollReset className={`flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm hover:bg-white/5 ${current?.id === s.id ? "text-white" : ""}`}>
-                <Avatar store={s} />
-                <span className="min-w-0 flex-1"><span className="block truncate">{s.name}</span><span className="block truncate text-[11px] text-night-faint">{s.domain}</span></span>
-                {current?.id === s.id ? <Icon name="check" className="h-4 w-4 text-emerald-300" /> : <span className={`h-1.5 w-1.5 rounded-full ${s.active ? "bg-emerald-400" : "bg-night-faint"}`} aria-label={s.active ? "Live" : "Off"} />}
-              </Link>
-            ))}
+          <div className="border-t border-[#ebebeb] p-1">
+            <p className="px-2 pb-1 pt-1.5 text-[11.5px] text-[#8a8a8a]">{viewer.email}</p>
+            {viewer.isTeam && <MenuLink to="/dashboard/account" icon="user">My account</MenuLink>}
+            <MenuLink to="/dashboard/security" icon="lock">Login & security</MenuLink>
+            <Form method="post" action="/logout">
+              <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[#f1f1f1]"><Icon name="logout" className="h-4 w-4 text-[#616161]" />Log out</button>
+            </Form>
           </div>
-          {allowAll && <Link to="/dashboard/stores/new" className="flex items-center gap-2 border-t border-night-line px-3.5 py-2.5 text-sm text-emerald-300 hover:bg-white/5"><Icon name="plus" className="h-4 w-4" />Connect a store</Link>}
         </div>
       )}
     </div>
   );
+}
+
+function MenuLink({ to, icon, children }: { to: string; icon: IconName; children: React.ReactNode }) {
+  return <Link to={to} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[#f1f1f1]"><Icon name={icon} className="h-4 w-4 text-[#616161]" />{children}</Link>;
 }
 
 function Avatar({ store }: { store: StoreItem | null }) {
@@ -515,32 +588,6 @@ function Avatar({ store }: { store: StoreItem | null }) {
     <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white text-sm font-semibold text-ink">
       {store?.logoUrl ? <img src={store.logoUrl} alt="" className="h-full w-full object-contain p-1" /> : store ? store.name.slice(0, 1).toUpperCase() : <Icon name="stores" className="h-4 w-4 text-pine" />}
     </span>
-  );
-}
-
-function Group({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-night-faint">{label}</p>
-      <div className="space-y-0.5">{children}</div>
-    </div>
-  );
-}
-
-function Item({ to, end, icon, match, small, children }: {
-  to: string; end?: boolean; icon: IconName; match?: RegExp | ((pathname: string, search: string) => boolean); small?: boolean; children: React.ReactNode;
-}) {
-  const { pathname, search } = useLocation();
-  const path = to.split("?")[0];
-  const active = typeof match === "function" ? match(pathname, search)
-    : match ? match.test(pathname) || match.test(search)
-    : end ? pathname === path : pathname.startsWith(path);
-  return (
-    <NavLink to={to} preventScrollReset
-      className={`group flex items-center gap-3 rounded-lg px-2.5 ${small ? "py-1.5 text-[13px]" : "py-2 text-sm"} transition ${active ? "bg-white/10 font-medium text-white shadow-[inset_2px_0_0_0_#34d399]" : "hover:bg-white/5 hover:text-white"}`}>
-      <Icon name={icon} className={`${small ? "h-4 w-4" : "h-[18px] w-[18px]"} ${active ? "text-emerald-300" : "text-night-faint group-hover:text-night-text"}`} />
-      {children}
-    </NavLink>
   );
 }
 

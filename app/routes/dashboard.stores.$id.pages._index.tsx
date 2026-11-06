@@ -3,7 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
 import { eq } from "drizzle-orm";
-import { Notice, SubmitButton } from "~/components/ui";
+import { Notice, SubmitButton, LearnMore } from "~/components/ui";
 import { db, users } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
@@ -33,6 +33,7 @@ export default function Pages() {
     <div className="max-w-4xl space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="flex-1 text-[22px] font-semibold tracking-tight">Pages</h1>
+        <LearnMore topic="pages" />
         <Form method="post"><SubmitButton className="btn-secondary" busyText="Adding">Add standard policies</SubmitButton></Form>
         <Link to="new" className="btn-primary">Add page</Link>
       </div>

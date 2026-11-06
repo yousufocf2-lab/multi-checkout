@@ -4,7 +4,7 @@ import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
 import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
-import { CopyField, Notice, SubmitButton } from "~/components/ui";
+import { CopyField, Notice, SubmitButton, LearnMore } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
@@ -63,7 +63,7 @@ export default function Integrations() {
   const a = useActionData<typeof action>();
   return (
     <div className="max-w-3xl space-y-5">
-      <h1 className="text-[22px] font-semibold tracking-tight">Integrations</h1>
+      <div className="flex items-center gap-2"><h1 className="flex-1 text-[22px] font-semibold tracking-tight">Integrations</h1><LearnMore topic="integrations" /></div>
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
       {a?.error && <Notice tone="error">{a.error}</Notice>}
 

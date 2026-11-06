@@ -1,8 +1,9 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, Outlet, useLoaderData, useLocation } from "@remix-run/react";
-import { Icon } from "~/components/Icons";
-import { StatusBadge } from "~/components/ui";
+import { Icon, type IconName } from "~/components/Icons";
+import { DiscountPicker } from "~/components/DiscountPicker";
+import { LearnMore, StatusBadge } from "~/components/ui";
 import { can, requireStore, requireViewer } from "~/lib/auth.server";
 import { storeBaseUrl } from "~/lib/urls.server";
 import { rupees } from "~/lib/wallet";
@@ -13,26 +14,27 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const s = await requireStore(viewer, params.id);
   const w = await getWallet(s.id);
   const locked = viewer.role !== "admin" && (stateOf(w) === "locked" || w.status === "suspended");
-  return json({ locked, balance: w.balancePaise, canSettings: can(viewer, "settings"), store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : "Shopify" } });
+  return json({ locked, balance: w.balancePaise, canSettings: can(viewer, "settings"), store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : s.platform === "growpefy" ? true : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : s.platform === "growpefy" ? "Growpefy" : "Shopify" } });
 }
 
-const TITLES: Record<string, { title: string; description: string }> = {
-  ads: { title: "Ads", description: "Meta and Google Ads: spend, cost per order, ROAS, and which one works better." },
-  inbox: { title: "WhatsApp inbox", description: "Chats with customers who got an order message from your store." },
-  whatsapp: { title: "WhatsApp settings", description: "Business verification for your WhatsApp sender and abandoned-cart messages." },
-  payments: { title: "Payment methods", description: "Prepaid, COD and Partial COD: on/off, discount or fee, coupons and when each shows." },
-  discounts: { title: "Discounts", description: "Product discounts by payment method and checkout recommendations." },
-  coupons: { title: "Coupons", description: "Codes customers can apply at checkout." },
-  offers: { title: "Bank offers", description: "Card and bank offers shown at checkout (applied by PayU's offer engine)." },
-  gifts: { title: "Free gifts & deals", description: "Mix & Match, Buy 1 get 1, Buy 2 get 1 and other free gift offers." },
-  shipping: { title: "Shipping", description: "Delivery charges by location, order value and payment method." },
-  settings: { title: "Store settings", description: "Store connection, payment gateways and Meta ads for this store." },
-  design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout." },
-  rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation." },
-  logistics: { title: "Logistics", description: "Connect one or more couriers to track shipments and unlock RTO Shield. Optional." },
-  "rto-shield": { title: "RTO Shield", description: "Block COD or orders based on a customer's delivery history." },
-  wallet: { title: "Wallet", description: "Prepaid balance for sale fees, OTP and WhatsApp messages." },
-  install: { title: "Setup", description: "Connect your store, payments, webhooks and the checkout button." },
+const TITLES: Record<string, { title: string; description: string; icon: IconName; guide?: string; back?: string }> = {
+  ads: { title: "Ads", description: "Meta and Google Ads: spend, cost per order and ROAS.", icon: "ads", guide: "ads" },
+  inbox: { title: "WhatsApp inbox", description: "Chats with customers who got a message from your store.", icon: "inbox", guide: "inbox" },
+  whatsapp: { title: "WhatsApp", description: "Sender verification and automatic messages.", icon: "chat", guide: "whatsapp" },
+  payments: { title: "Payments", description: "Prepaid, COD and Partial COD: on/off, discount or fee.", icon: "rupee", guide: "payments" },
+  promotions: { title: "Discounts", description: "", icon: "discounts", guide: "discounts" },
+  discounts: { title: "Amount off products", description: "Product discounts by payment method and checkout recommendations.", icon: "discounts", guide: "discounts", back: "promotions" },
+  coupons: { title: "Discount codes", description: "Codes customers can apply at checkout.", icon: "coupons", guide: "discounts", back: "promotions" },
+  offers: { title: "Bank & card offers", description: "Shown at checkout, applied by your gateway's offer engine.", icon: "offers", guide: "discounts", back: "promotions" },
+  gifts: { title: "Free gifts & bundles", description: "Mix & Match, Buy 1 get 1, Buy 2 get 1 and more.", icon: "gift", guide: "discounts", back: "promotions" },
+  shipping: { title: "Shipping and delivery", description: "Delivery charges by location, order value and payment method.", icon: "shipping", guide: "shipping" },
+  settings: { title: "General", description: "Store details, payment gateways and ad connections.", icon: "stores", guide: "general" },
+  design: { title: "Checkout", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout" },
+  rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
+  logistics: { title: "Shipments", description: "Connect couriers to track shipments and unlock RTO Shield.", icon: "shipping", guide: "logistics" },
+  "rto-shield": { title: "RTO Shield", description: "Block COD based on a customer's delivery history.", icon: "shield", guide: "rto-shield" },
+  wallet: { title: "Plan & wallet", description: "Balance for sale fees, OTP and WhatsApp messages.", icon: "wallet", guide: "wallet" },
+  install: { title: "Store connection", description: "Connect your store, payments, webhooks and the checkout button.", icon: "setup", guide: "install" },
 };
 
 /** Pages an owner can't open while the wallet is past its negative limit. Checkout itself never stops. */
@@ -46,27 +48,26 @@ export default function StoreLayout() {
   return (
     <>
       {t && (
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-rule bg-surface text-lg font-semibold">
-            {store.logoUrl ? <img src={store.logoUrl} alt="" className="h-full w-full object-contain p-1.5" /> : store.name.slice(0, 1)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-[22px] font-semibold leading-tight tracking-tight">{t.title}</h1>
-            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-soft">
-              <span className="font-medium text-ink">{store.name}</span>
-              <StatusBadge status={store.active ? "live" : "off"} />
-              {!store.connected && <StatusBadge status="pending_payment" label={`${store.platform} not connected`} />}
-              <span className="hidden truncate text-ink-faint sm:inline">{t.description}</span>
-            </p>
+        <div className="mb-4 flex min-h-[32px] flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            {t.back
+              ? <Link to={`/dashboard/stores/${store.id}/${t.back}`} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back to discounts"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>
+              : <Icon name={t.icon} className="h-4 w-4 shrink-0" strokeWidth={1.9} />}
+            <h1 className="truncate text-[15px] font-semibold leading-tight tracking-tight">{t.title}</h1>
+            {!store.active && <StatusBadge status="off" label="Checkout off" />}
+            {!store.connected && store.platform !== "Growpefy" && <StatusBadge status="pending_payment" label={`${store.platform} not connected`} />}
+            {t.description && <span className="hidden min-w-0 truncate text-[12.5px] text-ink-faint lg:inline">{t.description}</span>}
           </div>
-          {section === "inbox" && canSettings && (
-            <Link to={`/dashboard/stores/${store.id}/whatsapp`} className="btn-secondary px-3" title="WhatsApp settings" aria-label="WhatsApp settings">
-              <Icon name="settings" className="h-4 w-4" /><span className="hidden sm:inline">Settings</span>
-            </Link>
-          )}
-          {section === "whatsapp" && (
-            <Link to={`/dashboard/stores/${store.id}/inbox`} className="btn-secondary px-3"><Icon name="chat" className="h-4 w-4" />Back to inbox</Link>
-          )}
+          <div className="flex items-center gap-2">
+            {t.guide && <LearnMore topic={t.guide} />}
+            {section === "promotions" && <DiscountPicker storeId={store.id} />}
+            {section === "inbox" && canSettings && (
+              <Link to={`/dashboard/stores/${store.id}/whatsapp`} className="btn-secondary"><Icon name="settings" className="h-4 w-4" />WhatsApp settings</Link>
+            )}
+            {section === "whatsapp" && (
+              <Link to={`/dashboard/stores/${store.id}/inbox`} className="btn-secondary"><Icon name="chat" className="h-4 w-4" />Open inbox</Link>
+            )}
+          </div>
         </div>
       )}
       {locked && LOCKED.has(section) ? (

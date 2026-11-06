@@ -2,7 +2,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useSearchParams, useSubmit } from "@remix-run/react";
-import { Notice, SubmitButton } from "~/components/ui";
+import { Notice, SubmitButton, LearnMore } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { packOf } from "~/lib/business-types";
 import { catalogAllowed, countByStatus, createCategory, deleteCategory, importFromShopify, listCategories, listItems, type ItemStatus } from "~/lib/catalog.server";
@@ -71,6 +71,7 @@ export default function Catalog() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="flex-1 text-[22px] font-semibold tracking-tight">{pack.items}</h1>
+        <LearnMore topic="catalog" />
         {store.shopify && (
           <Form method="post"><input type="hidden" name="intent" value="import" />
             <SubmitButton className="btn-secondary" busyText="Starting">Import from Shopify</SubmitButton>

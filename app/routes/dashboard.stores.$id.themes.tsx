@@ -2,7 +2,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData } from "@remix-run/react";
-import { Notice, SubmitButton } from "~/components/ui";
+import { Notice, SubmitButton, LearnMore } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { discardDraft, editorState, publishDraft, restoreVersion } from "~/lib/themes.server";
@@ -45,7 +45,8 @@ export default function Themes() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="flex-1 text-[22px] font-semibold tracking-tight">Themes & design</h1>
+        <h1 className="flex-1 text-[22px] font-semibold tracking-tight">Themes</h1>
+        <LearnMore topic="themes" />
         <a href={liveUrl} target="_blank" rel="noreferrer" className="btn-secondary">View website</a>
       </div>
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
