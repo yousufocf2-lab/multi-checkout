@@ -8,12 +8,16 @@ import type { BusinessType } from "~/db/schema";
 import { requireViewer } from "~/lib/auth.server";
 import { BUSINESS_PACKS } from "~/lib/business-types";
 import { createOwnStore } from "~/lib/connect.server";
+import { eq } from "drizzle-orm";
+import { db, users } from "~/db.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   if (viewer.role !== "owner") throw redirect("/dashboard");
   const brand = viewer.name ?? "";
-  return json({ brand, packs: Object.values(BUSINESS_PACKS).map((p) => ({ id: p.id, name: p.name, examples: p.examples, ready: p.ready })) });
+  const [u] = await db.select({ signup: users.signup }).from(users).where(eq(users.id, viewer.userId)).limit(1);
+  const want = u?.signup?.industry ?? "store";
+  return json({ brand, want, packs: Object.values(BUSINESS_PACKS).map((p) => ({ id: p.id, name: p.name, examples: p.examples, ready: p.ready })) });
 }
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -32,9 +36,10 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export default function CreateStore() {
-  const { brand, packs } = useLoaderData<typeof loader>();
+  const { brand, packs, want } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
-  const [picked, setPicked] = useState<string>("store");
+  const wantReady = packs.find((p) => p.id === want)?.ready;
+  const [picked, setPicked] = useState<string>(wantReady ? want : "store");
   return (
     <Form method="post" className="mx-auto max-w-3xl space-y-6 py-4">
       <div className="text-center">
@@ -42,6 +47,7 @@ export default function CreateStore() {
         <p className="mt-1 text-sm text-ink-soft">Your website, checkout, COD and payments in one place. You can change everything later.</p>
       </div>
       {a?.error && <Notice tone="error">{a.error}</Notice>}
+      {!wantReady && <Notice>{packs.find((p) => p.id === want)?.name} stores are coming soon. We'll tell you the day they're ready; you can start with an online store now.</Notice>}
       <label className="block text-sm font-medium">Brand name
         <input name="name" required defaultValue={brand} placeholder="e.g. Fusion Prime" className="input mt-1.5 w-full text-base" autoFocus />
       </label>

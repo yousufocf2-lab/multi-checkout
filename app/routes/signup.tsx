@@ -14,10 +14,14 @@ import { clientIp } from "~/lib/orders.server";
 import { ownerWidget, parseContact, sendOwnerOtp, showContact, verifyOwnerOtp } from "~/lib/owner-otp.server";
 import { useAdsTag } from "~/components/site/AdsTag";
 import { readAttribution } from "~/lib/attribution";
-import { SignupQuestions } from "~/components/SignupQuestions";
 import { startWelcomeWatcher, welcomeNow } from "~/lib/welcome.server";
-import { parseProfile } from "~/lib/clients";
-import type { SignupProfile } from "~/db/schema";
+import type { BusinessType, SignupProfile } from "~/db/schema";
+import { BUSINESS_PACKS } from "~/lib/business-types";
+
+const INDUSTRIES: { id: BusinessType; label: string }[] = [
+  { id: "store", label: "E-commerce" }, { id: "restaurant", label: "Restaurant / Cloud kitchen" }, { id: "coaching", label: "Coaching / Courses" },
+  { id: "hotel", label: "Hotel / Homestay" }, { id: "services", label: "Services" }, { id: "events", label: "Events" },
+];
 
 export const meta: MetaFunction = () => [{ title: "Create account · Growpefy" }, { name: "robots", content: "noindex" }];
 
@@ -32,8 +36,7 @@ type Data = {
   stage: "start" | "otp";
   contact: string;
   brand: string;
-  profileRaw: string;
-  profile?: SignupProfile;
+  industry: BusinessType | "";
   shown?: string;
   resendIn?: number;
   errors?: { contact?: string; brand?: string; code?: string; form?: string; profile?: string };
@@ -50,13 +53,14 @@ export async function action({ request }: ActionFunctionArgs) {
   const rawContact = String(fd.get("contact") ?? "").trim();
   const brand = String(fd.get("brand") ?? "").trim().slice(0, 120);
   const c = parseContact(rawContact);
-  const profileRaw = String(fd.get("profile") ?? "");
-  const { profile, error: profileError } = parseProfile(profileRaw);
-  const base: Data = { stage: "start", contact: rawContact, brand, profileRaw: JSON.stringify(profile), profile };
+  const industryRaw = String(fd.get("industry") ?? "");
+  const industry = (industryRaw in BUSINESS_PACKS ? industryRaw : "") as BusinessType | "";
+  const profile: SignupProfile = industry ? { industry } : {};
+  const base: Data = { stage: "start", contact: rawContact, brand, industry };
 
   const errors: Data["errors"] = {};
   if (brand.length < 2) errors.brand = "Enter your brand name";
-  if (profileError) errors.profile = profileError;
+  if (!industry) errors.profile = "Pick what you sell";
   // New accounts always confirm a mobile number with an OTP (stops sign-ups with made-up numbers)
   if (!c || c.channel !== "phone") errors.contact = "Enter a valid 10-digit mobile number";
   else if (await findOwner(c.channel, c.target)) errors.contact = `An account with this ${c.channel === "phone" ? "number" : "email"} already exists. Log in instead.`;
@@ -104,15 +108,13 @@ export default function Signup() {
             <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
             <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} error={e.contact} phoneOnly />
             <p className="-mt-2 text-xs text-ink-faint">We'll send a one-time code to confirm it. You can add your email in the next step.</p>
-            <div className="border-t border-rule pt-4">
-              <SignupQuestions initial={data?.profile} error={e.profile} />
-            </div>
+            <IndustryPicker initial={data?.industry ?? ""} error={e.profile} />
             <SubmitButton className="btn-primary w-full py-3" busyText="Sending code">Get OTP</SubmitButton>
             <p className="text-center text-xs text-ink-faint">By continuing you agree to our <Link to="/terms" className="underline">Terms</Link> and <Link to="/privacy" className="underline">Privacy policy</Link>.</p>
           </Form>
         ) : (
           <OtpStep
-            hidden={{ contact: data?.contact ?? "", brand: data?.brand ?? "", profile: data?.profileRaw ?? "" }}
+            hidden={{ contact: data?.contact ?? "", brand: data?.brand ?? "", industry: data?.industry ?? "" }}
             error={e.code}
             resendIn={data?.resendIn}
             onChange={() => setStage("start")}
@@ -123,5 +125,24 @@ export default function Signup() {
         )}
       </AuthShell>
     </>
+  );
+}
+
+function IndustryPicker({ initial, error }: { initial: string; error?: string }) {
+  const [v, setV] = useState(initial);
+  return (
+    <fieldset>
+      <legend className="label">What do you sell?</legend>
+      <input type="hidden" name="industry" value={v} />
+      <div className="mt-1.5 flex flex-wrap gap-2" role="radiogroup" aria-label="What do you sell?">
+        {INDUSTRIES.map((o) => (
+          <button key={o.id} type="button" role="radio" aria-checked={v === o.id} onClick={() => setV(o.id)}
+            className={`rounded-full border px-3.5 py-2 text-sm transition ${v === o.id ? "border-pine bg-pine-tint/50 font-semibold text-pine" : "border-rule hover:border-rule-strong"}`}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {error && <p className="mt-1.5 text-xs text-bad">{error}</p>}
+    </fieldset>
   );
 }

@@ -42,6 +42,8 @@ export const users = pgTable("users", {
 
 /** What a new owner told us at signup. */
 export type SignupProfile = {
+  /** What they sell, picked at signup (decides the store type). */
+  industry?: BusinessType;
   websites?: { url: string; platform: "shopify" | "woocommerce" | "other"; other?: string }[];
   adChannels?: ("meta" | "google" | "other")[];
   adOther?: string;
