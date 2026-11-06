@@ -142,7 +142,10 @@ export default function DashboardLayout() {
       { label: "Abandoned checkouts", to: "/dashboard/orders/abandoned", show: true },
       { label: "Orders to ship", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: Boolean(site) },
     ] },
-    { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/catalog(\/|$)|next=catalog/, show: Boolean(site) },
+    { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/(catalog|collections|inventory)(\/|$)|next=(catalog|collections|inventory)\b/, show: Boolean(site), children: [
+      { label: "Collections", to: storeHref("collections"), match: /\/collections$|next=collections/, show: true },
+      { label: "Inventory", to: storeHref("inventory"), match: /\/inventory$|next=inventory/, show: true },
+    ] },
     { label: "Discounts", to: storeHref("promotions"), icon: "discounts", match: /\/(promotions|discounts|coupons|offers|gifts)$|next=(promotions|discounts|coupons|offers|gifts)\b/, show: may("offers") },
     { label: "Marketing", to: adsHref, icon: "ads", match: /\/ads$|\/profit$|\/compare$/, show: may("ads"), children: [
       { label: "Ads", to: adsHref, match: /\/ads$/, show: true },

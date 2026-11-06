@@ -74,6 +74,10 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
       value: sql<string>`coalesce(sum(${amountCol} - ${orders.refunded}), 0)`,
       prepaid: sql<number>`count(*) filter (where ${orders.paymentMethod} <> 'cod')::int`,
       cod: sql<number>`count(*) filter (where ${orders.paymentMethod} = 'cod')::int`,
+      items: sql<number>`coalesce(sum((select coalesce(sum((li->>'quantity')::int), 0) from jsonb_array_elements(${orders.items}) li)), 0)::int`,
+      fulfilled: sql<number>`count(*) filter (where ${orders.awb} is not null)::int`,
+      delivered: sql<number>`count(*) filter (where ${orders.shipStatus} = 'delivered')::int`,
+      returned: sql<number>`count(*) filter (where ${orders.shipStatus} in ('rto', 'rto_transit', 'returned') or ${orders.refundStatus} is not null)::int`,
     }).from(orders).where(where),
     db.execute<{ title: string }>(sql`
       select li->>'title' as title from ${orders}, jsonb_array_elements(${orders.items}) li
@@ -88,7 +92,7 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
     hasMore: rows.length > PAGE,
     page,
     filters,
-    summary: { count: n, value, prepaid: sum?.prepaid ?? 0, cod: sum?.cod ?? 0, aov: n ? value / n : 0 },
+    summary: { count: n, value, prepaid: sum?.prepaid ?? 0, cod: sum?.cod ?? 0, aov: n ? value / n : 0, items: sum?.items ?? 0, fulfilled: sum?.fulfilled ?? 0, delivered: sum?.delivered ?? 0, returned: sum?.returned ?? 0 },
     products: (products as unknown as { title: string }[]).map((r) => r.title).filter(Boolean).sort((a, b) => a.localeCompare(b)),
   };
 }

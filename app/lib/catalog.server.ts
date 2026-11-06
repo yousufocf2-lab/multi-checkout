@@ -18,28 +18,95 @@ export function catalogAllowed(viewer: Viewer, store: Store) {
   return viewer.role === "admin" || store.storefrontEnabled;
 }
 
-/** List for the Products page: one row per item with its price range, stock and first photo. */
-export async function listItems(storeId: number, opts: { q?: string; status?: ItemStatus | "all" } = {}) {
+export type StockFilter = "in" | "low" | "out" | "untracked";
+export type ItemSort = "newest" | "oldest" | "updated" | "title" | "price_asc" | "price_desc" | "stock_asc";
+export type ListOpts = { q?: string; status?: ItemStatus | "all"; category?: number | null; type?: string | null; vendor?: string | null; stock?: StockFilter | null; sort?: ItemSort };
+const LOW_STOCK = 5;
+
+/** List for the Products page: one row per item with its price range, stock and first photo; newest first by default. */
+export async function listItems(storeId: number, opts: ListOpts = {}) {
   const where = [eq(catalogItems.storeId, storeId)];
   if (opts.status && opts.status !== "all") where.push(eq(catalogItems.status, opts.status));
-  if (opts.q?.trim()) where.push(ilike(catalogItems.title, `%${opts.q.trim()}%`));
-  const rows = await db
+  if (opts.q?.trim()) {
+    const q = `%${opts.q.trim()}%`;
+    where.push(sql`(${catalogItems.title} ilike ${q} or ${catalogItems.tags}::text ilike ${q} or ${catalogItems.vendor} ilike ${q}
+      or exists (select 1 from ${catalogVariants} v where v.item_id = ${catalogItems.id} and v.sku ilike ${q}))`);
+  }
+  if (opts.type) where.push(eq(catalogItems.productType, opts.type));
+  if (opts.vendor) where.push(eq(catalogItems.vendor, opts.vendor));
+  if (opts.category) where.push(sql`exists (select 1 from ${catalogCategoryItems} ci where ci.item_id = ${catalogItems.id} and ci.category_id = ${opts.category})`);
+  const stock = sql<number | null>`sum(${catalogVariants.stock})::int`;
+  const tracked = sql<boolean>`bool_or(${catalogVariants.stock} is not null)`;
+  const having = opts.stock === "out" ? sql`bool_or(${catalogVariants.stock} is not null) and coalesce(sum(${catalogVariants.stock}),0) <= 0`
+    : opts.stock === "low" ? sql`bool_or(${catalogVariants.stock} is not null) and sum(${catalogVariants.stock}) between 1 and ${LOW_STOCK}`
+    : opts.stock === "in" ? sql`(not bool_or(${catalogVariants.stock} is not null)) or sum(${catalogVariants.stock}) > 0`
+    : opts.stock === "untracked" ? sql`not coalesce(bool_or(${catalogVariants.stock} is not null), false)` : undefined;
+  const order = {
+    newest: [desc(catalogItems.createdAt), desc(catalogItems.id)], oldest: [asc(catalogItems.createdAt)], updated: [desc(catalogItems.updatedAt)],
+    title: [asc(sql`lower(${catalogItems.title})`)], price_asc: [asc(sql`min(${catalogVariants.pricePaise})`)], price_desc: [desc(sql`max(${catalogVariants.pricePaise})`)],
+    stock_asc: [asc(sql`coalesce(sum(${catalogVariants.stock}), 999999999)`)],
+  }[opts.sort ?? "newest"];
+  const q = db
     .select({
-      id: catalogItems.id, title: catalogItems.title, status: catalogItems.status, images: catalogItems.images,
-      productType: catalogItems.productType, source: catalogItems.source, updatedAt: catalogItems.updatedAt,
+      id: catalogItems.id, title: catalogItems.title, handle: catalogItems.handle, status: catalogItems.status, images: catalogItems.images,
+      productType: catalogItems.productType, vendor: catalogItems.vendor, source: catalogItems.source, createdAt: catalogItems.createdAt, updatedAt: catalogItems.updatedAt,
       variants: sql<number>`count(${catalogVariants.id})::int`,
       minPrice: sql<number | null>`min(${catalogVariants.pricePaise})`,
       maxPrice: sql<number | null>`max(${catalogVariants.pricePaise})`,
-      stock: sql<number | null>`sum(${catalogVariants.stock})::int`,
-      tracked: sql<boolean>`bool_or(${catalogVariants.stock} is not null)`,
+      stock, tracked,
+      categories: sql<string[]>`coalesce((select array_agg(c.title order by c.title) from ${catalogCategoryItems} ci join ${catalogCategories} c on c.id = ci.category_id where ci.item_id = ${catalogItems.id}), '{}')`,
     })
     .from(catalogItems)
     .leftJoin(catalogVariants, eq(catalogVariants.itemId, catalogItems.id))
     .where(and(...where))
-    .groupBy(catalogItems.id)
-    .orderBy(desc(catalogItems.updatedAt))
-    .limit(500);
+    .groupBy(catalogItems.id);
+  const rows = await (having ? q.having(having) : q).orderBy(...order).limit(500);
   return rows.map((r) => ({ ...r, image: coverOf(r.images) }));
+}
+
+/** Small numbers above the Products list. */
+export async function catalogStats(storeId: number) {
+  const [r] = await db.select({
+    active: sql<number>`count(distinct ${catalogItems.id}) filter (where ${catalogItems.status} = 'active')::int`,
+    out: sql<number>`count(distinct ${catalogItems.id}) filter (where ${catalogVariants.stock} is not null and ${catalogVariants.stock} <= 0)::int`,
+    low: sql<number>`count(distinct ${catalogItems.id}) filter (where ${catalogVariants.stock} between 1 and ${LOW_STOCK})::int`,
+    value: sql<number>`coalesce(sum(greatest(${catalogVariants.stock}, 0)::bigint * ${catalogVariants.pricePaise}), 0)::float8`,
+  }).from(catalogItems).leftJoin(catalogVariants, eq(catalogVariants.itemId, catalogItems.id)).where(eq(catalogItems.storeId, storeId));
+  return r ?? { active: 0, out: 0, low: 0, value: 0 };
+}
+
+/** Types and brands already used, for filters and suggestions. */
+export async function catalogFacets(storeId: number) {
+  const rows = await db.selectDistinct({ type: catalogItems.productType, vendor: catalogItems.vendor }).from(catalogItems).where(eq(catalogItems.storeId, storeId));
+  const uniq = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => Boolean(x && x.trim())))].sort((a, b) => a.localeCompare(b));
+  return { types: uniq(rows.map((r) => r.type)), vendors: uniq(rows.map((r) => r.vendor)) };
+}
+
+export async function deleteItems(storeId: number, ids: number[]) {
+  if (!ids.length) return;
+  await db.delete(catalogItems).where(and(eq(catalogItems.storeId, storeId), inArray(catalogItems.id, ids)));
+}
+
+/** Every variant with its stock, for the Inventory page. */
+export async function listInventory(storeId: number, q?: string) {
+  const where = [eq(catalogVariants.storeId, storeId)];
+  if (q?.trim()) where.push(sql`(${catalogItems.title} ilike ${`%${q.trim()}%`} or ${catalogVariants.sku} ilike ${`%${q.trim()}%`})`);
+  return db.select({
+    id: catalogVariants.id, itemId: catalogItems.id, title: catalogItems.title, variant: catalogVariants.title, sku: catalogVariants.sku,
+    stock: catalogVariants.stock, pricePaise: catalogVariants.pricePaise, images: catalogItems.images, imageUrl: catalogVariants.imageUrl,
+  }).from(catalogVariants).innerJoin(catalogItems, eq(catalogItems.id, catalogVariants.itemId)).where(and(...where))
+    .orderBy(asc(sql`lower(${catalogItems.title})`), asc(catalogVariants.position)).limit(1000)
+    .then((rows) => rows.map((r) => ({ ...r, image: r.imageUrl ?? coverOf(r.images) })));
+}
+
+/** Set or adjust stock of one variant (null = stop tracking). */
+export async function setStock(storeId: number, variantId: number, stock: number | null) {
+  await db.update(catalogVariants).set({ stock: stock == null ? null : Math.max(0, Math.round(stock)) }).where(and(eq(catalogVariants.storeId, storeId), eq(catalogVariants.id, variantId)));
+}
+
+export async function renameCategory(storeId: number, id: number, title: string) {
+  if (!title.trim()) throw new Error("Give the category a name.");
+  await db.update(catalogCategories).set({ title: title.trim() }).where(and(eq(catalogCategories.storeId, storeId), eq(catalogCategories.id, id)));
 }
 
 export async function countByStatus(storeId: number) {
@@ -78,11 +145,11 @@ async function freeHandle(storeId: number, wanted: string, exceptId?: number) {
   for (let i = 2; ; i++) if (!used.has(`${base}-${i}`)) return `${base}-${i}`;
 }
 
-export type VariantInput = { title: string; optionValues: string[]; sku: string | null; pricePaise: number; compareAtPaise: number | null; stock: number | null; imageUrl?: string | null; sourceId?: string | null };
+export type VariantInput = { title: string; optionValues: string[]; sku: string | null; pricePaise: number; compareAtPaise: number | null; stock: number | null; weightGrams?: number | null; imageUrl?: string | null; sourceId?: string | null };
 export type ItemInput = {
   title: string; handle?: string; descriptionHtml: string; status: ItemStatus; vendor?: string | null; productType?: string | null;
   tags: string[]; images: ItemImage[]; options: ItemOption[]; variants: VariantInput[]; categoryIds: number[];
-  seoTitle?: string | null; seoDescription?: string | null; kind?: Store["businessType"];
+  seoTitle?: string | null; seoDescription?: string | null; kind?: Store["businessType"]; extra?: Record<string, unknown>;
 };
 
 /** Create (no id) or update an item; its variants and categories are replaced by the ones given. */
@@ -96,21 +163,32 @@ export async function saveItem(store: Store, input: ItemInput, id?: number) {
       title: input.title.trim(), handle, descriptionHtml: input.descriptionHtml, status: input.status,
       vendor: input.vendor ?? null, productType: input.productType ?? null, tags: input.tags, images: input.images, options: input.options,
       seoTitle: input.seoTitle ?? null, seoDescription: input.seoDescription ?? null, updatedAt: new Date(),
+      ...(input.extra ? { extra: input.extra } : {}),
     };
     let itemId = id;
     if (itemId) {
       const r = await tx.update(catalogItems).set(values).where(and(eq(catalogItems.id, itemId), eq(catalogItems.storeId, store.id))).returning({ id: catalogItems.id });
       if (!r.length) throw new Error("This item no longer exists.");
-      await tx.delete(catalogVariants).where(eq(catalogVariants.itemId, itemId));
       await tx.delete(catalogCategoryItems).where(eq(catalogCategoryItems.itemId, itemId));
     } else {
       const [r] = await tx.insert(catalogItems).values({ ...values, storeId: store.id, kind: input.kind ?? store.businessType }).returning({ id: catalogItems.id });
       itemId = r.id;
     }
-    await tx.insert(catalogVariants).values(input.variants.map((v, i) => ({
-      itemId: itemId!, storeId: store.id, title: v.title || "Default", optionValues: v.optionValues, sku: v.sku || null,
-      pricePaise: v.pricePaise, compareAtPaise: v.compareAtPaise, stock: v.stock, imageUrl: v.imageUrl ?? null, position: i, sourceId: v.sourceId ?? null,
-    })));
+    // Keep each variant's id when its option values stay the same, so carts and order links don't break after an edit
+    const before = id ? await tx.select({ id: catalogVariants.id, optionValues: catalogVariants.optionValues }).from(catalogVariants).where(eq(catalogVariants.itemId, itemId)) : [];
+    const byKey = new Map(before.map((v) => [v.optionValues.join("\u0001"), v.id]));
+    const kept = new Set<number>();
+    for (const [i, v] of input.variants.entries()) {
+      const row = {
+        itemId: itemId!, storeId: store.id, title: v.title || "Default", optionValues: v.optionValues, sku: v.sku || null,
+        pricePaise: v.pricePaise, compareAtPaise: v.compareAtPaise, stock: v.stock, weightGrams: v.weightGrams ?? null, imageUrl: v.imageUrl ?? null, position: i, sourceId: v.sourceId ?? null,
+      };
+      const existing = byKey.get(v.optionValues.join("\u0001"));
+      if (existing && !kept.has(existing)) { kept.add(existing); await tx.update(catalogVariants).set(row).where(eq(catalogVariants.id, existing)); }
+      else await tx.insert(catalogVariants).values(row);
+    }
+    const gone = before.filter((v) => !kept.has(v.id)).map((v) => v.id);
+    if (gone.length) await tx.delete(catalogVariants).where(inArray(catalogVariants.id, gone));
     if (input.categoryIds.length) {
       const own = await tx.select({ id: catalogCategories.id }).from(catalogCategories).where(and(eq(catalogCategories.storeId, store.id), inArray(catalogCategories.id, input.categoryIds)));
       if (own.length) await tx.insert(catalogCategoryItems).values(own.map((c) => ({ categoryId: c.id, itemId: itemId! }))).onConflictDoNothing();
@@ -228,7 +306,8 @@ export async function catalogLines(store: Store, items: { variantId: string; qua
   for (const it of items) {
     const r = by.get(gpNum(it.variantId));
     if (!r) continue;
-    const qty = r.v.stock == null ? it.quantity : Math.min(it.quantity, Math.max(0, r.v.stock));
+    const keepSelling = Boolean((r.i.extra as { continueSelling?: boolean } | null)?.continueSelling);
+    const qty = r.v.stock == null || keepSelling ? it.quantity : Math.min(it.quantity, Math.max(0, r.v.stock));
     if (qty <= 0) continue;
     out.push({
       variantId: it.variantId, productId: `${GP_PREFIX}${r.i.id}`, title: r.i.title,

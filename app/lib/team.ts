@@ -61,6 +61,9 @@ const STORE_SECTION: Record<string, string> = {
   logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto",
   wallet: "billing", settings: "settings", design: "settings", install: "settings", payments: "settings",
   products: "open",
+  promotions: "offers", "to-ship": "orders", profit: "ads",
+  catalog: "settings", collections: "settings", inventory: "settings", media: "settings", themes: "settings", editor: "settings",
+  pages: "settings", website: "settings", integrations: "settings", drafts: "orders",
 };
 
 function needFor(scope: Scope, path: string): Need {

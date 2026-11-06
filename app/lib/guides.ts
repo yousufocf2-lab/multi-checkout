@@ -148,6 +148,15 @@ export const GUIDES: Record<string, Guide> = {
     title: "Pages",
     intro: "Shipping, returns, privacy and terms pages. Payment gateways need these before approving your website.",
   },
+  abandoned: {
+    title: "Abandoned checkouts",
+    intro: "Shoppers who started checkout, left their phone number, but didn't place the order. Each has a link that reopens their cart.",
+    steps: [
+      { title: "Automatic reminders", text: "If WhatsApp is set up, Growpefy sends the recovery link on its own. Turn it on in Settings → WhatsApp." },
+      { title: "Reach out yourself", text: "Use WhatsApp or Call on a row. Big carts are worth a personal message." },
+    ],
+    tips: ["Most carts are recovered in the first hour. Reply quickly."],
+  },
   funnel: {
     title: "Checkout funnel",
     intro: "Where shoppers drop off between opening checkout, entering their phone, address and paying.",

@@ -185,7 +185,7 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
   const cover = coverOf(item.images);
   const variantDrops = vs.map((v) => ({
     id: v.id, title: v.title, option_values: v.optionValues, price: v.pricePaise, compare_at_price: v.compareAtPaise ?? 0,
-    available: v.stock == null || v.stock > 0, image: v.imageUrl ? imgUrl(v.imageUrl, 1100) : null, sku: v.sku,
+    available: v.stock == null || v.stock > 0 || Boolean((item.extra as { continueSelling?: boolean } | null)?.continueSelling), image: v.imageUrl ? imgUrl(v.imageUrl, 1100) : null, sku: v.sku,
   }));
   const cheapest = variantDrops.filter((v) => v.available).sort((a, b) => a.price - b.price)[0] ?? variantDrops[0];
   const price = cheapest?.price ?? 0;

@@ -282,7 +282,7 @@ function MixDeal({ mix, error }: { mix: Mix; error?: string }) {
     const summary = !pre.on && !cod.on ? "Turn on for at least one payment method."
     : `Online: ${pre.on ? `Buy ${buy - pre.free}, Get ${pre.free} Free (${pre.which === "low" ? "lowest" : "highest"} price)` : "off"} · COD: ${cod.on ? `Buy ${buy - cod.free}, Get ${cod.free} Free (${cod.which === "low" ? "lowest" : "highest"} price)` : "off"}`;
   return (
-    <section className={`panel overflow-hidden ${on ? "ring-2 ring-pine/30" : ""}`}>
+    <section id="mix" className={`panel scroll-mt-4 overflow-hidden ${on ? "ring-2 ring-pine/30" : ""}`}>
       <Form method="post">
         <div className="flex flex-wrap items-center gap-4 bg-[linear-gradient(135deg,#0E1714,#0B5D4B)] px-5 py-4 text-white">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-2xl" aria-hidden>🛍️</span>
