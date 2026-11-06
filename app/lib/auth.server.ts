@@ -6,7 +6,8 @@ import { db, stores, teamMembers, users, type SignupProfile, type Store, type Te
 import { env } from "./env.server";
 import type { Attribution } from "./attribution";
 import { kycIncomplete } from "./kyc";
-import { memberMayOpen } from "./team";
+import { effectivePerms, memberMayOpen } from "./team";
+import { logTeam } from "./team-activity.server";
 import { storeIdFromCode } from "./store-code";
 
 const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -99,7 +100,7 @@ export async function getViewer(request: Request): Promise<Viewer | null> {
 
 async function memberViewer(tid: number): Promise<Viewer | null> {
   const [m] = await db.select().from(teamMembers).where(eq(teamMembers.id, tid)).limit(1);
-  if (!m || !m.active) return null;
+  if (!m || !m.active || (m.expiresAt && m.expiresAt.getTime() < Date.now())) return null;
   const contact = m.login.includes("@") ? m.login : `+91 ${m.login}`;
   if (m.scope === "platform") return { role: "admin", name: m.name, email: contact, staff: { id: m.id, name: m.name, perms: m.perms } };
   if (!m.ownerId) return null;
@@ -107,7 +108,7 @@ async function memberViewer(tid: number): Promise<Viewer | null> {
   if (!u || !u.active) return null;
   return {
     role: "owner", name: u.name, email: contact, userId: u.id, kycStatus: u.kycStatus, kycDone: !kycIncomplete(u),
-    member: { id: m.id, name: m.name, perms: m.perms, storeIds: m.storeIds ?? null },
+    member: { id: m.id, name: m.name, perms: effectivePerms("owner", m.perms), storeIds: m.storeIds ?? null },
   };
 }
 
@@ -188,8 +189,9 @@ export async function login(email: string, password: string): Promise<LoginResul
   const key = teamLogin(email);
   if (key) {
     const [m] = await db.select().from(teamMembers).where(eq(teamMembers.login, key)).limit(1);
-    if (m && m.active && (await verifyPassword(password, m.passwordHash))) {
+    if (m && m.active && !(m.expiresAt && m.expiresAt.getTime() < Date.now()) && (await verifyPassword(password, m.passwordHash))) {
       await db.update(teamMembers).set({ lastLoginAt: new Date() }).where(eq(teamMembers.id, m.id));
+      void logTeam(m.scope, m.ownerId, m.name, "Logged in", m.kind === "collaborator" ? "Collaborator" : null);
       return { member: m };
     }
   }

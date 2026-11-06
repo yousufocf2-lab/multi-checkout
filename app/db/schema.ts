@@ -69,6 +69,10 @@ export const teamMembers = pgTable(
     role: text("role").notNull().default("custom"), // preset the permissions came from (label only)
     perms: jsonb("perms").$type<string[]>().notNull().default([]),
     storeIds: jsonb("store_ids").$type<number[] | null>(), // owner scope: null = all the owner's stores
+    // "collaborator" = someone outside the business (agency, freelancer) let in through a request code; can expire
+    kind: text("kind").$type<"staff" | "collaborator">().notNull().default("staff"),
+    company: text("company"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     createdBy: text("created_by"),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
@@ -334,6 +338,9 @@ export const stores = pgTable("stores", {
   orderSuffix: text("order_suffix").notNull().default(""),
   orderStart: integer("order_start").notNull().default(1001),
   orderSeq: integer("order_seq"),
+  // Collaborators: people outside the business ask for access with this code (regenerate to stop old requests)
+  collabCode: text("collab_code"),
+  collabOpen: boolean("collab_open").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1341,3 +1348,39 @@ export const storefrontVitals = pgTable("storefront_vitals", {
   cls: real("cls"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("storefront_vitals_store_idx").on(t.storeId, t.createdAt)]);
+
+/** Access requests from collaborators (agencies, freelancers) for one store, approved or rejected by the owner. */
+export const collaboratorRequests = pgTable(
+  "collaborator_requests",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references((): AnyPgColumn => stores.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    login: text("login").notNull(), // lowercase email or 10-digit mobile
+    passwordHash: text("password_hash").notNull(), // chosen by the collaborator; becomes their login password on approval
+    company: text("company"),
+    message: text("message"),
+    perms: jsonb("perms").$type<string[]>().notNull().default([]),
+    status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+    memberId: integer("member_id"),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("collaborator_requests_store_idx").on(t.storeId, t.status)],
+);
+
+/** Who did what in the team: logins, access changes, collaborator requests. Kept for the activity log. */
+export const teamActivity = pgTable(
+  "team_activity",
+  {
+    id: serial("id").primaryKey(),
+    scope: text("scope").$type<"platform" | "owner">().notNull(),
+    ownerId: integer("owner_id"),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    detail: text("detail"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("team_activity_owner_idx").on(t.scope, t.ownerId, t.createdAt)],
+);

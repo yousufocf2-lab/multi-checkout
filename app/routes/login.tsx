@@ -74,7 +74,10 @@ export default function Login() {
       <AuthShell
         title={stage === "otp" ? "Enter your code" : "Log in"}
         subtitle={stage === "otp" ? `We sent a 6-digit code to ${data?.shown ?? "you"}.` : "Manage your stores, checkout and orders."}
-        footer={signup && stage !== "otp" && <>New here? <Link to="/signup" className="font-medium text-ink underline underline-offset-2">Create an account</Link></>}
+        footer={stage !== "otp" && <>
+          {signup && <>New here? <Link to="/signup" className="font-medium text-ink underline underline-offset-2">Create an account</Link><br /></>}
+          Working on someone's store? <Link to="/collaborate" className="font-medium text-ink underline underline-offset-2">Request collaborator access</Link>
+        </>}
       >
         {expired && stage === "start" && <div className="mb-4"><Notice>You were logged out after some time without activity. Please log in again.</Notice></div>}
 

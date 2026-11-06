@@ -17,17 +17,28 @@ export const PLATFORM_PERMS: Perm[] = [
   { id: "team", label: "Manage team", description: "Add team members and change their access." },
 ];
 
-/** A store owner's employees. */
-export const OWNER_PERMS: Perm[] = [
-  { id: "orders", label: "Orders", description: "Orders, abandoned checkouts and the overview numbers." },
-  { id: "inbox", label: "WhatsApp inbox", description: "Read and reply to customers on WhatsApp." },
-  { id: "ads", label: "Ads", description: "Meta and Google ad reports." },
-  { id: "offers", label: "Discounts & offers", description: "Discounts, coupons, bank offers and free gifts." },
-  { id: "rto", label: "Shipping & RTO", description: "Shipping rates, courier, RTO Shield and RTO suite." },
-  { id: "billing", label: "Wallet", description: "Wallet balance, recharges and invoices." },
-  { id: "settings", label: "Store settings", description: "Store, payment, WhatsApp, design and setup settings." },
-  { id: "team", label: "Manage team", description: "Add employees and change their access." },
+/** A store owner's employees and collaborators. Grouped for the role editor. No point-of-sale access: Growpefy has no POS. */
+export const OWNER_PERMS: (Perm & { group: "Sell" | "Grow" | "Manage" })[] = [
+  { id: "orders", label: "Orders", description: "Orders, draft orders, abandoned checkouts and orders to ship.", group: "Sell" },
+  { id: "products", label: "Products", description: "Products, collections, inventory and media.", group: "Sell" },
+  { id: "inbox", label: "WhatsApp inbox", description: "Read and reply to customers on WhatsApp.", group: "Sell" },
+  { id: "rto", label: "Shipping & RTO", description: "Shipping rates, couriers, shipments, RTO Shield and RTO suite.", group: "Sell" },
+  { id: "ads", label: "Marketing & ads", description: "Meta and Google ad reports, profit share.", group: "Grow" },
+  { id: "offers", label: "Discounts & offers", description: "Discounts, coupons, bank offers and free gifts.", group: "Grow" },
+  { id: "analytics", label: "Analytics", description: "Checkout funnel and reports.", group: "Grow" },
+  { id: "online_store", label: "Online store", description: "Themes, theme editor and pages of the website.", group: "Grow" },
+  { id: "billing", label: "Plan & billing", description: "Plan, bills and receipts.", group: "Manage" },
+  { id: "settings", label: "Store settings", description: "Store profile, payments, checkout, locations, domains and WhatsApp settings.", group: "Manage" },
+  { id: "developer", label: "Developer tools", description: "Store connection, integrations and order webhooks.", group: "Manage" },
+  { id: "team", label: "Manage team", description: "Add members, approve collaborators and change access.", group: "Manage" },
 ];
+
+/** Older logins were given broader permissions; these keep them working after the split. */
+const IMPLIES: Record<string, string[]> = { settings: ["products", "online_store", "developer"], orders: ["analytics"] };
+export function effectivePerms(scope: Scope, perms: string[]) {
+  if (scope === "platform") return perms;
+  return [...new Set(perms.flatMap((p) => [p, ...(IMPLIES[p] ?? [])]))];
+}
 
 export type RolePreset = { id: string; label: string; perms: string[] };
 
@@ -39,12 +50,17 @@ export const PLATFORM_ROLES: RolePreset[] = [
   { id: "manager", label: "Manager", perms: ["leads", "support", "clients", "marketing", "stores", "billing", "fulfilment"] },
 ];
 
-export const OWNER_ROLES: RolePreset[] = [
-  { id: "orders", label: "Order manager", perms: ["orders", "inbox", "rto"] },
-  { id: "support", label: "Customer support", perms: ["orders", "inbox"] },
-  { id: "marketing", label: "Marketing", perms: ["ads", "offers", "orders"] },
-  { id: "accounts", label: "Accounts", perms: ["billing", "orders"] },
-  { id: "manager", label: "Manager", perms: ["orders", "inbox", "ads", "offers", "rto", "billing", "settings"] },
+export type OwnerRole = RolePreset & { description: string; group: "Store" | "Organization" };
+export const OWNER_ROLES: OwnerRole[] = [
+  { id: "admin", label: "Administrator", group: "Organization", description: "Everything, including the team. Give this to a partner or co-owner.", perms: ["orders", "products", "inbox", "rto", "ads", "offers", "analytics", "online_store", "billing", "settings", "developer", "team"] },
+  { id: "manager", label: "Store manager", group: "Store", description: "Runs the store day to day. No billing or team changes.", perms: ["orders", "products", "inbox", "rto", "ads", "offers", "analytics", "online_store", "settings"] },
+  { id: "orders", label: "Order & fulfilment", group: "Store", description: "Confirms, packs and ships orders, handles RTO.", perms: ["orders", "inbox", "rto"] },
+  { id: "support", label: "Customer support", group: "Store", description: "Answers customers and looks up their orders.", perms: ["orders", "inbox"] },
+  { id: "marketing", label: "Marketer", group: "Store", description: "Ads, discounts and the numbers behind them.", perms: ["ads", "offers", "analytics", "orders"] },
+  { id: "merchandiser", label: "Merchandiser", group: "Store", description: "Adds products, prices and stock, runs product offers.", perms: ["products", "offers"] },
+  { id: "editor", label: "Online store editor", group: "Store", description: "Designs the website: themes, pages and banners.", perms: ["online_store", "products"] },
+  { id: "accounts", label: "Accounts", group: "Organization", description: "Bills, receipts and order value for bookkeeping.", perms: ["billing", "orders", "analytics"] },
+  { id: "developer", label: "Developer", group: "Organization", description: "Connects the store, apps and webhooks. Good for agencies.", perms: ["developer", "settings"] },
 ];
 
 export const permsFor = (scope: Scope) => (scope === "platform" ? PLATFORM_PERMS : OWNER_PERMS);
@@ -56,14 +72,14 @@ export const roleLabel = (scope: Scope, id: string) => rolesFor(scope).find((r) 
 type Need = "open" | string | null;
 
 const STORE_SECTION: Record<string, string> = {
-  orders: "orders", funnel: "orders", diagnostics: "orders", ads: "ads", google: "ads", inbox: "inbox", whatsapp: "settings",
+  orders: "orders", funnel: "analytics", diagnostics: "analytics", ads: "ads", google: "ads", inbox: "inbox", whatsapp: "settings",
   discounts: "offers", coupons: "offers", offers: "offers", gifts: "offers",
   logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto",
-  wallet: "billing", settings: "settings", design: "settings", install: "settings", payments: "settings",
+  wallet: "billing", settings: "settings", design: "settings", install: "developer", payments: "settings", locations: "settings",
   products: "open",
   promotions: "offers", "to-ship": "orders", profit: "ads",
-  catalog: "settings", collections: "settings", inventory: "settings", media: "settings", themes: "settings", editor: "settings",
-  pages: "settings", website: "settings", integrations: "settings", drafts: "orders",
+  catalog: "products", collections: "products", inventory: "products", media: "products", themes: "online_store", editor: "online_store",
+  pages: "online_store", website: "settings", integrations: "developer", drafts: "orders",
 };
 
 function needFor(scope: Scope, path: string): Need {
@@ -95,6 +111,6 @@ function needFor(scope: Scope, path: string): Need {
 /** Whether a team member with these permissions may open this dashboard path. */
 export function memberMayOpen(scope: Scope, perms: string[], path: string) {
   const need = needFor(scope, path);
-  return need === "open" || (need != null && perms.includes(need));
+  return need === "open" || (need != null && effectivePerms(scope, perms).includes(need));
 }
 
