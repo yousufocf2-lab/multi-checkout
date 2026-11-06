@@ -142,7 +142,10 @@ function StoreHome() {
   return (
     <>
       <div className="mb-3 flex min-h-[32px] flex-wrap items-center gap-2">
-        <h1 className="sr-only">Home</h1>
+        <div className="mr-auto min-w-[180px]">
+          <p className="text-xs font-medium text-ink-soft">{greeting}, {viewerName}</p>
+          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight">Store overview</h1>
+        </div>
         <RangePicker current={overview.range} />
         {stores.length > 1 && !locked && <StoreFilter stores={stores} selected={picked} />}
         {!single && <span className="hidden h-7 items-center gap-1 rounded-lg px-2 text-[12.5px] text-ink-soft sm:inline-flex"><Icon name="stores" className="h-3.5 w-3.5" />{scopeName}</span>}
@@ -152,7 +155,6 @@ function StoreHome() {
             {tasks.liveCheckouts} in checkout now
           </span>
         )}
-        <span className="ml-auto hidden text-[12.5px] text-ink-soft md:inline">{greeting}, {viewerName}</span>
         {single?.liveUrl && <a href={single.liveUrl} target="_blank" rel="noreferrer" className="btn-secondary btn"><Icon name="eye" className="h-3.5 w-3.5" />View store</a>}
       </div>
       <HomeView data={overview} tasks={tasks} setup={setup} leaders={leaders} single={single} showStoreColumn={!single} />

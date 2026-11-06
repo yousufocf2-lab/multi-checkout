@@ -30,7 +30,7 @@ import { storeIdFromCode, storePath } from "~/lib/store-code";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
-  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700&display=swap" },
+  { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Inter:wght@400;450;500;550;600;650;700&display=swap" },
 ];
 
 export const meta: MetaFunction = () => [{ title: "Dashboard · Growpefy" }, { name: "robots", content: "noindex" }];
@@ -139,16 +139,16 @@ export default function DashboardLayout() {
   // ---- main menu (store tools) ----
   const storeMain: NavNode[] = [
     { label: "Home", to: "/dashboard", icon: "home", end: true, show: may("orders") },
-    { label: "Orders", to: "/dashboard/orders", icon: "inbox", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship|\/drafts(\/|$)|next=drafts/, show: may("orders"), children: [
-      { label: "Drafts", to: storeHref("drafts"), match: /\/drafts(\/|$)|next=drafts/, show: Boolean(focus) || !isAdmin },
-      { label: "Abandoned checkouts", to: "/dashboard/orders/abandoned", show: true },
-      { label: "Orders to ship", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: storefront },
+    { label: "Sales", to: "/dashboard/orders", icon: "inbox", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship|\/drafts(\/|$)|next=drafts/, show: may("orders"), children: [
+      { label: "Manual orders", to: storeHref("drafts"), match: /\/drafts(\/|$)|next=drafts/, show: Boolean(focus) || !isAdmin },
+      { label: "Recover checkouts", to: "/dashboard/orders/abandoned", show: true },
+      { label: "Ship queue", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: storefront },
     ] },
     { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/(catalog|collections|inventory)(\/|$)|next=(catalog|collections|inventory)\b/, show: storefront && may("products"), children: [
-      { label: "Collections", to: storeHref("collections"), match: /\/collections$|next=collections/, show: true },
-      { label: "Inventory", to: storeHref("inventory"), match: /\/inventory$|next=inventory/, show: true },
+      { label: "Product groups", to: storeHref("collections"), match: /\/collections$|next=collections/, show: true },
+      { label: "Stock", to: storeHref("inventory"), match: /\/inventory$|next=inventory/, show: true },
     ] },
-    { label: "Discounts", to: storeHref("promotions"), icon: "discounts", match: /\/(promotions|discounts|coupons|offers|gifts)$|next=(promotions|discounts|coupons|offers|gifts)\b/, show: may("offers") },
+    { label: "Offers", to: storeHref("promotions"), icon: "discounts", match: /\/(promotions|discounts|coupons|offers|gifts)$|next=(promotions|discounts|coupons|offers|gifts)\b/, show: may("offers") },
     { label: "Marketing", to: adsHref, icon: "ads", match: /\/ads$|\/profit$|\/compare$/, show: may("ads"), children: [
       { label: "Ads", to: adsHref, match: /\/ads$/, show: true },
       { label: "Profit share", to: storeHref("profit"), match: /\/profit$/, show: isAdmin || Boolean(focus?.profitEnabled) },
@@ -165,20 +165,20 @@ export default function DashboardLayout() {
     ] },
   ];
   const storeChannels: NavNode[] = [
-    { label: "Online Store", to: storeHref("themes"), icon: "stores", match: /\/(themes|pages(\/\d+)?)$|next=(themes|pages)\b/, show: storefront && may("online_store"), children: [
-      { label: "Themes", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
-      { label: "Pages", to: storeHref("pages"), match: /\/pages(\/|$)|next=pages/, show: true },
+    { label: "Website", to: storeHref("themes"), icon: "stores", match: /\/(themes|pages(\/\d+)?)$|next=(themes|pages)\b/, show: storefront && may("online_store"), children: [
+      { label: "Designs", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
+      { label: "Site pages", to: storeHref("pages"), match: /\/pages(\/|$)|next=pages/, show: true },
     ] },
   ];
-  // ---- settings (opens its own menu, like Shopify) ----
+  // ---- store settings navigation ----
   const storeSettings: NavNode[] = [
-    { label: "Store profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
+    { label: "Business profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
     { label: "Plan & wallet", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
-    { label: "Checkout", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },
-    { label: "Shipping & delivery", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
-    { label: "Warehouses & locations", to: storeHref("locations"), icon: "box", match: /\/locations$|next=locations\b/, show: may("settings") },
+    { label: "Checkout experience", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },
+    { label: "Delivery setup", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
+    { label: "Locations", to: storeHref("locations"), icon: "box", match: /\/locations$|next=locations\b/, show: may("settings") },
     { label: "WhatsApp", to: storeHref("whatsapp"), icon: "chat", match: /\/whatsapp$|next=whatsapp/, show: may("inbox") || may("settings") },
     { label: "WhatsApp inbox", to: storeHref("inbox"), icon: "inbox", match: /\/inbox$|next=inbox/, show: may("inbox") },
     { label: "Domains", to: storeHref("website"), icon: "globe", match: /\/website$|next=website/, show: may("settings") },
@@ -230,7 +230,7 @@ export default function DashboardLayout() {
   ];
 
   const nav = (
-    <nav className="gp-nav flex h-full flex-col bg-[#1a1a1a] text-[#e3e3e3]">
+    <nav className="gp-nav flex h-full flex-col text-[#e3e3e3]">
       {inSettings ? (
         <div className="px-3 pb-2 pt-3">
           <Link to={storeMode ? (may("orders") ? "/dashboard" : storeHref("catalog")) : adminHome} className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-semibold text-white hover:bg-white/[.06]">
@@ -245,7 +245,7 @@ export default function DashboardLayout() {
       )}
 
       <div className="px-3 pb-2">
-        <button type="button" onClick={() => setPalette(true)} className="flex h-8 w-full items-center gap-2 rounded-lg border border-white/[.08] bg-white/[.06] px-2.5 text-[13px] text-[#a6a6a6] transition hover:bg-white/[.09]">
+        <button type="button" onClick={() => setPalette(true)} className="nav-search flex h-9 w-full items-center gap-2 rounded-lg border px-2.5 text-[13px] transition">
           <Icon name="search" className="h-4 w-4" /><span className="flex-1 text-left">{inSettings ? "Search settings" : "Search"}</span>
           <kbd className="font-sans text-[11px] text-[#8a8a8a]">Ctrl K</kbd>
         </button>
@@ -253,7 +253,7 @@ export default function DashboardLayout() {
 
       {inSettings && storeMode && focus && (
         <div className="px-3 pb-2">
-          <div className="flex items-center gap-2.5 rounded-lg bg-white/[.06] px-2 py-2">
+          <div className="store-switcher flex items-center gap-2.5 rounded-lg px-2 py-2">
             <Avatar store={focus} />
             <span className="min-w-0"><span className="block truncate text-[13px] font-medium text-white">{focus.name}</span><span className="block truncate text-[11px] text-[#8a8a8a]">{focus.domain}</span></span>
           </div>
@@ -273,7 +273,7 @@ export default function DashboardLayout() {
             <NavList items={mainList} />
             {channelList.length > 0 && (
               <>
-                <p className="mb-1 mt-4 px-2 text-[12px] font-medium text-[#8a8a8a]">Sales channels</p>
+                <p className="nav-group-label mb-1 mt-5 px-2 text-[11px] font-semibold uppercase tracking-[.12em]">Sales channels</p>
                 <NavList items={channelList} />
               </>
             )}
@@ -281,7 +281,7 @@ export default function DashboardLayout() {
         )}
       </div>
 
-      <div className="space-y-0.5 px-3 pb-2">
+      <div className="nav-separator space-y-0.5 border-t px-3 pb-2 pt-2">
         {!inSettings && settingsList.length > 0 && <NavList items={[{ label: "Settings", to: settingsHome, icon: "settings", show: true, match: () => false }]} />}
         {!isAdmin && !inSettings && <NavList items={[{ label: "Help & support", to: "/dashboard/support", icon: "help", show: true, badge: support || undefined }]} />}
       </div>
@@ -290,11 +290,11 @@ export default function DashboardLayout() {
   );
 
   return (
-    <div className="admin min-h-screen bg-[#1a1a1a] lg:grid lg:h-screen lg:grid-cols-[240px_minmax(0,1fr)] lg:overflow-hidden">
+    <div className="admin min-h-screen bg-[#0d3027] lg:grid lg:h-screen lg:grid-cols-[252px_minmax(0,1fr)] lg:overflow-hidden">
       <aside className="hidden lg:block"><div className="h-screen">{nav}</div></aside>
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex h-12 items-center gap-3 bg-[#1a1a1a] px-3 text-white lg:hidden">
+      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 bg-[#0d3027] px-4 text-white lg:hidden">
         <button type="button" className="rounded-lg p-1.5 text-[#e3e3e3] hover:bg-white/10" onClick={() => setOpen(true)} aria-expanded={open} aria-label="Open menu"><Icon name="menu" className="h-5 w-5" /></button>
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{!storeMode ? (viewer.isTeam ? "Team panel" : "Admin panel") : current?.name ?? (only ? only.name : `All stores (${stores.length})`)}</span>
         <button type="button" className="rounded-lg p-1.5 text-[#e3e3e3] hover:bg-white/10" onClick={() => setPalette(true)} aria-label="Search"><Icon name="search" className="h-5 w-5" /></button>
@@ -306,11 +306,11 @@ export default function DashboardLayout() {
         </div>
       )}
 
-      <main className="relative min-h-[calc(100vh-48px)] min-w-0 bg-[#f1f1f1] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-xl">
+      <main className="relative min-h-[calc(100vh-56px)] min-w-0 bg-[#f4f8f5] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
         <ActionLoader stores={stores} />
         {nextDemo && <DemoBar demo={nextDemo} login={login} />}
         <IdleLogout idleMs={idleMs} />
-        <div className={`mx-auto px-4 pb-24 pt-4 sm:px-6 lg:pb-12 lg:pt-5 ${inSettings ? "max-w-[920px]" : "max-w-[1200px]"}`}>
+        <div className={`mx-auto px-4 pb-24 pt-5 sm:px-7 lg:px-8 lg:pb-12 lg:pt-7 ${inSettings ? "max-w-[960px]" : "max-w-[1320px]"}`}>
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`${storePath(alertStore.id)}/wallet`} />
           )}
@@ -346,7 +346,7 @@ function isActive(n: NavNode, pathname: string, search: string) {
 function NavList({ items }: { items: NavNode[] }) {
   const { pathname, search } = useLocation();
   return (
-    <ul className="space-y-px">
+    <ul className="space-y-1">
       {items.map((n) => {
         const kids = (n.children ?? []).filter((c) => c.show);
         const on = isActive(n, pathname, search);
@@ -354,10 +354,10 @@ function NavList({ items }: { items: NavNode[] }) {
         return (
           <li key={n.label}>
             <NavLink to={n.to} preventScrollReset
-              className={`flex h-[30px] items-center gap-2 rounded-lg px-2 text-[13px] font-medium transition ${on && !kidOn ? "bg-[#303030] text-white" : on ? "text-white" : "text-[#e3e3e3] hover:bg-white/[.06] hover:text-white"}`}>
+              className={`nav-link flex h-9 items-center gap-2 rounded-lg px-2.5 text-[13px] font-medium transition ${on && !kidOn ? "nav-selected text-white" : on ? "text-white" : "text-[#e3e3e3] hover:bg-white/[.06] hover:text-white"}`}>
               {n.icon && <Icon name={n.icon} className={`h-4 w-4 ${on ? "text-white" : "text-[#b5b5b5]"}`} strokeWidth={1.9} />}
               <span className="min-w-0 flex-1 truncate">{n.label}</span>
-              {n.badge != null && n.badge !== 0 && <span className="num rounded-md bg-white/[.12] px-1.5 text-[11px] font-semibold leading-[18px] text-white">{n.badge}</span>}
+              {n.badge != null && n.badge !== 0 && <span className="nav-badge num rounded-md px-1.5 text-[11px] font-semibold leading-[18px]">{n.badge}</span>}
             </NavLink>
             {on && kids.length > 0 && (
               <ul className="mt-px space-y-px">
@@ -365,7 +365,7 @@ function NavList({ items }: { items: NavNode[] }) {
                   const cOn = isActive(c, pathname, search);
                   return (
                     <li key={c.label}>
-                      <NavLink to={c.to} preventScrollReset className={`flex h-[28px] items-center rounded-lg pl-8 pr-2 text-[13px] transition ${cOn ? "bg-[#303030] font-semibold text-white" : "text-[#b5b5b5] hover:bg-white/[.06] hover:text-white"}`}>
+                      <NavLink to={c.to} preventScrollReset className={`nav-link flex h-8 items-center rounded-lg pl-9 pr-2 text-[13px] transition ${cOn ? "nav-selected font-semibold text-white" : "text-[#b5b5b5] hover:bg-white/[.06] hover:text-white"}`}>
                         <span className="truncate">{c.label}</span>
                       </NavLink>
                     </li>
@@ -398,7 +398,7 @@ function CommandPalette({ items, onClose }: { items: { label: string; to: string
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center bg-black/30 px-4 pt-[12vh]" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true" aria-label="Search">
       <div className="w-full max-w-[560px] animate-fadein overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgba(0,0,0,.08),0_24px_48px_-12px_rgba(0,0,0,.35)]">
-        <div className="flex items-center gap-2 border-b border-[#ebebeb] px-3.5">
+        <div className="flex items-center gap-2 border-b border-[#e4ece6] px-3.5">
           <Icon name="search" className="h-4 w-4 text-[#8a8a8a]" />
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search pages and settings"
             onKeyDown={(e) => {
@@ -413,8 +413,8 @@ function CommandPalette({ items, onClose }: { items: { label: string; to: string
         <ul className="max-h-[50vh] overflow-y-auto p-1.5">
           {list.map((x, n) => (
             <li key={`${x.label}|${x.to}`}>
-              <button type="button" onMouseEnter={() => setI(n)} onClick={() => go(x.to)} className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] ${n === i ? "bg-[#f1f1f1]" : ""}`}>
-                <span className="flex-1 font-medium text-[#303030]">{x.label}</span>
+              <button type="button" onMouseEnter={() => setI(n)} onClick={() => go(x.to)} className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] ${n === i ? "bg-[#eaf4ee]" : "hover:bg-[#f7fbf8]"}`}>
+                <span className="flex-1 font-medium text-[#19372c]">{x.label}</span>
                 <span className="text-[12px] text-[#8a8a8a]">{x.group}</span>
               </button>
             </li>
@@ -533,7 +533,7 @@ function AccountMenu({ stores, current, here, isAdmin, viewer }: { stores: Store
   const title = current ? current.name : isAdmin ? (viewer.isTeam ? "Growpefy team" : "Growpefy admin") : stores.length === 1 ? stores[0].name : `All stores (${stores.length})`;
 
   return (
-    <div className="relative border-t border-white/[.08] p-2" ref={ref}>
+    <div className="account-trigger relative border-t p-2" ref={ref}>
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
         className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-white/[.06]">
         {current || !isAdmin ? <Avatar store={current ?? (stores.length === 1 ? stores[0] : null)} /> : <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#2dd496] text-[12px] font-bold text-[#0b1513]">G</span>}
@@ -544,13 +544,13 @@ function AccountMenu({ stores, current, here, isAdmin, viewer }: { stores: Store
         <Icon name="chevron" className={`h-3.5 w-3.5 shrink-0 text-[#8a8a8a] transition ${open ? "" : "rotate-180"}`} />
       </button>
       {open && (
-        <div className="absolute bottom-full left-2 right-2 z-40 mb-1 animate-fadein overflow-hidden rounded-xl bg-white text-[#303030] shadow-[0_0_0_1px_rgba(0,0,0,.08),0_16px_40px -12px_rgba(0,0,0,.45)]" role="menu">
+        <div className="absolute bottom-full left-2 right-2 z-40 mb-1 animate-fadein overflow-hidden rounded-xl bg-white text-[#19372c] shadow-[0_0_0_1px_rgba(20,70,48,.12),0_16px_40px_-12px_rgba(9,37,31,.25)]" role="menu">
           {showStores && stores.length > 0 && (
             <>
               {stores.length > 6 && (
                 <div className="border-b border-[#ebebeb] p-1.5">
                   <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a store" aria-label="Find a store"
-                    className="h-8 w-full rounded-md border border-[#e3e3e3] px-2 text-[13px] outline-none focus:border-[#005bd3]" />
+                    className="h-8 w-full rounded-md border border-[#d6e3da] px-2 text-[13px] outline-none focus:border-[#168163]" />
                 </div>
               )}
               <div className="max-h-60 overflow-y-auto p-1">

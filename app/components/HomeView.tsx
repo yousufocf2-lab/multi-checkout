@@ -1,4 +1,4 @@
-// Store Home: Shopify-style metrics card with comparison chart, things to do, setup guide and insights.
+// Store home: sales metrics, next actions, setup guidance and store insights.
 import { Link } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Overview as OverviewData } from "~/lib/stats.server";
@@ -81,7 +81,7 @@ function niceMax(v: number) {
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p * 3;
 }
 
-const BLUE = "#005bd3", PREV = "#8fbbf3";
+const BLUE = "#14785d", PREV = "#bd7048";
 
 function MetricChart({ m, buckets, nowLabel, prevLabel }: { m: Metric; buckets: B[]; nowLabel: string; prevLabel: string | null }) {
   const [ref, width] = useWidth<HTMLDivElement>();
@@ -118,7 +118,7 @@ function MetricChart({ m, buckets, nowLabel, prevLabel }: { m: Metric; buckets: 
         </defs>
         {ticks.map((v) => (
           <g key={v}>
-            <line x1={pad.l} x2={width - pad.r} y1={y(v)} y2={y(v)} stroke="#ebebeb" strokeDasharray={v ? "2 3" : undefined} />
+            <line x1={pad.l} x2={width - pad.r} y1={y(v)} y2={y(v)} stroke="#e7eee9" strokeDasharray={v ? "2 3" : undefined} />
             <text x={pad.l - 8} y={y(v) + 3.5} textAnchor="end" className="num fill-[#8a8a8a] text-[10.5px]">{m.axis(v)}</text>
           </g>
         ))}
@@ -168,7 +168,7 @@ function MetricsCard({ data }: { data: Data }) {
           const on = x.id === active;
           return (
             <button key={x.id} type="button" role="tab" aria-selected={on} onClick={() => setActive(x.id)}
-              className={`min-w-[132px] flex-1 rounded-lg px-3 py-2 text-left transition ${on ? "bg-[#f1f1f1]" : "hover:bg-[#f7f7f7]"}`}>
+              className={`min-w-[132px] flex-1 rounded-lg px-3 py-2 text-left transition ${on ? "bg-[#eaf4ee]" : "hover:bg-[#f7fbf8]"}`}>
               <span className="block truncate text-[12px] font-medium text-ink-soft underline decoration-[#c9c9c9] decoration-dotted underline-offset-[3px]" title={x.tip}>{x.label}</span>
               <span className="mt-0.5 flex items-baseline gap-2">
                 <span className="num text-[17px] font-semibold leading-tight tracking-tight">{x.fmt(x.total)}</span>
@@ -185,7 +185,7 @@ function MetricsCard({ data }: { data: Data }) {
   );
 }
 
-/** Compact chips of what needs doing now, like Shopify's, with money attached where it helps. */
+/** Compact links to the store tasks that need attention now. */
 function TodoChips({ tasks, links }: { tasks: HomeTasks; links: { toShip: string | null; inventory: string | null } }) {
   const chips: { icon: IconName; text: string; to: string; tone?: "warn" }[] = [];
   if (tasks.toShip && links.toShip) chips.push({ icon: "shipping", text: `${num(tasks.toShip)} ${tasks.toShip === 1 ? "order" : "orders"} to ship`, to: links.toShip });
@@ -202,7 +202,7 @@ function TodoChips({ tasks, links }: { tasks: HomeTasks; links: { toShip: string
     <div className="scroll-thin -mx-4 flex gap-2 overflow-x-auto px-4 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
       {chips.map((c) => (
         <Link key={c.text} to={c.to}
-          className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-white px-2.5 text-[12.5px] font-medium shadow-[0_0_0_1px_rgba(0,0,0,.08),0_1px_0_rgba(0,0,0,.05)] transition hover:bg-[#f7f7f7] ${c.tone === "warn" ? "text-[#8e1f0b]" : "text-[#303030]"}`}>
+          className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-white px-3 text-[12.5px] font-medium shadow-[0_1px_3px_rgba(20,70,48,.08)] transition hover:bg-[#f7fbf8] ${c.tone === "warn" ? "text-[#8e1f0b]" : "text-[#21483a]"}`}>
           <Icon name={c.icon} className="h-3.5 w-3.5" strokeWidth={2} />{c.text}<Icon name="chevron" className="h-3 w-3 -rotate-90 text-ink-faint" />
         </Link>
       ))}
@@ -225,7 +225,7 @@ function SetupGuide({ steps, name }: { steps: SetupStep[]; name: string }) {
           <p className="text-[12.5px] text-ink-soft">Use this guide to get {name} ready to sell.</p>
           <div className="mt-2 flex items-center gap-2">
             <span className="num text-[12px] text-ink-soft">{done} of {steps.length} tasks complete</span>
-            <span className="h-1 w-24 overflow-hidden rounded-full bg-[#ebebeb]"><span className="block h-full rounded-full bg-[#303030]" style={{ width: `${(done / steps.length) * 100}%` }} /></span>
+            <span className="h-1.5 w-24 overflow-hidden rounded-full bg-[#e7eee9]"><span className="block h-full rounded-full bg-[#14785d]" style={{ width: `${(done / steps.length) * 100}%` }} /></span>
           </div>
         </div>
         <button type="button" onClick={toggleHidden} className="btn-quiet btn text-ink-soft" aria-expanded={!hidden}>
@@ -241,7 +241,7 @@ function SetupGuide({ steps, name }: { steps: SetupStep[]; name: string }) {
               <li key={s.id} className={`rounded-lg ${on ? "bg-[#f7f7f7]" : ""}`}>
                 <button type="button" onClick={() => setOpen(s.id)} className="flex w-full items-center gap-2.5 px-2 py-2 text-left">
                   {s.done
-                    ? <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[#303030] text-white"><Icon name="check" className="h-3 w-3" strokeWidth={3} /></span>
+                    ? <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[#14785d] text-white"><Icon name="check" className="h-3 w-3" strokeWidth={3} /></span>
                     : <span className="h-[18px] w-[18px] shrink-0 rounded-full border-[1.5px] border-dashed border-[#8a8a8a]" />}
                   <span className={`text-[13px] ${on ? "font-semibold" : "font-medium"} ${s.done && !on ? "text-ink-soft" : ""}`}>{s.title}</span>
                 </button>
@@ -338,7 +338,7 @@ export function HomeView({ data, tasks, setup, leaders, single, showStoreColumn 
               <ul className="divide-y divide-rule border-t border-rule">
                 {insights.map((x, i) => (
                   <li key={i} className="flex items-start gap-3 px-4 py-2.5">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#f1f1f1] text-[#4a4a4a]"><Icon name={x.icon} className="h-3.5 w-3.5" strokeWidth={2} /></span>
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#eaf4ee] text-[#14785d]"><Icon name={x.icon} className="h-3.5 w-3.5" strokeWidth={2} /></span>
                     <p className="min-w-0 flex-1 text-[13px] leading-[1.45]">{x.text}</p>
                     {x.to && <Link to={x.to} className="btn-secondary btn shrink-0">{x.cta}</Link>}
                   </li>
@@ -347,14 +347,14 @@ export function HomeView({ data, tasks, setup, leaders, single, showStoreColumn 
             </Panel>
           )}
 
-          <Panel title="Recent orders" action={<Link to="/dashboard/orders" className="text-[12.5px] font-medium text-[#005bd3] hover:underline">View all</Link>}>
+          <Panel title="Recent orders" action={<Link to="/dashboard/orders" className="text-[12.5px] font-medium text-[#14785d] hover:underline">View all</Link>}>
             {data.recent.length === 0 ? (
               <p className="border-t border-rule px-4 py-8 text-center text-[13px] text-ink-faint">No orders in this period</p>
             ) : (
               <ul className="divide-y divide-rule border-t border-rule">
                 {data.recent.map((o) => (
                   <li key={o.id} className="flex items-center gap-3 px-4 py-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#f1f1f1] text-[11px] font-semibold uppercase text-ink-soft">{(o.name || "C").slice(0, 1)}</span>
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#eaf4ee] text-[11px] font-semibold uppercase text-[#14785d]">{(o.name || "C").slice(0, 1)}</span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium">{o.name || "Customer"}<span className="font-normal text-ink-faint"> · {o.city}</span></p>
                       <p className="truncate text-[11.5px] text-ink-faint">
@@ -387,16 +387,16 @@ export function HomeView({ data, tasks, setup, leaders, single, showStoreColumn 
             <div className="border-t border-rule px-4 py-3">
               <div className="flex items-center justify-between text-[12px]"><span className="font-medium">Payment method</span><span className="num text-ink-faint">{num(t.orders)} orders</span></div>
               <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-[#ebebeb]" role="img" aria-label={`Prepaid ${prepaidPct}%, COD ${100 - prepaidPct}%`}>
-                {t.orders > 0 && <><span className="bg-[#005bd3]" style={{ width: `${prepaidPct}%` }} /><span className="bg-[#f49342]" style={{ width: `${100 - prepaidPct}%` }} /></>}
+                {t.orders > 0 && <><span className="bg-[#14785d]" style={{ width: `${prepaidPct}%` }} /><span className="bg-[#bd7048]" style={{ width: `${100 - prepaidPct}%` }} /></>}
               </div>
               <dl className="mt-2 space-y-1 text-[12.5px]">
-                <div className="flex justify-between"><dt className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#005bd3]" />Prepaid · {num(t.prepaidOrders)}</dt><dd className="num">{inr(t.prepaidRevenue)}</dd></div>
-                <div className="flex justify-between"><dt className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#f49342]" />COD · {num(t.codOrders)}</dt><dd className="num">{inr(t.codRevenue)}</dd></div>
+                <div className="flex justify-between"><dt className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#14785d]" />Prepaid · {num(t.prepaidOrders)}</dt><dd className="num">{inr(t.prepaidRevenue)}</dd></div>
+                <div className="flex justify-between"><dt className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-[#bd7048]" />COD · {num(t.codOrders)}</dt><dd className="num">{inr(t.codRevenue)}</dd></div>
               </dl>
             </div>
           </Panel>
 
-          <Panel title="Marketing" action={base ? <Link to={`${base}/ads`} className="text-[12.5px] font-medium text-[#005bd3] hover:underline">Open</Link> : undefined}>
+          <Panel title="Marketing" action={base ? <Link to={`${base}/ads`} className="text-[12.5px] font-medium text-[#14785d] hover:underline">Open</Link> : undefined}>
             {hasAds ? (
               <dl className="border-t border-rule py-1.5">
                 <Row label="Ad spend" value={inr(t.adSpend)} />
@@ -413,14 +413,14 @@ export function HomeView({ data, tasks, setup, leaders, single, showStoreColumn 
             )}
           </Panel>
 
-          <Panel title="Top products" action={base && single?.storefront ? <Link to={`${base}/catalog`} className="text-[12.5px] font-medium text-[#005bd3] hover:underline">Products</Link> : undefined}>
+          <Panel title="Top products" action={base && single?.storefront ? <Link to={`${base}/catalog`} className="text-[12.5px] font-medium text-[#14785d] hover:underline">Products</Link> : undefined}>
             {data.topProducts.length === 0 ? (
               <p className="border-t border-rule px-4 py-6 text-center text-[12.5px] text-ink-faint">No sales in this period</p>
             ) : (
               <ul className="divide-y divide-rule border-t border-rule">
                 {data.topProducts.map((p) => (
                   <li key={p.title} className="flex items-center gap-2.5 px-4 py-2">
-                    <div className="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-[#f1f1f1] shadow-[inset_0_0_0_1px_rgba(0,0,0,.06)]">
+                    <div className="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-[#eaf4ee] shadow-[inset_0_0_0_1px_rgba(20,70,48,.08)]">
                       {p.image && <img src={p.image} alt="" className="h-full w-full object-cover" loading="lazy" />}
                     </div>
                     <div className="min-w-0 flex-1">
