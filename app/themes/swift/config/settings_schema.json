@@ -21,12 +21,12 @@
     { "id": "heading_uppercase", "type": "checkbox", "label": "Headings in capital letters", "default": false }
   ] },
   { "name": "Buttons", "settings": [
-    { "id": "button_radius", "type": "range", "label": "Corner roundness", "min": 0, "max": 30, "step": 1, "unit": "px", "default": 12 },
-    { "id": "button_height", "type": "range", "label": "Height", "min": 40, "max": 60, "step": 2, "unit": "px", "default": 48 }
+    { "id": "button_radius", "type": "range", "label": "Corner roundness", "min": 0, "max": 30, "step": 1, "unit": "px", "default": 10 },
+    { "id": "button_height", "type": "range", "label": "Height", "min": 38, "max": 60, "step": 2, "unit": "px", "default": 46 }
   ] },
   { "name": "Product cards", "settings": [
     { "id": "card_ratio", "type": "select", "label": "Photo shape", "default": "square", "options": ["square", "portrait", "landscape"] },
-    { "id": "card_radius", "type": "range", "label": "Photo corner roundness", "min": 0, "max": 28, "step": 1, "unit": "px", "default": 14 },
+    { "id": "card_radius", "type": "range", "label": "Photo corner roundness", "min": 0, "max": 28, "step": 1, "unit": "px", "default": 12 },
     { "id": "card_show_discount", "type": "checkbox", "label": "Show “% off” badge", "default": true },
     { "id": "card_show_quick_add", "type": "checkbox", "label": "Show “Add to cart” button on cards", "default": false }
   ] },

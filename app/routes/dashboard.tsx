@@ -12,8 +12,8 @@ import { dropshipAlertCount, startDropshipWatcher } from "~/lib/dropship.server"
 import { startRecoveryWatcher } from "~/lib/recovery.server";
 import { startWelcomeWatcher } from "~/lib/welcome.server";
 import { startNativeOrdersWatcher } from "~/lib/native-orders.server";
-import { db, stores as storesTable } from "~/db.server";
-import { sql } from "drizzle-orm";
+import { db, stores as storesTable, storeThemes } from "~/db.server";
+import { and, inArray, isNotNull, sql } from "drizzle-orm";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
 import { rupees } from "~/lib/wallet";
 import { stateOf, walletsFor } from "~/lib/wallet.server";
@@ -51,6 +51,12 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const touched = await touchSession(request);
   if (touched) headers.append("Set-Cookie", touched);
   const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
+  // Growpefy Store websites count as "live" once the design is published or their domain is connected; till then no wallet alerts
+  const own = list.filter((s) => s.platform === "growpefy");
+  const published = new Set(own.length
+    ? await db.select({ id: storeThemes.storeId }).from(storeThemes).where(and(inArray(storeThemes.storeId, own.map((s) => s.id)), isNotNull(storeThemes.publishedAt))).then((r) => r.map((x) => x.id)).catch(() => [])
+    : []);
+  const isLive = (s: (typeof list)[number]) => s.platform !== "growpefy" || published.has(s.id) || s.storefrontDomainStatus === "live";
   const admin = viewer.role === "admin";
   const dropshipAlerts = admin && can(viewer, "fulfilment") ? await dropshipAlertCount().catch(() => 0) : 0;
   const waPending = admin && can(viewer, "clients")
@@ -76,7 +82,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType, live: isLive(s) })),
     selected,
   }, { headers });
 }
@@ -115,8 +121,9 @@ export default function DashboardLayout() {
   const adminHome = "/dashboard/select?store=all&to=%2Fdashboard";
   const RANK = { ok: 0, low: 1, negative: 2, locked: 3 } as const;
   const focusWallet = focus ? wallets.find((w) => w.storeId === focus.id) ?? null : null;
-  const worst = [...wallets].sort((a, b) => RANK[b.state] - RANK[a.state])[0] ?? null;
-  const alertWallet = !may("billing") ? null : focus ? focusWallet : isAdmin ? null : worst;
+  const liveIds = new Set(stores.filter((s) => s.live).map((s) => s.id));
+  const worst = [...wallets].filter((w) => liveIds.has(w.storeId)).sort((a, b) => RANK[b.state] - RANK[a.state])[0] ?? null;
+  const alertWallet = !may("billing") ? null : focus ? (focus.live ? focusWallet : null) : isAdmin ? null : worst;
   const alertStore = alertWallet ? stores.find((s) => s.id === alertWallet.storeId) ?? null : null;
 
   const settingsPaths = ["/settings", "/design", "/install", "/payments", "/dashboard/stores/new", "/dashboard/team"];

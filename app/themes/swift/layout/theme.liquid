@@ -50,7 +50,7 @@
   <script>{{ 'theme.js' | asset_content }}</script>
   {% if editor %}<script>
   (function(){
-    function hl(id, scroll){ document.querySelectorAll('.gp-hl').forEach(function(e){e.classList.remove('gp-hl')}); if(!id) return; var el=document.querySelector('[data-gp-section="'+id+'"]'); if(el){ el.classList.add('gp-hl'); var f=el.firstElementChild; if(scroll&&f) f.scrollIntoView({behavior:'smooth',block:'center'}); } }
+    function hl(id, scroll){ document.querySelectorAll('.gp-hl').forEach(function(e){e.classList.remove('gp-hl')}); if(!id) return; var el=document.querySelector('[data-gp-section="'+id+'"]'); if(el){ el.classList.add('gp-hl'); var f=el.firstElementChild; if(scroll&&f){ var r=f.getBoundingClientRect(); if(r.top<70||r.top>innerHeight*0.6) window.scrollTo({top:Math.max(0,r.top+scrollY-80),behavior:'smooth'}); } } }
     window.addEventListener('message', function(e){ var d=e.data||{}; if(d.gp === 'select') hl(d.id, true); if(d.gp === 'vars'){ for(var k in d.vars) document.documentElement.style.setProperty(k, d.vars[k]); } });
     document.addEventListener('click', function(e){ var s=e.target.closest('[data-gp-section]'); if(!s) return; e.preventDefault(); e.stopPropagation(); hl(s.getAttribute('data-gp-section')); parent.postMessage({gp:'clicked', id:s.getAttribute('data-gp-section'), group:s.getAttribute('data-gp-group')}, '*'); }, true);
     parent.postMessage({gp:'ready'}, '*');
