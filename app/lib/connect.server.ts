@@ -262,3 +262,18 @@ export async function connectFormAction(fd: FormData) {
   }
   return { ok: false, errors: { form: "Unknown action" } };
 }
+
+// ---------------- Growpefy Store (own website, no Shopify / WooCommerce) ----------------
+
+/** Creates a store that runs on Growpefy itself: website preview at /s/<slug>, catalog and checkout built in. */
+export async function createOwnStore(input: { ownerId: number; name: string; businessType: import("~/db/schema").BusinessType }) {
+  const name = input.name.trim().slice(0, 80);
+  if (name.length < 2) throw new Error("Enter your brand name.");
+  const slug = await uniqueSlug(name);
+  const [created] = await db.insert(stores).values({
+    ownerId: input.ownerId, name, slug, platform: "growpefy", shopDomain: `${slug}.store.growpefy`, storefrontUrl: `${base()}/s/${slug}`,
+    active: true, storefrontEnabled: true, businessType: input.businessType,
+  }).returning({ id: stores.id });
+  console.log(`[store] owner=${input.ownerId} created Growpefy Store ${created.id} (${slug}, ${input.businessType})`);
+  return created.id;
+}

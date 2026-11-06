@@ -118,8 +118,8 @@ function StoreHome() {
     return (
       <>
         <h1 className="mb-6 text-2xl font-semibold tracking-tight">Welcome, {viewerName}</h1>
-        <EmptyState title="Let's set up your store" action={<Link to="/dashboard/support" className="btn-primary">Talk to our team</Link>}>
-          Our team sets up your store, checkout and payments with you on a call. Tell us a good time and we'll call you.
+        <EmptyState title="Let's set up your store" action={<Link to="/dashboard/stores/create" className="btn-primary">Create your store</Link>}>
+          Your website, checkout, COD and payments in one place. It takes 2 minutes. Need help? <Link to="/dashboard/support" className="font-semibold text-pine underline">Talk to our team</Link>.
         </EmptyState>
       </>
     );

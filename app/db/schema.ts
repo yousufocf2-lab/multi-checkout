@@ -206,7 +206,7 @@ export const stores = pgTable("stores", {
   ownerId: integer("owner_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
-  platform: text("platform").$type<"shopify" | "woocommerce">().notNull().default("shopify"),
+  platform: text("platform").$type<"shopify" | "woocommerce" | "growpefy">().notNull().default("shopify"), // growpefy = Growpefy Store (own website)
   shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com (WooCommerce: the site's host)
   storefrontUrl: text("storefront_url").notNull(), // https://brand.com
   checkoutDomain: text("checkout_domain").unique(), // e.g. checkout.brand.com (CNAME -> Railway)

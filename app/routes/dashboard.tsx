@@ -77,7 +77,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
     idleMs: IDLE_MS,
     wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, businessType: s.businessType })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType })),
     selected,
   }, { headers });
 }
@@ -146,7 +146,7 @@ export default function DashboardLayout() {
         {!isAdmin && may("ads") && stores.length > 1 && <Item to="/dashboard/compare" icon="compare">Compare stores</Item>}
       </Group>
       {(isAdmin || focus?.storefront) && may("settings") && (
-        <Group label="Growpefy Store (pilot)">
+        <Group label={focus?.platform === "growpefy" ? "Your website" : "Growpefy Store (pilot)"}>
           <Item to={storeHref("catalog")} icon="box" match={/\/catalog(\/|$)|next=catalog/}>{packOf(focus?.businessType).items}</Item>
           <Item to={storeHref("to-ship")} icon="shipping" match={/\/to-ship$|next=to-ship/}>Orders to ship</Item>
           <Item to={storeHref("pages")} icon="layers" match={/\/pages(\/|$)|next=pages/}>Pages</Item>
@@ -205,7 +205,7 @@ export default function DashboardLayout() {
             <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-night-line pl-2.5">
               {may("settings") && <Item to={storeHref("settings")} icon="stores" match={/\/settings$|next=settings/} small>Store settings</Item>}
               {may("settings") && <Item to={storeHref("design")} icon="design" match={/\/design$|next=design/} small>Checkout design</Item>}
-              {may("settings") && <Item to={storeHref("install")} icon="setup" match={/\/install$|next=install/} small>Setup</Item>}
+              {may("settings") && focus?.platform !== "growpefy" && <Item to={storeHref("install")} icon="setup" match={/\/install$|next=install/} small>Setup</Item>}
               {!isAdmin && <Item to="/dashboard/stores" icon="stores" match={(p, q) => p === "/dashboard/stores" && !q.includes("next=")} small>All stores</Item>}
               {!isAdmin && may("team") && <Item to="/dashboard/team" icon="users" small>Team</Item>}
             </div>

@@ -4,7 +4,7 @@ import { Section, SelectField, SubmitButton, TextField, Toggle } from "./ui";
 import { GatewaysEditor, type GatewayView } from "./GatewaysEditor";
 
 export type StoreFormValues = {
-  name?: string; slug?: string; platform?: "shopify" | "woocommerce"; hasWooSecret?: boolean; shopDomain?: string; storefrontUrl?: string; checkoutDomain?: string | null; active?: boolean;
+  name?: string; slug?: string; platform?: "shopify" | "woocommerce" | "growpefy"; hasWooSecret?: boolean; shopDomain?: string; storefrontUrl?: string; checkoutDomain?: string | null; active?: boolean;
   clientId?: string | null; apiVersion?: string; hasAdminToken?: boolean; hasClientSecret?: boolean;
   payuViaStorefront?: boolean; gatewayViews?: GatewayView[]; webhookBase?: string;
   codEnabled?: boolean; codCooldownHours?: number; codBlockAfterPrepaid?: boolean;
@@ -28,7 +28,8 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
   siteSuggestions?: { url: string; platform: string }[];
 }) {
   const v = values;
-  const [platform, setPlatform] = useState<"shopify" | "woocommerce">(v.platform ?? "shopify");
+  const own = v.platform === "growpefy"; // Growpefy Store: no Shopify / WordPress fields
+  const [platform, setPlatform] = useState<"shopify" | "woocommerce">(v.platform === "woocommerce" ? "woocommerce" : "shopify");
   // Picking a suggested website also picks its platform (when it's Shopify or WooCommerce)
   const onSite = (url: string) => {
     const hit = siteSuggestions.find((x) => x.url === url || x.url.replace(/^https?:\/\//, "") === url);
@@ -60,14 +61,14 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="Store name" name="name" defaultValue={v.name} error={errors.name} placeholder="Budverse" required />
           <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="budverse" hint="Lowercase letters, numbers and dashes. Used in the theme script and your checkout address." required />
-          {!woo && <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="budverse.myshopify.com" hint="Settings → Domains in Shopify admin" required />}
-          <TextField label={woo ? "WordPress site address" : "Store website"} name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in"
+          {!woo && !own && <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="budverse.myshopify.com" hint="Settings → Domains in Shopify admin" required />}
+          {!own && <TextField label={woo ? "WordPress site address" : "Store website"} name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in"
             hint={woo ? "Settings → General → Site Address (URL) in WordPress" : siteSuggestions.length > 1 ? "Pick one of the websites you gave us, or type another." : undefined} required
-            list={siteSuggestions.length ? "gp-site-suggestions" : undefined} onChange={(e) => onSite(e.currentTarget.value)} />
+            list={siteSuggestions.length ? "gp-site-suggestions" : undefined} onChange={(e) => onSite(e.currentTarget.value)} />}
           {siteSuggestions.length > 0 && <datalist id="gp-site-suggestions">{siteSuggestions.map((x) => <option key={x.url} value={x.url} />)}</datalist>}
           <TextField label="Support phone" name="supportPhone" defaultValue={v.supportPhone ?? ""} placeholder="+91 98765 43210" hint="Shown on the checkout for help." />
         </div>
-        <div className={`mt-4 space-y-4 border-t border-rule pt-4 ${woo ? "hidden" : ""}`}>
+        <div className={`mt-4 space-y-4 border-t border-rule pt-4 ${woo || own ? "hidden" : ""}`}>
           <Toggle name="proxyCheckout" label="Open checkout on your own website (recommended)"
             description={`Checkout, payment and the thank-you page open on ${v.storefrontUrl ? v.storefrontUrl.replace(/^https?:\/\//, "").replace(/\/+$/, "") : "your store"}/apps/growpefy/…, so your Meta and Google ads see every order on your own store. Uses the App Proxy in your Shopify app. If it isn't working, checkout opens on your Growpefy address instead.`}
             defaultChecked={v.proxyCheckout ?? true} />
@@ -77,7 +78,7 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         {isNew && <input type="hidden" name="active" value="on" />}
       </Section>
 
-      {woo ? (
+      {own ? null : woo ? (
         <Section title="WooCommerce plugin" description="Growpefy talks to your store through a small WordPress plugin. Every request is signed with a secret key.">
           <p className="text-sm text-ink-soft">{isNew ? "After you save, the Setup page gives you the plugin to install and the Store ID and secret key to paste in it." : <>Plugin download, Store ID and secret key are on the <b className="text-ink">Setup</b> page.</>}</p>
           {!isNew && v.hasWooSecret && <div className="mt-4 border-t border-rule pt-4"><Toggle name="rotateWooSecret" label="Make a new secret key" description="The old key stops working right away. Paste the new one in the plugin after saving." /></div>}
@@ -101,7 +102,7 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
 
       <Section title="Payment gateways" description="Connect up to 3 gateways. Payments go straight to your account. If the primary has a problem, the backup takes over.">
         <GatewaysEditor initial={v.gatewayViews ?? []} errors={errors} webhookBase={v.webhookBase} />
-        <label className={`mt-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-rule p-3 ${woo ? "hidden" : ""}`}>
+        <label className={`mt-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-rule p-3 ${woo || own ? "hidden" : ""}`}>
           <input type="checkbox" name="payuViaStorefront" defaultChecked={v.payuViaStorefront} className="mt-0.5 h-4 w-4" />
           <span className="text-sm"><b>Start payments from the store's own website</b>
             <span className="block text-xs text-ink-faint">For gateways that only allow your registered website (PayU, Cashfree, CCAvenue). Payments start from {v.storefrontUrl ? v.storefrontUrl.replace(/^https?:\/\//, "") : "your store"}/apps/growpefy/… Needs App Proxy in your Shopify app (subpath prefix <b>apps</b>, subpath <b>growpefy</b>, proxy URL <b>https://growpefy.com/proxy</b>).{v.storefrontUrl && <> <a href={`${v.storefrontUrl.replace(/\/+$/, "")}/apps/growpefy/ping`} target="_blank" rel="noreferrer" className="font-medium text-pine underline">Test App Proxy</a></>}</span></span>

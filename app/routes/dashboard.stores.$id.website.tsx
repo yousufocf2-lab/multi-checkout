@@ -29,7 +29,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       const st = await hostnameState(store.storefrontDomain);
       if (st.state === "missing") await addHostname(store.storefrontDomain);
       if (st.state === "live") {
-        await db.update(stores).set({ storefrontDomainStatus: "live" }).where(eq(stores.id, store.id));
+        await db.update(stores).set({ storefrontDomainStatus: "live", ...(store.platform === "growpefy" ? { storefrontUrl: `https://${store.storefrontDomain}` } : {}) }).where(eq(stores.id, store.id));
         store.storefrontDomainStatus = "live";
       }
       detail = st.detail;
@@ -65,13 +65,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
   if (intent === "remove") {
     if (cfConfigured() && store.storefrontDomain) await removeHostname(store.storefrontDomain).catch((e) => console.error("[domain] remove:", e));
-    await db.update(stores).set({ storefrontDomain: null, storefrontDomainStatus: null, storefrontDnsTarget: null }).where(eq(stores.id, store.id));
+    await db.update(stores).set({ storefrontDomain: null, storefrontDomainStatus: null, storefrontDnsTarget: null, ...(store.platform === "growpefy" ? { storefrontUrl: `${env.appUrl}/s/${store.slug}` } : {}) }).where(eq(stores.id, store.id));
     return json({ ok: "Domain removed. Your website is still on the preview link.", error: null });
   }
   if (viewer.role === "admin" && intent === "target") {
     const t = String(fd.get("target") ?? "").trim().toLowerCase().replace(/\.$/, "");
     const live = fd.get("live") === "on";
-    await db.update(stores).set({ storefrontDnsTarget: t || null, storefrontDomainStatus: live ? "live" : t ? "dns" : "requested" }).where(eq(stores.id, store.id));
+    await db.update(stores).set({ storefrontDnsTarget: t || null, storefrontDomainStatus: live ? "live" : t ? "dns" : "requested", ...(live && store.platform === "growpefy" && store.storefrontDomain ? { storefrontUrl: `https://${store.storefrontDomain}` } : {}) }).where(eq(stores.id, store.id));
     return json({ ok: "Saved.", error: null });
   }
   return json({ ok: null, error: null });

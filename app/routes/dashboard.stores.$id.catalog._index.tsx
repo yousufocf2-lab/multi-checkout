@@ -80,6 +80,7 @@ export default function Catalog() {
         <Link to="new" className="btn-primary">Add {pack.item}</Link>
       </div>
 
+      {sp.get("welcome") === "1" && <Notice tone="success">Your store is ready. Add your first {pack.item}, then set up payments and connect your domain from the menu.</Notice>}
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
       {a?.error && <Notice tone="error">{a.error}</Notice>}
       {importing != null && <Notice tone="info">Importing from Shopify… ({importing}s). Refresh to see new {pack.items.toLowerCase()}.</Notice>}

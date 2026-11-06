@@ -12,10 +12,11 @@ export type Platform = "shopify" | "woocommerce";
 export const PLATFORM_NAME: Record<Platform, string> = { shopify: "Shopify", woocommerce: "WooCommerce" };
 
 export const isWoo = (s: Pick<Store, "platform">) => s.platform === "woocommerce";
-export const platformName = (s: Pick<Store, "platform">) => PLATFORM_NAME[isWoo(s) ? "woocommerce" : "shopify"];
+export const platformName = (s: Pick<Store, "platform">) => (s.platform === "growpefy" ? "Growpefy Store" : PLATFORM_NAME[isWoo(s) ? "woocommerce" : "shopify"]);
 
 /** Store has working credentials, so we can read products and create orders. */
 export function storeConnected(s: Store) {
+  if (s.platform === "growpefy") return true;
   return isWoo(s) ? Boolean(s.wooSecret) : Boolean(s.adminToken || (s.clientId && s.clientSecret));
 }
 

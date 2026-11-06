@@ -23,7 +23,8 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   // the platform is picked once, when the store is connected
   const platform: Store["platform"] = existing ? existing.platform : s("platform") === "woocommerce" ? "woocommerce" : "shopify";
   const woo = platform === "woocommerce";
-  const site = s("storefrontUrl").replace(/\/+$/, "");
+  const own = platform === "growpefy"; // Growpefy Store: no Shopify/WordPress fields; website address comes from Website & domain
+  const site = own ? existing!.storefrontUrl : s("storefrontUrl").replace(/\/+$/, "");
   // "Get credentials" stores: the owner's form has no app fields, so keep what Growpefy's team saved
   const keepApp = !woo && Boolean(existing && (existing.connectStatus || existing.installUrl)) && !fd.has("clientId");
 
@@ -33,7 +34,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     // WooCommerce: a fresh secret on connect (or when asked); the plugin signs every request with it
     wooSecret: woo ? (on("rotateWooSecret") || !existing?.wooSecret ? newWooSecret() : existing.wooSecret) : existing?.wooSecret ?? null,
     slug: s("slug").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, ""),
-    shopDomain: (woo ? site : s("shopDomain")).replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase(),
+    shopDomain: own ? existing!.shopDomain : (woo ? site : s("shopDomain")).replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase(),
     storefrontUrl: site,
     // Every checkout runs on Growpefy's own address (store-id.checkout.growpefy.com); own domains are no longer used
     checkoutDomain: null,
@@ -47,7 +48,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     payuSalt: null,
     payuMode: "test",
     gateways: [],
-    payuViaStorefront: woo ? false : on("payuViaStorefront"),
+    payuViaStorefront: woo || own ? false : on("payuViaStorefront"),
     // COD on/off now lives in Payment methods; new stores start with COD on
     codEnabled: existing?.codEnabled ?? true,
     // COD wait time and repeat-COD rules now live in the RTO Suite page
@@ -62,7 +63,7 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     supportPhone: s("supportPhone") || null,
     popupCheckout: on("popupCheckout"),
     // New stores start on (the form's default); WooCommerce doesn't use it
-    proxyCheckout: woo ? false : on("proxyCheckout"),
+    proxyCheckout: woo || own ? false : on("proxyCheckout"),
   };
 
   // Payment gateways: up to 3, in the order shown (primary first). Blank secrets keep the saved value.
@@ -92,11 +93,11 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
 
   if (!data.name) errors.name = "Enter the store name";
   if (!data.slug) errors.slug = "Enter a short ID, e.g. budverse";
-  if (!woo && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
+  if (!woo && !own && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
   if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://budverse.in";
   if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://budverse.in";
   if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
-  if (!woo && !keepApp && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
+  if (!woo && !own && !keepApp && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
 
   return { data, errors };
 }
