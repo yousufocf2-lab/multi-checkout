@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  real,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -1291,3 +1292,15 @@ export const draftOrders = pgTable("draft_orders", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("draft_orders_number_idx").on(t.storeId, t.number), index("draft_orders_store_idx").on(t.storeId, t.status)]);
 export type DraftOrder = typeof draftOrders.$inferSelect;
+
+/** Real shopper speed on Growpefy Store websites (one row per page view): Core Web Vitals for the Online Store page. */
+export const storefrontVitals = pgTable("storefront_vitals", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  page: text("page"), // index | product | collection | cart | page
+  device: text("device").$type<"mobile" | "desktop">().notNull(),
+  lcp: integer("lcp"), // ms
+  inp: integer("inp"), // ms
+  cls: real("cls"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("storefront_vitals_store_idx").on(t.storeId, t.createdAt)]);

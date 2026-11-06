@@ -1,5 +1,5 @@
 // Growpefy Store theme editor: a store's own copy of its theme (draft while editing, live after Publish, last 5 versions).
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, storeThemes, type ThemeData, type ThemeSection, type ThemeTemplate, type ThemeVersion } from "~/db.server";
 import { defaultThemeData, themeManifest, TEMPLATES } from "./storefront.server";
 
@@ -96,4 +96,23 @@ export async function restoreVersion(storeId: number, index: number) {
   const v = row?.history?.[index];
   if (!v) throw new Error("That version no longer exists.");
   await saveDraft(storeId, v.data);
+}
+
+/** Real-shopper speed for the last 30 days (75th percentile, like Google's Core Web Vitals) and page views by device. */
+export async function vitalsSummary(storeId: number) {
+  const q = (from: string, to: string) => db.execute<{ lcp: number | null; inp: number | null; cls: number | null; mobile: number; desktop: number }>(sql`
+    select percentile_cont(0.75) within group (order by lcp) as lcp,
+           percentile_cont(0.75) within group (order by inp) as inp,
+           percentile_cont(0.75) within group (order by cls) as cls,
+           count(*) filter (where device = 'mobile')::int as mobile,
+           count(*) filter (where device = 'desktop')::int as desktop
+    from storefront_vitals where store_id = ${storeId} and created_at >= now() - ${from}::interval and created_at < now() - ${to}::interval`);
+  const [now, before] = await Promise.all([q("30 days", "0 days"), q("60 days", "30 days")]);
+  const a = (now as unknown as { rows?: unknown[] }).rows?.[0] ?? (now as unknown as unknown[])[0];
+  const b = (before as unknown as { rows?: unknown[] }).rows?.[0] ?? (before as unknown as unknown[])[0];
+  const pick = (r: unknown) => {
+    const x = (r ?? {}) as { lcp: number | null; inp: number | null; cls: number | null; mobile: number; desktop: number };
+    return { lcp: x.lcp == null ? null : Math.round(Number(x.lcp)), inp: x.inp == null ? null : Math.round(Number(x.inp)), cls: x.cls == null ? null : Math.round(Number(x.cls) * 100) / 100, mobile: Number(x.mobile ?? 0), desktop: Number(x.desktop ?? 0) };
+  };
+  return { now: pick(a), before: pick(b) };
 }

@@ -286,13 +286,20 @@ export async function previewContext(request: Request, slug: string | undefined)
   const store = slug ? await storeBySlug(slug) : null;
   if (!store || !store.active) throw new Response("Not found", { status: 404 });
   const sp = new URL(request.url).searchParams;
-  const mode = sp.get("gp_editor") === "1" ? "editor" : sp.get("gp_draft") === "1" ? "draft" : "live";
+  const preset = sp.get("gp_preset");
+  const mode = sp.get("gp_editor") === "1" ? "editor" : sp.get("gp_draft") === "1" || preset ? "draft" : "live";
   // Owners (and their team) see their own store's preview and its unpublished draft; shoppers only a switched-on store.
   if (mode !== "live" || !store.storefrontEnabled) {
     const { getViewer, requireStore } = await import("./auth.server");
     const viewer = await getViewer(request);
     const canEdit = viewer ? await requireStore(viewer, store.id).then(() => true, () => false) : false;
     if (!canEdit && !store.storefrontEnabled) throw new Response("Not found", { status: 404 });
+    if (canEdit && preset) {
+      const { presetById, applyPreset } = await import("./theme-presets");
+      const p = presetById(preset);
+      const base = (await themeLook(store.id, "draft")).data ?? defaultThemeData("swift");
+      if (p) return { store, root: `/s/${store.slug}`, preview: true, look: { data: applyPreset(base, p), editor: false } };
+    }
     if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id, mode) };
   }
   return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id) };

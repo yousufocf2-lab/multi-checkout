@@ -48,6 +48,19 @@
   {%- endif -%}
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script>{{ 'theme.js' | asset_content }}</script>
+  {%- unless editor -%}
+  <script>
+  /* Page speed from real shoppers (LCP, INP, CLS), sent once when the page is hidden */
+  (function(){try{
+    var v={s:{{ shop.slug | json }},p:{{ template | default: 'page' | json }},d:matchMedia('(min-width:861px)').matches?'desktop':'mobile',cls:0},sent=false;
+    new PerformanceObserver(function(l){var e=l.getEntries();if(e.length)v.lcp=e[e.length-1].startTime}).observe({type:'largest-contentful-paint',buffered:true});
+    new PerformanceObserver(function(l){l.getEntries().forEach(function(e){if(!e.hadRecentInput)v.cls+=e.value})}).observe({type:'layout-shift',buffered:true});
+    try{new PerformanceObserver(function(l){l.getEntries().forEach(function(e){if(e.interactionId&&(!v.inp||e.duration>v.inp))v.inp=e.duration})}).observe({type:'event',buffered:true,durationThreshold:16})}catch(e){}
+    function send(){if(sent||v.lcp==null)return;sent=true;v.cls=Math.round(v.cls*1000)/1000;navigator.sendBeacon&&navigator.sendBeacon('/api/vitals',JSON.stringify(v))}
+    addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')send()});addEventListener('pagehide',send);
+  }catch(e){}})();
+  </script>
+  {%- endunless -%}
   {% if editor %}<script>
   (function(){
     function hl(id, scroll){ document.querySelectorAll('.gp-hl').forEach(function(e){e.classList.remove('gp-hl')}); if(!id) return; var el=document.querySelector('[data-gp-section="'+id+'"]'); if(el){ el.classList.add('gp-hl'); var f=el.firstElementChild; if(scroll&&f){ var r=f.getBoundingClientRect(); if(r.top<70||r.top>innerHeight*0.6) window.scrollTo({top:Math.max(0,r.top+scrollY-80),behavior:'smooth'}); } } }
