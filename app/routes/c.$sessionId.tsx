@@ -364,7 +364,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const [order] = await db
     .insert(orders)
     .values({
-      id: newOrderId(), storeId: store.id, sessionId: session.id,
+      id: newOrderId(), storeId: store.id, sessionId: session.id, checkoutChannel: store.smartCheckout ? "premium_checkout" : "native",
       status: method === "cod" ? "cod_placing" : "pending_payment", paymentMethod: method,
       customer, items: [...lines, ...freeLines], subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
       couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, offerDiscount: p.mixDiscount,

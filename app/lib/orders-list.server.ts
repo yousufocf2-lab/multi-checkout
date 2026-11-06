@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, not as negate, or, sql, type SQL } from "drizzle-orm";
 import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, stores, type Store } from "~/db.server";
 import { addDays, resolveRange, type Range } from "./dates";
@@ -11,7 +11,7 @@ const amountCol = orderValueSql;
 
 export type OrderFilters = {
   status: string; method: string; tag: string; product: string; state: string; q: string;
-  min: string; max: string; range: Range;
+  min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; range: Range;
 };
 
 /** WHERE clause for the orders list, the summary and the CSV export. Every filter combines with AND. */
@@ -27,29 +27,52 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
     status: params.get("status") ?? "", method: params.get("method") ?? "", tag: params.get("tag") ?? "",
     product: (params.get("product") ?? "").trim(), state: params.get("state") ?? "", q: (params.get("q") ?? "").trim(),
     min: (params.get("min") ?? "").replace(/[^\d]/g, ""), max: (params.get("max") ?? "").replace(/[^\d]/g, ""), range,
+    paymentStatus: params.get("payment_status") ?? "", fulfillment: params.get("fulfillment") ?? "", deliveryStatus: params.get("delivery_status") ?? "",
+    returnStatus: params.get("return_status") ?? "", labelStatus: params.get("label_status") ?? "", deliveryMethod: params.get("delivery_method") ?? "",
   };
 
   const where: SQL[] = [inArray(orders.storeId, ids.length ? ids : [-1])];
+  const push = (key: string, condition: SQL) => where.push(params.get(`${key}_not`) === "1" ? negate(condition) : condition);
   // Status: completed (paid online + COD placed) unless asked otherwise
-  if (f.status === "failed") where.push(eq(orders.status, "failed"));
-  else if (f.status === "pending") where.push(sql`${orders.status} in ('pending_payment','cod_placing')`);
-  else if (f.status !== "any") where.push(sql`${orders.status} in ${OK}`);
+  if (f.status === "failed") push("status", eq(orders.status, "failed"));
+  else if (f.status === "pending") push("status", sql`${orders.status} in ('pending_payment','cod_placing')`);
+  else if (f.status === "refunded") push("status", sql`${orders.refundStatus} = 'full'`);
+  else if (f.status === "open") push("status", sql`${orders.status} in ('paid','cod_placed','pending_payment','cod_placing')`);
+  else if (f.status === "any") { /* All statuses */ }
+  else if (f.status) push("status", sql`${orders.status} in ${OK}`);
+  else where.push(sql`${orders.status} in ${OK}`);
 
-  if (f.method === "prepaid" || f.method === "cod" || f.method === "partial") where.push(eq(orders.paymentMethod, f.method));
+  if (f.method === "prepaid" || f.method === "cod" || f.method === "partial") push("method", eq(orders.paymentMethod, f.method));
+  if (f.paymentStatus === "paid") push("payment_status", sql`${orders.status} = 'paid'`);
+  if (f.paymentStatus === "pending") push("payment_status", sql`${orders.paymentMethod} = 'cod' or ${orders.status} in ('pending_payment','cod_placing')`);
+  if (f.paymentStatus === "refunded") push("payment_status", sql`${orders.refundStatus} = 'full'`);
+  if (f.paymentStatus === "partially_refunded") push("payment_status", sql`${orders.refundStatus} = 'partial'`);
+  if (f.paymentStatus === "failed") push("payment_status", eq(orders.status, "failed"));
+  if (f.fulfillment === "fulfilled") push("fulfillment", isNotNull(orders.awb));
+  if (f.fulfillment === "unfulfilled") push("fulfillment", sql`${orders.status} in ${OK} and ${orders.awb} is null`);
+  if (f.deliveryStatus) push("delivery_status", sql`${orders.shipStatus} = ${f.deliveryStatus}`);
+  if (f.returnStatus === "returned") push("return_status", sql`${orders.shipStatus} in ('rto','rto_transit','returned')`);
+  if (f.returnStatus === "not_returned") push("return_status", sql`${orders.shipStatus} is null or ${orders.shipStatus} not in ('rto','rto_transit','returned')`);
+  if (f.labelStatus === "added") push("label_status", isNotNull(orders.awb));
+  if (f.labelStatus === "not_added") push("label_status", sql`${orders.awb} is null`);
+  if (f.deliveryMethod) push("delivery_method", eq(orders.shippingTitle, f.deliveryMethod));
   if (range.preset !== "max") {
     where.push(gte(orders.createdAt, new Date(`${range.since}T00:00:00+05:30`)));
     where.push(lt(orders.createdAt, new Date(`${addDays(range.until, 1)}T00:00:00+05:30`)));
   }
   if (f.min) where.push(sql`${amountCol} >= ${Number(f.min) * 100}`);
   if (f.max) where.push(sql`${amountCol} <= ${Number(f.max) * 100}`);
-  if (f.product) where.push(sql`exists (select 1 from jsonb_array_elements(${orders.items}) li where li->>'title' = ${f.product})`);
-  if (f.state) where.push(sql`${orders.customer}->>'state' = ${f.state}`);
-  if (f.tag === "refunded") where.push(sql`(${orders.refunded} > 0 or ${orders.refundStatus} is not null)`);
-  if (f.tag === "not_synced") where.push(sql`${orders.status} in ${OK} and ${orders.shopifyOrderId} is null`);
-  if (f.tag === "coupon") where.push(isNotNull(orders.couponCode));
-  if (f.tag === "bank") where.push(sql`${orders.bankDiscount} > 0`);
-  if (f.tag === "paid_shipping") where.push(sql`${orders.shipping} > 0`);
-  if (f.tag === "free_shipping") where.push(sql`${orders.shipping} = 0`);
+  if (f.product) push("product", sql`exists (select 1 from jsonb_array_elements(${orders.items}) li where li->>'title' = ${f.product})`);
+  if (f.state) push("state", sql`${orders.customer}->>'state' = ${f.state}`);
+  if (f.tag === "refunded") push("tag", sql`(${orders.refunded} > 0 or ${orders.refundStatus} is not null)`);
+  else if (f.tag === "not_synced") push("tag", sql`${orders.status} in ${OK} and ${orders.shopifyOrderId} is null`);
+  else if (f.tag === "coupon") push("tag", isNotNull(orders.couponCode));
+  else if (f.tag === "bank") push("tag", sql`${orders.bankDiscount} > 0`);
+  else if (f.tag === "paid_shipping") push("tag", sql`${orders.shipping} > 0`);
+  else if (f.tag === "free_shipping") push("tag", sql`${orders.shipping} = 0`);
+  else if (f.tag === "Smart Checkout") push("tag", sql`${orders.checkoutChannel} = 'premium_checkout' or (${orders.checkoutChannel} is null and ${orders.sessionId} is not null and exists (select 1 from stores st where st.id = ${orders.storeId} and st.smart_checkout = true))`);
+  else if (f.tag === "WhatsApp") push("tag", sql`${orders.confirmStatus} is not null or ${orders.waMessageId} is not null`);
+  else if (f.tag) push("tag", sql`${orders.manualTags} @> ${JSON.stringify([f.tag])}::jsonb`);
   if (f.q) {
     const like = `%${f.q}%`;
     where.push(or(
@@ -67,8 +90,9 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
   const page = Math.max(1, Number(params.get("page")) || 1);
   const ids = scope.map((s) => s.id);
   const { where, filters } = await orderFilters(scope, params);
-  const [rows, [sum], products] = await Promise.all([
-    db.select().from(orders).where(where).orderBy(desc(orders.createdAt)).limit(PAGE + 1).offset((page - 1) * PAGE),
+  const [rows, [sum], products, tagRows] = await Promise.all([
+    db.select({ order: orders, store: { platform: stores.platform, smartCheckout: stores.smartCheckout } }).from(orders)
+      .innerJoin(stores, eq(stores.id, orders.storeId)).where(where).orderBy(desc(orders.createdAt)).limit(PAGE + 1).offset((page - 1) * PAGE),
     db.select({
       n: sql<number>`count(*)::int`,
       value: sql<string>`coalesce(sum(${amountCol} - ${orders.refunded}), 0)`,
@@ -83,17 +107,23 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
       select li->>'title' as title from ${orders}, jsonb_array_elements(${orders.items}) li
       where ${inArray(orders.storeId, ids.length ? ids : [-1])} and ${orders.status} in ${OK}
       group by 1 order by count(*) desc limit 300`),
+    db.select({ manualTags: orders.manualTags }).from(orders).where(inArray(orders.storeId, ids.length ? ids : [-1])).limit(1000),
   ]);
   const names = new Map(scope.map((s) => [s.id, s.name]));
   const n = sum?.n ?? 0;
   const value = Number(sum?.value ?? 0) / 100;
   return {
-    orders: rows.slice(0, PAGE).map((o) => ({ ...o, storeName: names.get(o.storeId) ?? "" })),
+    orders: rows.slice(0, PAGE).map(({ order: o, store }) => {
+      const premium = o.checkoutChannel === "premium_checkout" || (!o.checkoutChannel && Boolean(o.sessionId && store.smartCheckout));
+      return { ...o, storeName: names.get(o.storeId) ?? "", channel: premium ? "Premium Checkout" : "Native", tags: [...new Set([...(o.manualTags ?? []), ...(premium ? ["Smart Checkout"] : []), ...(o.confirmStatus || o.waMessageId ? ["WhatsApp"] : [])])] };
+    }),
     hasMore: rows.length > PAGE,
     page,
     filters,
     summary: { count: n, value, prepaid: sum?.prepaid ?? 0, cod: sum?.cod ?? 0, aov: n ? value / n : 0, items: sum?.items ?? 0, fulfilled: sum?.fulfilled ?? 0, delivered: sum?.delivered ?? 0, returned: sum?.returned ?? 0 },
     products: (products as unknown as { title: string }[]).map((r) => r.title).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    tagOptions: [...new Set(tagRows.flatMap((r) => r.manualTags ?? []).concat("Smart Checkout", "WhatsApp"))].sort((a, b) => a.localeCompare(b)),
+    deliveryOptions: [...new Set(rows.map(({ order }) => order.shippingTitle).filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b)),
   };
 }
 
@@ -171,6 +201,14 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
   const [o] = await db.select().from(orders).where(and(eq(orders.id, String(fd.get("orderId"))), eq(orders.storeId, store.id)));
   if (!o) return json({ ok: null, error: "Order not found" });
   const intent = fd.get("intent");
+  if (intent === "tagAdd" || intent === "tagRemove") {
+    const tag = String(fd.get("tag") ?? "").trim().replace(/\s+/g, " ").slice(0, 32);
+    if (!tag || tag.length < 2) return json({ ok: null, error: "Tags must contain 2–32 characters." });
+    const tags = [...new Set(o.manualTags ?? [])];
+    const next = intent === "tagAdd" ? [...new Set([...tags, tag])].slice(0, 12) : tags.filter((t) => t !== tag);
+    await db.update(orders).set({ manualTags: next, updatedAt: new Date() }).where(eq(orders.id, o.id));
+    return json({ ok: intent === "tagAdd" ? "Tag added." : "Tag removed.", error: null });
+  }
   if (intent === "retry") {
     if (!["paid", "cod_placed"].includes(o.status)) return json({ ok: null, error: "This order can't be sent to Shopify" });
     const r = await pushToShopify(store, o);

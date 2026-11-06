@@ -4,6 +4,7 @@ import { Form, Link, NavLink, Outlet, useLoaderData, useLocation, useNavigate, u
 import { useEffect, useRef, useState } from "react";
 import { BrandIcon, BrandLockup, BusyOverlay } from "~/components/Brand";
 import { Icon, type IconName } from "~/components/Icons";
+import { useBodyScrollLock } from "~/components/useBodyScrollLock";
 import { IDLE_MS, can, loginStamp, needsKyc, requireViewer, touchSession, viewerStores } from "~/lib/auth.server";
 import { requireAppHost } from "~/lib/host.server";
 import { startRechargeWatcher } from "~/lib/recharges.server";
@@ -113,7 +114,11 @@ export default function DashboardLayout() {
   const { kycPending, viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [themeMode, setThemeMode] = useState<"light" | "dark">("light");
   const location = useLocation();
+  useEffect(() => { setThemeMode(localStorage.getItem("gp-admin-theme") === "dark" ? "dark" : "light"); }, []);
+  useEffect(() => { localStorage.setItem("gp-admin-theme", themeMode); }, [themeMode]);
+  useBodyScrollLock(open || palette);
   useEffect(() => { setOpen(false); setPalette(false); }, [location.pathname, location.search]);
 
   const isAdmin = viewer.role === "admin";
@@ -141,7 +146,7 @@ export default function DashboardLayout() {
   // ---- main menu (store tools) ----
   const storeMain: NavNode[] = [
     { label: "Home", to: "/dashboard", icon: "home", end: true, show: may("orders") },
-    { label: "Sales", to: "/dashboard/orders", icon: "inbox", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship|\/drafts(\/|$)|next=drafts/, show: may("orders"), children: [
+    { label: "Orders", to: "/dashboard/orders", icon: "bag", match: /^\/dashboard\/orders|\/to-ship$|next=to-ship|\/drafts(\/|$)|next=drafts/, show: may("orders"), children: [
       { label: "Manual orders", to: storeHref("drafts"), match: /\/drafts(\/|$)|next=drafts/, show: Boolean(focus) || !isAdmin },
       { label: "Recover checkouts", to: "/dashboard/orders/abandoned", show: true },
       { label: "Ship queue", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: storefront },
@@ -151,7 +156,7 @@ export default function DashboardLayout() {
       { label: "Stock", to: storeHref("inventory"), match: /\/inventory$|next=inventory/, show: true },
     ] },
     { label: "Offers", to: storeHref("promotions"), icon: "discounts", match: /\/(promotions|discounts|coupons|offers|gifts)$|next=(promotions|discounts|coupons|offers|gifts)\b/, show: may("offers") },
-    { label: "Marketing", to: adsHref, icon: "ads", match: /\/ads$|\/profit$|\/compare$/, show: may("ads"), children: [
+    { label: "Growth", to: adsHref, icon: "trend", match: /\/ads$|\/profit$|\/compare$/, show: may("ads"), children: [
       { label: "Ads", to: adsHref, match: /\/ads$/, show: true },
       { label: "Profit share", to: storeHref("profit"), match: /\/profit$/, show: isAdmin || Boolean(focus?.profitEnabled) },
       { label: "Compare stores", to: "/dashboard/compare", show: !isAdmin && stores.length > 1 },
@@ -167,8 +172,9 @@ export default function DashboardLayout() {
     ] },
   ];
   const storeChannels: NavNode[] = [
-    { label: "Website", to: storeHref("themes"), icon: "stores", match: /\/(themes|pages(\/\d+)?)$|next=(themes|pages)\b/, show: storefront && may("online_store"), children: [
-      { label: "Designs", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
+    { label: "Storefront", to: storeHref("editor"), icon: "stores", match: /\/(editor|themes|pages(\/\d+)?)$|next=(editor|themes|pages)\b/, show: storefront && may("online_store"), children: [
+      { label: "Storefront Studio", to: storeHref("editor"), match: /\/editor$|next=editor/, show: true },
+      { label: "Themes", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
       { label: "Site pages", to: storeHref("pages"), match: /\/pages(\/|$)|next=pages/, show: true },
     ] },
   ];
@@ -284,6 +290,7 @@ export default function DashboardLayout() {
       </div>
 
       <div className="nav-separator space-y-0.5 border-t px-3 pb-2 pt-2">
+        <button type="button" onClick={() => setThemeMode((m) => m === "light" ? "dark" : "light")} className="nav-link flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] font-medium" aria-label={`Switch to ${themeMode === "light" ? "dark" : "light"} theme`}><Icon name={themeMode === "light" ? "moon" : "sun"} className="h-4 w-4" />{themeMode === "light" ? "Dark theme" : "Light theme"}</button>
         {!inSettings && settingsList.length > 0 && <NavList items={[{ label: "Settings", to: settingsHome, icon: "settings", show: true, match: () => false }]} />}
         {!isAdmin && !inSettings && <NavList items={[{ label: "Help & support", to: "/dashboard/support", icon: "help", show: true, badge: support || undefined }]} />}
       </div>
@@ -292,11 +299,11 @@ export default function DashboardLayout() {
   );
 
   return (
-    <div className="admin min-h-screen bg-[#0d3027] lg:grid lg:h-screen lg:grid-cols-[252px_minmax(0,1fr)] lg:overflow-hidden">
+    <div className="admin min-h-screen bg-[#f3f4f6] lg:grid lg:h-screen lg:grid-cols-[252px_minmax(0,1fr)] lg:overflow-hidden" data-theme={themeMode}>
       <aside className="hidden lg:block"><div className="h-screen">{nav}</div></aside>
 
       {/* Mobile top bar */}
-      <header className="sticky top-0 z-30 flex h-14 items-center gap-3 bg-[#0d3027] px-4 text-white lg:hidden">
+      <header className="mobile-admin-header sticky top-0 z-30 flex h-14 items-center gap-3 px-4 lg:hidden">
         <button type="button" className="rounded-lg p-1.5 text-[#e3e3e3] hover:bg-white/10" onClick={() => setOpen(true)} aria-expanded={open} aria-label="Open menu"><Icon name="menu" className="h-5 w-5" /></button>
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">{!storeMode ? (viewer.isTeam ? "Team panel" : "Admin panel") : current?.name ?? (only ? only.name : `All stores (${stores.length})`)}</span>
         <button type="button" className="rounded-lg p-1.5 text-[#e3e3e3] hover:bg-white/10" onClick={() => setPalette(true)} aria-label="Search"><Icon name="search" className="h-5 w-5" /></button>
@@ -308,7 +315,7 @@ export default function DashboardLayout() {
         </div>
       )}
 
-      <main className="relative min-h-[calc(100vh-56px)] min-w-0 bg-[#f4f8f5] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
+      <main className="relative min-h-[calc(100vh-56px)] min-w-0 bg-[#f3f4f6] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
         <ActionLoader stores={stores} />
         {nextDemo && <DemoBar demo={nextDemo} login={login} />}
         <IdleLogout idleMs={idleMs} />

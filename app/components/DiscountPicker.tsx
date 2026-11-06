@@ -3,6 +3,7 @@ import { Link } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "~/components/Icons";
 import { storePath } from "~/lib/store-code";
+import { useBodyScrollLock } from "./useBodyScrollLock";
 
 const TYPES: { to: string; icon: IconName; title: string; text: string }[] = [
   { to: "coupons", icon: "coupons", title: "Coupon code", text: "Customer types a code at checkout" },
@@ -17,6 +18,7 @@ const TYPES: { to: string; icon: IconName; title: string; text: string }[] = [
 
 export function DiscountPicker({ storeId, label = "Create discount", primary = true }: { storeId: number; label?: string; primary?: boolean }) {
   const [open, setOpen] = useState(false);
+  useBodyScrollLock(open);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -28,7 +30,7 @@ export function DiscountPicker({ storeId, label = "Create discount", primary = t
       <button type="button" className={primary ? "btn-primary" : "btn-secondary"} onClick={() => setOpen(true)}>{label}</button>
       {open && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/30 px-4 pt-[12vh]" role="dialog" aria-modal="true" aria-labelledby="dp-title" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
-          <div className="w-full max-w-[680px] animate-fadein overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_rgba(0,0,0,.08),0_24px_48px_-12px_rgba(0,0,0,.35)]">
+          <div className="max-h-[88dvh] w-full max-w-[680px] animate-fadein overflow-y-auto overscroll-contain rounded-xl bg-white shadow-[0_0_0_1px_rgba(0,0,0,.08),0_24px_48px_-12px_rgba(0,0,0,.35)]">
             <header className="flex items-center justify-between border-b border-rule px-4 py-3">
               <h2 id="dp-title" className="text-[14px] font-semibold">Create discount</h2>
               <button type="button" onClick={() => setOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>

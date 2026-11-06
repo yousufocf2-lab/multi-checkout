@@ -1,4 +1,4 @@
-// Growpefy Store → Theme editor (full screen): sections of every page, the header and footer, and theme-wide settings,
+// Growpefy Storefront Studio (full screen): sections of every page, the header and footer, and theme-wide settings,
 // with a live preview. Changes autosave as a draft; shoppers see them only after Publish.
 import type { ActionFunctionArgs, LinksFunction, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -12,7 +12,7 @@ import { themeManifest } from "~/lib/storefront.server";
 import { editorState, publishDraft, saveDraft, THEME } from "~/lib/themes.server";
 import { storePath } from "~/lib/store-code";
 
-export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Edit theme · ${data.store.name}` : "Edit theme" }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Storefront Studio · ${data.store.name}` : "Storefront Studio" }, { name: "robots", content: "noindex" }];
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -288,7 +288,7 @@ export default function ThemeEditor() {
         <div className="ed-top__l">
           <Link to={`${storePath(L.store.id)}/themes`} className="ed-ib" aria-label="Exit editor" title="Exit"><I n="exit" /></Link>
           <span className="ed-sep" />
-          <span className="ed-store">{L.store.name}</span>
+          <span className="ed-store">{L.store.name} · Storefront Studio</span>
           <span className={`ed-pill ed-pill--${status === "published" ? "live" : status === "error" ? "err" : "draft"}`}>{statusText}</span>
         </div>
         <div className="ed-top__c">

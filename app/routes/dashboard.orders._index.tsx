@@ -27,14 +27,14 @@ export default function AllOrders() {
   const scope = useOrdersScope();
   return (
     <div className="space-y-3">
-      <PageHeader icon="inbox" title="Orders" actions={<>
+      <PageHeader icon="bag" title="Orders" actions={<>
         {scope && scope.stores.length > 1 && !scope.locked && <StoreFilter stores={scope.stores} selected={scope.picked} />}
         <DownloadLink href={`/dashboard/orders/export.csv${search}`} title="Preparing your CSV" className="btn-secondary">Export</DownloadLink>
       </>} />
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
       {res?.error && <Notice tone="error">{res.error}</Notice>}
       <OrdersView orders={d.orders} hasMore={d.hasMore} page={d.page} showStore={d.showStore}
-        filters={d.filters} summary={d.summary} products={d.products} exportHref={`/dashboard/orders/export.csv${search}`} />
+        filters={d.filters} summary={d.summary} products={d.products} tagOptions={d.tagOptions} deliveryOptions={d.deliveryOptions} exportHref={`/dashboard/orders/export.csv${search}`} />
     </div>
   );
 }

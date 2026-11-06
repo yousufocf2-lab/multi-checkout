@@ -2,7 +2,7 @@ import { gatewayName } from "~/lib/gateways/catalog";
 import { courierById } from "~/lib/courier-catalog";
 import { SHIP_STATUS_LABELS } from "~/lib/rto-shield";
 import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
-import { Form, Link, useLocation, useSearchParams, useSubmit } from "@remix-run/react";
+import { Form, Link, useLocation, useSearchParams, useNavigate } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
 import { INDIAN_STATES } from "~/lib/states";
@@ -18,6 +18,7 @@ export type OrderRow = {
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
   shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; tip?: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
   payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
+  manualTags: string[]; tags: string[]; channel: string;
 };
 
 const TAGS = [
@@ -46,20 +47,19 @@ export function PaymentTag({ method, status }: { method: string; status: string 
     : <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-[#1c5cab]">Paid</span>;
 }
 
-export type OrdersFilterState = { status: string; method: string; tag: string; product: string; state: string; q: string; min: string; max: string; range: { preset: string; since: string; until: string } };
+export type OrdersFilterState = { status: string; method: string; tag: string; product: string; state: string; q: string; min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; range: { preset: string; since: string; until: string } };
 export type OrdersSummary = { count: number; value: number; prepaid: number; cod: number; aov: number; items: number; fulfilled: number; delivered: number; returned: number };
 
 const rupee = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 
-export function OrdersView({ orders, hasMore, page, showStore, filters: f, summary, products }: {
+export function OrdersView({ orders, hasMore, page, showStore, filters: f, summary, products, tagOptions = [], deliveryOptions = [] }: {
   orders: OrderRow[]; hasMore: boolean; page: number; showStore: boolean;
-  filters: OrdersFilterState; summary: OrdersSummary; products: string[]; exportHref?: string;
+  filters: OrdersFilterState; summary: OrdersSummary; products: string[]; tagOptions?: string[]; deliveryOptions?: string[]; exportHref?: string;
 }) {
-  const [params] = useSearchParams();
-  const submit = useSubmit();
   const link = useLink();
-  const extra = [f.min || f.max, f.product, f.tag, f.state].filter(Boolean).length;
-  const clearAll = link({ min: "", max: "", product: "", tag: "", state: "", q: "" });
+  const navigate = useNavigate();
+  const extra = [f.status, f.method, f.min || f.max, f.product, f.tag, f.state, f.paymentStatus, f.fulfillment, f.deliveryStatus, f.returnStatus, f.labelStatus, f.deliveryMethod].filter(Boolean).length;
+  const clearAll = link({ min: "", max: "", product: "", tag: "", state: "", q: "", status: "", status_not: "", method: "", payment_status: "", payment_status_not: "", fulfillment: "", fulfillment_not: "", delivery_status: "", delivery_status_not: "", return_status: "", return_status_not: "", label_status: "", label_status_not: "", delivery_method: "", delivery_method_not: "", state_not: "", product_not: "", tag_not: "" });
   const views = [
     { label: "All", patch: { status: "", method: "" }, on: !f.status && !f.method },
     { label: "Prepaid", patch: { status: "", method: "prepaid" }, on: !f.status && f.method === "prepaid" },
@@ -83,46 +83,12 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
         <Metric label="Orders delivered" value={n(summary.delivered)} />
       </section>
 
-      <section className="panel overflow-hidden">
-        {/* views + search */}
-        <div className="flex flex-wrap items-center gap-1 border-b border-rule px-2 py-1.5">
-          <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto" role="tablist" aria-label="Order views">
-            {views.map((v) => (
-              <Link key={v.label} to={link(v.patch)} preventScrollReset role="tab" aria-selected={v.on}
-                className={`h-7 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium leading-7 ${v.on ? "bg-paper-sunk text-ink" : "text-ink-soft hover:bg-paper hover:text-ink"}`}>{v.label}</Link>
-            ))}
-          </div>
-          <Form method="get" className="flex h-7 w-full items-center gap-1.5 rounded-lg px-2 text-ink-faint focus-within:shadow-[inset_0_0_0_1px_#005bd3] sm:w-64" onChange={(e) => submit(e.currentTarget, { replace: true, preventScrollReset: true })}>
-            {[...params.entries()].filter(([k]) => !["q", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
-            <Icon name="search" className="h-3.5 w-3.5 shrink-0" />
-            <input type="search" name="q" defaultValue={f.q} placeholder="Search name, phone, city or order" className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-faint" aria-label="Search orders" />
-          </Form>
-        </div>
-
-        {/* filter pills */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-rule px-3 py-2">
-          <FilterPill label="Amount" value={f.min && f.max ? `₹${f.min}–₹${f.max}` : f.min ? `₹${f.min}+` : f.max ? `Up to ₹${f.max}` : ""} clear={link({ min: "", max: "" })}>
-            {(close) => (
-              <Form method="get" preventScrollReset className="w-56 space-y-2 p-2" onSubmit={close}>
-                {[...params.entries()].filter(([k]) => !["min", "max", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
-                <div className="flex items-center gap-1.5">
-                  <input name="min" inputMode="numeric" defaultValue={f.min} placeholder="From ₹" className="input num" aria-label="Minimum amount" />
-                  <input name="max" inputMode="numeric" defaultValue={f.max} placeholder="To ₹" className="input num" aria-label="Maximum amount" />
-                </div>
-                <button className="btn-primary w-full">Apply</button>
-              </Form>
-            )}
-          </FilterPill>
-          <FilterPill label="Product" value={f.product} clear={link({ product: "" })}>
-            {() => <OptionList options={products.map((p) => ({ id: p, label: p }))} current={f.product} to={(id) => link({ product: id })} searchable />}
-          </FilterPill>
-          <FilterPill label="Tagged with" value={TAGS.find((t) => t.id === f.tag && t.id)?.label ?? ""} clear={link({ tag: "" })}>
-            {() => <OptionList options={TAGS.filter((t) => t.id)} current={f.tag} to={(id) => link({ tag: id })} />}
-          </FilterPill>
-          <FilterPill label="State" value={INDIAN_STATES.find((s) => s.code === f.state)?.name ?? ""} clear={link({ state: "" })}>
-            {() => <OptionList options={INDIAN_STATES.map((s) => ({ id: s.code, label: s.name }))} current={f.state} to={(id) => link({ state: id })} searchable />}
-          </FilterPill>
-          {(extra > 0 || f.q) && <Link to={clearAll} preventScrollReset className="px-1.5 text-[12.5px] font-medium text-[#005bd3] hover:underline">Clear all</Link>}
+      <section className="panel relative">
+        <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
+          <select aria-label="Order view" value={views.find((v) => v.on)?.label ?? "All"} onChange={(e) => { const v = views.find((x) => x.label === e.target.value); if (v) navigate(link(v.patch)); }} className="h-8 rounded-lg border border-rule bg-surface px-2 text-[12.5px] font-medium text-ink">
+            {views.map((v) => <option key={v.label}>{v.label}</option>)}
+          </select>
+          <OrdersSearchFilter filters={f} products={products} tags={tagOptions} deliveryOptions={deliveryOptions} clearAll={clearAll} activeCount={extra} />
           <span className="num ml-auto hidden text-[12px] text-ink-faint sm:inline">{n(summary.prepaid)} prepaid · {n(summary.cod)} COD{summary.count > 0 && ` · avg ${rupee(summary.aov)}`}</span>
         </div>
 
@@ -136,8 +102,8 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
           <>
             <ul className="divide-y divide-rule sm:hidden">{orders.map((o) => <OrderCard key={o.id} o={o} showStore={showStore} />)}</ul>
             <div className="hidden overflow-x-auto sm:block">
-              <table className="table min-w-[980px]">
-                <thead><tr><th>Order</th><th>Date</th><th>Customer</th>{showStore && <th>Store</th>}<th className="text-right">Total</th><th>Payment status</th><th>Fulfillment status</th><th>Items</th><th>Delivery method</th></tr></thead>
+              <table className="table min-w-[1420px]">
+                <thead><tr><th>Order</th><th>Date</th><th>Customer</th>{showStore && <th>Store</th>}<th>Fulfill by</th><th>Channel</th><th className="text-right">Total</th><th>Payment status</th><th>Fulfillment status</th><th>Items</th><th>Delivery status</th><th>Delivery method</th><th>Tags</th></tr></thead>
                 <tbody>{orders.map((o) => <OrderRowView key={o.id} o={o} showStore={showStore} />)}</tbody>
               </table>
             </div>
@@ -158,10 +124,84 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
   );
 }
 
+function OrdersSearchFilter({ filters, products, tags, deliveryOptions, clearAll, activeCount }: { filters: OrdersFilterState; products: string[]; tags: string[]; deliveryOptions: string[]; clearAll: string; activeCount: number }) {
+  const [open, setOpen] = useState(false);
+  const [field, setField] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
+  const [operator, setOperator] = useState<"is" | "is_not">("is");
+  const [query, setQuery] = useState(filters.q);
+  const [range, setRange] = useState({ min: filters.min, max: filters.max });
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => { setQuery(filters.q); }, [filters.q]);
+  useEffect(() => {
+    if (query === filters.q) return;
+    const timer = setTimeout(() => { const p = new URLSearchParams(params); query ? p.set("q", query) : p.delete("q"); p.delete("page"); navigate(`${location.pathname}?${p}`, { replace: true, preventScrollReset: true }); }, 350);
+    return () => clearTimeout(timer);
+  }, [query, filters.q, params, navigate, location.pathname]);
+  const fields = [
+    { key: "status", label: "Order status", options: [["open", "Open"], ["pending", "Awaiting payment"], ["failed", "Failed"], ["refunded", "Refunded"]] },
+    { key: "payment_status", label: "Payment status", options: [["paid", "Paid"], ["pending", "Payment pending"], ["partially_refunded", "Partially refunded"], ["refunded", "Refunded"], ["failed", "Failed"]] },
+    { key: "fulfillment", label: "Fulfillment status", options: [["fulfilled", "Fulfilled"], ["unfulfilled", "Unfulfilled"]] },
+    { key: "delivery_status", label: "Delivery status", options: [["in_transit", "In transit"], ["delivered", "Delivered"], ["rto_transit", "RTO in transit"], ["rto", "Returned to origin"], ["returned", "Returned"], ["cancelled", "Cancelled"]] },
+    { key: "return_status", label: "Return status", options: [["returned", "Returned"], ["not_returned", "Not returned"]] },
+    { key: "label_status", label: "Shipping label status", options: [["added", "Label added"], ["not_added", "No label"]] },
+    { key: "total", label: "Order total", options: [] as string[][] },
+    { key: "delivery_method", label: "Delivery method", options: deliveryOptions.map((x) => [x, x]) },
+    { key: "state", label: "Destination", options: INDIAN_STATES.map((s) => [s.code, s.name]) },
+    { key: "product", label: "Product", options: products.map((x) => [x, x]) },
+    { key: "tag", label: "Tag", options: [...new Set([...tags, ...TAGS.filter((x) => x.id).map((x) => x.id)])].map((x) => [x, x === "Smart Checkout" ? x : x === "WhatsApp" ? x : TAGS.find((t) => t.id === x)?.label ?? x]) },
+  ];
+  const chosen = fields.find((x) => x.key === field);
+  const apply = (key: string, value: string) => {
+    const p = new URLSearchParams(params); p.set(key, value); p.delete("page");
+    query ? p.set("q", query) : p.delete("q");
+    if (operator === "is_not") p.set(`${key}_not`, "1"); else p.delete(`${key}_not`);
+    setOpen(false); setField(null);
+    navigate(`${location.pathname}?${p}`, { preventScrollReset: true });
+  };
+  const clearOne = (key: string) => {
+    const p = new URLSearchParams(params); p.delete(key); p.delete(`${key}_not`); p.delete("page");
+    if (key === "min" || key === "max") { p.delete("min"); p.delete("max"); }
+    navigate(`${location.pathname}?${p}`, { preventScrollReset: true });
+  };
+  const active = [
+    ["status", "Order status"], ["payment_status", "Payment status"], ["fulfillment", "Fulfillment status"], ["delivery_status", "Delivery status"], ["return_status", "Return status"], ["label_status", "Label status"], ["delivery_method", "Delivery method"], ["state", "Destination"], ["product", "Product"], ["tag", "Tag"],
+  ].filter(([k]) => params.has(k)) as [string, string][];
+  const valueLabel = (key: string, value: string) => fields.find((x) => x.key === key)?.options.find(([v]) => v === value)?.[1] ?? value;
+  return <div className="relative min-w-[200px] flex-1">
+    <Form method="get" className="flex min-h-8 min-w-0 items-center gap-2 rounded-lg border border-rule bg-surface px-2.5 focus-within:border-[#626873] focus-within:ring-2 focus-within:ring-black/5" onSubmit={(e) => { e.preventDefault(); const p = new URLSearchParams(params); query ? p.set("q", query) : p.delete("q"); p.delete("page"); navigate(`${location.pathname}?${p}`, { preventScrollReset: true }); }}>
+      {[...params.entries()].filter(([k]) => !["q", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
+      <Icon name="search" className="h-4 w-4 shrink-0 text-ink-faint" />
+      <input type="search" name="q" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search and filter" onFocus={() => setOpen(true)} className="h-8 min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-faint" aria-label="Search and filter orders" />
+      {!!active.length && <span className="hidden items-center gap-1 lg:flex">{active.map(([k, label]) => { const summary = `${label} ${params.get(`${k}_not`) === "1" ? "is not" : "is"} ${valueLabel(k, params.get(k) ?? "")}`; return <button type="button" key={k} onClick={() => clearOne(k)} className="inline-flex max-w-40 items-center gap-1 rounded-md bg-paper-sunk px-1.5 py-0.5 text-[11px] text-ink" title={summary}><span className="truncate">{summary}</span><Icon name="close" className="h-3 w-3 shrink-0" /></button>; })}</span>}
+      {(activeCount > 0 || filters.q) && <Link to={clearAll} preventScrollReset className="whitespace-nowrap text-[11px] font-medium text-ink-soft hover:text-ink">Clear</Link>}
+    </Form>
+    {open && <>
+      <button type="button" aria-label="Close filters" onClick={() => { setOpen(false); setField(null); }} className="fixed inset-0 z-40 cursor-default bg-black/10 sm:bg-transparent" />
+      <div className="absolute left-0 top-full z-50 mt-1 max-h-[68dvh] w-full min-w-[min(420px,calc(100vw-32px))] max-w-[560px] overflow-y-auto overscroll-contain rounded-xl border border-rule bg-surface p-2 shadow-[0_14px_40px_-16px_rgba(0,0,0,.3)]">
+        {!chosen ? <>
+          <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Add a filter</p>
+          <input autoFocus value={filterText} onChange={(e) => setFilterText(e.target.value)} placeholder="Find a filter" className="input mb-1 text-[12px]" />
+          <div className="space-y-0.5">{fields.filter((x) => x.label.toLowerCase().includes(filterText.toLowerCase())).map((x) => <button type="button" key={x.key} onClick={() => { setField(x.key); setOperator("is"); }} className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[12.5px] text-ink hover:bg-paper"><span>{x.label}</span><Icon name="chevron" className="h-3.5 w-3.5 -rotate-90 text-ink-faint" /></button>)}</div>
+          {params.get("min") || params.get("max") ? <button type="button" onClick={() => { clearOne("min"); clearOne("max"); }} className="mt-1 flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[12.5px] hover:bg-paper">Order total: {params.get("min") ? `₹${params.get("min")}` : "Any"} – {params.get("max") ? `₹${params.get("max")}` : "Any"}<Icon name="close" className="h-3.5 w-3.5" /></button> : null}
+        </> : <>
+          <div className="flex items-center gap-2 border-b border-rule px-1 pb-2"><button type="button" onClick={() => setField(null)} className="rounded-md p-1 hover:bg-paper" aria-label="Back"><Icon name="arrow" className="h-4 w-4 rotate-180" /></button><p className="flex-1 text-[13px] font-semibold">{chosen.label}</p></div>
+          {chosen.key === "total" ? <div className="space-y-2 p-2"><p className="text-[12px] text-ink-soft">Order total is between</p><div className="flex gap-2"><input inputMode="numeric" value={range.min} onChange={(e) => setRange((v) => ({ ...v, min: e.target.value.replace(/\D/g, "") }))} placeholder="From ₹" className="input num text-[12px]"/><input inputMode="numeric" value={range.max} onChange={(e) => setRange((v) => ({ ...v, max: e.target.value.replace(/\D/g, "") }))} placeholder="To ₹" className="input num text-[12px]"/></div><button type="button" className="btn-primary w-full" onClick={() => { const p = new URLSearchParams(params); range.min ? p.set("min", range.min) : p.delete("min"); range.max ? p.set("max", range.max) : p.delete("max"); p.delete("page"); navigate(`${location.pathname}?${p}`, { preventScrollReset: true }); }}>Apply</button></div> : <>
+            <div className="flex gap-2 px-2 py-2">{(["is", "is_not"] as const).map((op) => <button key={op} type="button" onClick={() => setOperator(op)} className={`rounded-lg px-3 py-1.5 text-[12px] font-medium ${operator === op ? "bg-[#e7e9ed] text-ink" : "text-ink-soft hover:bg-paper"}`}>{op === "is" ? "Is" : "Is not"}</button>)}</div>
+            <div className="max-h-[48dvh] space-y-0.5 overflow-y-auto overscroll-contain">{chosen.options.map(([value, label]) => <button type="button" key={value} onClick={() => apply(chosen.key, value)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px] text-ink hover:bg-paper"><span className="flex h-4 w-4 items-center justify-center rounded border border-rule-strong" />{label}</button>)}</div>
+          </>}
+        </>}
+      </div>
+    </>}
+  </div>;
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-rule px-4 py-2.5 last:border-b-0 sm:border-r lg:border-b-0 lg:last:border-r-0">
-      <p className="text-[12px] font-semibold text-ink underline decoration-dotted decoration-ink-faint/60 underline-offset-[3px]">{label}</p>
+      <p className="text-[12px] font-semibold text-ink-soft">{label}</p>
       <p className="num mt-0.5 text-[14px] font-semibold">{value}</p>
     </div>
   );
@@ -224,8 +264,8 @@ const shortWhen = (d: string) => {
 };
 
 const PILL: Record<string, string> = {
-  gray: "bg-[#e3e3e3] text-[#303030]", orange: "bg-[#ffd6a4] text-[#5e4200]", yellow: "bg-[#ffeb78] text-[#4f4700]",
-  green: "bg-[#affebf] text-[#014b40]", red: "bg-[#fedad9] text-[#8e0b21]", blue: "bg-[#d5ebff] text-[#003a5a]",
+  gray: "bg-[#eef0f2] text-[#354052]", orange: "bg-[#f5eee4] text-[#72542e]", yellow: "bg-[#f6f1df] text-[#6b5a27]",
+  green: "bg-[#edf0f3] text-[#354052]", red: "bg-[#f5e9e9] text-[#7c3b3b]", blue: "bg-[#e9eef5] text-[#354d6c]",
 };
 function Pill({ tone, children, title }: { tone: keyof typeof PILL; children: React.ReactNode; title?: string }) {
   return <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-medium ${PILL[tone]}`}><span aria-hidden className="h-1.5 w-1.5 rounded-full border-[1.5px] border-current" />{children}</span>;
@@ -252,6 +292,18 @@ function FulfillPill({ o }: { o: OrderRow }) {
   if (o.awb || s) return <Pill tone="blue" title={title}>{(SHIP_STATUS_LABELS as Record<string, string>)[s ?? "in_transit"] ?? "Fulfilled"}</Pill>;
   return <Pill tone="yellow">Unfulfilled</Pill>;
 }
+function FulfillmentStatusPill({ o }: { o: OrderRow }) {
+  if (!["paid", "cod_placed"].includes(o.status)) return <span className="text-ink-faint">—</span>;
+  return o.awb ? <Pill tone="gray">Fulfilled</Pill> : <Pill tone="yellow">Unfulfilled</Pill>;
+}
+function Tags({ o, compact = false }: { o: OrderRow; compact?: boolean }) {
+  if (!o.tags.length) return <span className="text-ink-faint">—</span>;
+  return <span className="flex max-w-[260px] flex-wrap gap-1">{o.tags.slice(0, compact ? 2 : 4).map((t) => <span key={t} className="rounded-md border border-rule bg-paper px-1.5 py-0.5 text-[10.5px] font-medium text-ink-soft">{t}</span>)}{o.tags.length > (compact ? 2 : 4) && <span className="text-[10.5px] text-ink-faint">+{o.tags.length - (compact ? 2 : 4)}</span>}</span>;
+}
+function FulfilledBy({ o }: { o: OrderRow }) {
+  if (!o.courier) return <span className="text-ink-faint">—</span>;
+  return <span className="whitespace-nowrap text-[12px] text-ink">{courierById(o.courier)?.name ?? o.courier}</span>;
+}
 function ConfirmIcon({ s }: { s: string | null }) {
   if (!s) return null;
   const v = s === "confirmed" ? ["text-good", "Confirmed on WhatsApp"] : s === "cancelled" ? ["text-bad", "Cancelled on WhatsApp"] : ["text-ink-faint", "Waiting for WhatsApp reply"];
@@ -269,6 +321,8 @@ function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
           <p className="mt-0.5 truncate text-[13px]">{o.customer.firstName} {o.customer.lastName}<span className="text-ink-faint"> · {o.customer.city}</span></p>
           <p className="truncate text-[12px] text-ink-faint">{showStore && `${o.storeName} · `}{shortWhen(o.createdAt)}</p>
           <div className="mt-1.5 flex flex-wrap gap-1"><PaymentPill o={o} /><FulfillPill o={o} /></div>
+          <p className="mt-1 text-[11px] text-ink-faint">{o.channel} · {o.courier ? courierById(o.courier)?.name ?? o.courier : "Fulfillment not assigned"}</p>
+          <div className="mt-1"><Tags o={o} compact /></div>
         </div>
         <div className="text-right"><p className="num text-[13px] font-semibold">{inr(paid - o.refunded)}</p><p className="text-[12px] text-ink-faint">{itemsLabel(o)}</p></div>
       </button>
@@ -289,14 +343,18 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
         <td className={`whitespace-nowrap ${strike}`}>{shortWhen(o.createdAt)}</td>
         <td className={`max-w-[200px] truncate ${strike}`} title={`${o.customer.phone}, ${o.customer.city}`}>{o.customer.firstName} {o.customer.lastName}</td>
         {showStore && <td className={`max-w-[160px] truncate ${strike}`}>{o.storeName}</td>}
+        <td><FulfilledBy o={o} /></td>
+        <td><span className="rounded-md border border-rule bg-paper px-1.5 py-0.5 text-[11px] text-ink-soft">{o.channel}</span></td>
         <td className={`num whitespace-nowrap text-right ${strike}`}>{inr(paid - o.refunded)}</td>
         <td><PaymentPill o={o} /></td>
-        <td><FulfillPill o={o} /></td>
+        <td><FulfillmentStatusPill o={o} /></td>
         <td className={`whitespace-nowrap ${strike}`}>{itemsLabel(o)}</td>
+        <td><FulfillPill o={o} /></td>
         <td className={`max-w-[160px] truncate ${strike}`}>{o.shipping ? o.shippingTitle ?? "Standard" : "Free delivery"}</td>
+        <td><Tags o={o} compact /></td>
       </tr>
       {open && (
-        <tr className="[&>td]:bg-paper"><td colSpan={showStore ? 9 : 8}><div className="py-2"><OrderDetails o={o} /></div></td></tr>
+        <tr className="[&>td]:bg-paper"><td colSpan={showStore ? 13 : 12}><div className="py-2"><OrderDetails o={o} /></div></td></tr>
       )}
     </>
   );
@@ -337,6 +395,9 @@ function OrderDetails({ o }: { o: OrderRow }) {
         <p className="text-xs font-medium text-ink-soft">Delivery address</p>
         <p className="text-ink-soft">{o.customer.firstName} {o.customer.lastName}, <a className="num underline" href={`tel:+91${o.customer.phone}`}>{o.customer.phone}</a></p>
         <p className="text-ink-soft">{o.customer.address1}{o.customer.address2 ? `, ${o.customer.address2}` : ""}, {o.customer.city}, {o.customer.state} {o.customer.pincode}</p>
+        <div><p className="mb-1 text-xs font-medium text-ink-soft">Tags</p><div className="flex flex-wrap gap-1"><Tags o={o} /></div></div>
+        <Form method="post" className="flex gap-1.5"><input type="hidden" name="intent" value="tagAdd"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input name="tag" maxLength={32} placeholder="Add a manual tag" className="input min-w-0 py-1.5 text-[12px]"/><button className="btn-secondary px-2.5 py-1.5 text-xs">Add</button></Form>
+        {o.manualTags.map((tag) => <Form key={tag} method="post" className="inline-flex"><input type="hidden" name="intent" value="tagRemove"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input type="hidden" name="tag" value={tag}/><button className="rounded-md border border-rule px-2 py-1 text-[11px] text-ink-soft hover:bg-paper">Remove “{tag}”</button></Form>)}
         {(o.gatewayRef || o.payuMihpayid) && <p className="text-xs text-ink-faint">{gatewayName(o.gateway ?? "payu")} ID {o.gatewayRef ?? o.payuMihpayid}, checkout ID {o.id}</p>}
         {o.error && <p className="break-words text-xs text-bad">{o.error}</p>}
         <div className="flex flex-wrap gap-2 pt-1">

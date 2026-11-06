@@ -1,6 +1,7 @@
 // Building blocks for settings pages: page header, cards with rows, and a modal dialog.
 import { useEffect, useRef } from "react";
 import { Icon, type IconName } from "./Icons";
+import { useBodyScrollLock } from "./useBodyScrollLock";
 
 export function SettingsHeader({ icon, title, children }: { icon: IconName; title: string; children?: React.ReactNode }) {
   return (
@@ -49,15 +50,14 @@ export function RowButton({ icon, title, detail, onClick, trailing }: { icon?: R
 /** Centered modal. Children usually hold a <Form>; footer buttons can submit it with form="...". */
 export function Dialog({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  useBodyScrollLock(open);
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", esc);
     const first = ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea");
     first?.focus();
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", esc); document.body.style.overflow = prev; };
+    return () => { document.removeEventListener("keydown", esc); };
   }, [open, onClose]);
   if (!open) return null;
   return (
@@ -68,7 +68,7 @@ export function Dialog({ open, onClose, title, children, footer, wide }: { open:
           <h2 className="flex-1 text-[13.5px] font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 border-t border-rule px-4 py-3">{footer}</div>}
       </div>
     </div>

@@ -2,6 +2,7 @@ import { Form, Link, useNavigation } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "~/components/Icons";
 import { guideFor } from "~/lib/guides";
+import { useBodyScrollLock } from "./useBodyScrollLock";
 
 export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
   return (
@@ -121,6 +122,7 @@ export function PageHeader({ title, description, actions, icon, back, guide }: {
 /** “Learn more”: opens a side panel with a short step-by-step guide for this page. */
 export function LearnMore({ topic, label = "Learn more", className = "" }: { topic: string; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
+  useBodyScrollLock(open);
   const g = guideFor(topic);
   useEffect(() => {
     if (!open) return;
@@ -143,7 +145,7 @@ export function LearnMore({ topic, label = "Learn more", className = "" }: { top
               <h2 id="guide-title" className="flex-1 text-[14px] font-semibold">{g.title}</h2>
               <button type="button" onClick={() => setOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>
             </header>
-            <div className="flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-relaxed">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 text-[13px] leading-relaxed">
               <p className="text-ink-soft">{g.intro}</p>
               {g.steps && (
                 <ol className="mt-5 space-y-4">

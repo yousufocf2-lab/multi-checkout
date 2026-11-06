@@ -835,6 +835,7 @@ export const orders = pgTable(
       .notNull()
       .references(() => stores.id, { onDelete: "cascade" }),
     sessionId: text("session_id"),
+    checkoutChannel: text("checkout_channel").$type<"native" | "premium_checkout">(),
     status: text("status").notNull(), // pending_payment | paid | failed | cod_placed
     paymentMethod: text("payment_method").notNull(), // prepaid | cod | partial
     customer: jsonb("customer").$type<OrderCustomer>().notNull(),
@@ -859,6 +860,7 @@ export const orders = pgTable(
     tip: integer("tip").notNull().default(0), // tip from the customer (paise), included in total
     refunded: integer("refunded").notNull().default(0), // paise
     refundStatus: text("refund_status"), // partial | full | pending
+    manualTags: jsonb("manual_tags").$type<string[]>().notNull().default([]),
     amountPaid: integer("amount_paid"),
     payuMihpayid: text("payu_mihpayid"),
     payuRaw: jsonb("payu_raw").$type<Record<string, string>>(),
