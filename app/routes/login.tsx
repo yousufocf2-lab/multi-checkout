@@ -80,7 +80,7 @@ export default function Login() {
 
         {stage === "start" && (
           <Form method="post" className="space-y-4" noValidate>
-            <SocialLogin google={social.google} facebook={social.facebook} next={next} error={oauthError} />
+            <SocialLogin google={social.google} next={next} error={oauthError} />
             <input type="hidden" name="intent" value="send" />
             <input type="hidden" name="next" value={next} />
             {data?.error && <Notice tone="error">{data.error}</Notice>}

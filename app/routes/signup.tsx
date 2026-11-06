@@ -98,7 +98,7 @@ export default function Signup() {
       >
         {stage === "start" ? (
           <Form method="post" className="space-y-4" noValidate>
-            <SocialLogin google={social.google} facebook={social.facebook} next="/onboarding?welcome=1" />
+            <SocialLogin google={social.google} next="/onboarding?welcome=1" />
             <input type="hidden" name="intent" value="send" />
             {e.form && <Notice tone="error">{e.form}</Notice>}
             <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />

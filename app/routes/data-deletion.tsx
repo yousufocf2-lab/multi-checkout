@@ -1,4 +1,4 @@
-// Data deletion instructions (required by Facebook Login / Google sign-in reviews).
+// Data deletion instructions (for Google sign-in).
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
@@ -14,7 +14,7 @@ export default function Page() {
   return (
     <SiteLayout loggedIn={d.loggedIn} company={c}>
       <LegalPage title="Delete your data" updated="6 November 2026">
-        <p>You can ask {c.name} ("Growpefy") to delete your account and the personal data linked to it at any time, including data we received when you signed in with Google or Facebook (your name and email address).</p>
+        <p>You can ask {c.name} ("Growpefy") to delete your account and the personal data linked to it at any time, including data we received when you signed in with Google (your name and email address).</p>
         <h2>How to ask</h2>
         <ul>
           <li>Email <a href={`mailto:${c.email}`}>{c.email}</a> with the subject <strong>Delete my account</strong>, or write to us from <Link to="/contact">our contact page</Link>.</li>
@@ -24,7 +24,7 @@ export default function Page() {
         <ul>
           <li>We delete your account, login details and profile within 30 days and confirm by email.</li>
           <li>Records we must keep by law (such as tax invoices and payment records) are kept only for the required period and then deleted.</li>
-          <li>If you signed in with Facebook, you can also remove Growpefy from Facebook: Settings &amp; privacy → Settings → Apps and websites → Growpefy → Remove.</li>
+          <li>If you signed in with Google, you can also remove Growpefy's access at myaccount.google.com → Security → Your connections to third-party apps.</li>
         </ul>
       </LegalPage>
     </SiteLayout>
