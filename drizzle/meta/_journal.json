@@ -393,6 +393,13 @@
       "when": 1794073600000,
       "tag": "0055_order_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1794160000000,
+      "tag": "0056_product_reviews",
+      "breakpoints": true
     }
   ]
 }

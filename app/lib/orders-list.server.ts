@@ -71,6 +71,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   else if (f.tag === "paid_shipping") push("tag", sql`${orders.shipping} > 0`);
   else if (f.tag === "free_shipping") push("tag", sql`${orders.shipping} = 0`);
   else if (f.tag === "Smart Checkout") push("tag", sql`${orders.checkoutChannel} = 'premium_checkout' or (${orders.checkoutChannel} is null and ${orders.sessionId} is not null and exists (select 1 from stores st where st.id = ${orders.storeId} and st.smart_checkout = true))`);
+  else if (f.tag === "Shopify History") push("tag", sql`${orders.checkoutChannel} = 'shopify_history'`);
   else if (f.tag === "WhatsApp") push("tag", sql`${orders.confirmStatus} is not null or ${orders.waMessageId} is not null`);
   else if (f.tag) push("tag", sql`${orders.manualTags} @> ${JSON.stringify([f.tag])}::jsonb`);
   if (f.q) {
@@ -115,7 +116,8 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
   return {
     orders: rows.slice(0, PAGE).map(({ order: o, store }) => {
       const premium = o.checkoutChannel === "premium_checkout" || (!o.checkoutChannel && Boolean(o.sessionId && store.smartCheckout));
-      return { ...o, storeName: names.get(o.storeId) ?? "", channel: premium ? "Premium Checkout" : "Native", tags: [...new Set([...(o.manualTags ?? []), ...(premium ? ["Smart Checkout"] : []), ...(o.confirmStatus || o.waMessageId ? ["WhatsApp"] : [])])] };
+      const history = o.checkoutChannel === "shopify_history";
+      return { ...o, storeName: names.get(o.storeId) ?? "", channel: history ? "Shopify History" : premium ? "Premium Checkout" : "Native", tags: [...new Set([...(o.manualTags ?? []), ...(history ? ["Shopify History"] : []), ...(premium ? ["Smart Checkout"] : []), ...(o.confirmStatus || o.waMessageId ? ["WhatsApp"] : [])])] };
     }),
     hasMore: rows.length > PAGE,
     page,
@@ -194,13 +196,25 @@ import { requireStore, type Viewer } from "./auth.server";
 import { pushToShopify } from "./orders.server";
 import { syncOrderPayment } from "./gateways/index.server";
 import { gatewayName } from "./gateways/catalog";
+import { importShopifyOrdersCsv } from "./shopify-order-import.server";
 
 /** Row actions on the orders list: send to Shopify, check payment with the gateway. */
 export async function handleOrderAction(viewer: Viewer, fd: FormData) {
   const store = await requireStore(viewer, String(fd.get("storeId") ?? ""));
+  const intent = fd.get("intent");
+  if (intent === "import_shopify_history") {
+    const file = fd.get("file");
+    if (!(file instanceof File) || !file.size) return json({ ok: null, error: "Choose Shopify's Orders CSV first." }, { status: 400 });
+    if (file.size > 20 * 1024 * 1024) return json({ ok: null, error: "Order CSV must be smaller than 20 MB." }, { status: 400 });
+    try {
+      const result = await importShopifyOrdersCsv(store, await file.text());
+      return json({ ok: `Imported ${result.imported} historical orders. ${result.alreadyPresent} were already present; no messages or purchase events were sent.`, error: null });
+    } catch (e) {
+      return json({ ok: null, error: e instanceof Error ? e.message : "Order import failed." }, { status: 400 });
+    }
+  }
   const [o] = await db.select().from(orders).where(and(eq(orders.id, String(fd.get("orderId"))), eq(orders.storeId, store.id)));
   if (!o) return json({ ok: null, error: "Order not found" });
-  const intent = fd.get("intent");
   if (intent === "tagAdd" || intent === "tagRemove") {
     const tag = String(fd.get("tag") ?? "").trim().replace(/\s+/g, " ").slice(0, 32);
     if (!tag || tag.length < 2) return json({ ok: null, error: "Tags must contain 2–32 characters." });

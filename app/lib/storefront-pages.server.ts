@@ -7,8 +7,10 @@ import { clientIp } from "./orders.server";
 import { publishedPage } from "./store-pages.server";
 import { baseScope, html, loadProduct, loadProducts, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
+import { reviewsForProduct } from "./reviews.server";
 
 const THEME = "swift";
+const canonical = (ctx: ShopContext, path: string) => ctx.store.platform === "growpefy" && ctx.store.storefrontDomain ? `https://${ctx.store.storefrontDomain}${path}` : "";
 
 /** The store whose own domain this request came in on (www.brand.com or brand.com). Null when none. */
 export async function domainContext(request: Request): Promise<ShopContext | null> {
@@ -28,17 +30,19 @@ export async function domainContext(request: Request): Promise<ShopContext | nul
 export async function homePage(ctx: ShopContext) {
   const [scope, first] = await Promise.all([baseScope(ctx), loadProducts(ctx, { limit: 1 })]);
   return html(await renderPage(THEME, "index", {
-    ...scope, template: "index", page_title: ctx.store.name, hero_image: first[0]?.featured_image ?? null, og_image: first[0]?.featured_image ?? null,
+    ...scope, template: "index", page_title: ctx.store.name, hero_image: first[0]?.featured_image ?? null, og_image: first[0]?.featured_image ?? null, canonical_url: canonical(ctx, "/"),
   }, sectionData(ctx), ctx.look));
 }
 
-export async function productPage(ctx: ShopContext, handle: string) {
+export async function productPage(ctx: ShopContext, handle: string, reviewSubmitted = false) {
   const product = (await loadProduct(ctx, handle)) ?? (handle === SAMPLE && ctx.look?.editor ? sampleProduct(ctx) : null);
   if (!product) throw new Response("Not found", { status: 404 });
   const scope = await baseScope(ctx);
+  const reviewData = product.id ? await reviewsForProduct(ctx.store.id, Number(product.id)) : { rows: [], count: 0, average: 0 };
   return html(await renderPage(THEME, "product", {
     ...scope, template: "product", product,
-    page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image,
+    reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_submitted: reviewSubmitted,
+    page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/products/${handle}`),
   }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }
 
@@ -48,14 +52,14 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
   if (handle !== "all" && !cat) throw new Response("Not found", { status: 404 });
   const products = await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
-  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title }, sectionData(ctx), ctx.look));
+  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, `/collections/${handle}`) }, sectionData(ctx), ctx.look));
 }
 
 export async function infoPage(ctx: ShopContext, handle: string) {
   const page = (await publishedPage(ctx.store.id, handle)) ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
   if (!page) throw new Response("Not found", { status: 404 });
   const scope = await baseScope(ctx);
-  return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title }, sectionData(ctx), ctx.look));
+  return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title, canonical_url: canonical(ctx, `/pages/${handle}`) }, sectionData(ctx), ctx.look));
 }
 
 export async function cartPage(ctx: ShopContext) {

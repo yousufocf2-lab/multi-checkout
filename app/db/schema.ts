@@ -835,7 +835,7 @@ export const orders = pgTable(
       .notNull()
       .references(() => stores.id, { onDelete: "cascade" }),
     sessionId: text("session_id"),
-    checkoutChannel: text("checkout_channel").$type<"native" | "premium_checkout">(),
+    checkoutChannel: text("checkout_channel").$type<"native" | "premium_checkout" | "shopify_history">(),
     status: text("status").notNull(), // pending_payment | paid | failed | cod_placed
     paymentMethod: text("payment_method").notNull(), // prepaid | cod | partial
     customer: jsonb("customer").$type<OrderCustomer>().notNull(),
@@ -1346,6 +1346,24 @@ export const catalogCategoryItems = pgTable(
 
 export type CatalogItem = typeof catalogItems.$inferSelect;
 export type CatalogVariant = typeof catalogVariants.$inferSelect;
+
+/** Customer reviews are private until a store owner approves them. */
+export const productReviews = pgTable(
+  "product_reviews",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    productId: integer("product_id").notNull().references(() => catalogItems.id, { onDelete: "cascade" }),
+    authorName: text("author_name").notNull(),
+    email: text("email"),
+    rating: integer("rating").notNull(),
+    body: text("body").notNull(),
+    status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("product_reviews_store_status_idx").on(t.storeId, t.status), index("product_reviews_product_status_idx").on(t.productId, t.status)],
+);
+export type ProductReview = typeof productReviews.$inferSelect;
 export type CatalogCategory = typeof catalogCategories.$inferSelect;
 
 /** Website pages of a Growpefy Store: policies (shipping, returns, privacy, terms), about, contact. */

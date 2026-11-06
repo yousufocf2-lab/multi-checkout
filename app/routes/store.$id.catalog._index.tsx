@@ -11,6 +11,7 @@ import {
   catalogAllowed, catalogFacets, catalogStats, countByStatus, deleteItems, importFromShopify, listCategories, listItems, setItemsStatus,
   type ItemSort, type ItemStatus, type StockFilter,
 } from "~/lib/catalog.server";
+import { importShopifyProductsCsv } from "~/lib/catalog-csv.server";
 import { formatINR } from "~/lib/pricing";
 import { storePath } from "~/lib/store-code";
 
@@ -60,6 +61,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
         imports.set(store.id, job);
         importFromShopify(store).then((r) => { job.done = r; }).catch((e) => { job.error = e instanceof Error ? e.message : "Import failed"; console.error("[catalog-import]", store.id, e); });
         return json({ ok: "Import started. Products appear here as they come in.", error: null });
+      }
+      case "import_csv": {
+        const file = fd.get("file");
+        if (!(file instanceof File) || !file.size) return json({ ok: null, error: "Choose a Shopify products CSV file first." }, { status: 400 });
+        if (file.size > 15 * 1024 * 1024) return json({ ok: null, error: "CSV file must be smaller than 15 MB." }, { status: 400 });
+        const result = await importShopifyProductsCsv(store, await file.text());
+        return json({ ok: `Imported ${result.created} new products and updated ${result.updated} existing Shopify products (${result.variants} variants).`, error: null });
       }
       case "status": {
         const to = String(fd.get("to")) as ItemStatus;
@@ -113,14 +121,6 @@ export default function Catalog() {
     sp.get("stock") && { k: "stock", label: STOCKS.find((s) => s.v === sp.get("stock"))?.label ?? "" },
   ].filter(Boolean) as { k: string; label: string }[];
 
-  const exportCsv = () => {
-    const rows = [["Title", "Status", "Type", "Brand", "Categories", "Variants", "Price (min)", "Price (max)", "Stock", "Created"],
-      ...items.map((i) => [i.title, i.status, i.productType ?? "", i.vendor ?? "", (i.categories ?? []).join("; "), i.variants, i.minPrice != null ? i.minPrice / 100 : "", i.maxPrice != null ? i.maxPrice / 100 : "", i.tracked ? i.stock ?? 0 : "", i.createdAt.slice(0, 10)])];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    Object.assign(document.createElement("a"), { href: url, download: `${pack.items.toLowerCase()}.csv` }).click();
-    URL.revokeObjectURL(url);
-  };
   const empty = counts.all === 0;
 
   return (
@@ -129,8 +129,14 @@ export default function Catalog() {
         <Icon name="tag" className="h-4 w-4" strokeWidth={1.9} />
         <h1 className="flex-1 text-[15px] font-semibold">{pack.items}</h1>
         <LearnMore topic="catalog" />
+        <Link to={`${base}/reviews`} className="btn-secondary">Reviews</Link>
         {store.shopify && <Form method="post"><input type="hidden" name="intent" value="import" /><button className="btn-secondary">Import from Shopify</button></Form>}
-        {!empty && <button type="button" className="btn-secondary" onClick={exportCsv}>Export</button>}
+        <Form method="post" encType="multipart/form-data" className="flex flex-wrap items-center gap-1.5" onSubmit={(e) => { if (!confirm("Products with a matching Growpefy Shopify-import handle will be updated. Continue?")) e.preventDefault(); }}>
+          <input type="hidden" name="intent" value="import_csv" />
+          <input type="file" name="file" accept=".csv,text/csv" required className="max-w-[210px] text-[11px]" aria-label="Choose Shopify products CSV" />
+          <button className="btn-secondary" disabled={busy}>Import CSV</button>
+        </Form>
+        {!empty && <a href={`${base}/catalog/export.csv`} className="btn-secondary">Export CSV</a>}
         <a href={`/s/${store.slug}`} target="_blank" rel="noreferrer" className="btn-secondary"><Icon name="eye" className="h-4 w-4" />View store</a>
         <Link to="new" className="btn-primary">Add {pack.item}</Link>
       </div>

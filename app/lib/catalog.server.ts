@@ -151,6 +151,7 @@ export type ItemInput = {
   title: string; handle?: string; descriptionHtml: string; status: ItemStatus; vendor?: string | null; productType?: string | null;
   tags: string[]; images: ItemImage[]; options: ItemOption[]; variants: VariantInput[]; categoryIds: number[];
   seoTitle?: string | null; seoDescription?: string | null; kind?: Store["businessType"]; extra?: Record<string, unknown>;
+  source?: "manual" | "shopify"; sourceId?: string | null;
 };
 
 /** Create (no id) or update an item; its variants and categories are replaced by the ones given. */
@@ -164,6 +165,7 @@ export async function saveItem(store: Store, input: ItemInput, id?: number) {
       title: input.title.trim(), handle, descriptionHtml: input.descriptionHtml, status: input.status,
       vendor: input.vendor ?? null, productType: input.productType ?? null, tags: input.tags, images: input.images, options: input.options,
       seoTitle: input.seoTitle ?? null, seoDescription: input.seoDescription ?? null, updatedAt: new Date(),
+      ...(input.source ? { source: input.source } : {}), ...(input.sourceId !== undefined ? { sourceId: input.sourceId } : {}),
       ...(input.extra ? { extra: input.extra } : {}),
     };
     let itemId = id;

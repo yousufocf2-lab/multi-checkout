@@ -32,7 +32,7 @@
       {%- if b.text != blank -%}<p class="eyebrow">{{ b.text }}</p>{%- endif -%}
       <h1 class="pdp__title">{{ product.title }}</h1>
     {%- when 'rating' -%}
-      <p class="pdp__rating"><span class="review__stars">★★★★★</span> {{ b.text | default: 'Loved by our customers' }}</p>
+      <p class="pdp__rating"><span class="review__stars">★★★★★</span> {% if review_count > 0 %}{{ review_average }} / 5 · {{ review_count }} reviews{% else %}{{ b.text | default: 'Be the first to review this product' }}{% endif %}</p>
     {%- when 'price' -%}
       <div class="pdp__price" data-price>{% render 'snippets/price', price: product.price, compare: product.compare_at_price %}</div>
       {%- if product.discount_pct > 0 and section.settings.show_savings -%}<p class="save" data-save>You save {{ product.compare_at_price | minus: product.price | money }} ({{ product.discount_pct }}%)</p>{%- endif -%}
@@ -92,6 +92,30 @@
     {%- endcase -%}
     {%- endfor -%}
   </div>
+</section>
+<section class="reviews wrap" id="reviews">
+  <h2>Customer reviews{% if review_count > 0 %} <span class="reviews__summary">{{ review_average }} / 5 · {{ review_count }}</span>{% endif %}</h2>
+  {% if review_submitted %}<p class="reviews__notice">Thank you. Your review was sent for approval.</p>{% endif %}
+  {% if reviews.size > 0 %}
+    <div class="reviews__list">
+      {% for review in reviews %}
+        <article class="reviews__item">
+          <p class="review__stars" aria-label="{{ review.rating }} out of 5 stars">{% if review.rating >= 1 %}★{% endif %}{% if review.rating >= 2 %}★{% endif %}{% if review.rating >= 3 %}★{% endif %}{% if review.rating >= 4 %}★{% endif %}{% if review.rating >= 5 %}★{% endif %}</p>
+          <p>{{ review.body | escape }}</p><small>{{ review.authorName | escape }} · {{ review.createdAt | date: '%d %b %Y' }}</small>
+        </article>
+      {% endfor %}
+    </div>
+  {% endif %}
+  <details class="reviews__write"><summary>Write a review</summary>
+    <form method="post" class="reviews__form">
+      <label>Name<input name="name" maxlength="80" required autocomplete="name"></label>
+      <label>Email (optional)<input name="email" type="email" maxlength="254" autocomplete="email"></label>
+      <label>Rating<select name="rating" required><option value="">Choose a rating</option><option value="5">5 — Excellent</option><option value="4">4 — Good</option><option value="3">3 — Average</option><option value="2">2 — Poor</option><option value="1">1 — Very poor</option></select></label>
+      <label>Your review<textarea name="body" minlength="10" maxlength="2000" required rows="4"></textarea></label>
+      <div class="reviews__trap" aria-hidden="true"><label>Leave this blank<input name="website" tabindex="-1" autocomplete="off"></label></div>
+      <button class="btn btn--primary" type="submit">Submit review</button>
+    </form>
+  </details>
 </section>
 <script type="application/json" id="product-json">{{ product.json }}</script>
 {%- if settings.pdp_sticky_buy != false -%}<div class="sticky-buy" data-sticky>

@@ -1,16 +1,62 @@
-<section class="hero">
-  <div class="wrap hero__grid">
-    <div class="hero__copy">
-      {%- if section.settings.eyebrow != blank -%}<p class="eyebrow">{{ section.settings.eyebrow }}</p>{%- endif -%}
-      <h1>{{ section.settings.heading | default: shop.name }}</h1>
-      {%- if section.settings.text != blank -%}<p class="hero__text">{{ section.settings.text }}</p>{%- endif -%}
-      <a class="btn btn--primary" href="{{ section.settings.button_link | default: routes.all }}">{{ section.settings.button_label }}</a>
-    </div>
-    {%- assign img = section.settings.image | default: hero_image -%}
-    {%- if img -%}
-    <div class="hero__media"><img src="{{ img | img_url: 1200 }}" alt="" fetchpriority="high"></div>
+{%- assign slides = section.settings.slides -%}
+{%- assign slide_count = slides.size -%}
+<section class="hero hero--banner" data-hero-slider data-slide-count="{{ slide_count }}">
+  <div class="hero__slides">
+    {%- if slide_count > 0 -%}
+      {%- for slide in slides -%}
+      <div class="hero__slide" data-hero-slide{% unless forloop.first %} hidden{% endunless %}>
+        {%- if slide.image != blank or slide.mobile_image != blank -%}
+        <picture class="hero__picture">
+          {%- if slide.mobile_image != blank -%}<source media="(max-width: 760px)" srcset="{{ slide.mobile_image }}">{%- endif -%}
+          <img src="{{ slide.image | default: slide.mobile_image }}" alt="{{ slide.alt | default: section.settings.heading | escape }}"{% if forloop.first %} fetchpriority="high" decoding="async"{% else %} loading="lazy" decoding="async"{% endif %}>
+        </picture>
+        {%- endif -%}
+      </div>
+      {%- endfor -%}
+    {%- else -%}
+      {%- assign img = section.settings.image | default: hero_image -%}
+      {%- if img != blank -%}<div class="hero__slide" data-hero-slide><picture class="hero__picture">{%- if section.settings.mobile_image != blank -%}<source media="(max-width: 760px)" srcset="{{ section.settings.mobile_image }}">{%- endif -%}<img src="{{ img }}" alt="{{ section.settings.heading | escape }}" fetchpriority="high" decoding="async"></picture></div>{%- endif -%}
     {%- endif -%}
   </div>
+  <div class="hero__shade"></div>
+  <div class="hero__copy wrap">
+    {%- if section.settings.eyebrow != blank -%}<p class="eyebrow">{{ section.settings.eyebrow }}</p>{%- endif -%}
+    <h1>{{ section.settings.heading | default: shop.name }}</h1>
+    {%- if section.settings.text != blank -%}<p class="hero__text">{{ section.settings.text }}</p>{%- endif -%}
+    {%- if section.settings.button_label != blank -%}<a class="btn btn--primary" href="{{ section.settings.button_link | default: routes.all }}">{{ section.settings.button_label }}</a>{%- endif -%}
+  </div>
+  {%- if slide_count > 1 -%}
+  <div class="hero__controls" aria-label="Banner slides">
+    <button type="button" data-hero-prev aria-label="Previous banner">‹</button>
+    <span data-hero-position>1 / {{ slide_count }}</span>
+    <button type="button" data-hero-next aria-label="Next banner">›</button>
+  </div>
+  <script>
+    (() => {
+      const root = document.currentScript?.closest('[data-hero-slider]');
+      if (!root || root.dataset.sliderReady) return;
+      root.dataset.sliderReady = '1';
+      const slides = [...root.querySelectorAll('[data-hero-slide]')];
+      const position = root.querySelector('[data-hero-position]');
+      if (slides.length < 2) return;
+      let index = 0;
+      let timer;
+      const show = (next) => {
+        index = (next + slides.length) % slides.length;
+        slides.forEach((slide, i) => { slide.hidden = i !== index; });
+        if (position) position.textContent = `${index + 1} / ${slides.length}`;
+      };
+      const restart = () => { clearInterval(timer); timer = setInterval(() => show(index + 1), 5000); };
+      root.querySelector('[data-hero-prev]')?.addEventListener('click', () => { show(index - 1); restart(); });
+      root.querySelector('[data-hero-next]')?.addEventListener('click', () => { show(index + 1); restart(); });
+      root.addEventListener('mouseenter', () => clearInterval(timer));
+      root.addEventListener('mouseleave', restart);
+      root.addEventListener('focusin', () => clearInterval(timer));
+      root.addEventListener('focusout', restart);
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) restart();
+    })();
+  </script>
+  {%- endif -%}
 </section>
 {% schema %}
 {
@@ -21,7 +67,13 @@
     { "id": "text", "type": "textarea", "label": "Text", "default": "Quality you can feel. Delivered fast, with cash on delivery across India." },
     { "id": "button_label", "type": "text", "label": "Button", "default": "Shop now" },
     { "id": "button_link", "type": "url", "label": "Button link" },
-    { "id": "image", "type": "image", "label": "Image" }
+    { "id": "slides", "type": "list", "label": "Banner images", "item_label": "slide", "fields": [
+      { "id": "image", "type": "image", "label": "Desktop banner (wide)" },
+      { "id": "mobile_image", "type": "image", "label": "Mobile banner (square 1:1)" },
+      { "id": "alt", "type": "text", "label": "Image description" }
+    ] },
+    { "id": "image", "type": "image", "label": "Desktop banner (legacy)" },
+    { "id": "mobile_image", "type": "image", "label": "Mobile banner (square 1:1)" }
   ]
 }
 {% endschema %}
