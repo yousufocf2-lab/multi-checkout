@@ -49,7 +49,7 @@ export default function CreateStore() {
       {a?.error && <Notice tone="error">{a.error}</Notice>}
       {!wantReady && <Notice>{packs.find((p) => p.id === want)?.name} stores are coming soon. We'll tell you the day they're ready; you can start with an online store now.</Notice>}
       <label className="block text-sm font-medium">Brand name
-        <input name="name" required defaultValue={brand} placeholder="e.g. Fusion Prime" className="input mt-1.5 w-full text-base" autoFocus />
+        <input name="name" required defaultValue={brand} placeholder="Your brand" className="input mt-1.5 w-full text-base" autoFocus />
       </label>
       <fieldset>
         <legend className="mb-2 text-sm font-medium">What do you sell?</legend>

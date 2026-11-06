@@ -59,10 +59,10 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
 
       <Section title="Store details" description="How this store is identified on your checkout.">
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Store name" name="name" defaultValue={v.name} error={errors.name} placeholder="Budverse" required />
-          <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="budverse" hint="Lowercase letters, numbers and dashes. Used in the theme script and your checkout address." required />
-          {!woo && !own && <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="budverse.myshopify.com" hint="Settings → Domains in Shopify admin" required />}
-          {!own && <TextField label={woo ? "WordPress site address" : "Store website"} name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://budverse.in"
+          <TextField label="Store name" name="name" defaultValue={v.name} error={errors.name} placeholder="Your brand" required />
+          <TextField label="Store ID" name="slug" defaultValue={v.slug} error={errors.slug} placeholder="your-brand" hint="Lowercase letters, numbers and dashes. Used in the theme script and your checkout address." required />
+          {!woo && !own && <TextField label="Shopify domain" name="shopDomain" defaultValue={v.shopDomain} error={errors.shopDomain} placeholder="your-brand.myshopify.com" hint="Settings → Domains in Shopify admin" required />}
+          {!own && <TextField label={woo ? "WordPress site address" : "Store website"} name="storefrontUrl" defaultValue={v.storefrontUrl} error={errors.storefrontUrl} placeholder="https://yourbrand.com"
             hint={woo ? "Settings → General → Site Address (URL) in WordPress" : siteSuggestions.length > 1 ? "Pick one of the websites you gave us, or type another." : undefined} required
             list={siteSuggestions.length ? "gp-site-suggestions" : undefined} onChange={(e) => onSite(e.currentTarget.value)} />}
           {siteSuggestions.length > 0 && <datalist id="gp-site-suggestions">{siteSuggestions.map((x) => <option key={x.url} value={x.url} />)}</datalist>}

@@ -92,10 +92,10 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
   data.payuMode = payuGw?.mode ?? "test";
 
   if (!data.name) errors.name = "Enter the store name";
-  if (!data.slug) errors.slug = "Enter a short ID, e.g. budverse";
-  if (!woo && !own && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. budverse.myshopify.com";
-  if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://budverse.in";
-  if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://budverse.in";
+  if (!data.slug) errors.slug = "Enter a short ID, e.g. your-brand";
+  if (!woo && !own && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. your-brand.myshopify.com";
+  if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://yourbrand.com";
+  if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://yourbrand.com";
   if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
   if (!woo && !own && !keepApp && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
 

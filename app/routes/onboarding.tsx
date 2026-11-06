@@ -483,7 +483,7 @@ function StepBusiness({ k, errors, busy }: { k: KycData; errors: KycErrors; busy
       <div className="grid gap-5 sm:grid-cols-2">
         <label className="block">
           <span className="label">Brand name<Req /></span>
-          <input name="brandName" className="input" defaultValue={k.brandName} placeholder="e.g. Fusion Prime" aria-invalid={Boolean(errors.brandName) || undefined} />
+          <input name="brandName" className="input" defaultValue={k.brandName} placeholder="Your brand" aria-invalid={Boolean(errors.brandName) || undefined} />
           <Err m={errors.brandName} />
         </label>
         <label className="block">

@@ -161,7 +161,7 @@ function RuleFields({ storeId, defaults }: { storeId: number; defaults: { name?:
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px_110px_110px_120px]">
-        <TextField label="Name (for you)" name="name" defaultValue={defaults.name} placeholder="Festive smartwatch offer" />
+        <TextField label="Name (for you)" name="name" defaultValue={defaults.name} placeholder="Festive offer" />
         <div>
           <span className="label">Discount type</span>
           <input type="hidden" name="type" value={type} />

@@ -210,7 +210,7 @@ export default function EditItem() {
             ))}
           </section>
           <section className="panel space-y-3 p-5">
-            <label className="block text-sm">Type<input name="productType" defaultValue={item?.productType ?? ""} className="input mt-1.5 w-full" placeholder="Smartwatch" /></label>
+            <label className="block text-sm">Type<input name="productType" defaultValue={item?.productType ?? ""} className="input mt-1.5 w-full" placeholder="e.g. T-shirt" /></label>
             <label className="block text-sm">Brand<input name="vendor" defaultValue={item?.vendor ?? ""} className="input mt-1.5 w-full" /></label>
             <label className="block text-sm">Tags<input name="tags" defaultValue={(item?.tags ?? []).join(", ")} className="input mt-1.5 w-full" placeholder="bestseller, new" /></label>
           </section>

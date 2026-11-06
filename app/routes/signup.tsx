@@ -105,7 +105,7 @@ export default function Signup() {
             <SocialLogin google={social.google} next="/dashboard/stores/create" />
             <input type="hidden" name="intent" value="send" />
             {e.form && <Notice tone="error">{e.form}</Notice>}
-            <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
+            <TextField label="Brand name" name="brand" placeholder="Your brand" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />
             <ContactInput mode={mode} setMode={setMode} defaultValue={data?.contact} error={e.contact} phoneOnly />
             <p className="-mt-2 text-xs text-ink-faint">We'll send a one-time code to confirm it. You can add your email in the next step.</p>
             <IndustryPicker initial={data?.industry ?? ""} error={e.profile} />

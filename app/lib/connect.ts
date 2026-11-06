@@ -21,7 +21,7 @@ export function parseShopInput(raw: string): { shop: string } | { error: string 
   return { error: "That doesn't look like a Shopify address. It looks like yourstore.myshopify.com." };
 }
 
-/** "Fusion Prime" → "fusion-prime" (lowercase, dashes for spaces, max 40). */
+/** "Your Brand" → "your-brand" (lowercase, dashes for spaces, max 40). */
 export function slugify(text: string) {
   return text.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
 }
