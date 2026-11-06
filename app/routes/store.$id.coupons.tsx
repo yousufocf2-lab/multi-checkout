@@ -8,11 +8,12 @@ import { EmptyState, Notice, RowAction, Section, SelectField, StatusBadge, Submi
 import { coupons, db } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { couponProblem } from "~/lib/coupons.server";
+import { SmartNote } from "~/components/SmartLock";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const rows = await db.select().from(coupons).where(eq(coupons.storeId, store.id)).orderBy(desc(coupons.createdAt));
-  return json({ storeId: store.id, coupons: rows.map((c) => ({ ...c, problem: c.active ? couponProblem(c) : null })) });
+  return json({ storeId: store.id, smart: store.smartCheckout, coupons: rows.map((c) => ({ ...c, problem: c.active ? couponProblem(c) : null })) });
 }
 
 const istDate = (v: string) => (v ? new Date(`${v}:00+05:30`) : null);
@@ -46,7 +47,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
       minCartRupees: int("minCartRupees") ?? 0,
       maxDiscountRupees: int("maxDiscountRupees"),
       stackable: fd.get("stackable") === "on",
-      paymentRestriction: ["prepaid", "cod"].includes(s("paymentRestriction")) ? s("paymentRestriction") : "any",
+      // Coupons for one payment method only are a Smart Checkout feature
+      paymentRestriction: store.smartCheckout && ["prepaid", "cod"].includes(s("paymentRestriction")) ? s("paymentRestriction") : "any",
       showInList: fd.get("showInList") === "on",
       usageLimit: int("usageLimit"),
       startsAt: istDate(s("startsAt")),
@@ -85,7 +87,7 @@ type CouponRow = ReturnType<typeof useLoaderData<typeof loader>>["coupons"][numb
 const toLocal = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + 330 * 60_000).toISOString().slice(0, 16) : "");
 
 export default function Coupons() {
-  const { storeId, coupons: list } = useLoaderData<typeof loader>();
+  const { storeId, smart, coupons: list } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const errorsFor = (form: string) => (res?.form === form ? (res.errors ?? {}) : {}) as Record<string, string>;
 
@@ -95,7 +97,7 @@ export default function Coupons() {
 
       <Section title="Create coupon" description="Customers can tap a coupon at checkout or type the code.">
         <Form method="post" className="space-y-5" key={list.length}>
-          <CouponFields storeId={storeId} errors={errorsFor("add")} />
+          <CouponFields storeId={storeId} smart={smart} errors={errorsFor("add")} />
           <SubmitButton intent="add" busyText="Creating">Create coupon</SubmitButton>
         </Form>
       </Section>
@@ -107,7 +109,7 @@ export default function Coupons() {
           <table className="table min-w-[760px]">
             <thead><tr><th>Code</th><th>Discount</th><th>Rules</th><th className="text-right">Used</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {list.map((c) => <CouponRowView key={c.id} c={c} storeId={storeId} errors={errorsFor(`edit${c.id}`)} saved={res?.form === `edit${c.id}` && Boolean(res.ok)} />)}
+              {list.map((c) => <CouponRowView smart={smart} key={c.id} c={c} storeId={storeId} errors={errorsFor(`edit${c.id}`)} saved={res?.form === `edit${c.id}` && Boolean(res.ok)} />)}
             </tbody>
           </table>
         </div>
@@ -116,7 +118,7 @@ export default function Coupons() {
   );
 }
 
-function CouponRowView({ c, storeId, errors, saved }: { c: CouponRow; storeId: number; errors: Record<string, string>; saved: boolean }) {
+function CouponRowView({ c, storeId, smart, errors, saved }: { c: CouponRow; storeId: number; smart: boolean; errors: Record<string, string>; saved: boolean }) {
   const [editing, setEditing] = useState(Object.keys(errors).length > 0);
   useEffect(() => { if (saved) setEditing(false); }, [saved]);
   const errKey = JSON.stringify(errors);
@@ -148,7 +150,7 @@ function CouponRowView({ c, storeId, errors, saved }: { c: CouponRow; storeId: n
           <td colSpan={6} className="bg-paper/60">
             <Form method="post" className="space-y-5 py-2">
               <input type="hidden" name="id" value={c.id} />
-              <CouponFields storeId={storeId} errors={errors} defaults={c} />
+              <CouponFields storeId={storeId} smart={smart} errors={errors} defaults={c} />
               <div className="flex gap-2">
                 <SubmitButton intent="edit" busyText="Saving">Save changes</SubmitButton>
                 <button type="button" className="btn-secondary" onClick={() => setEditing(false)}>Cancel</button>
@@ -161,7 +163,7 @@ function CouponRowView({ c, storeId, errors, saved }: { c: CouponRow; storeId: n
   );
 }
 
-function CouponFields({ storeId, errors, defaults }: { storeId: number; errors: Record<string, string>; defaults?: CouponRow }) {
+function CouponFields({ storeId, smart, errors, defaults }: { storeId: number; smart: boolean; errors: Record<string, string>; defaults?: CouponRow }) {
   const [type, setType] = useState(defaults?.type ?? "percent");
   const [appliesTo, setAppliesTo] = useState(defaults?.products?.length ? "products" : "all");
   return (
@@ -181,11 +183,19 @@ function CouponFields({ storeId, errors, defaults }: { storeId: number; errors: 
           <option value="all">All products</option>
           <option value="products">Specific products</option>
         </SelectField>
-        <SelectField label="Payment method" name="paymentRestriction" defaultValue={defaults?.paymentRestriction ?? "any"} wrap="sm:col-span-2">
-          <option value="any">Online and COD</option>
-          <option value="prepaid">Only when paying online</option>
-          <option value="cod">Only Cash on Delivery</option>
-        </SelectField>
+        {smart ? (
+          <SelectField label="Payment method" name="paymentRestriction" defaultValue={defaults?.paymentRestriction ?? "any"} wrap="sm:col-span-2">
+            <option value="any">Online and COD</option>
+            <option value="prepaid">Only when paying online</option>
+            <option value="cod">Only Cash on Delivery</option>
+          </SelectField>
+        ) : (
+          <div className="sm:col-span-2">
+            <span className="label">Payment method</span>
+            <select disabled className="input cursor-not-allowed opacity-70"><option>All payment methods</option></select>
+            <div className="mt-1.5"><SmartNote storeId={storeId}>Coupons for only COD or only prepaid need Smart Checkout.</SmartNote></div>
+          </div>
+        )}
         {appliesTo === "products" && (
           <div className="sm:col-span-4">
             <span className="label">Products</span>

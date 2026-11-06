@@ -8,12 +8,13 @@ import { Notice, RowAction, Section, StatusBadge, SubmitButton, TextField, Toggl
 import { db, discountRules, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { storePath } from "~/lib/store-code";
+import { SmartNote } from "~/components/SmartLock";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const rules = await db.select().from(discountRules).where(eq(discountRules.storeId, store.id)).orderBy(desc(discountRules.createdAt));
   return json({
-    store: { id: store.id, prepaid: store.prepaidDiscountPct, cod: store.codDiscountPct, codEnabled: store.codEnabled, upsellEnabled: store.upsellEnabled, upsellProducts: store.upsellProducts },
+    store: { id: store.id, smart: store.smartCheckout, prepaid: store.prepaidDiscountPct, cod: store.codDiscountPct, codEnabled: store.codEnabled, upsellEnabled: store.upsellEnabled, upsellProducts: store.upsellProducts },
     rules,
   });
 }
@@ -22,12 +23,14 @@ const pct = (v: FormDataEntryValue | null) => Math.max(0, Math.min(100, Math.rou
 const rupees = (v: FormDataEntryValue | null) => Math.max(0, Math.min(1_000_000, Math.round(Number(v) || 0)));
 
 /** Reads name, type, online/COD values and products from an add or edit form. */
-function readRule(fd: FormData) {
+function readRule(fd: FormData, smart: boolean) {
   const products = parsePicked(fd.get("products"));
   const type = fd.get("type") === "flat" ? "flat" : "percent";
   const val = type === "flat" ? rupees : pct;
   const name = String(fd.get("name") ?? "").trim() || `${products.length} product${products.length === 1 ? "" : "s"}`;
   const partialRaw = String(fd.get("partial") ?? "").trim();
+  // Standard checkout: one discount for every payment method
+  if (!smart) return { products, type, name, prepaidPct: val(fd.get("prepaid")), codPct: val(fd.get("prepaid")), partialPct: null };
   return { products, type, name, prepaidPct: val(fd.get("prepaid")), codPct: val(fd.get("cod")), partialPct: partialRaw === "" ? null : val(partialRaw) };
 }
 
@@ -42,13 +45,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       await db.update(stores).set({ prepaidDiscountPct: pct(fd.get("prepaid")), codDiscountPct: pct(fd.get("cod")) }).where(eq(stores.id, store.id));
       return json({ ok: "Store-wide discount saved", errors: null });
     case "addRule": {
-      const r = readRule(fd);
+      const r = readRule(fd, store.smartCheckout);
       if (!r.products.length) return json({ ok: null, errors: { rule: "Pick at least one product" } }, { status: 400 });
       await db.insert(discountRules).values({ storeId: store.id, ...r });
       return json({ ok: "Product discount added", errors: null });
     }
     case "updateRule": {
-      const r = readRule(fd);
+      const r = readRule(fd, store.smartCheckout);
       if (!r.products.length) return json({ ok: null, errors: { [`edit${id}`]: "Pick at least one product" } }, { status: 400 });
       await db.update(discountRules).set(r).where(own);
       return json({ ok: `“${r.name}” updated`, errors: null });
@@ -77,11 +80,13 @@ export default function Discounts() {
     <div className="max-w-4xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
 
-      <Notice>The store-wide online and COD discount (or fee) is now in <Link to={`${storePath(store.id)}/payments`} className="font-medium underline">Payment methods</Link>. Product discounts below win for their products.</Notice>
+      {store.smart
+        ? <Notice>The store-wide online and COD discount (or fee) is in <Link to={`${storePath(store.id)}/payment-rules`} className="font-medium underline">Payment offers & fees</Link>. Product discounts below win for their products.</Notice>
+        : <SmartNote storeId={store.id}>Different discounts for COD and prepaid need Smart Checkout. Each discount here applies the same to every payment method.</SmartNote>}
 
-      <Section title="Product discounts" description="Give selected products their own online, COD and Partial COD discount, as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins.">
+      <Section title="Product discounts" description={store.smart ? "Give selected products their own online, COD and Partial COD discount, as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins." : "Give selected products a discount, as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins."}>
         <Form method="post" className="space-y-4 rounded-lg border border-dashed border-rule-strong p-4" key={rules.length}>
-          <RuleFields storeId={store.id} defaults={{ type: "percent", prepaid: store.prepaid, cod: store.cod }} />
+          <RuleFields storeId={store.id} smart={store.smart} defaults={{ type: "percent", prepaid: store.prepaid, cod: store.cod }} />
           {errors.rule && <span className="error-text">{errors.rule}</span>}
           <SubmitButton intent="addRule" busyText="Adding">Add product discount</SubmitButton>
         </Form>
@@ -91,7 +96,7 @@ export default function Discounts() {
             <p className="text-sm text-ink-faint">No product discounts yet. Every product uses the discount set in Payment methods.</p>
           ) : (
             <ul className="divide-y divide-rule rounded-lg border border-rule">
-              {rules.map((r) => <RuleRow key={r.id} r={r} storeId={store.id} error={errors[`edit${r.id}`]} />)}
+              {rules.map((r) => <RuleRow key={r.id} r={r} storeId={store.id} smart={store.smart} error={errors[`edit${r.id}`]} />)}
             </ul>
           )}
         </div>
@@ -116,7 +121,7 @@ type Rule = ReturnType<typeof useLoaderData<typeof loader>>["rules"][number];
 
 const fmtValue = (type: string, v: number) => (type === "flat" ? `₹${v.toLocaleString("en-IN")}` : `${v}%`);
 
-function RuleRow({ r, storeId, error }: { r: Rule; storeId: number; error?: string }) {
+function RuleRow({ r, storeId, smart, error }: { r: Rule; storeId: number; smart: boolean; error?: string }) {
   const [editing, setEditing] = useState(false);
   const nav = useNavigation();
   const saving = nav.state !== "idle" && nav.formData?.get("intent") === "updateRule" && nav.formData?.get("id") === String(r.id);
@@ -134,7 +139,7 @@ function RuleRow({ r, storeId, error }: { r: Rule; storeId: number; error?: stri
           </p>
           <p className="mt-0.5 truncate text-xs text-ink-faint">{r.products.map((p) => p.title).join(", ")}</p>
         </div>
-        <p className="num text-sm"><b>{fmtValue(r.type, r.prepaidPct)}</b> online <span className="text-ink-faint">/</span> <b>{fmtValue(r.type, r.codPct)}</b> COD{r.partialPct != null && <> <span className="text-ink-faint">/</span> <b>{fmtValue(r.type, r.partialPct)}</b> Partial</>}{r.type === "flat" && <span className="text-ink-faint"> per item</span>}</p>
+        {!smart ? <p className="num text-sm"><b>{fmtValue(r.type, r.prepaidPct)}</b> off</p> : <p className="num text-sm"><b>{fmtValue(r.type, r.prepaidPct)}</b> online <span className="text-ink-faint">/</span> <b>{fmtValue(r.type, r.codPct)}</b> COD{r.partialPct != null && <> <span className="text-ink-faint">/</span> <b>{fmtValue(r.type, r.partialPct)}</b> Partial</>}{r.type === "flat" && <span className="text-ink-faint"> per item</span>}</p>}
         <div className="flex">
           <button type="button" className="btn-quiet" onClick={() => setEditing((e) => !e)} aria-expanded={editing}>{editing ? "Cancel" : "Edit"}</button>
           <RowAction intent="toggleRule" id={r.id} label={r.active ? "Pause" : "Resume"} />
@@ -144,7 +149,7 @@ function RuleRow({ r, storeId, error }: { r: Rule; storeId: number; error?: stri
       {editing && (
         <Form method="post" className="mt-3 space-y-4 rounded-lg border border-rule bg-paper/60 p-4">
           <input type="hidden" name="id" value={r.id} />
-          <RuleFields storeId={storeId} defaults={{ name: r.name, type: r.type, prepaid: r.prepaidPct, cod: r.codPct, partial: r.partialPct, products: r.products }} />
+          <RuleFields storeId={storeId} smart={smart} defaults={{ name: r.name, type: r.type, prepaid: r.prepaidPct, cod: r.codPct, partial: r.partialPct, products: r.products }} />
           {error && <span className="error-text">{error}</span>}
           <div className="flex gap-2">
             <SubmitButton intent="updateRule" busyText="Saving">Save changes</SubmitButton>
@@ -156,12 +161,12 @@ function RuleRow({ r, storeId, error }: { r: Rule; storeId: number; error?: stri
   );
 }
 
-function RuleFields({ storeId, defaults }: { storeId: number; defaults: { name?: string; type: string; prepaid: number; cod: number; partial?: number | null; products?: Rule["products"] } }) {
+function RuleFields({ storeId, smart, defaults }: { storeId: number; smart: boolean; defaults: { name?: string; type: string; prepaid: number; cod: number; partial?: number | null; products?: Rule["products"] } }) {
   const [type, setType] = useState(defaults.type === "flat" ? "flat" : "percent");
   const flat = type === "flat";
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px_110px_110px_120px]">
+      <div className={`grid gap-4 ${smart ? "sm:grid-cols-[minmax(0,1fr)_170px_110px_110px_120px]" : "sm:grid-cols-[minmax(0,1fr)_170px_140px]"}`}>
         <TextField label="Name (for you)" name="name" defaultValue={defaults.name} placeholder="Festive offer" />
         <div>
           <span className="label">Discount type</span>
@@ -173,12 +178,12 @@ function RuleFields({ storeId, defaults }: { storeId: number; defaults: { name?:
             ))}
           </div>
         </div>
-        <TextField key={`p${type}`} label="Pay online" name="prepaid" type="number" min={0} max={flat ? undefined : 100}
+        <TextField key={`p${type}`} label={smart ? "Pay online" : "Discount"} name="prepaid" type="number" min={0} max={flat ? undefined : 100}
           defaultValue={flat === (defaults.type === "flat") ? defaults.prepaid : flat ? 100 : defaults.prepaid} hint={flat ? "₹ off each item" : "% off"} />
-        <TextField key={`c${type}`} label="COD" name="cod" type="number" min={0} max={flat ? undefined : 100}
+        {smart && <><TextField key={`c${type}`} label="COD" name="cod" type="number" min={0} max={flat ? undefined : 100}
           defaultValue={flat === (defaults.type === "flat") ? defaults.cod : flat ? 0 : defaults.cod} hint={flat ? "₹ off each item" : "% off"} />
         <TextField key={`pc${type}`} label="Partial COD" name="partial" type="number" min={0} max={flat ? undefined : 100} placeholder="Store setting"
-          defaultValue={defaults.partial ?? ""} hint="Blank = Payment methods %" />
+          defaultValue={defaults.partial ?? ""} hint="Blank = Payment methods %" /></>}
       </div>
       <div>
         <span className="label">Products</span>

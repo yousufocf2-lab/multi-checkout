@@ -268,7 +268,7 @@ function insightsFor(d: Data, tasks: HomeTasks, base: string | null) {
   const out: { icon: IconName; text: React.ReactNode; to?: string; cta?: string }[] = [];
   const prepaid = t.orders ? t.prepaidOrders / t.orders : null;
   if (prepaid != null && t.orders >= 10 && prepaid < 0.4) {
-    out.push({ icon: "rupee", text: <>Only <b>{Math.round(prepaid * 100)}%</b> of orders are prepaid. A small prepaid discount usually cuts RTO and lifts this.</>, to: base ? `${base}/payments` : undefined, cta: "Payment offers" });
+    out.push({ icon: "rupee", text: <>Only <b>{Math.round(prepaid * 100)}%</b> of orders are prepaid. A small prepaid discount usually cuts RTO and lifts this.</>, to: base ? `${base}/payment-rules` : undefined, cta: "Payment offers" });
   }
   if (t.abandonedValue > 0 && t.abandoned >= 3) {
     out.push({ icon: "cart", text: <><b>{inr(t.abandonedValue)}</b> was left in {num(t.abandoned)} abandoned checkouts. WhatsApp reminders win back a share of these.</>, to: "/dashboard/orders/abandoned", cta: "See checkouts" });

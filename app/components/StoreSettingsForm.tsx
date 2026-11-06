@@ -101,6 +101,7 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
       </Section>
       )}
 
+      {isNew ? (<>
       <Section title="Payment gateways" description="Connect up to 3 gateways. Payments go straight to your account. If the primary has a problem, the backup takes over.">
         <GatewaysEditor initial={v.gatewayViews ?? []} errors={errors} webhookBase={v.webhookBase} />
         <label className={`mt-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-rule p-3 ${woo || own ? "hidden" : ""}`}>
@@ -116,6 +117,7 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
           COD wait time, OTP and blocking customers are in <b className="text-ink">RTO Suite</b>.
         </p>
       </Section>
+      </>) : null}
 
       <Section id="meta" title="Meta ads" description="Shows ad spend, ROAS and cost per order on your dashboard, and sends purchases to your pixel.">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -145,7 +147,7 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
         </Section>
       )}
 
-      {!isNew && <p className="text-sm text-ink-soft">Logo, brand color and the checkout's look are under <b>Settings → Checkout design</b>.</p>}
+      {!isNew && <p className="text-sm text-ink-soft">Payment gateways and methods are in <b>Settings → Payments</b>. Logo, brand color and the checkout's look are in <b>Settings → Checkout</b>.</p>}
       <div className="sticky bottom-16 -mx-4 flex justify-end border-t border-rule bg-paper/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border sm:px-5 lg:bottom-0">
         <SubmitButton intent="saveStore" busyText="Saving">{submitLabel}</SubmitButton>
       </div>

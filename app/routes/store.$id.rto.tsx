@@ -12,6 +12,7 @@ import { BLOCK_KINDS, BLOCK_LABELS, CALL_UNLOCK_ORDERS, CSV_SOURCES, CSV_SOURCE_
 import { MAX_COOLDOWN_HOURS } from "~/lib/cod.server";
 import { hasCourier } from "~/lib/logistics.server";
 import { resolveShield } from "~/lib/rto-shield";
+import { SmartNote } from "~/components/SmartLock";
 import { addBlocks, completedOrders, messaging, otpReady, waReady } from "~/lib/rto.server";
 import { rupees } from "~/lib/wallet";
 import { getWallet, ratesFor, usageSummary } from "~/lib/wallet.server";
@@ -52,6 +53,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     storeId: store.id, isAdmin: viewer.role === "admin", codEnabled: store.codEnabled,
     shield: { unlocked: courier, on: courier && resolveShield(store.rtoShield).enabled },
     cod: { cooldownOn: store.codCooldownEnabled, cooldown, blockAfterPrepaid: store.codBlockAfterPrepaid },
+    smart: store.smartCheckout,
     otp: { on: store.otpEnabled, prepaid: store.otpPrepaid, cod: store.otpCod, timing: store.otpTiming === "start" ? "start" as const : "end" as const, ready: otpReady(m), price: rates.otp },
     usage,
     block: { on: store.blockEnabled, codOnly: store.blockCodOnly },
@@ -86,6 +88,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const enabled = on("otpOn");
     const prepaid = on("otpPrepaid"), cod = on("otpCod");
     if (enabled && !prepaid && !cod) return res(null, "Tick Prepaid, COD or both");
+    if (enabled && !store.smartCheckout) return res(null, "OTP verification is part of Smart Checkout. Activate it in Settings → Checkout.");
     await db.update(stores).set({ otpEnabled: enabled, otpPrepaid: prepaid, otpCod: cod, otpTiming: fd.get("otpTiming") === "start" ? "start" : "end" }).where(eq(stores.id, store.id));
     return res(enabled ? "OTP verification is on" : "OTP verification is off");
   }
@@ -319,6 +322,7 @@ function OtpForm({ d, msg }: { d: D; msg: Msg }) {
   const [timing, setTiming] = useState<"start" | "end">(d.otp.timing);
   return (
     <Form method="post" id="otp" className="panel scroll-mt-6 space-y-4 p-5">
+      {!d.smart && <SmartNote storeId={d.storeId}>OTP verification works with Smart Checkout. On the standard checkout no OTP is sent.</SmartNote>}
       <Head emoji="🔐" title="OTP verification" text="Customers confirm their mobile number with a code. Cuts fake numbers and prank orders." on={on} setOn={setOn} name="otpOn" price={`${rupees(d.otp.price)} per OTP`} />
       {!d.otp.ready && <Notice tone="warning">{d.isAdmin ? <>OTP sending isn't set up yet. Add the MSG91 key in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "OTP sending is being set up by Growpefy. Your settings are saved and OTP starts automatically once it's live."}</Notice>}
       <div className={`grid gap-2 sm:grid-cols-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>

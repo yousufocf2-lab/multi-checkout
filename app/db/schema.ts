@@ -341,10 +341,21 @@ export const stores = pgTable("stores", {
   // Collaborators: people outside the business ask for access with this code (regenerate to stop old requests)
   collabCode: text("collab_code"),
   collabOpen: boolean("collab_open").notNull().default(true),
+  // Smart Checkout: OTP, payment-method discounts and fees, Partial COD and method-specific offers. Off = standard checkout.
+  smartCheckout: boolean("smart_checkout").notNull().default(false),
+  smartActivatedAt: timestamp("smart_activated_at", { withTimezone: true }),
+  smartConsent: jsonb("smart_consent").$type<SmartConsent>(),
+  // Checkout fields (email / landmark: hidden, optional or required) and tipping
+  checkoutRules: jsonb("checkout_rules").$type<CheckoutRules>(),
+  tipping: jsonb("tipping").$type<TippingSettings>(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export type SmartConsent = { by: string; at: string; ip?: string | null; terms: string; auto?: boolean; deactivatedBy?: string; deactivatedAt?: string };
+export type FieldMode = "hidden" | "optional" | "required";
+export type CheckoutRules = { email?: FieldMode; landmark?: FieldMode; orderNote?: boolean };
+export type TippingSettings = { on?: boolean; presets?: number[]; custom?: boolean; label?: string };
 export type EntityType = "individual" | "sole_proprietorship" | "partnership" | "llp" | "private_limited" | "public_limited" | "trust_society" | "other";
 export type PostalAddress = { line1?: string; line2?: string; city?: string; state?: string; pincode?: string; country?: string };
 export type BusinessProfile = {
@@ -845,6 +856,7 @@ export const orders = pgTable(
     waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery
     paymentFee: integer("payment_fee").notNull().default(0), // fee for the payment method (e.g. COD charges), included in total
+    tip: integer("tip").notNull().default(0), // tip from the customer (paise), included in total
     refunded: integer("refunded").notNull().default(0), // paise
     refundStatus: text("refund_status"), // partial | full | pending
     amountPaid: integer("amount_paid"),

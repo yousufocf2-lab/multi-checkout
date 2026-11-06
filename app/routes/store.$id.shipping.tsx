@@ -39,7 +39,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (where === "pincodes" && !prefixes.length) errors.where = "Enter at least one pincode or prefix";
     const data = {
       name: s("name"), pricePaise: Math.round(price * 100), minOrderRupees: min, maxOrderRupees: max,
-      states, pincodePrefixes: prefixes, paymentMethod: ["prepaid", "cod"].includes(s("paymentMethod")) ? s("paymentMethod") : "any",
+      states, pincodePrefixes: prefixes, paymentMethod: store.smartCheckout && ["prepaid", "cod"].includes(s("paymentMethod")) ? s("paymentMethod") : "any",
     };
     return { data, errors };
   };

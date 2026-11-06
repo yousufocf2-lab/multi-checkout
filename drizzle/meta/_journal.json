@@ -372,6 +372,13 @@
       "when": 1793440001600,
       "tag": "0052_team_access",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793440001700,
+      "tag": "0053_smart_checkout",
+      "breakpoints": true
     }
   ]
 }

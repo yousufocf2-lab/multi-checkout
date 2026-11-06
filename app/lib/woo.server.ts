@@ -154,7 +154,10 @@ export async function createOrder(store: Store, order: Order) {
     },
     items: order.items.map((l) => ({ id: l.variantId, quantity: l.quantity, price: rupees(l.free ? 0 : l.pricePaise), free: Boolean(l.free), offer: l.offer ?? null })),
     discounts,
-    fees: order.paymentFee > 0 ? [{ label: isPartial ? "Partial COD charges" : isCod ? "COD charges" : "Payment charges", amount: rupees(order.paymentFee) }] : [],
+    fees: [
+      ...(order.paymentFee > 0 ? [{ label: isPartial ? "Partial COD charges" : isCod ? "COD charges" : "Payment charges", amount: rupees(order.paymentFee) }] : []),
+      ...((order.tip ?? 0) > 0 ? [{ label: "Tip", amount: rupees(order.tip) }] : []),
+    ],
     shipping: { title: order.shippingTitle || "Standard delivery", amount: rupees(order.shipping) },
     tags: ["Growpefy", isCod ? "COD" : isPartial ? "Partial COD" : "Prepaid", order.couponCode].filter(Boolean),
     note: `Growpefy checkout order ${order.id}${order.gatewayRef || order.payuMihpayid ? `, ${gw ?? "gateway"} ${order.gatewayRef ?? order.payuMihpayid}` : ""}${isPartial ? `. Partial COD: ₹${rupees(order.amountPaid ?? order.advance ?? 0)} paid online, collect ₹${rupees(order.total - (order.advance ?? 0))} on delivery` : ""}`,

@@ -22,7 +22,9 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   ads: { title: "Ads", description: "Meta and Google Ads: spend, cost per order and ROAS.", icon: "ads", guide: "ads" },
   inbox: { title: "WhatsApp inbox", description: "Chats with customers who got a message from your store.", icon: "inbox", guide: "inbox" },
   whatsapp: { title: "WhatsApp", description: "Sender verification and automatic messages.", icon: "chat", guide: "whatsapp" },
-  payments: { title: "Payments", description: "Prepaid, COD and Partial COD: on/off, discount or fee.", icon: "rupee", guide: "payments" },
+  payments: { title: "Payments", description: "Payment gateways and the methods customers can choose.", icon: "rupee", guide: "payments" },
+  checkout: { title: "Checkout", description: "Smart Checkout, customer details, OTP and tipping.", icon: "cart", guide: "checkout" },
+  "payment-rules": { title: "Payment offers & fees", description: "Discount or fee per payment method, Partial COD and when each shows.", icon: "rupee", guide: "payments", back: "checkout" },
   promotions: { title: "Discounts", description: "", icon: "discounts", guide: "discounts" },
   discounts: { title: "Amount off products", description: "Product discounts by payment method and checkout recommendations.", icon: "discounts", guide: "discounts", back: "promotions" },
   coupons: { title: "Discount codes", description: "Codes customers can apply at checkout.", icon: "coupons", guide: "discounts", back: "promotions" },
@@ -32,7 +34,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   settings: { title: "Store profile", description: "Business details, contact, store defaults and order IDs.", icon: "stores", guide: "general" },
   locations: { title: "Warehouses & locations", description: "Where you keep stock, ship from and offer pickup.", icon: "box" },
   website: { title: "Domains", description: "Your own domain and the free Growpefy address.", icon: "globe", guide: "domains" },
-  design: { title: "Checkout", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout" },
+  design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout", back: "checkout" },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
   logistics: { title: "Shipments", description: "Connect couriers to track shipments and unlock RTO Shield.", icon: "shipping", guide: "logistics" },
   "rto-shield": { title: "RTO Shield", description: "Block COD based on a customer's delivery history.", icon: "shield", guide: "rto-shield" },
@@ -54,7 +56,7 @@ export default function StoreLayout() {
         <div className="mb-4 flex min-h-[32px] flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {t.back
-              ? <Link to={`${storePath(store.id)}/${t.back}`} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back to discounts"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>
+              ? <Link to={`${storePath(store.id)}/${t.back}`} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>
               : <Icon name={t.icon} className="h-4 w-4 shrink-0" strokeWidth={1.9} />}
             <h1 className="truncate text-[15px] font-semibold leading-tight tracking-tight">{t.title}</h1>
             {!store.active && <StatusBadge status="off" label="Checkout off" />}

@@ -1,244 +1,141 @@
+// Settings → Payments: connect payment gateways with their API keys, and turn payment methods on or off.
+// Discounts and fees per method live in Payment offers & fees (Smart Checkout).
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useActionData, useLoaderData } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { eq } from "drizzle-orm";
 import { useState } from "react";
-import { ProductPicker, parsePicked } from "~/components/ProductPicker";
-import { Notice, SubmitButton, Toggle } from "~/components/ui";
+import { GatewaysEditor } from "~/components/GatewaysEditor";
+import { Icon } from "~/components/Icons";
+import { Card } from "~/components/settings-ui";
+import { SmartNote } from "~/components/SmartLock";
+import { Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
+import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
+import { GATEWAYS } from "~/lib/gateways/catalog";
 import { onlineReady } from "~/lib/gateways/index.server";
-import { requireStore, requireViewer } from "~/lib/auth.server";
-import {
-  DEFAULT_COD_UNAVAILABLE_MESSAGE, METHOD_LABEL, describeRule, resolvePaymentMethods,
-  type AdjustMode, type AmountType, type MethodSettings, type PartialSettings, type PayMethod, type ShowRule,
-} from "~/lib/payment-methods";
+import { METHOD_LABEL, resolvePaymentMethods, type PayMethod } from "~/lib/payment-methods";
+import { storePath } from "~/lib/store-code";
+import { parseGateways } from "~/lib/store-form.server";
+import { storeForClient } from "~/lib/store-view.server";
+import { clearTokenCache } from "~/lib/platform.server";
+import { forgetProxyCheck } from "~/lib/proxy-checkout.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
+  const view = storeForClient(store);
+  const pm = resolvePaymentMethods(store.paymentMethods, store);
   return json({
-    storeId: store.id,
-    payuReady: onlineReady(store),
-    methods: resolvePaymentMethods(store.paymentMethods, store),
+    storeId: store.id, smart: store.smartCheckout, online: onlineReady(store), platform: store.platform,
+    storefrontUrl: store.storefrontUrl, payuViaStorefront: store.payuViaStorefront,
+    gateways: view.gatewayViews, webhookBase: view.webhookBase,
+    methods: { prepaid: pm.prepaid.on, cod: pm.cod.on, partial: pm.partial.on },
+    supported: GATEWAYS.map((g) => g.name),
   });
 }
 
-const n = (v: FormDataEntryValue | null) => {
-  const s = String(v ?? "").trim();
-  if (s === "") return null;
-  const x = Math.round(Number(s));
-  return Number.isFinite(x) && x >= 0 ? x : null;
-};
-
-function readMethod(fd: FormData): { m: MethodSettings; errors: Record<string, string> } {
-  const errors: Record<string, string> = {};
-  const adjust = (["off", "discount", "fee"].includes(String(fd.get("adjust"))) ? fd.get("adjust") : "off") as AdjustMode;
-  const type: AmountType = fd.get("type") === "flat" ? "flat" : "percent";
-  const value = n(fd.get("value")) ?? 0;
-  if (adjust !== "off" && value <= 0) errors.value = adjust === "fee" ? "Enter the fee" : "Enter the discount";
-  if (type === "percent" && value > 100) errors.value = "Can't be more than 100%";
-  const rules: ShowRule[] = [];
-  for (const key of fd.getAll("rule")) {
-    const k = String(key);
-    const min = n(fd.get(`min_${k}`)), max = n(fd.get(`max_${k}`));
-    const products = parsePicked(fd.get(`products_${k}`)).slice(0, 50);
-    if (min == null && max == null && !products.length) continue;
-    if (min != null && max != null && max < min) errors.rules = "In a rule the maximum can't be less than the minimum";
-    rules.push({ min, max, products, productMode: fd.get(`mode_${k}`) === "only" ? "only" : "contains" });
-  }
-  return { m: { on: fd.get("on") === "on", adjust, type, value: adjust === "off" ? 0 : value, coupons: fd.get("coupons") === "on", rules: rules.slice(0, 100) }, errors };
-}
-
 export async function action({ request, params }: ActionFunctionArgs) {
-  const store = await requireStore(await requireViewer(request), params.id);
+  const viewer = await requireViewer(request);
+  const store = await requireStore(viewer, params.id);
   const fd = await request.formData();
-  const which = String(fd.get("intent")) as PayMethod;
-  if (!["prepaid", "cod", "partial"].includes(which)) return json({ ok: null, which, errors: { form: "Unknown action" } }, { status: 400 });
+  const intent = String(fd.get("intent") ?? "");
 
-  const current = resolvePaymentMethods(store.paymentMethods, store);
-  const { m, errors } = readMethod(fd);
-  let next: MethodSettings | PartialSettings = m;
-  if (which === "partial") {
-    const advanceType: AmountType = fd.get("advanceType") === "flat" ? "flat" : "percent";
-    const advanceValue = n(fd.get("advanceValue")) ?? 0;
-    if (advanceValue <= 0) errors.advanceValue = "Enter how much the customer pays now";
-    if (advanceType === "percent" && advanceValue >= 100) errors.advanceValue = "Must be less than 100%";
-    if (m.on && !onlineReady(store)) errors.form = "Partial COD needs an online payment gateway connected in Store settings.";
-    next = { ...m, advanceType, advanceValue };
+  if (intent === "gateways") {
+    const g = parseGateways(fd, store);
+    const before = new Set((store.gateways ?? []).map((x) => x.id));
+    const gate = g.gateways.some((x) => !before.has(x.id)) ? kycGate(viewer, "adding a payment gateway") : null;
+    if (gate) return json({ ok: null, error: gate, kyc: true, errors: g.errors }, { status: 400 });
+    if (Object.keys(g.errors).length) return json({ ok: null, error: "Fix the highlighted gateway and save again.", kyc: false, errors: g.errors }, { status: 400 });
+    await db.update(stores).set({
+      gateways: g.gateways, payuKey: g.payuKey, payuSalt: g.payuSalt, payuMode: g.payuMode,
+      ...(store.platform === "shopify" ? { payuViaStorefront: fd.get("payuViaStorefront") === "on" } : {}),
+    }).where(eq(stores.id, store.id));
+    clearTokenCache(store.id);
+    forgetProxyCheck(store.id);
+    return json({ ok: "Payment gateways saved", error: null, kyc: false, errors: {} as Record<string, string> });
   }
-  if (which === "prepaid" && m.on && !onlineReady(store)) errors.form = "Connect a payment gateway in Store settings to take online payments.";
-  if (Object.keys(errors).length) return json({ ok: null, which, errors }, { status: 400 });
 
-  const all = { ...current, [which]: next };
-  if (which === "cod") {
-    const show = fd.get("showCodUnavailable") === "on";
-    const message = String(fd.get("codUnavailableMessage") ?? DEFAULT_COD_UNAVAILABLE_MESSAGE).trim();
-    if (message.length > 60) return json({ ok: null, which, errors: { codUnavailableMessage: "Use 60 characters or fewer." } }, { status: 400 });
-    all.codUnavailable = { show, message: message || DEFAULT_COD_UNAVAILABLE_MESSAGE };
+  if (intent === "methods") {
+    const pm = resolvePaymentMethods(store.paymentMethods, store);
+    const want = { prepaid: fd.get("prepaid") === "on", cod: fd.get("cod") === "on", partial: store.smartCheckout && fd.get("partial") === "on" };
+    if (!want.prepaid && !want.cod) return json({ ok: null, error: "Keep at least one payment method on.", kyc: false, errors: {} }, { status: 400 });
+    if ((want.prepaid || want.partial) && !onlineReady(store)) {
+      return json({ ok: null, error: "Connect a payment gateway above first. Prepaid and Partial COD need one.", kyc: false, errors: {} }, { status: 400 });
+    }
+    const all = { ...pm, prepaid: { ...pm.prepaid, on: want.prepaid }, cod: { ...pm.cod, on: want.cod }, partial: { ...pm.partial, on: want.partial } };
+    await db.update(stores).set({ paymentMethods: all, codEnabled: want.cod }).where(eq(stores.id, store.id));
+    return json({ ok: "Payment methods saved", error: null, kyc: false, errors: {} });
   }
-  const legacyPct = (x: MethodSettings) => (x.adjust === "discount" && x.type === "percent" ? Math.min(100, x.value) : 0);
-  await db.update(stores).set({
-    paymentMethods: all,
-    // Older screens and Shopify discount codes still read these
-    prepaidDiscountPct: legacyPct(all.prepaid),
-    codDiscountPct: legacyPct(all.cod),
-    codEnabled: all.cod.on,
-  }).where(eq(stores.id, store.id));
-  return json({ ok: `${METHOD_LABEL[which]} saved`, which, errors: null });
+  return json({ ok: null, error: "Unknown action", kyc: false, errors: {} }, { status: 400 });
 }
 
-const INFO: Record<PayMethod, { icon: string; text: string }> = {
-  prepaid: { icon: "💳", text: "Customer pays the full amount online (UPI, cards, net banking, wallets)." },
-  cod: { icon: "💵", text: "Customer pays the full amount when the order arrives." },
-  partial: { icon: "🪙", text: "Customer pays a small advance online now and the rest in cash on delivery. Cuts fake COD orders." },
-};
+const METHODS: { id: PayMethod; icon: "rupee" | "box" | "wallet"; text: string }[] = [
+  { id: "prepaid", icon: "rupee", text: "UPI, cards, net banking and wallets through your gateway." },
+  { id: "cod", icon: "box", text: "Customer pays in cash when the order arrives." },
+  { id: "partial", icon: "wallet", text: "A small advance online now, the rest in cash on delivery." },
+];
 
-export default function PaymentMethods() {
+export default function Payments() {
   const d = useLoaderData<typeof loader>();
-  const res = useActionData<typeof action>();
-  return (
-    <div className="max-w-4xl space-y-5">
-      {res?.ok && <Notice tone="success">{res.ok}</Notice>}
-      {!d.payuReady && <Notice tone="warning">Online payment isn't connected, so Prepaid and Partial COD won't show at checkout. Add a payment gateway in Store settings.</Notice>}
-      <p className="text-sm text-ink-soft">
-        Turn each payment method on or off, give it a discount or a fee, and choose when it shows.
-        Product discounts (in Discounts) still win for their products. Partial COD follows your COD rules in RTO Suite (wait time, blocks, OTP).
-      </p>
-      {(["prepaid", "cod", "partial"] as const).map((k) => (
-        <MethodPanel key={k} k={k} storeId={d.storeId} s={d.methods[k]} codUnavailable={d.methods.codUnavailable} errors={res?.which === k ? ((res.errors ?? {}) as Record<string, string>) : {}} />
-      ))}
-    </div>
-  );
-}
-
-type RuleRow = ShowRule & { key: string };
-let seq = 0;
-const newKey = () => `r${Date.now().toString(36)}${seq++}`;
-
-function MethodPanel({ k, storeId, s, codUnavailable, errors }: { k: PayMethod; storeId: number; s: MethodSettings | PartialSettings; codUnavailable: { show: boolean; message: string }; errors: Record<string, string> }) {
-  const [adjust, setAdjust] = useState<AdjustMode>(s.adjust);
-  const [type, setType] = useState<AmountType>(s.type);
-  const [rules, setRules] = useState<RuleRow[]>(s.rules.map((r) => ({ ...r, key: newKey() })));
-  const partial = k === "partial" ? (s as PartialSettings) : null;
-  const [advType, setAdvType] = useState<AmountType>(partial?.advanceType ?? "percent");
-  const label = METHOD_LABEL[k];
+  const a = useActionData<typeof action>();
+  const nav = useNavigation();
+  const busy = (i: string) => nav.state !== "idle" && nav.formData?.get("intent") === i;
+  const [on, setOn] = useState(d.methods);
+  const changed = on.prepaid !== d.methods.prepaid || on.cod !== d.methods.cod || on.partial !== d.methods.partial;
+  const base = storePath(d.storeId);
 
   return (
-    <Form method="post" className="panel p-5" id={k}>
-      <div className="flex items-start gap-3">
-        <span className="text-2xl leading-none" aria-hidden>{INFO[k].icon}</span>
-        <div className="min-w-0 flex-1">
-          <Toggle name="on" label={label} description={INFO[k].text} defaultChecked={s.on} />
-          {k === "cod" && (
-            <fieldset className="mt-4 rounded-lg border border-rule p-3">
-              <Toggle name="showCodUnavailable" label="Show COD as unavailable when COD is off" description="Customers can see COD, but can't select it. A short message appears below it." defaultChecked={codUnavailable.show} />
-              <label className="mt-3 block">
-                <span className="label">Message below COD (up to 60 characters)</span>
-                <input name="codUnavailableMessage" type="text" maxLength={60} defaultValue={codUnavailable.message || DEFAULT_COD_UNAVAILABLE_MESSAGE} className="input" />
-                {errors.codUnavailableMessage && <span className="error-text">{errors.codUnavailableMessage}</span>}
-              </label>
-            </fieldset>
-          )}
-        </div>
-      </div>
-      {errors.form && <div className="mt-3"><Notice tone="error">{errors.form}</Notice></div>}
+    <div className="max-w-3xl space-y-4">
+      {a?.ok && <Notice tone="success">{a.ok}</Notice>}
+      {a?.error && <Notice tone="error">{a.error}{a.kyc && <> <a href="/onboarding" className="font-semibold underline">Complete KYC</a></>}</Notice>}
 
-      {partial && (
-        <fieldset className="mt-5 rounded-lg border border-rule p-4">
-          <legend className="px-1 text-sm font-semibold">Advance paid online</legend>
-          <div className="flex flex-wrap items-end gap-3">
-            <Seg name="advanceType" value={advType} onChange={(v) => setAdvType(v as AmountType)} options={[["percent", "% of order"], ["flat", "Fixed ₹"]]} />
-            <label className="block w-36">
-              <span className="label">{advType === "percent" ? "Percent" : "Amount (₹)"}</span>
-              <input name="advanceValue" type="number" min={1} max={advType === "percent" ? 99 : undefined} defaultValue={partial.advanceValue || ""} className="input num" />
+      <Card title="Payment gateways" description={`Connect your own gateway account with its API keys. Money goes straight to your bank. Add up to 3: if the first one has a problem, the next takes over. Supported: ${d.supported.join(", ")}.`}
+        action={<span className={`shrink-0 whitespace-nowrap rounded-md px-1.5 py-px text-[11.5px] font-medium ${d.online ? "bg-[#cdfee1] text-[#0c5132]" : "bg-[#fff1e3] text-[#5e4200]"}`}>{d.online ? "Taking online payments" : "Not connected"}</span>}>
+        <Form method="post" className="space-y-3">
+          <GatewaysEditor initial={d.gateways} errors={(a?.errors ?? {}) as Record<string, string>} webhookBase={d.webhookBase} />
+          {d.platform === "shopify" && (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2.5 shadow-[inset_0_0_0_1px_#ebebeb]">
+              <input type="checkbox" name="payuViaStorefront" defaultChecked={d.payuViaStorefront} className="mt-0.5 h-4 w-4" />
+              <span className="text-[13px]"><b className="font-medium">Start payments from your own website</b>
+                <span className="block text-[12px] text-ink-faint">For gateways that only accept your registered website (PayU, Cashfree, CCAvenue). Payments start from {d.storefrontUrl.replace(/^https?:\/\//, "")}/apps/growpefy/…</span></span>
             </label>
-          </div>
-          {errors.advanceValue && <span className="error-text">{errors.advanceValue}</span>}
-          <p className="hint mt-2">
-            {advType === "percent" ? "E.g. 10%: on a ₹1,000 order the customer pays ₹100 now and ₹900 on delivery." : "E.g. ₹200: the customer pays ₹200 now on every order, the rest on delivery."}
-            {" "}If the advance would be the whole order, Partial COD is hidden for that cart.
-          </p>
-        </fieldset>
-      )}
-
-      <fieldset className="mt-5">
-        <legend className="text-sm font-semibold">Discount or fee</legend>
-        <div className="mt-2 flex flex-wrap items-end gap-3">
-          <Seg name="adjust" value={adjust} onChange={(v) => setAdjust(v as AdjustMode)} options={[["off", "Off"], ["discount", "Discount"], ["fee", "Fee"]]} />
-          {adjust !== "off" && (
-            <>
-              <Seg name="type" value={type} onChange={(v) => setType(v as AmountType)} options={[["percent", "%"], ["flat", "₹ flat"]]} />
-              <label className="block w-32">
-                <span className="label">{type === "percent" ? "Percent" : "Amount (₹)"}</span>
-                <input name="value" type="number" min={1} max={type === "percent" ? 100 : undefined} defaultValue={s.value || ""} className="input num" />
-              </label>
-            </>
           )}
-          {adjust === "off" && <><input type="hidden" name="type" value={type} /><input type="hidden" name="value" value="0" /></>}
-        </div>
-        {errors.value && <span className="error-text">{errors.value}</span>}
-        <p className="hint mt-2">
-          {adjust === "off" ? "No discount and no extra charge for this method."
-            : adjust === "discount" ? (type === "percent" ? "% off the items. Products with their own discount in Discounts use that instead." : "₹ off the order total.")
-            : type === "percent" ? "% of the order value added as a fee (shown as a separate line)." : "Fixed ₹ added to the order as a fee."}
-        </p>
-      </fieldset>
+          <div className="flex justify-end"><SubmitButton intent="gateways" className="btn-primary btn" busyText="Saving">Save gateways</SubmitButton></div>
+        </Form>
+      </Card>
 
-      <label className="mt-5 flex cursor-pointer items-start gap-2.5">
-        <input type="checkbox" name="coupons" defaultChecked={s.coupons} className="mt-0.5 h-4 w-4 accent-[var(--brand)]" />
-        <span><span className="block text-sm font-medium">Allow coupons with {label}</span>
-          <span className="block text-xs text-ink-faint">Off: coupon codes can't be applied when the customer picks this method.</span></span>
-      </label>
-
-      <fieldset className="mt-5">
-        <legend className="text-sm font-semibold">When to show {label}</legend>
-        <p className="hint">No rules = shown on every cart. Add rules to show it only for some carts; it shows when any one rule matches.</p>
-        <ul className="mt-3 space-y-3">
-          {rules.map((r, i) => (
-            <li key={r.key} className="rounded-lg border border-dashed border-rule-strong p-3">
-              <input type="hidden" name="rule" value={r.key} />
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-ink-faint">Rule {i + 1}</span>
-                <button type="button" className="text-xs font-medium text-bad" onClick={() => setRules((x) => x.filter((y) => y.key !== r.key))}>Remove</button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block"><span className="label">Minimum order (₹)</span><input name={`min_${r.key}`} type="number" min={0} defaultValue={r.min ?? ""} placeholder="No minimum" className="input num" /></label>
-                <label className="block"><span className="label">Maximum order (₹)</span><input name={`max_${r.key}`} type="number" min={0} defaultValue={r.max ?? ""} placeholder="No maximum" className="input num" /></label>
-                <div className="sm:col-span-2">
-                  <span className="label">Products (optional)</span>
-                  <ProductPicker storeId={storeId} name={`products_${r.key}`} initial={r.products.map((p) => ({ id: p.id, title: p.title, image: p.image ?? null }))} />
-                </div>
-                <label className="block sm:col-span-2"><span className="label">With these products</span>
-                  <select name={`mode_${r.key}`} defaultValue={r.productMode} className="input">
-                    <option value="contains">Show when the cart has any of them (other products can be in the cart too)</option>
-                    <option value="only">Show only when the cart has just these products</option>
-                  </select>
-                </label>
-              </div>
-            </li>
-          ))}
-        </ul>
-        {errors.rules && <span className="error-text">{errors.rules}</span>}
-        <button type="button" className="btn-secondary mt-3" onClick={() => setRules((x) => [...x, { key: newKey(), min: null, max: null, products: [], productMode: "contains" }])}>+ Add rule</button>
-        {s.rules.length > 0 && rules.length === s.rules.length && (
-          <p className="hint mt-2">Now: shows when {s.rules.map(describeRule).join(", or ")}.</p>
-        )}
-      </fieldset>
-
-      <div className="mt-5 border-t border-rule pt-4">
-        <SubmitButton intent={k} busyText="Saving">Save {label}</SubmitButton>
-      </div>
-    </Form>
-  );
-}
-
-function Seg({ name, value, onChange, options }: { name: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
-  return (
-    <div className="inline-flex rounded-lg border border-rule-strong p-0.5" role="radiogroup">
-      <input type="hidden" name={name} value={value} />
-      {options.map(([v, l]) => (
-        <button key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onChange(v)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${value === v ? "bg-ink text-surface" : "text-ink-soft hover:text-ink"}`}>{l}</button>
-      ))}
+      <Card title="Payment methods" description="What customers can choose at checkout." flush>
+        <Form method="post">
+          <input type="hidden" name="intent" value="methods" />
+          <ul className="divide-y divide-rule border-t border-rule">
+            {METHODS.map((m) => {
+              const locked = m.id === "partial" && !d.smart;
+              const needsGateway = m.id !== "cod" && !d.online;
+              return (
+                <li key={m.id} className={`flex items-center gap-3 px-4 py-3 ${locked ? "opacity-60" : ""}`}>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f1f1f1] text-ink-soft"><Icon name={m.icon} className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium">{METHOD_LABEL[m.id]}</p>
+                    <p className="text-[12px] text-ink-soft">{m.text}{needsGateway && !locked ? " Needs a gateway." : ""}</p>
+                  </div>
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input type="checkbox" name={m.id} checked={on[m.id]} disabled={locked} onChange={(e) => setOn((x) => ({ ...x, [m.id]: e.target.checked }))} className="peer sr-only" aria-label={METHOD_LABEL[m.id]} />
+                    <span className="h-5 w-9 rounded-full bg-[#d4d4d4] transition peer-checked:bg-[#303030] peer-disabled:cursor-not-allowed" />
+                    <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          {!d.smart && <div className="border-t border-rule px-4 py-3"><SmartNote storeId={d.storeId}>Partial COD, a prepaid discount or a COD fee need Smart Checkout.</SmartNote></div>}
+          <div className="flex items-center justify-between gap-3 border-t border-rule px-4 py-3">
+            {d.smart
+              ? <Link to={`${base}/payment-rules`} className="text-[12.5px] font-medium text-[#005bd3] hover:underline">Discounts, fees and rules for each method</Link>
+              : <span className="text-[12px] text-ink-faint">Standard checkout: every method costs the customer the same.</span>}
+            <button className="btn-primary btn" disabled={!changed || busy("methods")}>{busy("methods") ? "Saving" : "Save"}</button>
+          </div>
+        </Form>
+      </Card>
     </div>
   );
 }

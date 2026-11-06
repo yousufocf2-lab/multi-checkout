@@ -289,6 +289,9 @@ export async function createShopifyOrder(store: Store, order: Order) {
     })).concat(order.paymentFee > 0 ? [
       // Payment method fee (e.g. COD charges) as its own line
       { title: feeLabel, quantity: 1, priceSet: money(order.paymentFee), requiresShipping: false, taxable: false } as never,
+    ] : []).concat((order.tip ?? 0) > 0 ? [
+      // Customer's tip as its own line
+      { title: "Tip", quantity: 1, priceSet: money(order.tip), requiresShipping: false, taxable: false } as never,
     ] : []),
     email: c.email || null,
     phone: `+91${c.phone}`,

@@ -176,7 +176,7 @@ export default function DashboardLayout() {
     { label: "Plan & wallet", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
-    { label: "Checkout", to: storeHref("design"), icon: "cart", match: /\/design$|next=design/, show: may("settings") },
+    { label: "Checkout", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },
     { label: "Shipping & delivery", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
     { label: "Warehouses & locations", to: storeHref("locations"), icon: "box", match: /\/locations$|next=locations\b/, show: may("settings") },
     { label: "WhatsApp", to: storeHref("whatsapp"), icon: "chat", match: /\/whatsapp$|next=whatsapp/, show: may("inbox") || may("settings") },

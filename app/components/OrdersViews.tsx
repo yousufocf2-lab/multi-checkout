@@ -16,7 +16,7 @@ const when = (d: string) => new Date(d).toLocaleString("en-IN", { timeZone: "Asi
 export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
-  shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
+  shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; tip?: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
   payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
 };
 
@@ -322,6 +322,7 @@ function OrderDetails({ o }: { o: OrderRow }) {
         {o.bankDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Bank offer</dt><dd>−{inr(o.bankDiscount)}</dd></div>}
         <div className="flex justify-between"><dt className="text-ink-soft">{o.shippingTitle ?? "Delivery"}</dt><dd>{o.shipping ? inr(o.shipping) : "Free"}</dd></div>
         {o.paymentFee > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "prepaid" ? "Online payment" : o.paymentMethod === "partial" ? "Partial COD" : "COD"} fee</dt><dd>{inr(o.paymentFee)}</dd></div>}
+        {(o.tip ?? 0) > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Tip</dt><dd>{inr(o.tip ?? 0)}</dd></div>}
         {o.paymentMethod === "partial" ? (
           <>
             <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>Advance paid</dt><dd>{inr(o.amountPaid ?? o.advance ?? 0)}</dd></div>

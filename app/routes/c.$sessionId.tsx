@@ -33,6 +33,8 @@ import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.se
 import { env } from "~/lib/env.server";
 import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.server";
 import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
+import { smartView } from "~/lib/smart.server";
+import { maxTipPaise, resolveRules, resolveTipping } from "~/lib/smart-checkout";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_QTY = 9999;
@@ -48,7 +50,8 @@ async function loadSession(sessionId: string) {
   if (Date.now() - row.session.createdAt.getTime() > SESSION_TTL_MS) {
     throw new Response("This checkout link has expired. Go back to the store and check out again.", { status: 410 });
   }
-  return row;
+  // Without Smart Checkout the store gets the standard checkout (no OTP, method discounts/fees or Partial COD)
+  return { session: row.session, store: smartView(row.store) };
 }
 
 async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRule> {
@@ -73,12 +76,14 @@ async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRul
     codDiscountPct: store.codDiscountPct,
     mix: prepaidDeal || codDeal ? { prepaid: prepaidDeal, cod: codDeal } : null,
     rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct, partialPct: r.partialPct })),
+    uniform: !store.smartCheckout,
   };
 }
 
-async function shippingRulesFor(storeId: number): Promise<ShipRule[]> {
+async function shippingRulesFor(storeId: number, smart = true): Promise<ShipRule[]> {
   const rows = await db.select().from(shippingRates).where(and(eq(shippingRates.storeId, storeId), eq(shippingRates.active, true)));
-  return rows.map((r) => ({
+  // Delivery charges for one payment method only are a Smart Checkout feature
+  return rows.filter((r) => smart || r.paymentMethod === "any").map((r) => ({
     id: r.id, name: r.name, pricePaise: r.pricePaise, minOrderRupees: r.minOrderRupees, maxOrderRupees: r.maxOrderRupees,
     states: r.states, pincodePrefixes: r.pincodePrefixes, paymentMethod: r.paymentMethod,
   }));
@@ -118,7 +123,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     db.select().from(bankOffers).where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true))).orderBy(asc(bankOffers.sort)),
     storeRuleFor(store),
   ]);
-  const [shipping, gifts, otpPrepaid, otpCod] = await Promise.all([shippingRulesFor(store.id), freeGiftsFor(store, lines), otpRequired(store, "prepaid"), otpRequired(store, "cod")]);
+  const [shipping, gifts, otpPrepaid, otpCod] = await Promise.all([shippingRulesFor(store.id, store.smartCheckout), freeGiftsFor(store, lines), otpRequired(store, "prepaid"), otpRequired(store, "cod")]);
   const pm = resolvePaymentMethods(store.paymentMethods, store);
   const payuReady = onlineReady(store);
   const slim = (m: PaymentMethodsSettings["prepaid"]) => ({ on: m.on, rules: m.rules.map((r) => ({ ...r, products: r.products.map((x) => ({ id: x.id, title: x.title })) })) });
@@ -152,6 +157,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       supportPhone: store.supportPhone, codEnabled: store.codEnabled, payuReady,
       pixelId: store.metaPixelId,
     },
+    fields: resolveRules(store.checkoutRules, resolveTheme(store.theme).showEmail),
+    tipping: resolveTipping(store.tipping),
     theme: (() => {
       const t = resolveTheme(store.theme);
       const by = primaryGatewayName(store);
@@ -296,6 +303,9 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!customer.firstName) errors.firstName = "Enter your full name";
   if (!/^[6-9]\d{9}$/.test(customer.phone)) errors.phone = "Enter a valid 10-digit mobile number";
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = "Enter a valid email address";
+  const fieldRules = resolveRules(store.checkoutRules, resolveTheme(store.theme).showEmail);
+  if (fieldRules.email === "required" && !customer.email) errors.email = "Enter your email";
+  if (fieldRules.landmark === "required" && !customer.address2) errors.address2 = "Enter the area or a landmark";
   if (customer.address1.length < 5) errors.address1 = "Enter your house number and street";
   if (!customer.city) errors.city = "Enter your city";
   if (!INDIAN_STATES.some((s) => s.code === customer.state)) errors.state = "Select your state";
@@ -319,7 +329,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ errors: { form: "Verify your mobile number with the OTP to continue." } as FieldErrors, needOtp: true }, { status: 400 });
   }
 
-  const [lines, rule, shipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id)]);
+  const [lines, rule, shipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id, store.smartCheckout)]);
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
   const freeLines = (await freeGiftsFor(store, lines))[legacyMethod(method)];
   const cartInfo = { value: lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0), productIds: lines.map((l) => l.productId) };
@@ -335,7 +345,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     coupon = r.coupon;
   }
   const base = computePricing(lines, rule, method, coupon);
-  const p = withShipping(base, quoteShipping(shipRules, { state: customer.state, pincode: customer.pincode, method: legacyMethod(method), value: base.total }));
+  const shipped = withShipping(base, quoteShipping(shipRules, { state: customer.state, pincode: customer.pincode, method: legacyMethod(method), value: base.total }));
+  // Tip (when the store turned tipping on): never more than half the items or ₹10,000
+  const tip = resolveTipping(store.tipping).on ? Math.min(maxTipPaise(base.subtotal), Math.max(0, Math.round(Number(str("tip")) || 0))) : 0;
+  const p = { ...shipped, total: shipped.total + tip };
   const advance = method === "partial" ? partialAdvance(pm.partial, p.total) : null;
   if (method === "partial" && !advance) return json({ errors: { form: "Partial COD isn't available for this order. Choose another payment method." } as FieldErrors }, { status: 400 });
 
@@ -353,7 +366,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       status: method === "cod" ? "cod_placing" : "pending_payment", paymentMethod: method,
       customer, items: [...lines, ...freeLines], subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
       couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, offerDiscount: p.mixDiscount,
-      shipping: p.shipping, shippingTitle: p.shippingName, total: p.total, paymentFee: p.paymentFee, advance,
+      shipping: p.shipping, shippingTitle: p.shippingName, total: p.total, paymentFee: p.paymentFee, tip, advance,
       saveAddress: savedId > 0 || fd.get("saveAddress") === "on",
       tracking: {
         ...(session.tracking ?? {}),
@@ -481,7 +494,13 @@ type Eligibility = { cod: CodStatus; block: "cod" | "all" | null; message: strin
 type OtpPurpose = "order" | "start" | "start_next" | { reveal: number };
 
 export default function Checkout() {
-  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers, base, cx: cxCfg } = useLoaderData<typeof loader>();
+  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers, base, cx: cxCfg, fields, tipping } = useLoaderData<typeof loader>();
+  // Tip: a preset % of the items, a custom ₹ amount, or none
+  const [tipPick, setTipPick] = useState<number | "custom" | null>(null);
+  const [tipCustom, setTipCustom] = useState("");
+  const itemsValue = lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0);
+  const tip = !tipping.on || tipPick == null ? 0
+    : Math.min(maxTipPaise(itemsValue), tipPick === "custom" ? Math.max(0, Math.round(Number(tipCustom) || 0)) * 100 : Math.round((itemsValue * tipPick) / 10000) * 100);
   // The store domain the customer is on (only used when the checkout runs through the App Proxy)
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(window.location.origin), []);
@@ -665,14 +684,15 @@ export default function Checkout() {
 
   const priced = (m: PaymentMethod) => {
     const base = computePricing(lines, rule, m, coupon);
-    return withShipping(base, quoteShipping(shipping, { state: c.state, pincode: c.pincode, method: legacyMethod(m), value: base.total }));
+    const x = withShipping(base, quoteShipping(shipping, { state: c.state, pincode: c.pincode, method: legacyMethod(m), value: base.total }));
+    return { ...x, tip, total: x.total + tip };
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const prepaid = useMemo(() => priced("prepaid"), [lines, rule, coupon, shipping, c.state, c.pincode]);
+  const prepaid = useMemo(() => priced("prepaid"), [lines, rule, coupon, shipping, c.state, c.pincode, tip]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const cod = useMemo(() => priced("cod"), [lines, rule, coupon, shipping, c.state, c.pincode]);
+  const cod = useMemo(() => priced("cod"), [lines, rule, coupon, shipping, c.state, c.pincode, tip]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const partial = useMemo(() => priced("partial"), [lines, rule, coupon, shipping, c.state, c.pincode]);
+  const partial = useMemo(() => priced("partial"), [lines, rule, coupon, shipping, c.state, c.pincode, tip]);
   const P = { prepaid, cod, partial };
   const p = P[method];
   const advance = partialAdvance(pay.partial, partial.total);
@@ -837,9 +857,9 @@ export default function Checkout() {
         onEnter={steps ? () => continueFromContact() : undefined} />
     </Field>
   );
-  const emailField = theme.showEmail && (
-    <Field label="Email (optional)" error={fieldError("email")} className="col-span-2">
-      <input name={nm("email")} type="email" autoComplete="email" className="input" placeholder="For order updates" value={c.email} onChange={set("email")} />
+  const emailField = fields.email !== "hidden" && (
+    <Field label={fields.email === "required" ? "Email" : "Email (optional)"} error={fieldError("email")} className="col-span-2">
+      <input name={nm("email")} type="email" autoComplete="email" className="input" placeholder="For order updates" value={c.email} onChange={set("email")} required={fields.email === "required"} />
     </Field>
   );
   const labelChips = (
@@ -887,7 +907,7 @@ export default function Checkout() {
       <p className="col-span-2 -mb-1 mt-2 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Delivery address</p>
       {pinField}
       <Field label="House number, building, street" error={fieldError("address1")} className="col-span-2"><input name={nm("address1")} autoComplete="address-line1" required className="input" value={c.address1} onChange={set("address1")} /></Field>
-      <Field label="Area, landmark (optional)" className="col-span-2"><input name={nm("address2")} autoComplete="address-line2" className="input" value={c.address2} onChange={set("address2")} /></Field>
+      {fields.landmark !== "hidden" && <Field label={fields.landmark === "required" ? "Area, landmark" : "Area, landmark (optional)"} error={fieldError("address2")} className="col-span-2"><input name={nm("address2")} autoComplete="address-line2" className="input" value={c.address2} onChange={set("address2")} required={fields.landmark === "required"} /></Field>}
       <Field label="City" error={fieldError("city")}><input name={nm("city")} autoComplete="address-level2" required className="input" value={c.city} onChange={set("city")} /></Field>
       <Field label="State" error={fieldError("state")} className="col-span-2">
         <select name={nm("state")} required className="input" value={c.state} onChange={set("state")}>
@@ -960,7 +980,7 @@ export default function Checkout() {
                     <p className="inline-flex items-center gap-1.5 rounded-md bg-brand/10 px-2 py-0.5 text-sm font-bold tracking-wider text-brand">{cp.code}</p>
                     <p className="mt-1 text-xs text-ink-soft">
                       {cp.description || (cp.type === "percent" ? `${cp.value}% off` : `${formatINR(cp.value * 100)} off`)}
-                      {cp.paymentRestriction !== "any" && (cp.paymentRestriction === "prepaid" ? ", online payment only" : ", COD only")}
+                      {cp.paymentRestriction !== "any" && !rule.uniform && (cp.paymentRestriction === "prepaid" ? ", online payment only" : ", COD only")}
                     </p>
                     {preview.couponApplied ? <p className="text-xs font-semibold text-good">Save {formatINR(preview.couponDiscount)} on this order</p>
                       : preview.couponMessage && <p className="text-xs text-ink-faint">{preview.couponMessage}</p>}
@@ -995,8 +1015,37 @@ export default function Checkout() {
   );
 
   const prepaidCheaper = prepaid.total < Math.min(...(["cod", "partial"] as const).filter(usable).map((m) => P[m].total), Infinity);
+  const tipBox = tipping.on && (
+    <div className="mb-4 rounded-xl border border-rule p-3">
+      <p className="text-sm font-medium">{tipping.label}</p>
+      <p className="text-xs text-ink-faint">Thank the team that makes and delivers your order.</p>
+      <div className="mt-2.5 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Tip">
+        {[null, ...tipping.presets].map((pct) => {
+          const on = tipPick === pct;
+          return (
+            <button key={pct ?? "none"} type="button" role="radio" aria-checked={on} onClick={() => setTipPick(pct)}
+              className={`rounded-lg border px-2 py-2 text-center text-sm transition ${on ? "border-[var(--brand)] bg-[color-mix(in_srgb,var(--brand)_8%,transparent)] font-semibold" : "border-rule hover:border-rule-strong"}`}>
+              {pct == null ? "None" : <><span className="block">{pct}%</span><span className="num block text-[11px] text-ink-faint">{formatINR(Math.round((itemsValue * pct) / 10000) * 100)}</span></>}
+            </button>
+          );
+        })}
+      </div>
+      {tipping.custom && (
+        <div className="mt-2 flex items-center gap-2">
+          <button type="button" onClick={() => setTipPick("custom")} className={`text-xs font-medium underline-offset-2 hover:underline ${tipPick === "custom" ? "text-ink" : "text-ink-soft"}`}>Custom tip</button>
+          {tipPick === "custom" && (
+            <label className="flex items-center gap-1 rounded-lg border border-rule px-2 py-1 text-sm">₹
+              <input inputMode="numeric" className="num w-20 bg-transparent outline-none" value={tipCustom} onChange={(e) => setTipCustom(e.target.value.replace(/\D/g, "").slice(0, 5))} aria-label="Custom tip in rupees" autoFocus />
+            </label>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   const paymentCard = (
     <Card title="Payment">
+      {tipBox}
       <div className="space-y-3" role="radiogroup" aria-label="Payment method">
         {shows.prepaid && (
           <PayOption selected={method === "prepaid"} onSelect={() => !limitReasons.prepaid && setMethod("prepaid")} disabled={Boolean(limitReasons.prepaid)} title="Pay online" subtitle={limitReasons.prepaid ?? "UPI, cards, net banking, wallets"}
@@ -1089,6 +1138,7 @@ export default function Checkout() {
         {base && origin && <input type="hidden" name="origin" value={origin} />}
         <input type="hidden" name="method" value={method} />
         <input type="hidden" name="couponCode" value={coupon?.code ?? ""} />
+        <input type="hidden" name="tip" value={tip} />
         {usingSaved && <input type="hidden" name="savedAddressId" value={savedId!} />}
         {steps && CUSTOMER_KEYS.map((k) => <input key={k} type="hidden" name={k} value={c[k] ?? ""} />)}
         {steps && saveAddr && !usingSaved && <input type="hidden" name="saveAddress" value="on" />}
@@ -1461,7 +1511,7 @@ function UpsellCard({ item, rule }: { item: LoaderData["upsell"][number]; rule: 
   );
 }
 
-type P = ReturnType<typeof computePricing> & { itemsTotal: number; shipping: number; shippingName: string; freeAbove: number | null };
+type P = ReturnType<typeof computePricing> & { itemsTotal: number; shipping: number; shippingName: string; freeAbove: number | null; tip?: number };
 
 function PriceDetails({ p, method, coupon, hasOffers, giftWorth = 0, advance }: { p: P; method: PaymentMethod; coupon: CouponRule | null; hasOffers: boolean; giftWorth?: number; advance?: number | null }) {
   const methodName = method === "prepaid" ? "Online payment" : method === "partial" ? "Partial COD" : "COD";
@@ -1474,6 +1524,7 @@ function PriceDetails({ p, method, coupon, hasOffers, giftWorth = 0, advance }: 
       {p.paymentDiscount > 0 && <Row label={`${methodName} discount${p.paymentDiscountPct ? ` (${p.paymentDiscountPct}%)` : ""}`} value={`−${formatINR(p.paymentDiscount)}`} green />}
       {p.couponApplied && coupon && <Row label={`Coupon ${coupon.code}`} value={`−${formatINR(p.couponDiscount)}`} green />}
       {p.paymentFee > 0 && <Row label={`${methodName} charges`} value={formatINR(p.paymentFee)} />}
+      {(p.tip ?? 0) > 0 && <Row label="Tip" value={formatINR(p.tip ?? 0)} />}
       <Row label={p.shipping > 0 ? p.shippingName : "Delivery"} value={p.shipping > 0 ? formatINR(p.shipping) : "Free"} green={p.shipping === 0} />
       {p.shipping > 0 && p.freeAbove && <p className="text-xs font-medium text-good">Free delivery on orders above {formatINR(p.freeAbove)}</p>}
       <div className="flex items-baseline justify-between border-t border-rule pt-3">

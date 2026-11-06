@@ -17,7 +17,8 @@ function qualifyingQty(o: FreeOffer, paid: PricedLine[]) {
   return paid.filter((l) => ids.has(l.productId)).reduce((n, l) => n + l.quantity, 0);
 }
 
-const allows = (o: FreeOffer, m: PaymentMethod) => o.paymentRestriction === "any" || o.paymentRestriction === m;
+// Gifts for one payment method only count with Smart Checkout
+const allows = (o: FreeOffer, m: PaymentMethod, smart = true) => !smart || o.paymentRestriction === "any" || o.paymentRestriction === m;
 
 /**
  * Free gift lines for the cart, per payment method, plus hints for offers the cart almost qualifies for.
@@ -49,7 +50,7 @@ export async function freeGiftsFor(store: Store, paid: PricedLine[], offers?: Fr
   const linesFor = (m: PaymentMethod) => {
     const out: FreeLine[] = [];
     for (const w of won) {
-      if (!w.times || !allows(w.o, m)) continue;
+      if (!w.times || !allows(w.o, m, store.smartCheckout)) continue;
       for (const ref of w.o.freeProducts) {
         const p = byId.get(ref.id);
         const v = p?.variants.find((x) => x.available);
@@ -67,7 +68,7 @@ export async function freeGiftsFor(store: Store, paid: PricedLine[], offers?: Fr
   };
 
   const hints: OfferHint[] = won
-    .filter((w) => !w.times && (w.qty > 0 || w.o.buyMode === "any") && w.o.paymentRestriction !== "cod")
+    .filter((w) => !w.times && (w.qty > 0 || w.o.buyMode === "any") && (!store.smartCheckout || w.o.paymentRestriction !== "cod"))
     .map((w) => ({ offer: w.o.name, need: w.min - w.qty, gifts: w.o.freeProducts.map((p) => p.title).join(", ") }))
     .filter((h) => h.need > 0 && h.need <= 5);
 

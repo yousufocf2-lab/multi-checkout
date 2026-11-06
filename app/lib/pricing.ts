@@ -44,6 +44,8 @@ export interface StoreRule {
   mix?: MixDeals | null;
   /** Payment methods tab: discount / fee / coupons per method. Missing = the old % fields above. */
   methods?: Partial<Record<PaymentMethod, MethodAdjust>>;
+  /** Standard checkout (no Smart Checkout): every offer works the same for every payment method. */
+  uniform?: boolean;
 }
 
 export const mixTitle = (m: Pick<MixDeal, "buyQty" | "freeQty">) => `Buy ${m.buyQty - m.freeQty}, Get ${m.freeQty} Free`;
@@ -118,7 +120,8 @@ const lineTotal = (l: PricedLine) => l.pricePaise * l.quantity;
  * Payment discount for one line: first matching product rule, else the store-wide %.
  * Returns paise off per item, the effective % and a label like "70% off" or "₹100 off".
  */
-export function lineOff(line: Pick<PricedLine, "productId" | "pricePaise">, store: StoreRule, method: PaymentMethod) {
+export function lineOff(line: Pick<PricedLine, "productId" | "pricePaise">, store: StoreRule, methodIn: PaymentMethod) {
+  const method: PaymentMethod = store.uniform ? "prepaid" : methodIn;
   const found = store.rules?.find((r) => r.productIds.includes(line.productId));
   // A product discount without a Partial COD value leaves Partial COD to the Payment methods setting
   const rule = found && method === "partial" && found.partialPct == null ? undefined : found;
@@ -149,7 +152,7 @@ export function computePricing(
   const mrpTotal = lines.reduce((s, l) => s + Math.max(l.comparePaise ?? 0, l.pricePaise) * l.quantity, 0);
 
   // Mix & Match first: free units are taken out before payment discounts and coupons
-  const deal = store.mix?.[legacyMethod(method)] ?? null;
+  const deal = store.mix?.[store.uniform ? "prepaid" : legacyMethod(method)] ?? null;
   const adj = store.methods?.[method];
   const mix = mixFreeUnits(lines, deal);
   const noPaymentDiscount = mix.discount > 0 && mixBlocksPayment(deal);
@@ -190,7 +193,7 @@ export function computePricing(
 
     if (adj && !adj.coupons) {
       couponMessage = `Coupons can't be used with ${method === "prepaid" ? "online payment" : method === "partial" ? "Partial COD" : "Cash on Delivery"}`;
-    } else if (coupon.paymentRestriction !== "any" && coupon.paymentRestriction !== legacyMethod(method)) {
+    } else if (!store.uniform && coupon.paymentRestriction !== "any" && coupon.paymentRestriction !== legacyMethod(method)) {
       couponMessage = coupon.paymentRestriction === "prepaid" ? "Valid only when you pay online" : "Valid only on Cash on Delivery";
     } else if (restricted && eligible.length === 0) {
       couponMessage = "Not valid on the products in your cart";

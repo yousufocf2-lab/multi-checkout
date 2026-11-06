@@ -8,12 +8,13 @@ import { EmptyState, Notice, RowAction, Section, StatusBadge, SubmitButton, Text
 import { db, freeOffers, stores } from "~/db.server";
 import { mixTitle } from "~/lib/pricing";
 import { requireStore, requireViewer } from "~/lib/auth.server";
+import { SmartNote } from "~/components/SmartLock";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const offers = await db.select().from(freeOffers).where(eq(freeOffers.storeId, store.id)).orderBy(desc(freeOffers.createdAt));
   return json({
-    storeId: store.id, offers,
+    storeId: store.id, smart: store.smartCheckout, offers,
     mix: {
       enabled: store.mixEnabled, buyQty: store.mixBuyQty, title: store.mixTitle ?? "",
       prepaid: { on: store.mixPrepaidOn, free: store.mixFreeQty, which: store.mixFreeWhich, keep: store.mixKeepPrepaid, pct: store.prepaidDiscountPct },
@@ -28,13 +29,14 @@ const int = (v: FormDataEntryValue | null, min: number, max: number, d: number) 
 };
 
 /** Reads an add or edit form. Returns errors keyed for the form that sent it. */
-function readOffer(fd: FormData) {
+function readOffer(fd: FormData, smart = true) {
   const buyMode = fd.get("buyMode") === "any" ? "any" : "products";
   const buyProducts = buyMode === "products" ? parsePicked(fd.get("buyProducts")) : [];
   const freeProducts = parsePicked(fd.get("freeProducts"));
   const minQty = int(fd.get("minQty"), 1, 50, 1);
   const freeQty = int(fd.get("freeQty"), 1, 20, 1);
-  const pr = String(fd.get("paymentRestriction") ?? "any");
+  // Gifts for one payment method only are a Smart Checkout feature
+  const pr = smart ? String(fd.get("paymentRestriction") ?? "any") : "any";
   const errors: string[] = [];
   if (buyMode === "products" && !buyProducts.length) errors.push("Pick the products the customer has to buy, or choose “Any product”.");
   if (!freeProducts.length) errors.push("Pick at least one free product.");
@@ -70,13 +72,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json({ ok: enabled ? "Mix & Match deal is live on your checkout" : "Mix & Match deal turned off", errors: null });
     }
     case "add": {
-      const r = readOffer(fd);
+      const r = readOffer(fd, store.smartCheckout);
       if (r.error) return json({ ok: null, errors: { add: r.error } as Record<string, string> }, { status: 400 });
       await db.insert(freeOffers).values({ storeId: store.id, ...r.data });
       return json({ ok: `“${r.data.name}” is live`, errors: null });
     }
     case "update": {
-      const r = readOffer(fd);
+      const r = readOffer(fd, store.smartCheckout);
       if (r.error) return json({ ok: null, errors: { [`edit${id}`]: r.error } as Record<string, string> }, { status: 400 });
       await db.update(freeOffers).set(r.data).where(own);
       return json({ ok: `“${r.data.name}” updated`, errors: null });
@@ -96,13 +98,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
 type Offer = ReturnType<typeof useLoaderData<typeof loader>>["offers"][number];
 
 export default function Gifts() {
-  const { storeId, offers, mix } = useLoaderData<typeof loader>();
+  const { storeId, smart, offers, mix } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const errors = (res?.errors ?? {}) as Record<string, string>;
 
   return (
     <div className="max-w-4xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
+      {!smart && <SmartNote storeId={storeId}>Separate deals and gifts for COD and prepaid need Smart Checkout. On the standard checkout, the online-payment deal and every gift apply to all payment methods.</SmartNote>}
       <MixDeal mix={mix} error={errors.mix} />
 
       <Notice>
@@ -112,7 +115,7 @@ export default function Gifts() {
 
       <Section title="Create a free gift offer">
         <Form method="post" className="space-y-5" key={offers.length}>
-          <OfferFields storeId={storeId} />
+          <OfferFields storeId={storeId} smart={smart} />
           {errors.add && <p className="error-text">{errors.add}</p>}
           <SubmitButton intent="add" busyText="Creating">Create offer</SubmitButton>
         </Form>
@@ -124,7 +127,7 @@ export default function Gifts() {
         <section className="panel">
           <h2 className="border-b border-rule px-5 py-4 text-[15px] font-semibold">Your offers</h2>
           <ul className="divide-y divide-rule">
-            {offers.map((o) => <OfferRow key={o.id} o={o} storeId={storeId} error={errors[`edit${o.id}`]} />)}
+            {offers.map((o) => <OfferRow key={o.id} o={o} storeId={storeId} smart={smart} error={errors[`edit${o.id}`]} />)}
           </ul>
         </section>
       )}
@@ -138,7 +141,7 @@ function summary(o: Pick<Offer, "buyMode" | "buyProducts" | "minQty" | "freeProd
   return { buy, free, repeat: o.repeat ? `Repeats: every ${o.minQty} bought gets the gift again` : null };
 }
 
-function OfferRow({ o, storeId, error }: { o: Offer; storeId: number; error?: string }) {
+function OfferRow({ o, storeId, smart, error }: { o: Offer; storeId: number; smart: boolean; error?: string }) {
   const [editing, setEditing] = useState(false);
   const nav = useNavigation();
   const saving = nav.state !== "idle" && nav.formData?.get("intent") === "update" && nav.formData?.get("id") === String(o.id);
@@ -167,7 +170,7 @@ function OfferRow({ o, storeId, error }: { o: Offer; storeId: number; error?: st
       {editing && (
         <Form method="post" className="mt-4 space-y-5 rounded-lg border border-rule bg-paper/60 p-4">
           <input type="hidden" name="id" value={o.id} />
-          <OfferFields storeId={storeId} o={o} />
+          <OfferFields storeId={storeId} smart={smart} o={o} />
           {error && <p className="error-text">{error}</p>}
           <div className="flex gap-2">
             <SubmitButton intent="update" busyText="Saving">Save changes</SubmitButton>
@@ -179,7 +182,7 @@ function OfferRow({ o, storeId, error }: { o: Offer; storeId: number; error?: st
   );
 }
 
-function OfferFields({ storeId, o }: { storeId: number; o?: Offer }) {
+function OfferFields({ storeId, smart, o }: { storeId: number; smart: boolean; o?: Offer }) {
   const [mode, setMode] = useState(o?.buyMode === "any" ? "any" : "products");
   const [minQty, setMinQty] = useState(o?.minQty ?? 1);
   const [freeQty, setFreeQty] = useState(o?.freeQty ?? 1);
@@ -232,7 +235,7 @@ function OfferFields({ storeId, o }: { storeId: number; o?: Offer }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
           <span className="label">Payment</span>
-          <select name="paymentRestriction" defaultValue={o?.paymentRestriction ?? "any"} className="input">
+          <select name="paymentRestriction" defaultValue={smart ? o?.paymentRestriction ?? "any" : "any"} className="input disabled:cursor-not-allowed disabled:opacity-70" disabled={!smart} title={smart ? undefined : "Activate Smart Checkout to limit gifts to one payment method"}>
             <option value="any">Online and COD</option>
             <option value="prepaid">Online payment only</option>
             <option value="cod">COD only</option>

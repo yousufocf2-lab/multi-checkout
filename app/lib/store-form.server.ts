@@ -66,7 +66,32 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
     proxyCheckout: woo || own ? false : on("proxyCheckout"),
   };
 
-  // Payment gateways: up to 3, in the order shown (primary first). Blank secrets keep the saved value.
+  // Payment gateways live on the Payments page now: forms without them keep what's saved
+  if (fd.has("gwCount") || !existing) {
+    const g = parseGateways(fd, existing);
+    Object.assign(errors, g.errors);
+    data.gateways = g.gateways; data.payuKey = g.payuKey; data.payuSalt = g.payuSalt; data.payuMode = g.payuMode;
+  } else {
+    data.gateways = existing.gateways; data.payuKey = existing.payuKey; data.payuSalt = existing.payuSalt; data.payuMode = existing.payuMode;
+    data.payuViaStorefront = existing.payuViaStorefront;
+  }
+
+  if (!data.name) errors.name = "Enter the store name";
+  if (!data.slug) errors.slug = "Enter a short ID, e.g. your-brand";
+  if (!woo && !own && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. your-brand.myshopify.com";
+  if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://yourbrand.com";
+  if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://yourbrand.com";
+  if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
+  if (!woo && !own && !keepApp && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
+
+  return { data, errors };
+}
+
+/** Payment gateways from a form: up to 3, in the order shown (primary first). Blank secrets keep the saved value. */
+export function parseGateways(fd: FormData, existing?: Store) {
+  const s = (k: string) => String(fd.get(k) ?? "").trim();
+  const errors: Record<string, string> = {};
+  const gateways: StoreGateway[] = [];
   const count = Math.min(MAX_GATEWAYS, Math.max(0, Number(s("gwCount")) || 0));
   const before = existing ? storeGateways(existing) : [];
   const seen = new Set<string>();
@@ -81,23 +106,11 @@ export function parseStoreForm(fd: FormData, existing?: Store) {
       const v = s(`gw${i}_f_${f.name}`);
       creds[f.name] = v || (f.secret ? old?.creds[f.name] ?? "" : "");
     }
-    const g: StoreGateway = { id, mode: s(`gw${i}_mode`) === "live" ? "live" : "test", on: on(`gw${i}_on`), creds };
+    const g: StoreGateway = { id, mode: s(`gw${i}_mode`) === "live" ? "live" : "test", on: fd.get(`gw${i}_on`) === "on", creds };
     const missing = info.fields.filter((f) => !f.optional && !creds[f.name]).map((f) => f.label.toLowerCase());
     if (g.on && missing.length) errors[`gw${i}`] = `${info.name}: enter the ${missing.join(", ")}`;
-    data.gateways.push(g);
+    gateways.push(g);
   }
-  const payuGw = data.gateways.find((g) => g.id === "payu");
-  data.payuKey = payuGw?.creds.key || null;
-  data.payuSalt = payuGw?.creds.salt || null;
-  data.payuMode = payuGw?.mode ?? "test";
-
-  if (!data.name) errors.name = "Enter the store name";
-  if (!data.slug) errors.slug = "Enter a short ID, e.g. your-brand";
-  if (!woo && !own && !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(data.shopDomain)) errors.shopDomain = "Use the .myshopify.com domain, e.g. your-brand.myshopify.com";
-  if (woo && !/^https:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Use your WordPress site address with https://, e.g. https://yourbrand.com";
-  if (!/^https?:\/\/\S+$/.test(data.storefrontUrl)) errors.storefrontUrl = "Start with https://, e.g. https://yourbrand.com";
-  if (data.slug && data.slug.length > 40) errors.slug = "Keep the store ID under 40 characters";
-  if (!woo && !own && !keepApp && !data.adminToken && !(data.clientId && data.clientSecret)) errors.clientId = "Add the Shopify app's Client ID and Client secret";
-
-  return { data, errors };
+  const payuGw = gateways.find((g) => g.id === "payu");
+  return { gateways, errors, payuKey: payuGw?.creds.key || null, payuSalt: payuGw?.creds.salt || null, payuMode: (payuGw?.mode ?? "test") as Store["payuMode"] };
 }
