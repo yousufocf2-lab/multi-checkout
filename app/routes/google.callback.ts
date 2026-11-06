@@ -5,6 +5,7 @@ import { redirect } from "@remix-run/node";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { exchangeCode, readState, revoke, saveConnection } from "~/lib/google-ads.server";
 import { getMarketing, saveMarketing } from "~/lib/marketing.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -18,7 +19,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const platform = state.s === 0;
   if (platform && viewer.role !== "admin") throw new Response("Not allowed", { status: 403 });
   const store = platform ? null : await requireStore(viewer, state.s);
-  const back = platform ? "/dashboard/marketing?ch=google" : `/dashboard/stores/${store!.id}/ads?ch=google`;
+  const back = platform ? "/dashboard/marketing?ch=google" : `${storePath(store!.id)}/ads?ch=google`;
 
   const err = url.searchParams.get("error");
   if (err) throw redirect(`${back}&gerr=${encodeURIComponent(err === "access_denied" ? "Google access wasn't allowed." : err)}`);

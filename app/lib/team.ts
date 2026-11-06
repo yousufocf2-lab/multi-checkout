@@ -67,7 +67,7 @@ function needFor(scope: Scope, path: string): Need {
   const p = path.replace(/\/+$/, "") || "/";
   if (p === "/dashboard" || p === "/dashboard/account" || p === "/dashboard/security" || p === "/dashboard/select") return "open";
   if (p === "/dashboard/team") return "team";
-  const store = p.match(/^\/dashboard\/stores\/(\d+)(?:\/([^/]+))?/);
+  const store = p.match(/^\/dashboard\/stores\/(\d+)(?:\/([^/]+))?/) ?? p.match(/^\/store\/([a-z0-9-]+)(?:\/([^/]+))?/);
 
   if (scope === "platform") {
     if (p.startsWith("/dashboard/leads")) return "leads";

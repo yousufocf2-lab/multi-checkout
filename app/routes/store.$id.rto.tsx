@@ -17,6 +17,7 @@ import { rupees } from "~/lib/wallet";
 import { getWallet, ratesFor, usageSummary } from "~/lib/wallet.server";
 import { ProductPicker, parsePicked } from "~/components/ProductPicker";
 import { resolvePaymentMethods } from "~/lib/payment-methods";
+import { storePath } from "~/lib/store-code";
 
 const PAGE = 50;
 const MAX_CSV_BYTES = 8 * 1024 * 1024;
@@ -178,7 +179,7 @@ export default function RtoSuite() {
       {uploading && <BusyOverlay title="Reading your file" note="Adding customers to the block list." />}
       <Hero d={d} blocked={blocked} />
       <UsageCard d={d} />
-      {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`/dashboard/stores/${d.storeId}/payments`}>Payment methods</Link>.</Notice>}
+      {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`${storePath(d.storeId)}/payments`}>Payment methods</Link>.</Notice>}
       <CodForm d={d} msg={msg} />
       <CheckoutLimits d={d} msg={msg} />
       <OtpForm d={d} msg={msg} />
@@ -220,7 +221,7 @@ function Hero({ d, blocked }: { d: D; blocked: number }) {
               <p className="mt-0.5 truncate text-sm font-semibold"><span className="mr-1" aria-hidden>{c.emoji}</span>{c.value}</p>
             </a>
           ))}
-          <Link to={`/dashboard/stores/${d.storeId}/${d.shield.unlocked ? "rto-shield" : "logistics"}`} className="col-span-2 rounded-xl bg-gradient-to-r from-emerald-400/30 to-sky-400/20 px-3 py-2.5 ring-1 ring-emerald-300/30 transition hover:from-emerald-400/40 sm:col-span-4 lg:col-span-1">
+          <Link to={`${storePath(d.storeId)}/${d.shield.unlocked ? "rto-shield" : "logistics"}`} className="col-span-2 rounded-xl bg-gradient-to-r from-emerald-400/30 to-sky-400/20 px-3 py-2.5 ring-1 ring-emerald-300/30 transition hover:from-emerald-400/40 sm:col-span-4 lg:col-span-1">
             <p className="flex items-center justify-between text-[11px] text-emerald-100">RTO Shield<span className={`h-1.5 w-1.5 rounded-full ${d.shield.on ? "bg-emerald-400" : "bg-white/25"}`} /></p>
             <p className="mt-0.5 truncate text-sm font-semibold">🛡️ {d.shield.unlocked ? (d.shield.on ? "On" : "Set up →") : "Connect courier →"}</p>
           </Link>
@@ -510,7 +511,7 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
   return (
     <Form method="post" id="confirm" className="panel scroll-mt-6 space-y-4 p-5">
       <Head emoji="💬" title="Order confirmation" text="Confirm every order with the customer right after checkout, so fewer orders get refused at the door." on={on} setOn={setOn} name="confirmOn" />
-      {!d.waVerified && <Notice tone="warning">WhatsApp messages start after Growpefy verifies your store. <Link to={`/dashboard/stores/${d.storeId}/whatsapp`} className="font-medium underline">Send your stock video and documents →</Link></Notice>}
+      {!d.waVerified && <Notice tone="warning">WhatsApp messages start after Growpefy verifies your store. <Link to={`${storePath(d.storeId)}/whatsapp`} className="font-medium underline">Send your stock video and documents →</Link></Notice>}
       {!d.confirm.ready && <Notice tone="warning">{d.isAdmin ? <>WhatsApp sending isn't set up yet. Add the WhatsApp Cloud API details in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "WhatsApp messages are being set up by Growpefy. Your settings are saved and messages start automatically once it's live."}</Notice>}
       <div className={`space-y-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>
         <Row name="waOn" checked={wa} onChange={setWa} title="WhatsApp confirmation" text="Order details on WhatsApp right after the order is placed."
@@ -563,7 +564,7 @@ function UsageCard({ d }: { d: D }) {
     <section className="panel p-5" id="usage">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">Messages used</h3>
-        <Link to={`/dashboard/stores/${d.storeId}/wallet`} className="num text-sm text-ink-soft hover:text-ink">Wallet balance <b className={d.usage.balance < 0 ? "text-bad" : "text-ink"}>{rupees(d.usage.balance)}</b></Link>
+        <Link to={`${storePath(d.storeId)}/wallet`} className="num text-sm text-ink-soft hover:text-ink">Wallet balance <b className={d.usage.balance < 0 ? "text-bad" : "text-ink"}>{rupees(d.usage.balance)}</b></Link>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Tile emoji="🔐" title="OTPs sent" x={u.otp} price={d.otp.price} />

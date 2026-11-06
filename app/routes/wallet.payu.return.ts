@@ -3,6 +3,7 @@ import { redirect } from "@remix-run/node";
 import { eq } from "drizzle-orm";
 import { db, walletRecharges, wallets } from "~/db.server";
 import { checkReturnHash, confirmRecharge } from "~/lib/wallet.server";
+import { storePath } from "~/lib/store-code";
 
 /**
  * PayU posts here after a wallet recharge (surl / furl). The posted status is never trusted:
@@ -21,7 +22,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const [row] = await db.select({ storeId: wallets.storeId }).from(walletRecharges).innerJoin(wallets, eq(walletRecharges.walletId, wallets.id)).where(eq(walletRecharges.txnid, txnid)).limit(1);
   if (!row) return redirect("/dashboard");
   const tag = status === "paid" ? "success" : status === "failed" ? "failed" : "pending";
-  return redirect(`/dashboard/stores/${row.storeId}/wallet?recharge=${tag}`);
+  return redirect(`${storePath(row.storeId)}/wallet?recharge=${tag}`);
 }
 
 export const loader = (_: LoaderFunctionArgs) => redirect("/dashboard");

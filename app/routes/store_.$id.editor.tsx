@@ -10,6 +10,7 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { themeManifest } from "~/lib/storefront.server";
 import { editorState, publishDraft, saveDraft, THEME } from "~/lib/themes.server";
+import { storePath } from "~/lib/store-code";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Edit theme · ${data.store.name}` : "Edit theme" }, { name: "robots", content: "noindex" }];
 
@@ -60,7 +61,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 // ---------- types and helpers ----------
 
 /** Plain fetch to this route's action gets JSON back (not the page) with Remix's _data parameter. */
-const DATA_ID = encodeURIComponent("routes/dashboard_.stores.$id.editor");
+const DATA_ID = encodeURIComponent("routes/store_.$id.editor");
 
 type Setting = { id: string; type: string; label?: string; default?: unknown; min?: number; max?: number; step?: number; unit?: string; options?: string[]; option_labels?: string[]; fields?: Setting[]; info?: string };
 type Kind = { type: string; name: string; settings: Setting[]; where: "template" | "header" | "footer" | "fixed" };
@@ -139,7 +140,7 @@ export default function ThemeEditor() {
     clearTimeout(saveTimer.current);
     setStatus("saving");
     try {
-      const r = await fetch(`/dashboard/stores/${L.store.id}/editor?_data=${DATA_ID}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intent: "save", data: dataRef.current }) });
+      const r = await fetch(`${storePath(L.store.id)}/editor?_data=${DATA_ID}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intent: "save", data: dataRef.current }) });
       const j = await r.json().catch(() => ({ error: "Couldn't save" }));
       if (!r.ok || j.error) throw new Error(j.error ?? "Couldn't save");
       setStatus("saved"); setError(null);
@@ -186,7 +187,7 @@ export default function ThemeEditor() {
     clearTimeout(saveTimer.current);
     setStatus("publishing");
     try {
-      const r = await fetch(`/dashboard/stores/${L.store.id}/editor?_data=${DATA_ID}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intent: "publish", data: dataRef.current }) });
+      const r = await fetch(`${storePath(L.store.id)}/editor?_data=${DATA_ID}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ intent: "publish", data: dataRef.current }) });
       const j = await r.json().catch(() => ({ error: "Couldn't publish" }));
       if (!r.ok || j.error) throw new Error(j.error ?? "Couldn't publish");
       setStatus("published"); setError(null);
@@ -285,7 +286,7 @@ export default function ThemeEditor() {
       {/* top bar */}
       <header className="ed-top">
         <div className="ed-top__l">
-          <Link to={`/dashboard/stores/${L.store.id}/themes`} className="ed-ib" aria-label="Exit editor" title="Exit"><I n="exit" /></Link>
+          <Link to={`${storePath(L.store.id)}/themes`} className="ed-ib" aria-label="Exit editor" title="Exit"><I n="exit" /></Link>
           <span className="ed-sep" />
           <span className="ed-store">{L.store.name}</span>
           <span className={`ed-pill ed-pill--${status === "published" ? "live" : status === "error" ? "err" : "draft"}`}>{statusText}</span>
@@ -568,7 +569,7 @@ function MediaField({ id, s, value, onChange, storeId }: { id: string; s: Settin
   const upload = async (f: File) => {
     setBusy(true); setErr(null);
     try {
-      const r = await fetch(`/dashboard/stores/${storeId}/media`, { method: "POST", headers: { "Content-Type": f.type }, body: f });
+      const r = await fetch(`${storePath(storeId)}/media`, { method: "POST", headers: { "Content-Type": f.type }, body: f });
       const j = await r.json();
       if (!r.ok || !j.url) throw new Error(j.error ?? "Upload failed");
       onChange(j.url);

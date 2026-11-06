@@ -13,7 +13,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (body.step === "options") return json(await loginOptions());
   try {
     const who = await finishLogin(body.response as Parameters<typeof finishLogin>[0]);
-    const next = typeof body.next === "string" && body.next.startsWith("/dashboard") ? body.next : "/dashboard";
+    const next = typeof body.next === "string" && (body.next.startsWith("/dashboard") || body.next.startsWith("/store/")) ? body.next : "/dashboard";
     const { cookie, to } = await sessionCookie(request, who, next);
     return json({ to }, { headers: { "Set-Cookie": cookie } });
   } catch (e) {

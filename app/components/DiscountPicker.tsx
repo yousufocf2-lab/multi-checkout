@@ -2,6 +2,7 @@
 import { Link } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { Icon, type IconName } from "~/components/Icons";
+import { storePath } from "~/lib/store-code";
 
 const TYPES: { to: string; icon: IconName; title: string; text: string }[] = [
   { to: "discounts", icon: "discounts", title: "Amount off products", text: "% or ₹ off chosen products, with its own value for online and COD." },
@@ -32,7 +33,7 @@ export function DiscountPicker({ storeId, label = "Create discount", primary = t
             <ul className="divide-y divide-rule">
               {TYPES.map((t) => (
                 <li key={t.to}>
-                  <Link to={`/dashboard/stores/${storeId}/${t.to}`} className="flex items-center gap-3 px-4 py-3 hover:bg-paper">
+                  <Link to={`${storePath(storeId)}/${t.to}`} className="flex items-center gap-3 px-4 py-3 hover:bg-paper">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-sunk"><Icon name={t.icon} className="h-4 w-4" /></span>
                     <span className="min-w-0 flex-1"><span className="block text-[13px] font-semibold">{t.title}</span><span className="block text-[12.5px] text-ink-soft">{t.text}</span></span>
                     <Icon name="chevron" className="h-4 w-4 -rotate-90 text-ink-faint" />

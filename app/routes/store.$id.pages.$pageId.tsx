@@ -6,6 +6,7 @@ import { Notice, SubmitButton } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { deletePage, getPage, savePage } from "~/lib/store-pages.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -25,7 +26,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const id = params.pageId === "new" ? undefined : Number(params.pageId);
   if (fd.get("intent") === "delete" && id) {
     await deletePage(store.id, id);
-    return redirect(`/dashboard/stores/${store.id}/pages`);
+    return redirect(`${storePath(store.id)}/pages`);
   }
   const body = String(fd.get("body") ?? "");
   const publish = fd.get("published") === "on";
@@ -34,7 +35,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
   try {
     const newId = await savePage(store.id, { title: String(fd.get("title") ?? ""), handle: String(fd.get("handle") ?? ""), bodyHtml: body, published: publish, inFooter: fd.get("inFooter") === "on" }, id);
-    if (!id) return redirect(`/dashboard/stores/${store.id}/pages/${newId}`);
+    if (!id) return redirect(`${storePath(store.id)}/pages/${newId}`);
     return json({ ok: "Saved.", error: null });
   } catch (e) {
     return json({ ok: null, error: e instanceof Error ? e.message : "Couldn't save" }, { status: 400 });

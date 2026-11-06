@@ -17,6 +17,7 @@ import {
 } from "~/lib/wallet.server";
 import { storeBilling } from "~/lib/billing.server";
 import { BILLING_FIELDS, BILLING_LABEL, type BillingField } from "~/lib/billing";
+import { storePath } from "~/lib/store-code";
 
 const PAGE = 50;
 
@@ -336,7 +337,7 @@ function Ledger({ d }: { d: D }) {
     if (!("page" in patch)) p.delete("page");
     return `?${p}`;
   };
-  const exportHref = `/dashboard/stores/${d.storeId}/wallet/export.csv?${new URLSearchParams([...params.entries()].filter(([k]) => ["range", "from", "to", "type"].includes(k)))}`;
+  const exportHref = `${storePath(d.storeId)}/wallet/export.csv?${new URLSearchParams([...params.entries()].filter(([k]) => ["range", "from", "to", "type"].includes(k)))}`;
   return (
     <section className="panel">
       <div className="flex flex-wrap items-center gap-2 border-b border-rule px-5 py-3.5">

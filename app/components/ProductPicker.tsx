@@ -1,6 +1,7 @@
 import { useFetcher } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import { Spinner } from "./ui";
+import { storePath } from "~/lib/store-code";
 
 export type PickedProduct = { id: string; title: string; image: string | null };
 
@@ -28,7 +29,7 @@ export function ProductPicker({ storeId, name, initial = [], placeholder = "Sear
   useEffect(() => {
     if (!open) return;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => fetcher.load(`/dashboard/stores/${storeId}/products?q=${encodeURIComponent(q)}`), 250);
+    timer.current = setTimeout(() => fetcher.load(`${storePath(storeId)}/products?q=${encodeURIComponent(q)}`), 250);
     return () => clearTimeout(timer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, open, storeId]);

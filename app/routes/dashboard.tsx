@@ -26,6 +26,7 @@ import { PasskeyPrompt } from "~/components/Passkey";
 import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
+import { storeIdFromCode, storePath } from "~/lib/store-code";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -47,7 +48,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const list = await viewerStores(viewer);
   // Opening a store page focuses the dashboard on that store
   let selected = await selectedStore(request);
-  const inUrl = Number(new URL(request.url).pathname.match(/^\/dashboard\/stores\/(\d+)/)?.[1]);
+  const inUrl = storeIdFromCode(new URL(request.url).pathname.match(/^\/store\/([^/]+)/)?.[1]) ?? 0;
   const headers = new Headers();
   if (inUrl && inUrl !== selected && list.some((s) => s.id === inUrl)) {
     selected = inUrl;
@@ -104,7 +105,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = () => true;
 type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][number];
 
 /** Pages that belong to one store's tools (admin enters "store mode" on these when a store is picked). */
-const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/;
+const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$)|^\/store\//;
 
 export default function DashboardLayout() {
   const { kycPending, viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
@@ -115,14 +116,14 @@ export default function DashboardLayout() {
 
   const isAdmin = viewer.role === "admin";
   const may = (perm: string) => viewer.perms == null || viewer.perms.includes(perm);
-  const urlStore = Number(location.pathname.match(/^\/dashboard\/stores\/(\d+)/)?.[1]) || null;
+  const urlStore = storeIdFromCode(location.pathname.match(/^\/store\/([^/]+)/)?.[1]);
   const current = stores.find((s) => s.id === (urlStore ?? selected)) ?? null;
   const only = !isAdmin && stores.length === 1 ? stores[0] : null;
   const focus = current ?? only;
   // Admin sees its own panel; a client's store tools only after opening that store
   const storeMode = !isAdmin || (Boolean(current) && STORE_TOOL.test(location.pathname));
-  const storeHref = (section: string) => (focus ? `/dashboard/stores/${focus.id}/${section}` : `/dashboard/stores?next=${section}`);
-  const adsHref = focus ? `/dashboard/stores/${focus.id}/ads` : "/dashboard/ads";
+  const storeHref = (section: string) => (focus ? `${storePath(focus.id)}/${section}` : `/dashboard/stores?next=${section}`);
+  const adsHref = focus ? `${storePath(focus.id)}/ads` : "/dashboard/ads";
   const here = location.pathname + location.search;
   const adminHome = "/dashboard/select?store=all&to=%2Fdashboard";
   const RANK = { ok: 0, low: 1, negative: 2, locked: 3 } as const;
@@ -305,7 +306,7 @@ export default function DashboardLayout() {
         <IdleLogout idleMs={idleMs} />
         <div className={`mx-auto px-4 pb-24 pt-4 sm:px-6 lg:pb-12 lg:pt-5 ${inSettings ? "max-w-[920px]" : "max-w-[1200px]"}`}>
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
-            <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
+            <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`${storePath(alertStore.id)}/wallet`} />
           )}
           {kycPending && (
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-[#fff1e3] px-4 py-2.5 text-[13px] text-[#5e4200] shadow-[0_0_0_1px_rgba(178,132,0,.25)]">

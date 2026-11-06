@@ -7,6 +7,7 @@ import { env } from "./env.server";
 import type { Attribution } from "./attribution";
 import { kycIncomplete } from "./kyc";
 import { memberMayOpen } from "./team";
+import { storeIdFromCode } from "./store-code";
 
 const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -113,7 +114,7 @@ async function memberViewer(tid: number): Promise<Viewer | null> {
 /** Team logins may only open the dashboard pages their permissions allow (checked on every loader and action). */
 function memberBlocked(v: Viewer, request: Request) {
   const path = new URL(request.url).pathname;
-  if (!path.startsWith("/dashboard")) return false;
+  if (!path.startsWith("/dashboard") && !path.startsWith("/store/")) return false;
   if (v.role === "admin" && v.staff) return !memberMayOpen("platform", v.staff.perms, path);
   if (v.role === "owner" && v.member) return !memberMayOpen("owner", v.member.perms, path);
   return false;
@@ -155,7 +156,7 @@ export async function viewerStores(v: Viewer) {
 
 /** Loads a store if the viewer may manage it, else 404. */
 export async function requireStore(v: Viewer, id: string | number | undefined): Promise<Store> {
-  const sid = Number(id);
+  const sid = typeof id === "number" ? id : storeIdFromCode(id) ?? NaN;
   if (!Number.isInteger(sid)) throw new Response("Store not found", { status: 404 });
   const where = v.role === "admin" ? eq(stores.id, sid) : and(eq(stores.id, sid), eq(stores.ownerId, v.userId));
   const [s] = await db.select().from(stores).where(where).limit(1);
@@ -294,7 +295,7 @@ export async function startSession(request: Request, who: LoginResult, next = "/
   s.set("seen", Date.now());
   s.set("at", Date.now()); // when this login started (e.g. a dismissed reminder comes back on the next login)
   // KYC no longer blocks the dashboard (it is asked when going live, adding payment keys or recharging the wallet)
-  const safeNext = next.startsWith("/dashboard") || next.startsWith("/onboarding") ? next : "/dashboard";
+  const safeNext = next.startsWith("/dashboard") || next.startsWith("/store/") || next.startsWith("/onboarding") ? next : "/dashboard";
   return redirect(safeNext, { headers: { "Set-Cookie": await st.commitSession(s) } });
 }
 

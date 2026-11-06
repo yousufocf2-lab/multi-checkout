@@ -12,6 +12,7 @@ import { env } from "~/lib/env.server";
 import { connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, shipmentsByCourier, syncStoreShipments } from "~/lib/logistics.server";
 import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
 import { SHIP_STATUS_LABELS, type ShipStatus } from "~/lib/rto-shield";
+import { storePath } from "~/lib/store-code";
 
 const maskEmail = (e?: string) => (e ? e.replace(/^(.{2})[^@]*/, "$1•••") : null);
 
@@ -130,7 +131,7 @@ export default function Logistics() {
             <p className="text-sm font-semibold">{justConnected.name} connected. RTO Shield is unlocked 🛡️</p>
             <p className="text-xs text-ink-soft">{justConnected.kind === "push" ? "Share the webhook link below with Shipnex." : `We pick up AWBs from your ${d.platform} orders and refresh them every hour.`}</p>
           </div>
-          <Link to={`/dashboard/stores/${d.storeId}/rto-shield`} className="btn-primary text-sm">Set up RTO Shield →</Link>
+          <Link to={`${storePath(d.storeId)}/rto-shield`} className="btn-primary text-sm">Set up RTO Shield →</Link>
         </div>
       )}
       {r?.ok && r.ok !== "connected" && <Notice tone="success">{r.ok}</Notice>}

@@ -7,6 +7,7 @@ import { ProductPicker, parsePicked } from "~/components/ProductPicker";
 import { Notice, RowAction, Section, StatusBadge, SubmitButton, TextField, Toggle } from "~/components/ui";
 import { db, discountRules, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
@@ -76,7 +77,7 @@ export default function Discounts() {
     <div className="max-w-4xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
 
-      <Notice>The store-wide online and COD discount (or fee) is now in <Link to={`/dashboard/stores/${store.id}/payments`} className="font-medium underline">Payment methods</Link>. Product discounts below win for their products.</Notice>
+      <Notice>The store-wide online and COD discount (or fee) is now in <Link to={`${storePath(store.id)}/payments`} className="font-medium underline">Payment methods</Link>. Product discounts below win for their products.</Notice>
 
       <Section title="Product discounts" description="Give selected products their own online, COD and Partial COD discount, as a % or a flat ₹ amount off each item. If a product is in more than one, the newest one wins.">
         <Form method="post" className="space-y-4 rounded-lg border border-dashed border-rule-strong p-4" key={rules.length}>

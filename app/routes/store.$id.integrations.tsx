@@ -11,6 +11,7 @@ import { catalogAllowed } from "~/lib/catalog.server";
 import { courierAccountsFor } from "~/lib/logistics.server";
 import { courierById } from "~/lib/courier-catalog";
 import { postWebhook } from "~/lib/order-webhook.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -68,7 +69,7 @@ export default function Integrations() {
       {a?.error && <Notice tone="error">{a.error}</Notice>}
 
       <section className="panel space-y-3 p-5">
-        <div className="flex items-center"><h2 className="flex-1 text-[15px] font-semibold">Couriers</h2><Link to={`/dashboard/stores/${id}/logistics`} className="btn-secondary">Connect a courier</Link></div>
+        <div className="flex items-center"><h2 className="flex-1 text-[15px] font-semibold">Couriers</h2><Link to={`${storePath(id)}/logistics`} className="btn-secondary">Connect a courier</Link></div>
         <p className="text-sm text-ink-soft">Connect with your own API key or login. Delhivery with a pickup location books website orders by itself; every connected courier sends tracking updates back.</p>
         {couriers.length > 0 && (
           <ul className="flex flex-wrap gap-2">
@@ -78,7 +79,7 @@ export default function Integrations() {
       </section>
 
       <section className="panel space-y-3 p-5">
-        <div className="flex items-center"><h2 className="flex-1 text-[15px] font-semibold">Payment gateways</h2><Link to={`/dashboard/stores/${id}/payments`} className="btn-secondary">Add your keys</Link></div>
+        <div className="flex items-center"><h2 className="flex-1 text-[15px] font-semibold">Payment gateways</h2><Link to={`${storePath(id)}/payments`} className="btn-secondary">Add your keys</Link></div>
         <p className="text-sm text-ink-soft">PayU, Razorpay, Cashfree, PhonePe, Paytm, Easebuzz and CCAvenue with your own merchant keys. Money settles straight to your bank.</p>
       </section>
 

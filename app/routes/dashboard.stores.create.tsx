@@ -10,6 +10,7 @@ import { BUSINESS_PACKS } from "~/lib/business-types";
 import { createOwnStore } from "~/lib/connect.server";
 import { eq } from "drizzle-orm";
 import { db, users } from "~/db.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -29,7 +30,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!BUSINESS_PACKS[type]?.ready) return json({ error: "That type is coming soon. Pick Online store for now." }, { status: 400 });
   try {
     const id = await createOwnStore({ ownerId: viewer.userId, name: String(fd.get("name") ?? ""), businessType: type });
-    return redirect(`/dashboard/stores/${id}/catalog?welcome=1`);
+    return redirect(`${storePath(id)}/catalog?welcome=1`);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "Couldn't create the store" }, { status: 400 });
   }

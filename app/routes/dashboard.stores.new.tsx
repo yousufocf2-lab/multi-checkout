@@ -10,6 +10,7 @@ import { requireViewer } from "~/lib/auth.server";
 import { parseShopInput, slugify } from "~/lib/connect";
 import { requestConnect, shopExists } from "~/lib/connect.server";
 import { parseStoreForm } from "~/lib/store-form.server";
+import { storePath } from "~/lib/store-code";
 
 /** Only Growpefy's team adds Shopify / WooCommerce stores now (kept for existing clients). Plain boolean on purpose: no type narrowing. */
 const teamOnly = (role: string): boolean => role === "admin";
@@ -48,7 +49,7 @@ export async function action({ request }: ActionFunctionArgs) {
       website: String(fd.get("website") ?? "").trim() || null,
     });
     if ("error" in r) return json({ errors: { shop: r.error } as Record<string, string>, shop: raw }, { status: 400 });
-    return redirect(`/dashboard/stores/${r.storeId}/install${r.existed ? "" : "?requested=1"}`);
+    return redirect(`${storePath(r.storeId)}/install${r.existed ? "" : "?requested=1"}`);
   }
 
   // WooCommerce (and the team's manual Shopify setup): the full form
@@ -62,7 +63,7 @@ export async function action({ request }: ActionFunctionArgs) {
     .insert(stores)
     .values({ ...data, active: true, ownerId: viewer.role === "owner" ? viewer.userId : null })
     .returning({ id: stores.id });
-  return redirect(`/dashboard/stores/${created.id}/install?created=1`);
+  return redirect(`${storePath(created.id)}/install?created=1`);
 }
 
 export default function NewStore() {

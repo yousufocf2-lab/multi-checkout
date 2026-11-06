@@ -25,7 +25,7 @@ export function startSocial(p: Provider, request: Request) {
   if (!socialProviders()[p]) throw redirect("/login");
   const url = new URL(request.url);
   const nextRaw = url.searchParams.get("next") ?? "/dashboard";
-  const next = nextRaw.startsWith("/dashboard") || nextRaw.startsWith("/onboarding") ? nextRaw : "/dashboard";
+  const next = nextRaw.startsWith("/dashboard") || nextRaw.startsWith("/store/") || nextRaw.startsWith("/onboarding") ? nextRaw : "/dashboard";
   const nonce = randomBytes(16).toString("base64url");
   const val = `${p}.${nonce}.${Buffer.from(next).toString("base64url")}`;
   const cookie = `${COOKIE}=${val}.${sign(val)}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`;

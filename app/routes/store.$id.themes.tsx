@@ -6,6 +6,7 @@ import { Notice, SubmitButton, LearnMore } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { discardDraft, editorState, publishDraft, restoreVersion } from "~/lib/themes.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -69,7 +70,7 @@ export default function Themes() {
               <dt className="text-ink-faint">Last edit</dt><dd>{when(updatedAt)}</dd>
             </dl>
             <div className="mt-auto flex flex-wrap gap-2 pt-2">
-              <Link to={`/dashboard/stores/${store.id}/editor`} className="btn-primary">Customize</Link>
+              <Link to={`${storePath(store.id)}/editor`} className="btn-primary">Customize</Link>
               {hasDraft && <a href={`/s/${store.slug}?gp_draft=1`} target="_blank" rel="noreferrer" className="btn-secondary">Preview changes</a>}
               {hasDraft && (
                 <Form method="post"><input type="hidden" name="intent" value="publish" /><SubmitButton className="btn-secondary" busyText="Publishing">Publish</SubmitButton></Form>

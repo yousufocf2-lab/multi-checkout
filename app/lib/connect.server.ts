@@ -8,6 +8,7 @@ import { messaging } from "./rto.server";
 import { getPlatform } from "./wallet.server";
 import { getWelcome } from "./welcome.server";
 import { greetName } from "./welcome";
+import { storePath } from "~/lib/store-code";
 
 const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const phone10 = (p: string | null | undefined) => { const d = (p ?? "").replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, ""); return /^[6-9]\d{9}$/.test(d) ? d : null; };
@@ -204,7 +205,7 @@ export async function notifyOwner(storeId: number): Promise<Sent> {
   const name = greetName(row.u.kyc?.contactName || row.u.name);
   const phone = phone10(row.u.phone ?? row.u.kyc?.phone);
   const email = mail(row.u.email ?? row.u.kyc?.email);
-  const link = `${base()}/dashboard/stores/${storeId}/install`;
+  const link = `${base()}${storePath(storeId)}/install`;
   const { html, text } = noticeEmail({
     heading: `Your Shopify connection is ready${name === "there" ? "" : `, ${esc(name)}`} ✅`,
     lines: [

@@ -16,6 +16,7 @@ import { getPlatform, platformPayu, rechargeSummary, stateOf, usageSummary, wall
 import { testPayu } from "~/lib/payu.server";
 import { messaging, otpMode } from "~/lib/rto.server";
 import { recoveryBase } from "~/lib/recovery.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
@@ -193,7 +194,7 @@ export default function Wallets() {
                     </td>
                     <td className="num text-right text-sm">{rupees(r.spent)}</td>
                     <td className={`num text-right font-semibold ${r.balance < 0 ? "text-bad" : ""}`}>{rupees(r.balance)}</td>
-                    <td className="text-right"><Link to={`/dashboard/stores/${r.storeId}/wallet`} className="btn-quiet text-xs">Manage</Link></td>
+                    <td className="text-right"><Link to={`${storePath(r.storeId)}/wallet`} className="btn-quiet text-xs">Manage</Link></td>
                   </tr>
                 ))}
               </tbody>

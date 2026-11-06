@@ -7,6 +7,7 @@ import { Notice, PageHeader } from "~/components/ui";
 import { db, storeDocuments, stores, users, type WaVerifyStatus } from "~/db.server";
 import { requireAdmin } from "~/lib/auth.server";
 import { VERIFY_LABEL, verifyStatus } from "~/lib/whatsapp-gate";
+import { storePath } from "~/lib/store-code";
 
 const ORDER: Record<string, number> = { submitted: 0, requested: 1, none: 2, rejected: 3, approved: 4 };
 
@@ -85,7 +86,7 @@ export default function WaVerify() {
                 <p className="truncate text-xs text-ink-faint"><a href={s.url} target="_blank" rel="noreferrer" className="hover:underline">{s.url.replace(/^https?:\/\//, "")}</a>
                   {s.owner && <> · {s.owner.name} · {s.owner.phone || s.owner.email} · KYC {s.owner.kyc}</>}</p>
               </div>
-              <Link to={`/dashboard/stores/${s.id}/whatsapp`} className="btn-quiet text-xs">Store page</Link>
+              <Link to={`${storePath(s.id)}/whatsapp`} className="btn-quiet text-xs">Store page</Link>
             </div>
             <div className="grid gap-4 p-5 md:grid-cols-[1.2fr_1fr]">
               <div className="space-y-3 text-sm">

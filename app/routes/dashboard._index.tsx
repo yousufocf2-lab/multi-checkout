@@ -19,6 +19,7 @@ import type { Range } from "~/lib/dates";
 import { resolveRange } from "~/lib/dates";
 import { dashboardScope } from "~/lib/selection.server";
 import { earliestDate, loadLeaderboard, loadOverview } from "~/lib/stats.server";
+import { storePath } from "~/lib/store-code";
 
 const greet = () => {
   const hour = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hourCycle: "h23", timeZone: "Asia/Kolkata" }).format(new Date()));
@@ -145,7 +146,7 @@ function StoreHome() {
         </div>
       </div>
       <OverviewView data={overview} leaders={leaders} showStoreColumn={!single}
-        adsHref={single ? `/dashboard/stores/${single.id}/ads` : undefined} />
+        adsHref={single ? `${storePath(single.id)}/ads` : undefined} />
     </>
   );
 }

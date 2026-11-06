@@ -2,6 +2,7 @@ import { Form } from "@remix-run/react";
 import { useState } from "react";
 import { Section, SelectField, SubmitButton, TextField, Toggle } from "./ui";
 import { GatewaysEditor, type GatewayView } from "./GatewaysEditor";
+import { storePath } from "~/lib/store-code";
 
 export type StoreFormValues = {
   name?: string; slug?: string; platform?: "shopify" | "woocommerce" | "growpefy"; hasWooSecret?: boolean; shopDomain?: string; storefrontUrl?: string; checkoutDomain?: string | null; active?: boolean;
@@ -139,7 +140,7 @@ export function StoreSettingsForm({ values = {}, errors = {}, submitLabel, isNew
                 ? <>Connected to ad account <b className="num text-ink">{v.googleAdsCustomerId.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}</b>{v.googleConversionActionName ? <> · purchases go to “{v.googleConversionActionName}”</> : " · purchase uploads off"}{v.googleTagId ? <> · tag {v.googleTagId}</> : ""}</>
                 : v.googleConnected ? "Signed in. Pick the ad account to finish." : "Not connected."}
             </p>
-            <a href={`/dashboard/stores/${v.id}/ads?ch=google`} className="btn-secondary">{v.googleConnected ? "Manage Google Ads" : "Connect Google Ads"}</a>
+            <a href={`${storePath(v.id)}/ads?ch=google`} className="btn-secondary">{v.googleConnected ? "Manage Google Ads" : "Connect Google Ads"}</a>
           </div>
         </Section>
       )}

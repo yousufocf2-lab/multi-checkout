@@ -8,6 +8,7 @@ import { CostTag, EmptyState, PageHeader } from "~/components/ui";
 import { requireViewer, viewerStores } from "~/lib/auth.server";
 import { resolveRange } from "~/lib/dates";
 import { earliestDate, loadOverview } from "~/lib/stats.server";
+import { storePath } from "~/lib/store-code";
 
 const MAX = 4;
 
@@ -86,7 +87,7 @@ export default function Compare() {
               {rows.map((r, i) => (
                 <th key={r.id}>
                   <span className="flex items-center gap-1.5"><span aria-hidden className="h-2.5 w-2.5 rounded-sm" style={{ background: STORE_COLORS[i] }} />
-                    <Link to={`/dashboard/stores/${r.id}`} className="hover:underline">{r.name}</Link></span>
+                    <Link to={`${storePath(r.id)}`} className="hover:underline">{r.name}</Link></span>
                 </th>
               ))}
             </tr>

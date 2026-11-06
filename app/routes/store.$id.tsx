@@ -8,6 +8,7 @@ import { can, requireStore, requireViewer } from "~/lib/auth.server";
 import { storeBaseUrl } from "~/lib/urls.server";
 import { rupees } from "~/lib/wallet";
 import { getWallet, stateOf } from "~/lib/wallet.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -43,7 +44,7 @@ const LOCKED = new Set(["ads", "gifts", "design"]);
 /** Store pages share a slim header; the section menu lives in the sidebar. */
 export default function StoreLayout() {
   const { store, locked, balance, canSettings } = useLoaderData<typeof loader>();
-  const section = useLocation().pathname.split("/")[4] ?? "";
+  const section = useLocation().pathname.split("/")[3] ?? "";
   const t = TITLES[section];
   return (
     <>
@@ -51,7 +52,7 @@ export default function StoreLayout() {
         <div className="mb-4 flex min-h-[32px] flex-wrap items-center gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {t.back
-              ? <Link to={`/dashboard/stores/${store.id}/${t.back}`} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back to discounts"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>
+              ? <Link to={`${storePath(store.id)}/${t.back}`} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back to discounts"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>
               : <Icon name={t.icon} className="h-4 w-4 shrink-0" strokeWidth={1.9} />}
             <h1 className="truncate text-[15px] font-semibold leading-tight tracking-tight">{t.title}</h1>
             {!store.active && <StatusBadge status="off" label="Checkout off" />}
@@ -62,10 +63,10 @@ export default function StoreLayout() {
             {t.guide && <LearnMore topic={t.guide} />}
             {section === "promotions" && <DiscountPicker storeId={store.id} />}
             {section === "inbox" && canSettings && (
-              <Link to={`/dashboard/stores/${store.id}/whatsapp`} className="btn-secondary"><Icon name="settings" className="h-4 w-4" />WhatsApp settings</Link>
+              <Link to={`${storePath(store.id)}/whatsapp`} className="btn-secondary"><Icon name="settings" className="h-4 w-4" />WhatsApp settings</Link>
             )}
             {section === "whatsapp" && (
-              <Link to={`/dashboard/stores/${store.id}/inbox`} className="btn-secondary"><Icon name="chat" className="h-4 w-4" />Open inbox</Link>
+              <Link to={`${storePath(store.id)}/inbox`} className="btn-secondary"><Icon name="chat" className="h-4 w-4" />Open inbox</Link>
             )}
           </div>
         </div>
@@ -75,7 +76,7 @@ export default function StoreLayout() {
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-bad"><Icon name="wallet" className="h-6 w-6" /></span>
           <h2 className="mt-4 text-lg font-semibold">Recharge to unlock {t?.title.toLowerCase() ?? "this page"}</h2>
           <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-soft">Your wallet is at {rupees(balance)}, past its limit. Checkout, OTP and order confirmations keep working. Recharge to use this page again.</p>
-          <Link to={`/dashboard/stores/${store.id}/wallet`} className="btn-primary mt-5">Recharge wallet</Link>
+          <Link to={`${storePath(store.id)}/wallet`} className="btn-primary mt-5">Recharge wallet</Link>
         </div>
       ) : <Outlet />}
     </>

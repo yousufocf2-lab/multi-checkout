@@ -9,6 +9,7 @@ import { CONNECT_WA_TEMPLATES } from "~/lib/connect";
 import { connectFormAction, connectRequests } from "~/lib/connect.server";
 import { env } from "~/lib/env.server";
 import { SHOPIFY_SCOPES } from "~/lib/scopes";
+import { storePath } from "~/lib/store-code";
 
 export const meta: MetaFunction = () => [{ title: "Connect requests · Growpefy" }];
 
@@ -66,7 +67,7 @@ export default function ConnectRequests() {
         <div className="border-t border-rule px-5 py-5">
           <p className="mb-4 text-xs text-ink-faint">
             Asked {when(r.requestedAt)}. Store ID <b className="text-ink">{r.slug}</b> ·{" "}
-            <Link to={`/dashboard/stores/${r.id}/install`} className="underline">Open store setup</Link>
+            <Link to={`${storePath(r.id)}/install`} className="underline">Open store setup</Link>
           </p>
           <ConnectAppForm store={r} appUrl={appUrl} scopes={scopes} />
         </div>

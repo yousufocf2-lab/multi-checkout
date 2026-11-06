@@ -14,6 +14,7 @@ import {
   type LiveRule, type RtoShieldSettings, type ShieldAction, type ShipCounts, type Tier,
 } from "~/lib/rto-shield";
 import { blockedCustomersNow, setExempt } from "~/lib/rto-shield.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -85,7 +86,7 @@ function Locked({ storeId }: { storeId: number }) {
         <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-3xl" aria-hidden>🔒</span>
         <h2 className="mt-4 text-xl font-semibold">Connect a courier to unlock RTO Shield</h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-white/75">RTO Shield reads each customer's delivery history from your courier. Then it can hide COD, or stop orders, for customers who keep refusing deliveries.</p>
-        <Link to={`/dashboard/stores/${storeId}/logistics`} className="btn-primary mt-6 bg-white text-ink hover:bg-white/90">Connect courier →</Link>
+        <Link to={`${storePath(storeId)}/logistics`} className="btn-primary mt-6 bg-white text-ink hover:bg-white/90">Connect courier →</Link>
       </div>
       <ul className="grid gap-4 p-6 sm:grid-cols-3">
         {[["shipping", "Block while in transit", "No new COD order until the last one is delivered."], ["shield", "Block after RTO", "2 RTOs → COD off. 5 RTOs → no orders. You choose."], ["check", "Prepaid stays open", "Keep online payment open for everyone, if you like."]].map(([icon, t, s]) => (

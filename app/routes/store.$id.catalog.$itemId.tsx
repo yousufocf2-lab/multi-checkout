@@ -9,6 +9,7 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { packOf } from "~/lib/business-types";
 import { catalogAllowed, deleteItem, getItem, listCategories, saveItem, type ItemStatus, type VariantInput } from "~/lib/catalog.server";
 import { rupeesToPaise } from "~/lib/pricing";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -33,7 +34,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   if (fd.get("intent") === "delete" && id) {
     await deleteItem(store.id, id);
-    return redirect(`/dashboard/stores/${store.id}/catalog`);
+    return redirect(`${storePath(store.id)}/catalog`);
   }
 
   try {
@@ -54,7 +55,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       categoryIds: fd.getAll("category").map(Number).filter(Boolean),
       seoTitle: str(fd.get("seoTitle")) || null, seoDescription: str(fd.get("seoDescription")) || null,
     }, id);
-    if (!id) return redirect(`/dashboard/stores/${store.id}/catalog/${newId}?saved=1`);
+    if (!id) return redirect(`${storePath(store.id)}/catalog/${newId}?saved=1`);
     return json({ ok: "Saved.", error: null });
   } catch (e) {
     return json({ ok: null, error: e instanceof Error ? e.message : "Couldn't save" }, { status: 400 });
@@ -278,7 +279,7 @@ function MediaManager({ media, setMedia }: { media: ItemImage[]; setMedia: React
       setUploads((u) => [...u, { id, name: file.name, pct: 0 }]);
       try {
         const blob = await shrink(file);
-        const r = await sendFile(`/dashboard/stores/${storeId}/media`, blob, (pct) => setUploads((u) => u.map((x) => (x.id === id ? { ...x, pct } : x))));
+        const r = await sendFile(`${storePath(storeId)}/media`, blob, (pct) => setUploads((u) => u.map((x) => (x.id === id ? { ...x, pct } : x))));
         setMedia((m) => [...m, { url: r.url, type: r.type }]);
         setUploads((u) => u.filter((x) => x.id !== id));
       } catch (e) {

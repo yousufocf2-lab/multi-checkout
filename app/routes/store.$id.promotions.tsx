@@ -8,6 +8,7 @@ import { Icon } from "~/components/Icons";
 import { LearnMore } from "~/components/ui";
 import { bankOffers, coupons, db, discountRules, freeOffers } from "~/db.server";
 import { can, requireStore, requireViewer } from "~/lib/auth.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -76,7 +77,7 @@ export default function Promotions() {
             <tbody>
               {shown.map((r) => (
                 <tr key={r.key} className="cursor-pointer">
-                  <td><Link to={`/dashboard/stores/${storeId}/${r.to}`} className="font-semibold text-ink hover:underline">{r.title}</Link></td>
+                  <td><Link to={`${storePath(storeId)}/${r.to}`} className="font-semibold text-ink hover:underline">{r.title}</Link></td>
                   <td><span className={`inline-flex rounded-md px-1.5 py-0.5 text-[11.5px] font-medium ${r.active ? "bg-[#cdfee1] text-[#0c5132]" : "bg-paper-sunk text-ink-soft"}`}>{r.active ? "Active" : "Off"}</span></td>
                   <td className="text-ink-soft">{r.kind}</td>
                   <td className="max-w-[320px] truncate text-ink-soft">{r.detail}</td>

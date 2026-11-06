@@ -20,6 +20,7 @@ import { GST, withGst } from "~/lib/gst";
 import { orderValueSql } from "~/lib/order-value.server";
 import { creditFromGross, listRecharges, rechargeTotals, recordSnapshot, watchingSince } from "~/lib/recharges.server";
 import { earliestDate, loadOverview } from "~/lib/stats.server";
+import { storePath } from "~/lib/store-code";
 
 type Channel = "all" | "meta" | "google";
 type CampaignAll = { platform: "meta" | "google"; id: string; name: string; channel: string; spend: number; purchases: number; cpp: number | null; roas: number | null; ctr: number; cpc: number };
@@ -306,7 +307,7 @@ function MetaTab({ d }: { d: D }) {
     return (
       <ConnectCard logo={<AdLogo p="meta" className="h-7 w-auto" />} title="Connect your Meta ad account"
         text="Add your ad account ID and a system user token to see spend, ROAS, cost per order and recharges here."
-        action={<Link to={`/dashboard/stores/${d.storeId}/settings#meta`} className="btn-primary">Open settings</Link>} />
+        action={<Link to={`${storePath(d.storeId)}/settings#meta`} className="btn-primary">Open settings</Link>} />
     );
   }
   const { meta, own } = d;
@@ -431,7 +432,7 @@ function GoogleTab({ d }: { d: D }) {
     return (
       <ConnectCard logo={<AdLogo p="google" className="h-8 w-auto" text="text-2xl" />} title="Connect Google Ads"
         text="Sign in with the Google account that runs your ads. We read spend and campaign results, and can send purchases from ad clicks back to Google."
-        action={<a href={`/dashboard/stores/${d.storeId}/google/connect`} className="btn-primary"><GoogleG />Connect with Google</a>}
+        action={<a href={`${storePath(d.storeId)}/google/connect`} className="btn-primary"><GoogleG />Connect with Google</a>}
         extra={<TagCard d={d} />} />
     );
   }

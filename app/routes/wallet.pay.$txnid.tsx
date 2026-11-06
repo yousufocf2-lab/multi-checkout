@@ -8,6 +8,7 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { rupees } from "~/lib/wallet";
 import { BrandLoader, BrandLockup } from "~/components/Brand";
 import { rechargePayuForm } from "~/lib/wallet.server";
+import { storePath } from "~/lib/store-code";
 
 export const meta: MetaFunction = () => [{ title: "Opening secure payment" }, { name: "robots", content: "noindex" }];
 
@@ -19,7 +20,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     .where(eq(walletRecharges.txnid, params.txnid!)).limit(1);
   if (!row) throw new Response("Recharge not found", { status: 404 });
   const store = await requireStore(viewer, row.storeId);
-  if (row.r.status !== "pending") return redirect(`/dashboard/stores/${store.id}/wallet?recharge=${row.r.status === "paid" ? "success" : "failed"}`);
+  if (row.r.status !== "pending") return redirect(`${storePath(store.id)}/wallet?recharge=${row.r.status === "paid" ? "success" : "failed"}`);
   const form = await rechargePayuForm(row.r.txnid, { name: row.billing?.name || viewer.name, email: row.billing?.email || viewer.email, phone: row.billing?.phone }, store.name);
   return json({ action: form.action, fields: form.fields, total: row.r.totalPaise, credit: row.r.creditPaise });
 }

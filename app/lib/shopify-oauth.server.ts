@@ -6,6 +6,7 @@ import { env } from "./env.server";
 import { clearTokenCache } from "./shopify.server";
 
 import { SHOPIFY_SCOPES } from "./scopes";
+import { storePath } from "~/lib/store-code";
 const SHOP_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 
 let cookie: ReturnType<typeof createCookie> | null = null;
@@ -34,7 +35,7 @@ export async function storeByShop(shop: string, id?: number | null) {
 
 /** Simple page for OAuth problems, with a way back to the store's settings. */
 function oauthError(title: string, text: string, storeId?: number) {
-  const back = storeId ? `/dashboard/stores/${storeId}/settings` : "/dashboard";
+  const back = storeId ? `${storePath(storeId)}/settings` : "/dashboard";
   const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>
 <body style="font-family:system-ui,sans-serif;background:#f4f5f2;margin:0;display:grid;place-items:center;min-height:100vh;padding:16px">
 <div style="background:#fff;border:1px solid #e2e5e0;border-radius:14px;max-width:520px;padding:28px">
@@ -116,7 +117,7 @@ export async function finishOAuth(request: Request) {
   // Connected: a "Get credentials" request is done
   await db.update(stores).set({ adminToken: data.access_token, connectStatus: null }).where(eq(stores.id, store.id));
   clearTokenCache(store.id);
-  return redirect(`/dashboard/stores/${store.id}/install?connected=1`, {
+  return redirect(`${storePath(store.id)}/install?connected=1`, {
     headers: { "Set-Cookie": await stateCookie().serialize("", { maxAge: 0 }) },
   });
 }

@@ -11,12 +11,13 @@ import { earliestDate, loadLeaderboard } from "~/lib/stats.server";
 import { adsReady, metaReady } from "~/lib/ads.server";
 import { googleReady } from "~/lib/google-ads.server";
 import { AdIcon } from "~/components/AdLogos";
+import { storePath } from "~/lib/store-code";
 
 /** Ads across stores. With one store in focus, goes straight to that store's Ads page. */
 export async function loader({ request }: LoaderFunctionArgs) {
   const all = await viewerStores(await requireViewer(request));
   const { scope } = await dashboardScope(request, all);
-  if (scope.length === 1) return redirect(`/dashboard/stores/${scope[0].id}/ads${new URL(request.url).search}`);
+  if (scope.length === 1) return redirect(`${storePath(scope[0].id)}/ads${new URL(request.url).search}`);
   const range = resolveRange(new URL(request.url).searchParams, await earliestDate(scope));
   const rows = scope.length > 1 ? await loadLeaderboard(scope, range) : [];
   const withAds = new Set(scope.filter(adsReady).map((s) => s.id));
@@ -60,7 +61,7 @@ export default function AdsAll() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td><Link to={`/dashboard/stores/${r.id}/ads`} className="font-medium hover:underline">{r.name}</Link></td>
+                    <td><Link to={`${storePath(r.id)}/ads`} className="font-medium hover:underline">{r.name}</Link></td>
                     <td><span className="flex items-center gap-1.5">{r.meta && <AdIcon p="meta" className="h-3.5 w-auto" />}{r.google && <AdIcon p="google" className="h-3.5 w-auto" />}{!r.connected && <span className="text-xs text-ink-faint">—</span>}</span></td>
                     {r.connected ? (
                       <>
@@ -72,7 +73,7 @@ export default function AdsAll() {
                         <td className="text-right">{inr(r.invested)}</td>
                       </>
                     ) : (
-                      <td colSpan={6} className="text-right text-xs text-ink-faint"><Link to={`/dashboard/stores/${r.id}/ads`} className="underline">Connect Meta or Google ads</Link></td>
+                      <td colSpan={6} className="text-right text-xs text-ink-faint"><Link to={`${storePath(r.id)}/ads`} className="underline">Connect Meta or Google ads</Link></td>
                     )}
                   </tr>
                 ))}

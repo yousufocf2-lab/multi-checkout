@@ -7,6 +7,7 @@ import { inArray, sql } from "drizzle-orm";
 import { EmptyState, PageHeader, StatusBadge } from "~/components/ui";
 import { db, orders, users } from "~/db.server";
 import { requireViewer, viewerStores } from "~/lib/auth.server";
+import { storePath } from "~/lib/store-code";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -47,7 +48,7 @@ export default function StoresList() {
   const [params] = useSearchParams();
   const next = params.get("next") ?? "";
   const picking = Boolean(SECTIONS[next]);
-  const open = (id: number) => (picking ? `/dashboard/stores/${id}/${next}` : `/dashboard/select?store=${id}&to=/dashboard`);
+  const open = (id: number) => (picking ? `${storePath(id)}/${next}` : `/dashboard/select?store=${id}&to=/dashboard`);
   return (
     <>
       <PageHeader title={picking ? "Choose a store" : "All stores"}
@@ -72,7 +73,7 @@ export default function StoresList() {
                 <StatusBadge status={s.active ? "live" : "off"} />
               </Link>
               {s.connect === "requested" && <p className="mt-3 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">We're setting up your Shopify app. You'll get WhatsApp + email.</p>}
-              {s.connect === "ready" && <Link to={`/dashboard/stores/${s.id}/install`} className="mt-3 block rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-good">Your app is ready → Connect store</Link>}
+              {s.connect === "ready" && <Link to={`${storePath(s.id)}/install`} className="mt-3 block rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-good">Your app is ready → Connect store</Link>}
               <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
                 <Check ok={s.shopifyReady} label={s.platform} /><Check ok={s.payuReady} label="PayU" /><Check ok={s.adsReady} label="Meta ads" />
               </div>
@@ -83,7 +84,7 @@ export default function StoresList() {
               {isAdmin && <p className="mt-2 text-xs text-ink-faint">Owner: {s.owner ?? "You"}</p>}
               <div className="mt-4 flex gap-2">
                 <Link to={open(s.id)} className="btn-primary flex-1 py-2">{picking ? `Open ${SECTIONS[next]}` : "Open dashboard"}</Link>
-                {!picking && <Link to={`/dashboard/stores/${s.id}/settings`} className="btn-secondary py-2">Settings</Link>}
+                {!picking && <Link to={`${storePath(s.id)}/settings`} className="btn-secondary py-2">Settings</Link>}
               </div>
             </div>
           ))}
