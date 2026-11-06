@@ -2,7 +2,9 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { Icon } from "~/components/Icons";
-import { OverviewView, RangePicker } from "~/components/Overview";
+import { RangePicker } from "~/components/Overview";
+import { HomeView } from "~/components/HomeView";
+import { homeTasks, setupGuide } from "~/lib/home.server";
 import { StoreFilter } from "~/components/StoreFilter";
 import { EmptyState } from "~/components/ui";
 import { can, requireViewer, viewerStores, type Viewer } from "~/lib/auth.server";
@@ -93,13 +95,20 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
   const { scope, picked, locked } = await dashboardScope(request, all);
   const range = resolveRange(new URL(request.url).searchParams, await earliestDate(scope));
-  const [overview, leaders] = await Promise.all([loadOverview(scope, range), loadLeaderboard(scope, range)]);
+  const one = scope.length === 1 ? scope[0] : null;
+  const [overview, leaders, tasks, setup] = await Promise.all([
+    loadOverview(scope, range), loadLeaderboard(scope, range), homeTasks(scope),
+    one ? setupGuide(one, storePath(one.id)).catch(() => null) : Promise.resolve(null),
+  ]);
   const hour = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hourCycle: "h23", timeZone: "Asia/Kolkata" }).format(new Date()));
   return json({
     admin: null,
-    overview, leaders, picked, locked,
+    overview, leaders, picked, locked, tasks, setup,
     stores: all.map((s) => ({ id: s.id, name: s.name })),
-    single: scope.length === 1 ? { id: scope[0].id, name: scope[0].name } : null,
+    single: one ? {
+      id: one.id, name: one.name, base: storePath(one.id), storefront: one.storefrontEnabled,
+      liveUrl: one.storefrontEnabled ? (one.storefrontDomain ? `https://${one.storefrontDomain}` : `/s/${one.slug}`) : null,
+    } : null,
     greeting: hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening",
     viewerName: viewer.role === "admin" ? (viewer.staff?.name ?? "Admin").split(" ")[0] : (viewer.member?.name ?? viewer.name).split(" ")[0],
     isAdmin: viewer.role === "admin",
@@ -113,7 +122,7 @@ export default function DashboardHome() {
 }
 
 function StoreHome() {
-  const { overview, leaders, stores, picked, locked, single, greeting, viewerName, isAdmin } = useLoaderData<typeof loader>() as Extract<ReturnType<typeof useLoaderData<typeof loader>>, { admin: null }>;
+  const { overview, leaders, stores, picked, locked, single, greeting, viewerName, tasks, setup } = useLoaderData<typeof loader>() as Extract<ReturnType<typeof useLoaderData<typeof loader>>, { admin: null }>;
 
   if (stores.length === 0) {
     return (
@@ -132,21 +141,21 @@ function StoreHome() {
 
   return (
     <>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm text-ink-soft">{greeting}, {viewerName} {isAdmin && <span aria-hidden>👋</span>}</p>
-          <h1 className="mt-0.5 flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            Overview
-            <span className="inline-flex items-center gap-1 rounded-full bg-pine-tint px-2.5 py-0.5 text-xs font-medium text-pine"><Icon name="stores" className="h-3.5 w-3.5" />{scopeName}</span>
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RangePicker current={overview.range} align="right" />
-          {stores.length > 1 && !locked && <StoreFilter stores={stores} selected={picked} />}
-        </div>
+      <div className="mb-3 flex min-h-[32px] flex-wrap items-center gap-2">
+        <h1 className="sr-only">Home</h1>
+        <RangePicker current={overview.range} />
+        {stores.length > 1 && !locked && <StoreFilter stores={stores} selected={picked} />}
+        {!single && <span className="hidden h-7 items-center gap-1 rounded-lg px-2 text-[12.5px] text-ink-soft sm:inline-flex"><Icon name="stores" className="h-3.5 w-3.5" />{scopeName}</span>}
+        {tasks.liveCheckouts > 0 && (
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white px-2.5 text-[12.5px] font-medium shadow-[0_0_0_1px_rgba(0,0,0,.08)]" title="Checkouts active in the last 5 minutes">
+            <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#29845a] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#29845a]" /></span>
+            {tasks.liveCheckouts} in checkout now
+          </span>
+        )}
+        <span className="ml-auto hidden text-[12.5px] text-ink-soft md:inline">{greeting}, {viewerName}</span>
+        {single?.liveUrl && <a href={single.liveUrl} target="_blank" rel="noreferrer" className="btn-secondary btn"><Icon name="eye" className="h-3.5 w-3.5" />View store</a>}
       </div>
-      <OverviewView data={overview} leaders={leaders} showStoreColumn={!single}
-        adsHref={single ? `${storePath(single.id)}/ads` : undefined} />
+      <HomeView data={overview} tasks={tasks} setup={setup} leaders={leaders} single={single} showStoreColumn={!single} />
     </>
   );
 }

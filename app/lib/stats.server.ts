@@ -8,7 +8,12 @@ import { googleReady } from "./google-ads.server";
 
 const OK = ["paid", "cod_placed"];
 
-export type Bucket = { key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; adSpend: number | null; metaSpend: number | null; googleSpend: number | null };
+export type Bucket = {
+  key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; sessions: number;
+  adSpend: number | null; metaSpend: number | null; googleSpend: number | null;
+  // Same position in the previous period (null for "All time"), for the dotted comparison line
+  prev: { revenue: number; orders: number; sessions: number } | null;
+};
 
 export type Overview = {
   range: Range;
@@ -39,7 +44,7 @@ export type Overview = {
     googlePurchases: number | null;
   };
   ads: ReturnType<typeof compare>;
-  previous: { revenue: number; orders: number } | null;
+  previous: { revenue: number; orders: number; sessions: number } | null;
   buckets: Bucket[];
   topProducts: { title: string; image: string | null; quantity: number; revenue: number }[];
   recent: { id: string; storeName: string; name: string; city: string; method: string; status: string; total: number; createdAt: string }[];
@@ -70,12 +75,15 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
   const inRange = (col: typeof orders.createdAt) => and(gte(col, from), lt(col, to));
   const idsFilter = inArray(orders.storeId, empty ? [-1] : ids);
 
-  const bucketExpr =
+  const bucketOf = (col: typeof orders.createdAt | typeof checkoutSessions.createdAt) =>
     granularity === "hour"
-      ? sql<string>`to_char(${orders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD HH24')`
+      ? sql<string>`to_char(${col} at time zone 'Asia/Kolkata', 'YYYY-MM-DD HH24')`
       : granularity === "day"
-        ? sql<string>`to_char(${orders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`
-        : sql<string>`to_char(${orders.createdAt} at time zone 'Asia/Kolkata', 'YYYY-MM')`;
+        ? sql<string>`to_char(${col} at time zone 'Asia/Kolkata', 'YYYY-MM-DD')`
+        : sql<string>`to_char(${col} at time zone 'Asia/Kolkata', 'YYYY-MM')`;
+  const bucketExpr = bucketOf(orders.createdAt);
+  const sessionBucket = bucketOf(checkoutSessions.createdAt);
+  const sessionIds = inArray(checkoutSessions.storeId, empty ? [-1] : ids);
 
   const days = Math.round((to.getTime() - from.getTime()) / 86400_000);
   const prevFrom = new Date(from.getTime() - days * 86400_000);
@@ -97,9 +105,10 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       .from(orders)
       .where(and(idsFilter, sql`${orders.status} = 'failed'`, inRange(orders.createdAt))),
     db
-      .select({ n: sql<number>`count(*)::int` })
+      .select({ bucket: sessionBucket, n: sql<number>`count(*)::int` })
       .from(checkoutSessions)
-      .where(and(inArray(checkoutSessions.storeId, empty ? [-1] : ids), gte(checkoutSessions.createdAt, from), lt(checkoutSessions.createdAt, to))),
+      .where(and(sessionIds, gte(checkoutSessions.createdAt, from), lt(checkoutSessions.createdAt, to)))
+      .groupBy(sessionBucket),
     range.preset === "max"
       ? Promise.resolve(null)
       : db
@@ -138,6 +147,23 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     db.select({ v: sql<string>`coalesce(sum(${orders.refunded}), 0)` }).from(orders).where(and(idsFilter, inRange(orders.createdAt))),
   ]);
 
+  // Previous period, bucket by bucket (sales, orders, sessions), lined up with this period by position
+  const prevKeys = range.preset === "max" ? [] : bucketKeys({ ...range, preset: "custom", since: addDays(range.since, -days), until: addDays(range.since, -1) }, granularity);
+  const [prevOrderRows, prevSessionRows] = range.preset === "max" ? [[], []] : await Promise.all([
+    db.select({ bucket: bucketExpr, count: sql<number>`count(*)::int`, revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)` })
+      .from(orders)
+      .where(and(idsFilter, inArray(orders.status, OK), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from)))
+      .groupBy(bucketExpr),
+    db.select({ bucket: sessionBucket, n: sql<number>`count(*)::int` })
+      .from(checkoutSessions)
+      .where(and(sessionIds, gte(checkoutSessions.createdAt, prevFrom), lt(checkoutSessions.createdAt, from)))
+      .groupBy(sessionBucket),
+  ]);
+  const prevAt = new Map(prevKeys.map((k, i) => [k, i]));
+  const prevSeries = prevKeys.map(() => ({ revenue: 0, orders: 0, sessions: 0 }));
+  for (const r of prevOrderRows) { const i = prevAt.get(r.bucket); if (i != null) { prevSeries[i].revenue += Number(r.revenue) / 100; prevSeries[i].orders += r.count; } }
+  for (const r of prevSessionRows) { const i = prevAt.get(r.bucket); if (i != null) prevSeries[i].sessions += r.n; }
+
   // Ad spend from every connected platform (Meta, Google) of every store
   const spends = await spendFor(storeList.filter((st) => metaReady(st) || googleReady(st)), { since: range.since, until: range.until }, granularity);
   const adErrors: Overview["adErrors"] = [];
@@ -161,7 +187,8 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
 
   const keys = bucketKeys(range, granularity);
   const map = new Map<string, Bucket>(
-    keys.map((k) => [k, { key: k, label: bucketLabel(k, granularity), longLabel: bucketLabel(k, granularity, true), prepaid: 0, cod: 0, orders: 0,
+    keys.map((k, i) => [k, { key: k, label: bucketLabel(k, granularity), longLabel: bucketLabel(k, granularity, true), prepaid: 0, cod: 0, orders: 0, sessions: 0,
+      prev: range.preset === "max" ? null : (prevSeries[i] ?? { revenue: 0, orders: 0, sessions: 0 }),
       adSpend: adStores.length && granularity !== "hour" ? 0 : null,
       metaSpend: metaSpend != null && granularity !== "hour" ? 0 : null,
       googleSpend: googleSpend != null && granularity !== "hour" ? 0 : null }]),
@@ -222,7 +249,8 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
   }
 
   const storeName = new Map(storeList.map((s) => [s.id, s.name]));
-  const sessionCount = sessions[0]?.n ?? 0;
+  let sessionCount = 0;
+  for (const r of sessions) { sessionCount += r.n; const b = map.get(r.bucket); if (b) b.sessions += r.n; }
 
   return {
     range,
@@ -242,7 +270,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       metaPurchases, metaSpend, googleSpend, googlePurchases,
     },
     ads,
-    previous: prev ? { revenue: Number(prev[0]?.revenue ?? 0) / 100, orders: prev[0]?.n ?? 0 } : null,
+    previous: prev ? { revenue: Number(prev[0]?.revenue ?? 0) / 100, orders: prev[0]?.n ?? 0, sessions: prevSeries.reduce((a, x) => a + x.sessions, 0) } : null,
     buckets: [...map.values()],
     topProducts: (top as unknown as { title: string; image: string | null; quantity: number; revenue: string }[]).map((t) => ({
       title: t.title, image: t.image, quantity: Number(t.quantity), revenue: Number(t.revenue) / 100,

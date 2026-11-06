@@ -253,7 +253,7 @@ function Line({ icon, label, value }: { icon: IconName; label: string; value: Re
   );
 }
 
-function Leaderboard({ rows }: { rows: LeaderRow[] }) {
+export function Leaderboard({ rows }: { rows: LeaderRow[] }) {
   const top = Math.max(1, ...rows.map((r) => r.revenue));
   const total = rows.reduce((s, r) => s + r.revenue, 0);
   return (
