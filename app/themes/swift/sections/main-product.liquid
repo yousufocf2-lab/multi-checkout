@@ -1,4 +1,4 @@
-<section class="pdp wrap">
+<section class="pdp wrap pdp--{{ section.settings.gallery }} pdp--ratio-{{ section.settings.image_ratio }}{% if section.settings.media_right %} pdp--media-right{% endif %}">
   <div class="pdp__gallery">
     <div class="pdp__slides" data-slides>
       {%- for m in product.images -%}
@@ -25,53 +25,104 @@
   </div>
 
   <div class="pdp__info">
-    <h1 class="pdp__title">{{ product.title }}</h1>
-    <div class="pdp__price" data-price>{% render 'snippets/price', price: product.price, compare: product.compare_at_price %}</div>
-    {%- if product.discount_pct > 0 -%}<p class="save" data-save>You save {{ product.compare_at_price | minus: product.price | money }} ({{ product.discount_pct }}%)</p>{%- endif -%}
-
+    {%- assign blocks = section.settings.blocks -%}
+    {%- for b in blocks -%}
+    {%- case b.block -%}
+    {%- when 'title' -%}
+      {%- if b.text != blank -%}<p class="eyebrow">{{ b.text }}</p>{%- endif -%}
+      <h1 class="pdp__title">{{ product.title }}</h1>
+    {%- when 'rating' -%}
+      <p class="pdp__rating"><span class="review__stars">★★★★★</span> {{ b.text | default: 'Loved by our customers' }}</p>
+    {%- when 'price' -%}
+      <div class="pdp__price" data-price>{% render 'snippets/price', price: product.price, compare: product.compare_at_price %}</div>
+      {%- if product.discount_pct > 0 and section.settings.show_savings -%}<p class="save" data-save>You save {{ product.compare_at_price | minus: product.price | money }} ({{ product.discount_pct }}%)</p>{%- endif -%}
+      {%- if b.text != blank -%}<p class="muted pdp__small">{{ b.text }}</p>{%- endif -%}
+    {%- when 'offer' -%}
+      {%- if b.text != blank -%}<div class="pdp__offer">{{ b.text }}</div>{%- endif -%}
+    {%- when 'buy' -%}
     <form class="pdp__form" data-product-form>
       {%- for option in product.options -%}
+      {%- assign oi = forloop.index0 -%}
+      {%- if section.settings.variant_style == 'dropdown' -%}
+      <label class="opt"><span class="opt__label">{{ option.name }}</span>
+        <select class="select" name="option{{ oi }}">{%- for value in option.values -%}<option value="{{ value | escape }}">{{ value }}</option>{%- endfor -%}</select>
+      </label>
+      {%- else -%}
       <fieldset class="opt">
         <legend>{{ option.name }}</legend>
         <div class="opt__values">
-          {%- assign oi = forloop.index0 -%}
           {%- for value in option.values -%}
           <label class="pill"><input type="radio" name="option{{ oi }}" value="{{ value | escape }}" {% if forloop.first %}checked{% endif %}><span>{{ value }}</span></label>
           {%- endfor -%}
         </div>
       </fieldset>
+      {%- endif -%}
       {%- endfor -%}
-
+      {%- if section.settings.show_qty -%}
       <div class="qty" aria-label="Quantity">
         <button type="button" data-qty="-1" aria-label="Less">−</button>
         <input type="number" name="qty" value="1" min="1" max="20" inputmode="numeric" aria-label="Quantity">
         <button type="button" data-qty="1" aria-label="More">+</button>
       </div>
-
-      <div class="pdp__buttons">
-        <button type="submit" name="buy" value="now" class="btn btn--primary btn--block" data-buy>Buy now</button>
-        <button type="submit" name="buy" value="cart" class="btn btn--ghost btn--block" data-add>Add to cart</button>
+      {%- else -%}<input type="hidden" name="qty" value="1">{%- endif -%}
+      <div class="pdp__buttons{% if section.settings.buttons_side %} pdp__buttons--row{% endif %}">
+        {%- if section.settings.show_buy_now -%}<button type="submit" name="buy" value="now" class="btn btn--primary btn--block" data-buy>{{ section.settings.buy_label | default: 'Buy now' }}</button>{%- endif -%}
+        {%- if section.settings.show_add_cart -%}<button type="submit" name="buy" value="cart" class="btn {% if section.settings.show_buy_now %}btn--ghost{% else %}btn--primary{% endif %} btn--block" data-add {% unless section.settings.show_buy_now %}data-buy{% endunless %}>{{ section.settings.cart_label | default: 'Add to cart' }}</button>{%- endif -%}
       </div>
       <p class="pdp__soldout" data-soldout hidden>This option is sold out.</p>
     </form>
-
-    {%- assign points = settings.pdp_points | newline_to_br | split: '<br />' -%}
-    {%- if settings.pdp_points != blank -%}
-    <ul class="pdp__points">
-      {%- for p in points -%}{%- assign t = p | strip -%}{%- if t != '' -%}<li>{{ t }}</li>{%- endif -%}{%- endfor -%}
-    </ul>
-    {%- endif -%}
-
-    {%- if product.description != blank -%}
-    <details class="pdp__desc" open><summary>Description</summary><div class="rte">{{ product.description }}</div></details>
-    {%- endif -%}
+    {%- when 'highlights' -%}
+      {%- assign src = b.text | default: settings.pdp_points -%}
+      {%- assign points = src | newline_to_br | split: '<br />' -%}
+      {%- if src != blank -%}
+      <ul class="pdp__points">{%- for p in points -%}{%- assign t = p | strip -%}{%- if t != '' -%}<li>{{ t }}</li>{%- endif -%}{%- endfor -%}</ul>
+      {%- endif -%}
+    {%- when 'delivery' -%}
+      <p class="pdp__delivery">🚚 {{ b.text | default: 'Delivered in 3–6 days. Cash on delivery available.' }}</p>
+    {%- when 'trust' -%}
+      <div class="pdp__trust"><span>✓ Cash on delivery</span><span>✓ Easy returns</span><span>✓ Secure payment</span></div>
+    {%- when 'description' -%}
+      {%- if product.description != blank -%}
+      <details class="pdp__desc"{% if section.settings.desc_open %} open{% endif %}><summary>{{ b.text | default: 'Description' }}</summary><div class="rte">{{ product.description }}</div></details>
+      {%- endif -%}
+    {%- when 'text' -%}
+      {%- if b.text != blank -%}<div class="rte pdp__text">{{ b.text }}</div>{%- endif -%}
+    {%- when 'share' -%}
+      <p class="pdp__share">Share: <a href="https://wa.me/?text={{ product.title | url_encode }}%20{{ product.url | url_encode }}" target="_blank" rel="noopener" data-share-link>WhatsApp</a> · <a href="#" data-copy-link>Copy link</a></p>
+    {%- endcase -%}
+    {%- endfor -%}
   </div>
 </section>
 <script type="application/json" id="product-json">{{ product.json }}</script>
 {%- if settings.pdp_sticky_buy != false -%}<div class="sticky-buy" data-sticky>
   <div><p class="sticky-buy__title">{{ product.title }}</p><p class="sticky-buy__price" data-sticky-price>{{ product.price | money }}</p></div>
-  <button type="button" class="btn btn--primary" data-sticky-buy>Buy now</button>
+  <button type="button" class="btn btn--primary" data-sticky-buy>{{ section.settings.buy_label | default: 'Buy now' }}</button>
 </div>{%- endif -%}
 {% schema %}
-{ "name": "Product page", "settings": [] }
+{ "name": "Product details", "settings": [
+  { "id": "blocks", "type": "list", "label": "Blocks (drag order with the arrows)", "item_label": "block", "fields": [
+    { "id": "block", "type": "select", "label": "Block", "options": ["title", "rating", "price", "offer", "buy", "highlights", "delivery", "trust", "description", "text", "share"], "option_labels": ["Title", "Star rating line", "Price", "Offer box", "Variants + Buy buttons", "Highlights (✓ list)", "Delivery info", "Trust row", "Description", "Custom text", "Share buttons"] },
+    { "id": "text", "type": "textarea", "label": "Text (optional — depends on the block)" }
+  ], "default": [
+    { "block": "title", "text": "" },
+    { "block": "price", "text": "Inclusive of all taxes" },
+    { "block": "offer", "text": "Pay online and get extra 10% off" },
+    { "block": "buy", "text": "" },
+    { "block": "highlights", "text": "" },
+    { "block": "delivery", "text": "" },
+    { "block": "description", "text": "Description" }
+  ] },
+  { "id": "gallery", "type": "select", "label": "Photo layout", "default": "slider", "options": ["slider", "grid", "stack"], "option_labels": ["Slider with thumbnails", "Grid (2 per row on computer)", "One below the other"] },
+  { "id": "image_ratio", "type": "select", "label": "Photo shape", "default": "square", "options": ["square", "portrait", "landscape", "natural"], "option_labels": ["Square", "Portrait (4:5)", "Landscape (4:3)", "Original shape"] },
+  { "id": "media_right", "type": "checkbox", "label": "Photos on the right", "default": false },
+  { "id": "variant_style", "type": "select", "label": "Variant picker", "default": "pills", "options": ["pills", "dropdown"], "option_labels": ["Buttons", "Dropdown"] },
+  { "id": "show_qty", "type": "checkbox", "label": "Show quantity selector", "default": true },
+  { "id": "show_buy_now", "type": "checkbox", "label": "Show “Buy now” button", "default": true },
+  { "id": "buy_label", "type": "text", "label": "“Buy now” text", "default": "Buy now" },
+  { "id": "show_add_cart", "type": "checkbox", "label": "Show “Add to cart” button", "default": true },
+  { "id": "cart_label", "type": "text", "label": "“Add to cart” text", "default": "Add to cart" },
+  { "id": "buttons_side", "type": "checkbox", "label": "Buttons side by side", "default": false },
+  { "id": "show_savings", "type": "checkbox", "label": "Show “You save ₹…”", "default": true },
+  { "id": "desc_open", "type": "checkbox", "label": "Description open by default", "default": true }
+] }
 {% endschema %}

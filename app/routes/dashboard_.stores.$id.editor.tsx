@@ -122,8 +122,8 @@ export default function ThemeEditor() {
   const [, force] = useState(0);
 
   const base = `/s/${L.store.slug}`;
-  const path = page === "index" ? "" : page === "product" ? (L.samples.product ? `/products/${L.samples.product}` : null)
-    : page === "collection" ? `/collections/${L.samples.collection}` : page === "cart" ? "/cart" : L.samples.page ? `/pages/${L.samples.page}` : null;
+  const path = page === "index" ? "" : page === "product" ? `/products/${L.samples.product ?? "__sample"}`
+    : page === "collection" ? `/collections/${L.samples.collection}` : page === "cart" ? "/cart" : `/pages/${L.samples.page ?? "__sample"}`;
   const [nonce, setNonce] = useState(0);
   const src = path == null ? null : `${base}${path}?gp_editor=1&v=${nonce}`;
 
@@ -325,7 +325,7 @@ export default function ThemeEditor() {
                       )}
                     </SectionList>
                   ))}
-                  {path == null && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{page === "product" ? "Add an active product to see this page in the preview." : "Publish one page (Pages menu) to see it in the preview."}</p>}
+                  {((page === "product" && !L.samples.product) || (page === "page" && !L.samples.page)) && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">The preview shows a sample {page === "product" ? "product" : "page"}. Your real {page === "product" ? "products" : "pages"} will look like this.</p>}
                   <p className="px-1 text-xs text-ink-faint">Tip: click any part of the preview to edit it. Ctrl+Z undoes.</p>
                 </div>
               )}
@@ -334,7 +334,7 @@ export default function ThemeEditor() {
                 <div className="p-3">
                   <button type="button" onClick={() => setSel(null)} className="btn-quiet -ml-2 mb-2">← All sections</button>
                   <h2 className="text-base font-semibold">{selKind?.name ?? selected.type}</h2>
-                  {selKind?.where === "fixed" ? (
+                  {selKind?.where === "fixed" && !(selKind?.settings ?? []).length ? (
                     <p className="mt-2 text-sm text-ink-soft">This part fills itself from your {page === "product" ? "products" : page === "collection" ? "categories" : page === "cart" ? "shoppers' carts" : "pages"}. Change its look in Theme settings.</p>
                   ) : (
                     <div className="mt-3 space-y-4">
@@ -515,7 +515,14 @@ function ListField({ s, value, onChange, storeId, categories }: { s: Setting; va
   const fields = s.fields ?? [];
   const set = (i: number, k: string, v: unknown) => onChange(value.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
   const swap = (i: number, j: number) => { if (j < 0 || j >= value.length) return; const n = value.slice(); [n[i], n[j]] = [n[j], n[i]]; onChange(n); setOpen(j); };
-  const title = (x: Record<string, unknown>) => String(x[fields[0]?.id ?? ""] ?? "") || "Untitled";
+  const title = (x: Record<string, unknown>) => {
+    const f = fields[0];
+    const v = String(x[f?.id ?? ""] ?? "");
+    const i = f?.options?.indexOf(v) ?? -1;
+    const name = i >= 0 && f?.option_labels?.[i] ? f.option_labels[i] : v;
+    const extra = f?.type === "select" && fields[1] ? strip(String(x[fields[1].id] ?? "")).slice(0, 30) : "";
+    return name ? (extra ? `${name} · ${extra}` : name) : "Untitled";
+  };
   return (
     <div>
       <p className="label">{s.label}</p>

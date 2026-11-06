@@ -202,6 +202,24 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
   return { ...drop, json };
 }
 
+/** Editor preview when the store has no product yet. */
+export const SAMPLE = "__sample";
+export function sampleProduct(ctx: ShopContext) {
+  const svg = (c: string) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600"><rect width="600" height="600" fill="${c}"/><circle cx="300" cy="300" r="140" fill="#fff" opacity=".55"/></svg>`)}`;
+  const now = new Date();
+  const item = {
+    id: 0, storeId: ctx.store.id, title: "Sample product", handle: SAMPLE, status: "active", productType: null, vendor: null, tags: [], source: "manual", sourceId: null,
+    descriptionHtml: "<p>Your product description shows here: what it is, what's in the box, size and care.</p>",
+    images: [{ url: svg("#e9e2d8") }, { url: svg("#dfe7e4") }, { url: svg("#e4e1ee") }],
+    options: [{ name: "Color", values: ["Black", "White"] }, { name: "Size", values: ["M", "L"] }],
+    seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+  } as unknown as CatalogItem;
+  const variants = ["Black", "White"].flatMap((c, i) => ["M", "L"].map((sz, j) => ({
+    id: -(i * 2 + j + 1), itemId: 0, storeId: ctx.store.id, title: `${c} / ${sz}`, optionValues: [c, sz], pricePaise: 99900, compareAtPaise: 149900, stock: null, sku: null, imageUrl: null, position: i * 2 + j,
+  }))) as unknown as CatalogVariant[];
+  return productDrop(ctx, item, variants);
+}
+
 async function variantsFor(itemIds: number[]) {
   if (!itemIds.length) return new Map<number, CatalogVariant[]>();
   const rows = await db.select().from(catalogVariants).where(inArray(catalogVariants.itemId, itemIds));

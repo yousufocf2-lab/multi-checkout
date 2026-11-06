@@ -5,7 +5,7 @@ import { checkoutSessions, db, stores } from "~/db.server";
 import { catalogLines, GP_PREFIX } from "./catalog.server";
 import { clientIp } from "./orders.server";
 import { publishedPage } from "./store-pages.server";
-import { baseScope, html, loadProduct, loadProducts, renderPage, sectionData, themeLook, type ShopContext } from "./storefront.server";
+import { baseScope, html, loadProduct, loadProducts, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 
 const THEME = "swift";
@@ -33,7 +33,7 @@ export async function homePage(ctx: ShopContext) {
 }
 
 export async function productPage(ctx: ShopContext, handle: string) {
-  const product = await loadProduct(ctx, handle);
+  const product = (await loadProduct(ctx, handle)) ?? (handle === SAMPLE && ctx.look?.editor ? sampleProduct(ctx) : null);
   if (!product) throw new Response("Not found", { status: 404 });
   const scope = await baseScope(ctx);
   return html(await renderPage(THEME, "product", {
@@ -52,7 +52,7 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
 }
 
 export async function infoPage(ctx: ShopContext, handle: string) {
-  const page = await publishedPage(ctx.store.id, handle);
+  const page = (await publishedPage(ctx.store.id, handle)) ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
   if (!page) throw new Response("Not found", { status: 404 });
   const scope = await baseScope(ctx);
   return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title }, sectionData(ctx), ctx.look));

@@ -39,7 +39,7 @@
     var main = document.getElementById("pdp-main");
     var current = null;
     function chosen() {
-      var vals = product.options.map(function (o, i) { var r = form.querySelector('input[name="option' + i + '"]:checked'); return r ? r.value : null; });
+      var vals = product.options.map(function (o, i) { var r = form.querySelector('input[name="option' + i + '"]:checked') || form.querySelector('select[name="option' + i + '"]'); return r ? r.value : null; });
       return product.variants.find(function (v) { return v.option_values.every(function (x, i) { return x === vals[i]; }); }) || product.variants[0];
     }
     function paint() {
@@ -76,6 +76,8 @@
       sticky.querySelector("[data-sticky-buy]").addEventListener("click", function () { buyBtn.click(); });
     }
     var slides = document.querySelector("[data-slides]");
+    var copy = document.querySelector("[data-copy-link]");
+    if (copy) copy.addEventListener("click", function (e) { e.preventDefault(); var u = location.origin + product.url; if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { toast("Link copied"); }); });
     var thumbs = document.querySelectorAll(".pdp__thumb");
     function mark(i) { thumbs.forEach(function (x, j) { if (j === i) x.setAttribute("aria-current", "true"); else x.removeAttribute("aria-current"); }); }
     thumbs.forEach(function (t, i) {
