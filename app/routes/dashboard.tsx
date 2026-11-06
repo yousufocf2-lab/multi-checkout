@@ -39,8 +39,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startNativeOrdersWatcher();
   startPaymentRecheck();
   const viewer = await requireViewer(request);
-  // New owners finish the 3-step KYC before anything else
-  if (needsKyc(viewer)) throw redirect("/onboarding");
   const list = await viewerStores(viewer);
   // Opening a store page focuses the dashboard on that store
   let selected = await selectedStore(request);
@@ -68,6 +66,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const nextDemo: NextDemo | null = demos[0] ? { ...demos[0], more: demos.length - 1 } : null;
   const team = viewer.role === "admin" ? viewer.staff : viewer.member;
   return json({
+    kycPending: needsKyc(viewer),
     dropshipAlerts, waPending, connectPending, support, nextDemo, adminWa, hasPasskey, login: nextDemo ? await loginStamp(request) : "",
     viewer: {
       role: viewer.role, name: viewer.name, email: viewer.email,
@@ -97,7 +96,7 @@ type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][numbe
 const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$|\/stores\/\d+)/;
 
 export default function DashboardLayout() {
-  const { viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
+  const { kycPending, viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const location = useLocation();
   useEffect(() => setOpen(false), [location.pathname, location.search]);
@@ -325,6 +324,12 @@ export default function DashboardLayout() {
         <div className="mx-auto max-w-[1180px]">
           {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
             <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`/dashboard/stores/${alertStore.id}/wallet`} />
+          )}
+          {kycPending && (
+            <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <span className="flex-1">Complete your KYC to go live: connect your domain, add payment gateways and recharge your wallet.</span>
+              <Link to="/onboarding" className="btn-primary h-9">Complete KYC</Link>
+            </div>
           )}
           {!location.pathname.startsWith("/dashboard/security") && <PasskeyPrompt has={hasPasskey} />}
           <Outlet />

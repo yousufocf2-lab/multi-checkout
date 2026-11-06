@@ -8,7 +8,7 @@ import { Icon } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
 import { Notice, SubmitButton } from "~/components/ui";
 import { db, walletTransactions, wallets } from "~/db.server";
-import { requireStore, requireViewer } from "~/lib/auth.server";
+import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { addDays, istToday, resolveRange } from "~/lib/dates";
 import { INDIAN_STATES } from "~/lib/states";
 import { DEFAULT_RATES, TX_LABELS, mergeRates, rechargeBreakup, rupees, type TxType } from "~/lib/wallet";
@@ -86,6 +86,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     switch (intent) {
       case "recharge": {
+        { const g = kycGate(viewer, "adding money to your wallet"); if (g) return fail(g); }
         const credit = paise(fd.get("amount"));
         if (!Number.isFinite(credit) || credit <= 0) return fail("Enter the amount to add");
         const r = await createRecharge(w, credit, viewer.email);

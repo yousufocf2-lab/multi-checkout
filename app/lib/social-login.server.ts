@@ -78,5 +78,5 @@ export async function finishSocial(p: Provider, request: Request) {
   if (!signupOpen()) return fail("No account with this email. Ask Growpefy for access.");
   const user = await createOwner({ brandName: who.name || who.email.split("@")[0], channel: "email", target: who.email, attribution: readAttribution(request) });
   console.log(`[social] ${p} signup user=${user.id}`);
-  return startSession(request, { user }, "/onboarding?welcome=1");
+  return startSession(request, { user }, "/dashboard/stores/create");
 }

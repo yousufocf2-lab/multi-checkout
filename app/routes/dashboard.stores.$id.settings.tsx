@@ -5,7 +5,7 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { StoreSettingsForm } from "~/components/StoreSettingsForm";
 import { Notice, Section, SelectField, SubmitButton } from "~/components/ui";
 import { db, stores, users } from "~/db.server";
-import { requireStore, requireViewer } from "~/lib/auth.server";
+import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { clearTokenCache } from "~/lib/platform.server";
 import { parseStoreForm } from "~/lib/store-form.server";
 import { storeForClient } from "~/lib/store-view.server";
@@ -69,6 +69,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   }
 
   const { data, errors } = parseStoreForm(fd, store);
+  // New payment gateway keys need KYC first
+  {
+    const before = new Set((store.gateways ?? []).map((g) => g.id));
+    const g = data.gateways.some((x) => !before.has(x.id)) ? kycGate(viewer, "adding a payment gateway") : null;
+    if (g) errors.form = g;
+  }
   if (!errors.slug) {
     const [d] = await db.select({ id: stores.id }).from(stores).where(and(eq(stores.slug, data.slug), ne(stores.id, store.id))).limit(1);
     if (d) errors.slug = "This store ID is taken. Try another.";
@@ -91,7 +97,8 @@ export default function StoreSettings() {
   return (
     <div className="max-w-3xl space-y-5">
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
-      {Object.keys(errors).length > 0 && !errors.confirm && <Notice tone="error">Fix the highlighted fields and save again.</Notice>}
+      {errors.form && <Notice tone="error">{errors.form} <a href="/onboarding" className="font-semibold underline">Complete KYC</a></Notice>}
+      {Object.keys(errors).length > 0 && !errors.confirm && !errors.form && <Notice tone="error">Fix the highlighted fields and save again.</Notice>}
       <StoreSettingsForm key={JSON.stringify(store)} values={store} errors={errors} submitLabel="Save settings" isAdmin={isAdmin} />
 
       {owners && (

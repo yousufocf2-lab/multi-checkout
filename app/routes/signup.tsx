@@ -78,7 +78,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const user = await createOwner({ brandName: brand, channel: c.channel, target: c.target, attribution: readAttribution(request), signup: profile });
   startWelcomeWatcher();
   welcomeNow(); // welcome WhatsApp + email, if switched on
-  return startSession(request, { user }, "/onboarding?welcome=1");
+  return startSession(request, { user }, "/dashboard/stores/create");
 }
 
 export default function Signup() {
@@ -102,7 +102,7 @@ export default function Signup() {
       >
         {stage === "start" ? (
           <Form method="post" className="space-y-4" noValidate>
-            <SocialLogin google={social.google} next="/onboarding?welcome=1" />
+            <SocialLogin google={social.google} next="/dashboard/stores/create" />
             <input type="hidden" name="intent" value="send" />
             {e.form && <Notice tone="error">{e.form}</Notice>}
             <TextField label="Brand name" name="brand" placeholder="e.g. Fusion Prime" autoComplete="organization" defaultValue={data?.brand} error={e.brand} required autoFocus />

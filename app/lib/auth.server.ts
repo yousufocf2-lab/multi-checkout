@@ -257,9 +257,15 @@ export async function createOwner(input: { brandName: string; channel: "phone" |
   return u;
 }
 
-/** Owners must finish KYC before using the dashboard. */
+/** Owner (or their team) whose KYC isn't done yet. */
 export function needsKyc(v: Viewer) {
-  return v.role === "owner" && !v.member && !v.kycDone;
+  return v.role === "owner" && !v.kycDone;
+}
+
+/** Message to show when an action needs KYC first (going live, payment keys, wallet). Null when allowed. */
+export function kycGate(v: Viewer, what: string): string | null {
+  if (!needsKyc(v)) return null;
+  return v.role === "owner" && v.member ? `Ask the account owner to complete KYC before ${what}.` : `Complete your KYC first (takes 3 minutes) before ${what}.`;
 }
 
 export async function createUser(input: { name: string; email: string; password: string }) {
@@ -287,8 +293,8 @@ export async function startSession(request: Request, who: LoginResult, next = "/
   else s.set("uid", who.user.id);
   s.set("seen", Date.now());
   s.set("at", Date.now()); // when this login started (e.g. a dismissed reminder comes back on the next login)
-  const pending = "user" in who && kycIncomplete(who.user);
-  const safeNext = pending ? "/onboarding" : next.startsWith("/dashboard") ? next : "/dashboard";
+  // KYC no longer blocks the dashboard (it is asked when going live, adding payment keys or recharging the wallet)
+  const safeNext = next.startsWith("/dashboard") || next.startsWith("/onboarding") ? next : "/dashboard";
   return redirect(safeNext, { headers: { "Set-Cookie": await st.commitSession(s) } });
 }
 

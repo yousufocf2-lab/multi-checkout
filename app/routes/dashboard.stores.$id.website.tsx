@@ -5,7 +5,7 @@ import { Form, useActionData, useLoaderData } from "@remix-run/react";
 import { and, eq, ne } from "drizzle-orm";
 import { CopyField, Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
-import { requireStore, requireViewer } from "~/lib/auth.server";
+import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { env } from "~/lib/env.server";
 import { addHostname, cfConfigured, CONNECT_HOST, hostnameState, removeHostname } from "~/lib/cloudflare.server";
@@ -52,6 +52,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const fd = await request.formData();
   const intent = fd.get("intent");
   if (intent === "domain") {
+    const g = kycGate(viewer, "connecting your domain");
+    if (g) return json({ ok: null, error: g }, { status: 400 });
     const d = cleanDomain(String(fd.get("domain") ?? ""));
     if (!d) return json({ ok: null, error: "That doesn't look like a domain. Type it like brand.com" }, { status: 400 });
     const [taken] = await db.select({ id: stores.id }).from(stores).where(and(eq(stores.storefrontDomain, d), ne(stores.id, store.id))).limit(1);
