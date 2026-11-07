@@ -2,7 +2,7 @@
   { "name": "Logo and favicon", "settings": [
     { "id": "logo", "type": "image", "label": "Logo" },
     { "id": "logo_width", "type": "range", "label": "Logo width (max; the logo always fits the header)", "min": 60, "max": 280, "step": 10, "unit": "px", "default": 140 },
-    { "id": "favicon", "type": "image", "label": "Favicon (square, 32×32 or bigger)" }
+    { "id": "favicon", "type": "image", "label": "Favicon: the icon in the browser tab (square, 64×64 or bigger). Empty = your logo, or your store's first letter" }
   ] },
   { "name": "Colors", "settings": [
     { "id": "color_brand", "type": "color", "label": "Brand color (buttons, links, badges)", "default": "" },

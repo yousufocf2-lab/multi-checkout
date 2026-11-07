@@ -368,3 +368,14 @@ h2{font-size:calc(clamp(20px,2.3vw,26px)*var(--heading-scale));line-height:1.2}
 .drawer__foot .btn{min-height:44px;font-size:14px}
 html.drawer-open,html.drawer-open body{overflow:hidden}
 @media (prefers-reduced-motion:reduce){.drawer__panel,.drawer__shade{transition:none}}
+
+/* Banner with a photo: the photo's own shape, never cropped (a thin strip stays a thin strip) */
+.hero--fit{display:block;height:auto!important;min-height:0!important;aspect-ratio:auto!important;background:transparent;color:#fff}
+.hero--fit .hero__slides,.hero--fit .hero__slide,.hero--fit .hero__picture{position:relative;inset:auto;width:100%;height:auto}
+.hero--fit .hero__picture img{position:static;display:block;width:100%;height:auto;max-width:100%;object-fit:contain}
+.hero--fit .hero__shade{position:absolute;inset:0;width:auto;height:auto}
+.hero--fit.hero--text-over .hero__copy{position:absolute;inset:0;z-index:2;justify-content:center;padding-top:16px;padding-bottom:16px;overflow:hidden}
+.hero--fit.hero--text-below .hero__copy{position:relative;background:#14171a;padding-top:28px;padding-bottom:32px}
+.hero--fit .hero__controls{bottom:12px}
+.hero__link{position:absolute;inset:0;z-index:2}
+@media (max-width:760px){.hero--fit{aspect-ratio:auto!important}.hero--fit.hero--text-over .hero__copy{padding:16px 20px}.hero--fit.hero--text-over .hero__copy h1{font-size:clamp(22px,7vw,40px)}.hero--fit.hero--text-over .hero__text{font-size:14px}}

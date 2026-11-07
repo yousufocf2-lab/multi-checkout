@@ -68,7 +68,7 @@ app.use((req, res, next) => {
     || (checkoutRootHost && (host === checkoutRootHost || host.endsWith("." + checkoutRootHost)));
   if (!ours) {
     if (req.path === "/admin" || req.path.startsWith("/admin/")) return res.redirect(302, "/dashboard");
-    if (STOREFRONT_PATH.test(req.path)) {
+    if (STOREFRONT_PATH.test(req.path) || req.path === "/favicon.ico") {
       const rest = req.url === "/" ? "" : req.url.replace(/\/$/, "") ;
       req.url = req.originalUrl = "/sfhost" + (rest.startsWith("/?") ? rest.slice(1) : rest);
     }

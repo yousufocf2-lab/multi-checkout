@@ -9,7 +9,7 @@ const ctxOf = async (request: Request) => {
   if (!ctx) throw new Response("Not found", { status: 404 });
   return ctx;
 };
-export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: `My account · ${data?.store.name ?? ""}` }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: `My account · ${data?.store.name ?? ""}` }, { name: "robots", content: "noindex" }, ...(data ? [{ tagName: "link", rel: "icon", href: data.store.favicon }] : [])];
 export const loader = async ({ request }: LoaderFunctionArgs) => accountLoader(await ctxOf(request), request);
 export const action = async ({ request }: ActionFunctionArgs) => accountAction(await ctxOf(request), request);
 export default AccountPage;

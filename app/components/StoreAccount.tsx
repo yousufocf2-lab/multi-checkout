@@ -7,7 +7,7 @@ import type { AccountSettings, TrackStep } from "~/lib/customer-accounts";
 import type { AccountActionData } from "~/lib/account-pages.server";
 import type { WidgetConfig } from "./msg91-widget";
 
-type StoreInfo = { name: string; logo: string | null; color: string; home: string; account: string; support: string | null };
+type StoreInfo = { name: string; logo: string | null; color: string; home: string; account: string; support: string | null; favicon?: string };
 
 const rgb = (hex: string) => {
   const m = hex.replace("#", "").match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
@@ -16,6 +16,12 @@ const rgb = (hex: string) => {
 const when = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
 export function AccountShell({ store, children, wide }: { store: StoreInfo; children: React.ReactNode; wide?: boolean }) {
+  // The browser tab shows the store's icon, not Growpefy's
+  useEffect(() => {
+    if (!store.favicon) return;
+    // Point every icon link (Growpefy's defaults from the app shell) at the store's icon instead of removing them
+    document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"], link[rel="apple-touch-icon"]').forEach((l) => { l.href = store.favicon!; l.removeAttribute("type"); l.removeAttribute("sizes"); });
+  }, [store.favicon]);
   return (
     <div style={{ ["--brand" as string]: rgb(store.color), ["--btn" as string]: rgb(store.color) }} className="min-h-screen bg-[#f6f6f4] text-ink">
       <header className="border-b border-black/[.07] bg-white">

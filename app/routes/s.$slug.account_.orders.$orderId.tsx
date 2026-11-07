@@ -4,6 +4,6 @@ import { AccountOrderPage } from "~/components/StoreAccount";
 import { accountOrderLoader } from "~/lib/account-pages.server";
 import { previewContext } from "~/lib/storefront.server";
 
-export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: `Order ${data?.order.name ?? ""} · ${data?.store.name ?? ""}` }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: `Order ${data?.order.name ?? ""} · ${data?.store.name ?? ""}` }, { name: "robots", content: "noindex" }, ...(data ? [{ tagName: "link", rel: "icon", href: data.store.favicon }] : [])];
 export const loader = async ({ request, params }: LoaderFunctionArgs) => accountOrderLoader(await previewContext(request, params.slug), request, params.orderId ?? "");
 export default AccountOrderPage;

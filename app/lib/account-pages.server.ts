@@ -11,13 +11,16 @@ import { clientIp } from "./orders.server";
 import { orderValuePaise, toCollectPaise } from "./payment-methods";
 import { INDIAN_STATES } from "./states";
 import { courierById } from "./courier-catalog";
+import { storeIcon } from "./store-icon";
 import type { ShopContext } from "./storefront.server";
 
 const str = (fd: FormData, k: string, max = 120) => String(fd.get(k) ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
 function storeInfo(ctx: ShopContext) {
   const s = ctx.store;
-  return { name: s.name, logo: s.logoUrl, color: s.primaryColor || "#111827", home: ctx.root || "/", account: `${ctx.root}/account`, support: s.supportPhone };
+  const settings = (ctx.look?.data?.settings ?? null) as Record<string, unknown> | null;
+  const logo = (typeof settings?.logo === "string" && settings.logo) || s.logoUrl;
+  return { name: s.name, logo, color: s.primaryColor || "#111827", home: ctx.root || "/", account: `${ctx.root}/account`, support: s.supportPhone, favicon: storeIcon(s, settings) };
 }
 
 function enabledSettings(store: Store) {

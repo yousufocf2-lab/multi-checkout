@@ -9,7 +9,9 @@
   {% if preview %}<meta name="robots" content="noindex">{% endif %}
   <meta property="og:title" content="{{ page_title | default: shop.name | escape }}">
   {% if og_image %}<meta property="og:image" content="{{ og_image | img_url: 1200 }}">{% endif %}
-  {% if settings.favicon != blank %}<link rel="icon" href="{{ settings.favicon }}">{% endif %}
+  {%- assign favicon = settings.favicon | default: shop.favicon -%}
+  <link rel="icon" href="{{ favicon }}">
+  <link rel="apple-touch-icon" href="{{ favicon }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family={{ settings.font_heading | default: 'DM Sans' | replace: ' ', '+' }}:wght@400;500;600;700{% if settings.font_body != settings.font_heading %}&family={{ settings.font_body | default: 'DM Sans' | replace: ' ', '+' }}:wght@400;500;600;700{% endif %}&display=swap" rel="stylesheet">

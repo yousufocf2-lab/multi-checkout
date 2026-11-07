@@ -4,7 +4,7 @@ import { AccountOrderPage } from "~/components/StoreAccount";
 import { accountOrderLoader } from "~/lib/account-pages.server";
 import { domainContext } from "~/lib/storefront-pages.server";
 
-export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: `Order ${data?.order.name ?? ""} · ${data?.store.name ?? ""}` }, { name: "robots", content: "noindex" }];
+export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: `Order ${data?.order.name ?? ""} · ${data?.store.name ?? ""}` }, { name: "robots", content: "noindex" }, ...(data ? [{ tagName: "link", rel: "icon", href: data.store.favicon }] : [])];
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const ctx = await domainContext(request);
   if (!ctx) throw new Response("Not found", { status: 404 });
