@@ -19,6 +19,7 @@ import { storeBilling } from "~/lib/billing.server";
 import { BILLING_FIELDS, BILLING_LABEL, type BillingField } from "~/lib/billing";
 import { storePath } from "~/lib/store-code";
 import { accountFor, invoicesFor, startSubscription, PLANS } from "~/lib/subscription-billing.server";
+import { upcomingBill } from "~/lib/billing-breakdown.server";
 import { planById, feePct, rupeesLabel } from "~/lib/plans";
 
 const PAGE = 50;
@@ -53,6 +54,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const invoices = accountRow ? await invoicesFor(store.id) : [];
   const account = accountRow ? await accountFor(store.id) : null;
   const plan = account ? planById(account.planId) : null;
+  const upcoming = account ? await upcomingBill(store.id) : null;
   const dropship = (await db.select({ dropshipEnabled: stores.dropshipEnabled }).from(stores).where(eq(stores.id, store.id)).limit(1))[0]?.dropshipEnabled ?? false;
   const creds = platformPayu(p);
 
@@ -62,6 +64,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     dropship,
     account: account ? { planId: account.planId, status: account.status, startedAt: account.startedAt.toISOString(), nextInvoiceAt: account.nextInvoiceAt.toISOString(), creditPaise: account.creditPaise, creditGstPaise: account.creditGstPaise, legacyDebtPaise: account.legacyDebtPaise, planName: plan?.name ?? account.planId } : null,
     plans: PLANS,
+    upcoming,
     invoices: invoices.map((i) => ({ id: i.id, invoiceNo: i.invoiceNo, planId: i.planId, periodStart: i.periodStart.toISOString(), periodEnd: i.periodEnd.toISOString(), lines: i.lines, subtotalPaise: i.subtotalPaise, gstPaise: i.gstPaise, creditPaise: i.creditPaise, creditGstPaise: i.creditGstPaise, totalPaise: i.totalPaise, duePaise: i.duePaise, status: i.status, dueAt: i.dueAt.toISOString(), paidAt: i.paidAt?.toISOString() ?? null })),
     isAdmin: viewer.role === "admin",
     wallet: {
@@ -222,7 +225,7 @@ export default function WalletPage() {
         </Notice>
       )}
 
-      <SubscriptionPanel d={d} />
+      {d.account ? <BillingOverview d={d} /> : <SubscriptionPanel d={d} />}
       {/* Existing wallet remains the fulfilment wallet for dropshipping stores. */}
       {(d.dropship || !d.account) && <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
         <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl" />
@@ -269,8 +272,8 @@ export default function WalletPage() {
       </div>}
 
       {(d.dropship || !d.account) && <UsageCard usage={d.usage} />}
-      <Ledger d={d} />
-      <Recharges d={d} />
+      {(d.dropship || !d.account) && <Ledger d={d} />}
+      {(d.dropship || !d.account) && <Recharges d={d} />}
       <Billing d={d} field={res?.field} />
       {d.isAdmin && <AdminPanel d={d} />}
     </div>
@@ -640,5 +643,107 @@ function AdminPanel({ d }: { d: D }) {
         )}
       </div>
     </section>
+  );
+}
+
+// ---------------- monthly billing (Shopify-style) ----------------
+
+const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
+
+function BillingOverview({ d }: { d: D }) {
+  const a = d.account!;
+  const up = d.upcoming;
+  const plan = d.plans.find((p) => p.id === a.planId);
+  const open = d.invoices.filter((i) => i.status === "open");
+  const overdue = open.filter((i) => new Date(i.dueAt).getTime() < Date.now());
+  const elapsed = up ? Math.min(1, Math.max(0, (Date.now() - new Date(up.periodStart).getTime()) / (new Date(up.billDate).getTime() - new Date(up.periodStart).getTime()))) : 0;
+  return (
+    <div className="space-y-4">
+      {open.length > 0 && (
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-[13px] ${overdue.length ? "bg-[#fee9e8] text-[#8e1f0b]" : "bg-[#fff1e3] text-[#5e4200]"}`}>
+          <span><b>{overdue.length ? "Overdue bill" : "Bill ready to pay"}</b> · {rupees(open[0].duePaise)} {overdue.length ? "was due" : "due"} on {day(open[0].dueAt)}.{a.status === "paused" ? " Some features are paused until it's paid." : ""}</span>
+          <Link to={storePath(d.storeId, `billing/pay/${open[0].id}`)} className="btn-primary h-8 px-3 text-[12.5px]">Pay {rupees(open[0].duePaise)}</Link>
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <section className="panel p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-medium text-ink-soft">Upcoming bill</p>
+              <p className="num mt-1.5 text-[34px] font-semibold leading-none tracking-tight">{up ? rupees(up.amountPaise) : "—"}</p>
+              <p className="mt-1.5 text-[12px] text-ink-faint">Estimated so far, incl. GST{up?.hasCredit ? ", after your credit" : ""}</p>
+            </div>
+            <span className="rounded-full bg-[#f1f1f1] px-2.5 py-1 text-[11.5px] font-medium text-ink-soft">Estimate</span>
+          </div>
+          {up && (
+            <>
+              <div className="mt-5">
+                <div className="flex justify-between text-[11.5px] text-ink-faint"><span>{shortDay(up.periodStart)}</span><span>{shortDay(up.billDate)}</span></div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#ececec]"><div className="h-full rounded-full bg-[#303030]" style={{ width: `${Math.round(elapsed * 100)}%` }} /></div>
+              </div>
+              <dl className="mt-5 grid grid-cols-2 gap-3 border-t border-rule pt-4 text-[13px]">
+                <div><dt className="text-ink-soft">Bill date</dt><dd className="mt-0.5 font-semibold">{day(up.billDate)}</dd></div>
+                <div><dt className="text-ink-soft">Pay by</dt><dd className="mt-0.5 font-semibold">{day(up.payBy)}</dd></div>
+              </dl>
+            </>
+          )}
+        </section>
+
+        <section className="panel p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-medium text-ink-soft">Current plan</p>
+              <p className="mt-1.5 text-[20px] font-semibold">{a.planName}</p>
+            </div>
+            <span className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${a.status === "active" ? "bg-[#cdfee1] text-[#0c5132]" : "bg-[#fff1e3] text-[#5e4200]"}`}>{a.status === "active" ? "Active" : a.status === "paused" ? "Paused" : a.status}</span>
+          </div>
+          <ul className="mt-4 space-y-2 text-[13px]">
+            <li className="flex justify-between"><span className="text-ink-soft">Monthly price</span><span className="num font-medium">{rupeesLabel(plan?.monthlyRupees ?? 0)}</span></li>
+            <li className="flex justify-between"><span className="text-ink-soft">Transaction fee</span><span className="num font-medium">{feePct(plan ?? { feeBps: 0 })} of each order</span></li>
+            <li className="flex justify-between"><span className="text-ink-soft">Customer since</span><span className="font-medium">{day(a.startedAt)}</span></li>
+            {a.creditPaise + a.creditGstPaise > 0 && <li className="flex justify-between"><span className="text-ink-soft">Credit left</span><span className="num font-medium text-good">{rupees(a.creditPaise + a.creditGstPaise)}</span></li>}
+          </ul>
+          <p className="mt-4 border-t border-rule pt-3 text-[12px] text-ink-faint">All prices are before 18% GST. To change your plan, contact Growpefy support.</p>
+        </section>
+      </div>
+
+      <section className="panel overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4"><h2 className="text-[14px] font-semibold">Bills</h2><span className="text-[12px] text-ink-faint">{d.invoices.length} bill{d.invoices.length === 1 ? "" : "s"}</span></div>
+        {d.invoices.length === 0 ? (
+          <p className="border-t border-rule px-5 py-8 text-center text-[13px] text-ink-soft">Your first bill is created on {up ? day(up.billDate) : "your billing date"}.</p>
+        ) : (
+          <div className="overflow-x-auto border-t border-rule">
+            <table className="w-full text-[13px]">
+              <thead className="bg-[#f7f7f7] text-left text-[12px] text-ink-soft">
+                <tr><th className="px-5 py-2.5 font-medium">Bill</th><th className="px-3 py-2.5 font-medium">Period</th><th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 font-medium">Status</th><th className="px-5 py-2.5" /></tr>
+              </thead>
+              <tbody className="divide-y divide-rule">
+                {d.invoices.map((i) => {
+                  const late = i.status === "open" && new Date(i.dueAt).getTime() < Date.now();
+                  return (
+                    <tr key={i.id} className="hover:bg-[#fafafa]">
+                      <td className="px-5 py-3"><Link to={storePath(d.storeId, `billing/bill/${i.id}`)} className="font-medium hover:underline">{i.invoiceNo}</Link></td>
+                      <td className="whitespace-nowrap px-3 py-3 text-ink-soft">{shortDay(i.periodStart)} – {shortDay(i.periodEnd)}</td>
+                      <td className="num whitespace-nowrap px-3 py-3 text-right font-medium">{rupees(i.totalPaise)}</td>
+                      <td className="px-3 py-3">
+                        <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-medium ${i.status === "paid" ? "bg-[#cdfee1] text-[#0c5132]" : late ? "bg-[#fee9e8] text-[#8e1f0b]" : "bg-[#fff1e3] text-[#5e4200]"}`}>
+                          {i.status === "paid" ? "Paid" : late ? "Overdue" : `Due ${shortDay(i.dueAt)}`}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-3 text-right">
+                        <Link to={storePath(d.storeId, `billing/bill/${i.id}`)} className="text-[12.5px] font-medium underline-offset-2 hover:underline">View</Link>
+                        {i.status !== "paid" && <Link to={storePath(d.storeId, `billing/pay/${i.id}`)} className="btn-primary ml-3 h-7 px-2.5 text-[12px]">Pay</Link>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }

@@ -1085,6 +1085,17 @@ export const billingAccounts = pgTable("billing_accounts", {
 });
 
 export type BillingLine = { label: string; amountPaise: number };
+/** What a monthly bill is made of (see app/lib/billing-breakdown.server.ts). */
+export type BillSummary = {
+  planName: string; planPaise: number;
+  orders: number; netSalesPaise: number; feeBps: number; feePaise: number;
+  refundedOrders: number; feeReversedPaise: number;
+  whatsapp: { count: number; paise: number; parts: { label: string; count: number; paise: number }[] };
+  otp: { count: number; paise: number };
+  other: { label: string; paise: number }[];
+  previousDuePaise: number;
+};
+
 export const billingInvoices = pgTable("billing_invoices", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
@@ -1093,6 +1104,7 @@ export const billingInvoices = pgTable("billing_invoices", {
   periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
   periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
   lines: jsonb("lines").$type<BillingLine[]>().notNull().default([]),
+  summary: jsonb("summary").$type<BillSummary>(),
   subtotalPaise: bigint("subtotal_paise", { mode: "number" }).notNull(),
   gstPaise: bigint("gst_paise", { mode: "number" }).notNull(),
   creditPaise: bigint("credit_paise", { mode: "number" }).notNull().default(0),

@@ -6,6 +6,7 @@ import {
 } from "~/db.server";
 import { feePct, planById, PLANS, type PlanId } from "./plans";
 import { storeBilling } from "./billing.server";
+import { linesFrom, summarize } from "./billing-breakdown.server";
 import { financialYear, WALLET_GST } from "./wallet";
 import { sha512, payuEndpoint, verifyPayment } from "./payu.server";
 
@@ -136,12 +137,9 @@ export async function ensureBillingInvoices(storeId: number, now = new Date()) {
         eq(billingUsage.storeId, storeId), sql`${billingUsage.invoiceId} is null`,
         gte(billingUsage.createdAt, periodStart), lt(billingUsage.createdAt, periodEnd),
       )).orderBy(asc(billingUsage.createdAt)).for("update");
-      const byType = new Map<string, number>();
-      for (const u of usage) byType.set(u.type, (byType.get(u.type) ?? 0) + u.amountPaise);
-      const lines: BillingLine[] = [{ label: `${plan.name} plan · monthly subscription`, amountPaise: plan.monthlyRupees * 100 }];
-      const label: Record<string, string> = { sale_fee: `Checkout transaction fees (${feePct(plan)})`, sale_fee_reversal: "Transaction fee reversals", otp: "OTP messages", wa_confirm: "WhatsApp order confirmations", wa_tracking: "WhatsApp tracking messages", wa_promo: "WhatsApp promotional messages", wa_reply: "WhatsApp inbox replies", wa_followup: "WhatsApp inbox follow-ups", wa_recovery: "Abandoned checkout messages" };
-      for (const [type, amountPaise] of byType) if (amountPaise) lines.push({ label: label[type] ?? type.replaceAll("_", " "), amountPaise });
-      if (locked.legacyDebtPaise > 0) lines.push({ label: "Previous wallet balance due", amountPaise: locked.legacyDebtPaise });
+      // Orders, net sales, the % fee, plan, WhatsApp and OTP counts: kept on the bill and shown line by line
+      const summary = await summarize(storeId, locked.planId, usage, Math.max(0, locked.legacyDebtPaise));
+      const lines: BillingLine[] = linesFrom(summary);
       const subtotalPaise = Math.max(0, lines.reduce((n, l) => n + l.amountPaise, 0));
       const gstPaise = Math.round(subtotalPaise * WALLET_GST);
       const totalPaise = subtotalPaise + gstPaise;
@@ -152,7 +150,7 @@ export async function ensureBillingInvoices(storeId: number, now = new Date()) {
       const buyer = await storeBilling(storeId);
       const sameState = Boolean(seller.state && buyer.details.state && seller.state.trim().toLowerCase() === buyer.details.state.trim().toLowerCase());
       const [created] = await tx.insert(billingInvoices).values({
-        storeId, invoiceNo: no, planId: locked.planId, periodStart, periodEnd, lines,
+        storeId, invoiceNo: no, planId: locked.planId, periodStart, periodEnd, lines, summary,
         subtotalPaise, gstPaise, creditPaise, creditGstPaise, totalPaise, duePaise,
         status: duePaise ? "open" : "paid", dueAt: dueAfter(periodEnd),
         billing: { ...buyer.details, taxType: sameState ? "cgst_sgst" : "igst" }, paidAt: duePaise ? null : now,

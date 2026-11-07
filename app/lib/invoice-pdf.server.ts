@@ -1,6 +1,7 @@
 // GST tax invoice for a wallet recharge as a PDF (A4), with the Growpefy logo. Built with pdfkit on the server.
 import fs from "node:fs";
 import path from "node:path";
+import type { BillSummary } from "~/db/schema";
 import PDFDocument from "pdfkit";
 import type { BillingDetails } from "~/db.server";
 import { stateCode } from "./billing.server";
@@ -193,6 +194,7 @@ export type MonthlyInvoiceData = {
   seller: BillingDetails; buyer: BillingDetails; store: string; lines: { label: string; amountPaise: number }[];
   subtotalPaise: number; gstPaise: number; creditPaise: number; creditGstPaise: number; totalPaise: number; duePaise: number;
   taxType: "igst" | "cgst_sgst";
+  summary?: BillSummary | null;
 };
 
 /** PDF for monthly service invoices, including prior wallet credits and invoice balance. */
@@ -218,6 +220,31 @@ export function monthlyInvoicePdf(d: MonthlyInvoiceData): Promise<Buffer> {
     };
     party("Supplier", 44, d.seller, 230); party("Bill to", 315, { ...d.buyer, name: d.buyer.name || d.store }, 230);
     y = Math.max(doc.y, 230) + 20;
+    // This period at a glance: orders, net sales, the % fee, plan, WhatsApp and OTP
+    if (d.summary) {
+      const s = d.summary;
+      const cells: [string, string][] = [
+        ["Orders", s.orders.toLocaleString("en-IN")],
+        ["Net sales", money(s.netSalesPaise)],
+        [`Transaction fee (${(s.feeBps / 100).toString()}%)`, money(s.feePaise - s.feeReversedPaise)],
+        [`${s.planName} plan`, money(s.planPaise)],
+        [`WhatsApp (${s.whatsapp.count.toLocaleString("en-IN")})`, money(s.whatsapp.paise)],
+        [`OTP (${s.otp.count.toLocaleString("en-IN")})`, money(s.otp.paise)],
+      ];
+      doc.fillColor("#0B5D4B").font("Helvetica-Bold").fontSize(9).text("THIS BILLING PERIOD", 44, y); y += 16;
+      const cw = W / 3, ch = 40;
+      cells.forEach(([label, value], i) => {
+        const x = 44 + (i % 3) * cw, yy = y + Math.floor(i / 3) * ch;
+        doc.rect(x, yy, cw - 6, ch - 6).fill("#F6F8F7");
+        doc.fillColor("#4A5753").font("Helvetica").fontSize(8).text(label, x + 9, yy + 7, { width: cw - 24 });
+        doc.fillColor("#0B1513").font("Helvetica-Bold").fontSize(11).text(value, x + 9, yy + 19, { width: cw - 24 });
+      });
+      y += ch * 2 + 10;
+      if (s.whatsapp.parts.length > 1) {
+        doc.fillColor("#4A5753").font("Helvetica").fontSize(8).text("WhatsApp: " + s.whatsapp.parts.map((p) => `${p.label} ${p.count} (${money(p.paise)})`).join("  ·  "), 44, y, { width: W });
+        y = doc.y + 10;
+      }
+    }
     doc.roundedRect(44, y, W, 24, 4).fill("#0B5D4B");
     doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(9).text("Description", 54, y + 7, { width: W - 150 });
     doc.text("Amount", 400, y + 7, { width: W - 366, align: "right" }); y += 24;

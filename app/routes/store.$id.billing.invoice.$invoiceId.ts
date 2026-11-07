@@ -2,6 +2,7 @@ import type { LoaderFunctionArgs } from "@remix-run/node";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { invoiceFor } from "~/lib/subscription-billing.server";
 import { monthlyInvoicePdf } from "~/lib/invoice-pdf.server";
+import { invoiceSummary } from "~/lib/billing-breakdown.server";
 import { getPlatform } from "~/lib/wallet.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -15,6 +16,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     buyer: invoice.billing ?? {}, store: store.name, lines: invoice.lines, subtotalPaise: invoice.subtotalPaise,
     gstPaise: invoice.gstPaise, creditPaise: invoice.creditPaise, creditGstPaise: invoice.creditGstPaise,
     totalPaise: invoice.totalPaise, duePaise: invoice.duePaise, taxType: invoice.billing?.taxType === "cgst_sgst" ? "cgst_sgst" : "igst",
+    summary: await invoiceSummary(invoice),
   });
   const name = `Growpefy-Invoice-${invoice.invoiceNo.replace(/[^A-Za-z0-9-]+/g, "-")}.pdf`;
   return new Response(new Uint8Array(pdf), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "private, no-store" } });
