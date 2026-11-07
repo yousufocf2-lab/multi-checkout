@@ -1,8 +1,9 @@
 <header class="header">
   <div class="wrap header__row">
-    <a href="{{ routes.root }}" class="header__logo" aria-label="{{ shop.name }} home">
+    {%- comment -%} The logo always fits inside the header bar: these limits are inline !important, so settings or custom CSS can't push it out {%- endcomment -%}
+    <a href="{{ routes.root }}" class="header__logo" aria-label="{{ shop.name }} home" style="display:flex!important;align-items:center!important;height:48px!important;max-height:48px!important;overflow:hidden!important;flex:0 1 auto!important;min-width:0!important">
       {%- assign logo = settings.logo | default: shop.logo -%}
-      {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" style="width:var(--logo-width);height:auto">{%- else -%}{{ shop.name }}{%- endif -%}
+      {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" style="display:block!important;width:auto!important;height:auto!important;max-height:48px!important;max-width:min(var(--logo-width,140px),46vw)!important;object-fit:contain!important;position:static!important;transform:none!important;margin:0!important">{%- else -%}<span style="display:block;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ shop.name }}</span>{%- endif -%}
     </a>
     <nav class="header__nav" aria-label="Main">
       {%- if section.settings.show_all -%}<a href="{{ routes.all }}">{{ section.settings.all_label }}</a>{%- endif -%}
