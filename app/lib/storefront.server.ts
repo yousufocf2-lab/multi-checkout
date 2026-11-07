@@ -6,6 +6,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
 import { footerPages } from "./store-pages.server";
 import { renderCustomLiquid } from "./custom-liquid.server";
+import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, storeThemes, type CatalogItem, type CatalogVariant, type Store, type ThemeData, type ThemeTemplate } from "~/db.server";
 
 // ---------- theme files ----------
@@ -215,7 +216,7 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
   const cheapest = variantDrops.filter((v) => v.available).sort((a, b) => a.price - b.price)[0] ?? variantDrops[0];
   const price = cheapest?.price ?? 0;
   const compare = cheapest?.compare_at_price ?? 0;
-  const url = `${ctx.root}/products/${item.handle}`;
+  const url = productPath(ctx.root, item.handle);
   const drop = {
     id: item.id, title: item.title, handle: item.handle, url, description: item.descriptionHtml, images, featured_image: cover, has_video: images.some((i) => i.type === "video"), featured_video: images.find((i) => i.type === "video")?.src ?? null,
     options: item.options, variants: variantDrops, price, compare_at_price: compare, available: variantDrops.some((v) => v.available),
@@ -279,7 +280,7 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 
 export async function loadCategories(ctx: ShopContext) {
   const rows = await db.select().from(catalogCategories).where(eq(catalogCategories.storeId, ctx.store.id)).orderBy(asc(catalogCategories.position), asc(catalogCategories.title));
-  return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, url: `${ctx.root}/collections/${c.handle}` }));
+  return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, url: categoryPath(ctx.root, c.handle) }));
 }
 
 /** Everything every page gets: shop, routes, menu categories. */
@@ -287,7 +288,7 @@ export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id)]);
   return {
     shop: { name: ctx.store.name, slug: ctx.store.slug, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
-    routes: { root: ctx.root || "/", base: ctx.root, all: `${ctx.root}/collections/all`, cart: `${ctx.root}/cart` },
+    routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart` },
     collections, pages: pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` })), preview: ctx.preview,
   };
 }
@@ -304,7 +305,7 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
     const products = await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
-    return { products, collection_url: category ? `${ctx.root}/collections/${category}` : `${ctx.root}/collections/all` };
+    return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
   };
 }
 

@@ -76,7 +76,7 @@ export default function Collections() {
           <div className="px-6 py-14 text-center">
             <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-paper-sunk"><Icon name="layers" className="h-7 w-7 text-ink-soft" strokeWidth={1.4} /></span>
             <p className="mt-4 font-semibold">Group your {pack.items.toLowerCase()} into collections</p>
-            <p className="mt-0.5 text-[12.5px] text-ink-soft">Each collection gets its own page on your website, like /collections/smart-watches.</p>
+            <p className="mt-0.5 text-[12.5px] text-ink-soft">Each collection gets its own page on your website, like /category/smart-watches.</p>
             <button type="button" className="btn-primary mt-4" onClick={() => setAdding(true)}>Add collection</button>
           </div>
         ) : (
@@ -96,7 +96,7 @@ export default function Collections() {
                     ) : (
                       <span className="flex items-center gap-3">
                         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-paper-sunk text-[13px] font-semibold text-ink-soft">{c.title.slice(0, 1).toUpperCase()}</span>
-                        <span><span className="block font-semibold">{c.title}</span><span className="text-[11.5px] text-ink-faint">/collections/{c.handle}</span></span>
+                        <span><span className="block font-semibold">{c.title}</span><span className="text-[11.5px] text-ink-faint">/category/{c.handle}</span></span>
                       </span>
                     )}
                   </td>
@@ -106,7 +106,7 @@ export default function Collections() {
                   <td className="text-right">
                     {editing !== c.id && (
                       <span className="inline-flex gap-1">
-                        <a href={`/s/${store.slug}/collections/${c.handle}`} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label={`View ${c.title}`}><Icon name="eye" className="h-4 w-4" /></a>
+                        <a href={`/s/${store.slug}/category/${c.handle}`} target="_blank" rel="noreferrer" className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label={`View ${c.title}`}><Icon name="eye" className="h-4 w-4" /></a>
                         <button type="button" onClick={() => setEditing(c.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5" aria-label={`Rename ${c.title}`}><Icon name="design" className="h-4 w-4" /></button>
                         <Form method="post" onSubmit={(e) => { if (!confirm(`Delete “${c.title}”? Its ${pack.items.toLowerCase()} stay.`)) e.preventDefault(); }}>
                           <input type="hidden" name="intent" value="delete" /><input type="hidden" name="id" value={c.id} />

@@ -24,9 +24,9 @@ export const loader = async ({ request }: { request: Request }) => {
     const base = `https://${ctx.store.storefrontDomain}`;
     const entries = [
       { path: "/", date: new Date(), frequency: "weekly", priority: "1.0" },
-      { path: "/collections/all", date: new Date(), frequency: "daily", priority: "0.9" },
-      ...products.map((p) => ({ path: `/products/${p.handle}`, date: p.updatedAt, frequency: "weekly", priority: "0.8" })),
-      ...collections.map((c) => ({ path: `/collections/${c.handle}`, date: c.createdAt, frequency: "weekly", priority: "0.7" })),
+      { path: "/products/all", date: new Date(), frequency: "daily", priority: "0.9" },
+      ...products.map((p) => ({ path: `/product/${p.handle}`, date: p.updatedAt, frequency: "weekly", priority: "0.8" })),
+      ...collections.map((c) => ({ path: `/category/${c.handle}`, date: c.createdAt, frequency: "weekly", priority: "0.7" })),
       ...pages.map((p) => ({ path: `/pages/${p.handle}`, date: p.updatedAt, frequency: "monthly", priority: "0.5" })),
     ];
     return response(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries.map((e) => `  <url><loc>${xml(base + e.path)}</loc><lastmod>${e.date.toISOString().slice(0, 10)}</lastmod><changefreq>${e.frequency}</changefreq><priority>${e.priority}</priority></url>`).join("\n")}\n</urlset>\n`);

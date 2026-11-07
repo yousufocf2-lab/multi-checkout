@@ -61,7 +61,7 @@ app.use((req, res, next) => {
 // A store's own website domain (www.brand.com): storefront paths go to the /sfhost routes, /admin to the dashboard.
 // Every other path (checkout /c, /pay, /order, /media, /api, /dashboard, /login, assets) works as on growpefy.com.
 const checkoutRootHost = String(process.env.CHECKOUT_DOMAIN || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "");
-const STOREFRONT_PATH = /^\/($|products\/|collections\/|pages\/|cart\/?$|checkout\/?$)/;
+const STOREFRONT_PATH = /^\/($|products?\/|category\/|collections\/|pages\/|cart\/?$|checkout\/?$)/;
 app.use((req, res, next) => {
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase().replace(/:\d+$/, "");
   const ours = !host || host === canonicalHost || isOtherHost(host) || host === "localhost" || host === "127.0.0.1"

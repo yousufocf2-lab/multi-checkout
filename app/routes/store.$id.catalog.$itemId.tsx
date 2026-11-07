@@ -181,7 +181,7 @@ export default function EditItem() {
   const autoHandle = toHandleClient(title);
   const listingTitle = (seoTitle || title || `${Item} title`).slice(0, 70);
   const listingDesc = (seoDesc || plain(desc) || `Add a description to see how this ${pack.item} might appear in a search engine listing.`).slice(0, 160);
-  const url = `${site.host}/products/${handle || autoHandle || "…"}`;
+  const url = `${site.host}/product/${handle || autoHandle || "…"}`;
   const priceN = Number(r0?.price) || 0;
   const costN = Number(cost) || 0;
   const profit = priceN && costN ? priceN - costN : null;
@@ -206,7 +206,7 @@ export default function EditItem() {
         <span className="text-ink-faint">/</span>
         <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold">{item ? item.title : `Add ${pack.item}`}</h1>
         {savedFlash && <span className="text-[12.5px] font-medium text-[#0c5132]">Saved ✓</span>}
-        {item && item.status === "active" && <a href={`${site.host}/products/${item.handle}`} target="_blank" rel="noreferrer" className="btn-secondary"><Icon name="eye" className="h-4 w-4" />View</a>}
+        {item && item.status === "active" && <a href={`${site.host}/product/${item.handle}`} target="_blank" rel="noreferrer" className="btn-secondary"><Icon name="eye" className="h-4 w-4" />View</a>}
       </div>
       {a?.error && <div className="mb-4"><Notice tone="error">{a.error}</Notice></div>}
 
@@ -363,7 +363,7 @@ export default function EditItem() {
                 <label className="block"><span className="label flex justify-between">Page title<span className="font-normal text-ink-faint">{(seoTitle || title).length}/70</span></span><input name="seoTitle" value={seoTitle} onChange={(e) => setSeoTitle(e.target.value)} placeholder={title} maxLength={120} className="input w-full" /></label>
                 <label className="block"><span className="label flex justify-between">Meta description<span className="font-normal text-ink-faint">{(seoDesc || plain(desc)).slice(0, 999).length}/160</span></span><textarea name="seoDescription" value={seoDesc} onChange={(e) => setSeoDesc(e.target.value)} rows={3} placeholder={plain(desc).slice(0, 160)} className="input w-full" /></label>
                 <label className="block"><span className="label">URL handle</span>
-                  <div className="flex items-center rounded-lg shadow-[inset_0_0_0_1px_#d4d4d4]"><span className="pl-2.5 text-[12.5px] text-ink-faint">/products/</span><input name="handle" value={handle} onChange={(e) => setHandle(toHandleClient(e.target.value, true))} placeholder={autoHandle} className="min-w-0 flex-1 border-0 bg-transparent px-1 py-1.5 text-[13px] outline-none" /></div>
+                  <div className="flex items-center rounded-lg shadow-[inset_0_0_0_1px_#d4d4d4]"><span className="pl-2.5 text-[12.5px] text-ink-faint">/product/</span><input name="handle" value={handle} onChange={(e) => setHandle(toHandleClient(e.target.value, true))} placeholder={autoHandle} className="min-w-0 flex-1 border-0 bg-transparent px-1 py-1.5 text-[13px] outline-none" /></div>
                 </label>
               </div>
             )}

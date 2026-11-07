@@ -128,8 +128,8 @@ export default function ThemeEditor() {
   const [, force] = useState(0);
 
   const base = `/s/${L.store.slug}`;
-  const path = page === "index" ? "" : page === "product" ? `/products/${L.samples.product ?? "__sample"}`
-    : page === "collection" ? `/collections/${L.samples.collection}` : page === "cart" ? "/cart" : `/pages/${L.samples.page ?? "__sample"}`;
+  const path = page === "index" ? "" : page === "product" ? `/product/${L.samples.product ?? "__sample"}`
+    : page === "collection" ? (L.samples.collection === "all" || !L.samples.collection ? "/products/all" : `/category/${L.samples.collection}`) : page === "cart" ? "/cart" : `/pages/${L.samples.page ?? "__sample"}`;
   const [nonce, setNonce] = useState(0);
   const src = path == null ? null : `${base}${path}?gp_editor=1&v=${nonce}`;
 
@@ -563,7 +563,7 @@ function Field({ s, value, onChange, storeId, categories }: { s: Setting; value:
     case "list":
       return <ListField s={s} value={Array.isArray(value) ? (value as Record<string, unknown>[]) : []} onChange={onChange} storeId={storeId} categories={categories} />;
     case "url":
-      return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} placeholder="Paste a link or /collections/all" className="ed-input" /></div>;
+      return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} placeholder="Paste a link or /products/all" className="ed-input" /></div>;
     default:
       return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} className="ed-input" /></div>;
   }

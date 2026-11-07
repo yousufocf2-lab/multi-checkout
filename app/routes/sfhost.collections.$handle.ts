@@ -1,9 +1,7 @@
-// A store's own domain: category page.
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { collectionPage, domainContext } from "~/lib/storefront-pages.server";
+// A store's own domain: old /collections/<handle> links move to /category/<handle> (and /collections/all to /products/all).
+import { redirect, type LoaderFunctionArgs } from "@remix-run/node";
+import { movedTo } from "~/lib/storefront-paths";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const ctx = await domainContext(request);
-  if (!ctx) throw new Response("Not found", { status: 404 });
-  return collectionPage(ctx, params.handle ?? "all");
+  throw redirect(movedTo(request, params.handle === "all" ? "/products/all" : `/category/${encodeURIComponent(params.handle ?? "")}`), 301);
 }

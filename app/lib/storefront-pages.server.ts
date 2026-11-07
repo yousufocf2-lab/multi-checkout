@@ -42,7 +42,7 @@ export async function productPage(ctx: ShopContext, handle: string, reviewSubmit
   return html(await renderPage(THEME, "product", {
     ...scope, template: "product", product,
     reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_submitted: reviewSubmitted,
-    page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/products/${handle}`),
+    page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/product/${handle}`),
   }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }
 
@@ -52,7 +52,7 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
   if (handle !== "all" && !cat) throw new Response("Not found", { status: 404 });
   const products = await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
-  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, `/collections/${handle}`) }, sectionData(ctx), ctx.look));
+  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, handle === "all" ? "/products/all" : `/category/${handle}`) }, sectionData(ctx), ctx.look));
 }
 
 export async function infoPage(ctx: ShopContext, handle: string) {
