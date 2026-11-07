@@ -129,14 +129,18 @@ export default function Catalog() {
         <Icon name="tag" className="h-4 w-4" strokeWidth={1.9} />
         <h1 className="flex-1 text-[15px] font-semibold">{pack.items}</h1>
         <LearnMore topic="catalog" />
-        <Link to={`${base}/reviews`} className="btn-secondary">Reviews</Link>
-        {store.shopify && <Form method="post"><input type="hidden" name="intent" value="import" /><button className="btn-secondary">Import from Shopify</button></Form>}
-        <Form method="post" encType="multipart/form-data" className="flex flex-wrap items-center gap-1.5" onSubmit={(e) => { if (!confirm("Products with a matching Growpefy Shopify-import handle will be updated. Continue?")) e.preventDefault(); }}>
-          <input type="hidden" name="intent" value="import_csv" />
-          <input type="file" name="file" accept=".csv,text/csv" required className="max-w-[210px] text-[11px]" aria-label="Choose Shopify products CSV" />
-          <button className="btn-secondary" disabled={busy}>Import CSV</button>
-        </Form>
-        {!empty && <a href={`${base}/catalog/export.csv`} className="btn-secondary">Export CSV</a>}
+        <details className="group relative">
+          <summary className="btn-secondary cursor-pointer list-none select-none hover:bg-paper-sunk [&::-webkit-details-marker]:hidden">Product tools <span aria-hidden="true">⌄</span></summary>
+          <div className="absolute right-0 z-30 mt-1.5 min-w-[210px] rounded-xl border border-rule bg-paper p-1.5 shadow-xl">
+            <Link to={`${base}/reviews`} className="block rounded-lg px-3 py-2 text-left text-[12.5px] hover:bg-paper-sunk">Manage reviews</Link>
+            {!empty && <a href={`${base}/catalog/export.csv`} className="block rounded-lg px-3 py-2 text-left text-[12.5px] hover:bg-paper-sunk">Export products CSV</a>}
+            <Form method="post" encType="multipart/form-data" onSubmit={(e) => { if (!confirm("Matching Shopify-imported products will be updated. Continue?")) e.preventDefault(); }}>
+              <input type="hidden" name="intent" value="import_csv" />
+              <label className="block cursor-pointer rounded-lg px-3 py-2 text-[12.5px] hover:bg-paper-sunk">Import products CSV<input type="file" name="file" accept=".csv,text/csv" required className="sr-only" aria-label="Choose Shopify products CSV" onChange={(e) => { if (e.currentTarget.files?.length) e.currentTarget.form?.requestSubmit(); }} /></label>
+            </Form>
+            {store.shopify && <Form method="post"><input type="hidden" name="intent" value="import" /><button className="block w-full rounded-lg px-3 py-2 text-left text-[12.5px] hover:bg-paper-sunk" disabled={busy}>Import from Shopify</button></Form>}
+          </div>
+        </details>
         <a href={`/s/${store.slug}`} target="_blank" rel="noreferrer" className="btn-secondary"><Icon name="eye" className="h-4 w-4" />View store</a>
         <Link to="new" className="btn-primary">Add {pack.item}</Link>
       </div>

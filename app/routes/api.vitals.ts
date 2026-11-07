@@ -10,7 +10,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const done = new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*" } });
   try {
     const text = (await request.text()).slice(0, 2000);
-    const b = JSON.parse(text) as { s?: string; p?: string; d?: string; lcp?: number; inp?: number; cls?: number };
+    const b = JSON.parse(text) as { s?: string; p?: string; d?: string; u?: string; lcp?: number; inp?: number; cls?: number };
     if (!b.s || typeof b.s !== "string") return done;
     let hit = ids.get(b.s);
     if (!hit || Date.now() - hit.at > 10 * 60_000) {
@@ -20,9 +20,10 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     if (!hit.id) return done;
     const lcp = clamp(b.lcp, 60_000), inp = clamp(b.inp, 30_000), cls = clamp(b.cls, 10);
-    if (lcp == null && inp == null && cls == null) return done;
     await db.insert(storefrontVitals).values({
-      storeId: hit.id, page: typeof b.p === "string" ? b.p.slice(0, 20) : null, device: b.d === "desktop" ? "desktop" : "mobile",
+      storeId: hit.id, page: typeof b.p === "string" ? b.p.slice(0, 240) : null,
+      visitorId: typeof b.u === "string" && /^[a-zA-Z0-9_-]{8,80}$/.test(b.u) ? b.u : null,
+      device: b.d === "desktop" ? "desktop" : "mobile",
       lcp: lcp == null ? null : Math.round(lcp), inp: inp == null ? null : Math.round(inp), cls,
     });
   } catch { /* ignore bad beacons */ }

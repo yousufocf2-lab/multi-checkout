@@ -1433,7 +1433,8 @@ export type DraftOrder = typeof draftOrders.$inferSelect;
 export const storefrontVitals = pgTable("storefront_vitals", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
-  page: text("page"), // index | product | collection | cart | page
+  page: text("page"), // Storefront path without query params
+  visitorId: text("visitor_id"), // Session-scoped random ID; no name, IP, or browser fingerprint
   device: text("device").$type<"mobile" | "desktop">().notNull(),
   lcp: integer("lcp"), // ms
   inp: integer("inp"), // ms

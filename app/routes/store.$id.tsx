@@ -37,6 +37,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout", back: "checkout" },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
   logistics: { title: "Shipments", description: "Connect couriers to track shipments and unlock RTO Shield.", icon: "shipping", guide: "logistics" },
+  funnel: { title: "Analytics", description: "Store visits, checkout conversion and orders.", icon: "chart", guide: "analytics" },
   "rto-shield": { title: "RTO Shield", description: "Block COD based on a customer's delivery history.", icon: "shield", guide: "rto-shield" },
   wallet: { title: "Plan & billing", description: "Plans, monthly invoices and payment history.", icon: "wallet", guide: "wallet" },
   install: { title: "Store connection", description: "Connect your store, payments, webhooks and the checkout button.", icon: "setup", guide: "install" },

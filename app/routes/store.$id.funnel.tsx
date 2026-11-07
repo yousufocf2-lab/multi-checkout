@@ -84,19 +84,32 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (r) r.native = Number(n.n);
     else byDay.set(n.d, { d: n.d, sessions: 0, opened: 0, phone: 0, addr: 0, tried: 0, orders: 0, cod: 0, prepaid: 0, partial: 0, online_started: 0, online_failed: 0, inapp: 0, inapp_orders: 0, own_domain: 0, native: Number(n.n) });
   }
+  const siteTraffic = (await db.execute<{ d: string; views: number; visitors: number; mobile: number; desktop: number }>(sql`
+    select to_char(created_at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as d,
+      count(*)::int as views,
+      (count(distinct visitor_id) + count(*) filter (where visitor_id is null))::int as visitors,
+      count(*) filter (where device = 'mobile')::int as mobile,
+      count(*) filter (where device = 'desktop')::int as desktop
+    from storefront_vitals where store_id = ${store.id} and created_at >= ${from}::timestamptz and created_at < ${to}::timestamptz
+    group by 1 order by 1`)) as unknown as { d: string; views: number; visitors: number; mobile: number; desktop: number }[];
+  const topPages = (await db.execute<{ page: string | null; views: number }>(sql`
+    select page, count(*)::int as views from storefront_vitals
+    where store_id = ${store.id} and created_at >= ${from}::timestamptz and created_at < ${to}::timestamptz
+    group by page order by views desc limit 10`)) as unknown as { page: string | null; views: number }[];
+  const trafficTotal = siteTraffic.reduce((a, r) => ({ views: a.views + Number(r.views), visitors: a.visitors + Number(r.visitors), mobile: a.mobile + Number(r.mobile), desktop: a.desktop + Number(r.desktop) }), { views: 0, visitors: 0, mobile: 0, desktop: 0 });
   const days = [...byDay.values()].map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, k === "d" ? v : Number(v)])) as Row).sort((a, b) => a.d.localeCompare(b.d));
   const total = days.reduce((t, r) => {
     for (const k of Object.keys(t) as (keyof Omit<Row, "d">)[]) t[k] += r[k];
     return t;
   }, { sessions: 0, opened: 0, phone: 0, addr: 0, tried: 0, orders: 0, cod: 0, prepaid: 0, partial: 0, online_started: 0, online_failed: 0, inapp: 0, inapp_orders: 0, own_domain: 0, native: 0 });
-  return json({ name: store.name, range, days, total, profit: store.profitEnabled });
+  return json({ name: store.name, range, days, total, profit: store.profitEnabled, siteTraffic, trafficTotal, topPages: topPages.map((p) => ({ page: p.page || "Other", views: Number(p.views) })) });
 }
 
 const pct = (a: number, b: number) => (b ? `${((a / b) * 100).toFixed(a / b < 0.1 ? 1 : 0)}%` : "—");
 const dayLabel = (d: string) => new Date(`${d}T12:00:00+05:30`).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
 
 export default function Funnel() {
-  const { name, range, days, total: t, profit } = useLoaderData<typeof loader>();
+  const { name, range, days, total: t, profit, siteTraffic, trafficTotal, topPages } = useLoaderData<typeof loader>();
   const steps = [
     { label: "Clicked checkout", n: t.sessions, hint: "Buy now or Checkout pressed on the store" },
     { label: "Checkout page opened", n: t.opened, hint: "The checkout page loaded" },
@@ -110,13 +123,14 @@ export default function Funnel() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-semibold leading-tight tracking-tight">Checkout funnel</h1>
-          <p className="mt-1 text-sm text-ink-soft">{name} · where customers drop off in the Growpefy checkout</p>
+          <h1 className="text-[22px] font-semibold leading-tight tracking-tight">Analytics</h1>
+          <p className="mt-1 text-sm text-ink-soft">{name} · storefront visitors and checkout performance</p>
         </div>
         <RangePicker current={range} align="right" />
       </div>
 
       <section className="panel p-5">
+        <h2 className="mb-3 text-[15px] font-semibold">Checkout funnel</h2>
         <ol className="space-y-3">
           {steps.map((s, i) => {
             const prev = i ? steps[i - 1].n : s.n;
@@ -140,6 +154,17 @@ export default function Funnel() {
         <Card title="Other browsers" lines={[["Checkouts", other.toLocaleString("en-IN")], ["Orders", otherOrders.toLocaleString("en-IN")], ["Conversion", pct(otherOrders, other)]]} />
         <Card title="Online payment" lines={[["Started", t.online_started.toLocaleString("en-IN")], ["Completed", (t.prepaid + t.partial).toLocaleString("en-IN")], ["Not completed", `${t.online_failed} (${pct(t.online_failed, t.online_started)})`]]} />
       </div>
+
+      <section className="panel overflow-hidden">
+        <div className="border-b border-rule px-5 py-4"><h2 className="text-[15px] font-semibold">Storefront traffic</h2><p className="mt-0.5 text-xs text-ink-faint">Real visits to your website in the selected date range. Visitors are unique browser sessions, not identified people.</p></div>
+        <div className="grid grid-cols-2 divide-rule sm:grid-cols-4 sm:divide-x">
+          <TrafficMetric label="Page views" value={trafficTotal.views}/><TrafficMetric label="Visitor sessions" value={trafficTotal.visitors}/><TrafficMetric label="Mobile views" value={trafficTotal.mobile}/><TrafficMetric label="Desktop views" value={trafficTotal.desktop}/>
+        </div>
+        <div className="grid gap-0 border-t border-rule lg:grid-cols-2">
+          <div className="overflow-x-auto border-b border-rule px-5 py-4 lg:border-b-0 lg:border-r"><h3 className="mb-2 text-sm font-semibold">Popular pages</h3>{topPages.length ? <table className="table min-w-[300px]"><thead><tr><th>Page</th><th className="text-right">Views</th></tr></thead><tbody>{topPages.map((p) => <tr key={p.page}><td className="max-w-[30ch] truncate font-mono text-[11px]">{p.page}</td><td className="num text-right">{p.views.toLocaleString("en-IN")}</td></tr>)}</tbody></table> : <p className="text-xs text-ink-faint">No website visits recorded in this period.</p>}</div>
+          <div className="px-5 py-4"><h3 className="mb-2 text-sm font-semibold">Website views by day</h3>{siteTraffic.length ? <div className="max-h-64 overflow-y-auto"><table className="table min-w-[280px]"><thead><tr><th>Date</th><th className="text-right">Visitors</th><th className="text-right">Views</th></tr></thead><tbody>{siteTraffic.slice().reverse().map((r) => <tr key={r.d}><td>{dayLabel(r.d)}</td><td className="num text-right">{Number(r.visitors).toLocaleString("en-IN")}</td><td className="num text-right">{Number(r.views).toLocaleString("en-IN")}</td></tr>)}</tbody></table></div> : <p className="text-xs text-ink-faint">No website visits recorded in this period.</p>}</div>
+        </div>
+      </section>
 
       <section className="panel">
         <div className="border-b border-rule px-5 py-4">
@@ -189,4 +214,8 @@ function Card({ title, lines }: { title: string; lines: [string, string][] }) {
       </dl>
     </section>
   );
+}
+
+function TrafficMetric({ label, value }: { label: string; value: number }) {
+  return <div className="px-4 py-3"><p className="text-xs text-ink-soft">{label}</p><p className="num mt-1 text-[17px] font-semibold">{value.toLocaleString("en-IN")}</p></div>;
 }

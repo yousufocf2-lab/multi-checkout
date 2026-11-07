@@ -172,8 +172,7 @@ export default function DashboardLayout() {
     ] },
   ];
   const storeChannels: NavNode[] = [
-    { label: "Storefront", to: storeHref("editor"), icon: "stores", match: /\/(editor|themes|pages(\/\d+)?|reviews)$|next=(editor|themes|pages|reviews)\b/, show: storefront && may("online_store"), children: [
-      { label: "Storefront Studio", to: storeHref("editor"), match: /\/editor$|next=editor/, show: true },
+    { label: "Storefront", to: storeHref("themes"), icon: "stores", match: /\/(editor|themes|pages(\/\d+)?|reviews)$|next=(editor|themes|pages|reviews)\b/, show: storefront && may("online_store"), children: [
       { label: "Themes", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
       { label: "Site pages", to: storeHref("pages"), match: /\/pages(\/|$)|next=pages/, show: true },
       { label: "Product reviews", to: storeHref("reviews"), match: /\/reviews$|next=reviews/, show: true },
