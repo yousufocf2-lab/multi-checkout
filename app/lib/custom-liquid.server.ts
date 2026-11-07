@@ -74,11 +74,23 @@ export const sanitize = (html: string) => sanitizeHtml(html, SAFE);
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const text = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
+/** A <script> or <style> left open would swallow everything after it; close it so the page still lays out. */
+function closeOpen(html: string) {
+  let out = html;
+  for (const tag of ["script", "style"]) {
+    const opens = (out.match(new RegExp(`<${tag}\\b`, "gi")) ?? []).length;
+    const closes = (out.match(new RegExp(`</${tag}\\s*>`, "gi")) ?? []).length;
+    if (opens > closes) out += `</${tag}>`;
+  }
+  return out;
+}
+
 /** A sandboxed frame for code that runs scripts. Its own origin: no cookies, no access to the page or admin. */
 function frame(id: string, html: string, vars: string) {
   const doc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_top">
 <style>:root{${vars}}html,body{margin:0;background:transparent}body{font:16px/1.55 var(--font-body,system-ui),system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink,#14171a)}img,video{max-width:100%;height:auto}a{color:var(--brand,#111827)}</style>
-</head><body>${html}<script>(function(){var last=0;function send(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;parent.postMessage({gpFrame:${JSON.stringify(id)},h:h},"*")}}new ResizeObserver(send).observe(document.documentElement);addEventListener("load",send);send()})()</script></body></html>`;
+<script>(function(){var last=0;function send(){var d=document.documentElement,b=document.body;var h=Math.ceil(Math.max(d.getBoundingClientRect().height,b?b.scrollHeight:0));if(h!==last){last=h;parent.postMessage({gpFrame:${JSON.stringify(id)},h:h},"*")}}try{new ResizeObserver(send).observe(document.documentElement)}catch(e){}addEventListener("DOMContentLoaded",send);addEventListener("load",send);setTimeout(send,300);setTimeout(send,1500)})()</script>
+</head><body>${closeOpen(html)}</body></html>`;
   return `<iframe class="gp-code-frame" data-gp-frame="${attr(id)}" title="Custom content" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms allow-top-navigation-by-user-activation" loading="lazy" style="display:block;width:100%;height:120px;border:0;background:transparent" srcdoc="${attr(doc)}"></iframe>
 <script>(function(){var f=document.querySelector('[data-gp-frame=${JSON.stringify(id).replace(/</g, "\\u003c")}]');if(!f)return;addEventListener("message",function(e){if(e.source===f.contentWindow&&e.data&&e.data.gpFrame===${JSON.stringify(id).replace(/</g, "\\u003c")}&&e.data.h>0)f.style.height=Math.min(e.data.h,20000)+"px"})})()</script>`;
 }

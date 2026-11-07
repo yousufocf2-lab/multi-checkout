@@ -676,6 +676,8 @@ function CodeField({ id, label, value, onChange }: { id: string; label: string; 
     requestAnimationFrame(() => { t.selectionStart = t.selectionEnd = a + 2; });
   };
   const usesScript = /<script\b|\son[a-z]+\s*=/i.test(value);
+  const count = (re: RegExp) => (value.match(re) ?? []).length;
+  const unclosed = count(/<script\b/gi) > count(/<\/script\s*>/gi) ? "<script>" : count(/<style\b/gi) > count(/<\/style\s*>/gi) ? "<style>" : "";
   return (
     <div className="ed-f">
       <span className="ed-code__head">
@@ -695,6 +697,7 @@ function CodeField({ id, label, value, onChange }: { id: string; label: string; 
           wrap="off" rows={Math.min(24, Math.max(10, lines + 1))} placeholder={"<h2>{{ shop.name }}</h2>\n<p>Your own HTML, CSS and Liquid…</p>"} maxLength={50000} />
       </div>
       <span className="ed-hint">
+        {unclosed && <b style={{ color: "#b42318", display: "block", marginBottom: 4 }}>A {unclosed} tag isn't closed. The code may have been cut off while pasting; paste it again in full.</b>}
         {value.length.toLocaleString("en-IN")} / 50,000 · {usesScript ? "Has a script: runs in a secure frame." : "HTML and CSS show directly on the page."}
         {" "}<button type="button" className="ed-link" onClick={() => setHelp((h) => !h)}>{help ? "Hide help" : "What can I use?"}</button>
       </span>
