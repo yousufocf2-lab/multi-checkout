@@ -107,3 +107,23 @@ export async function cancelShiprocketOrder(c: CourierCreds, ref: string): Promi
     return { ok: false, error: e instanceof Error ? e.message : "Shiprocket didn't respond" };
   }
 }
+
+/** New delivery address for an order in the Shiprocket panel (allowed until it's picked up). */
+export async function updateShiprocketAddress(c: CourierCreds, ref: string, a: { name: string; phone: string; address1: string; address2: string; city: string; state: string; pincode: string; email?: string }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    return await session(c, async (token) => {
+      const r = await http(`${SR()}/orders/address/update`, {
+        method: "POST", headers: bearer(token), label: "Shiprocket",
+        body: JSON.stringify({
+          order_id: Number(ref) || ref, shipping_customer_name: a.name.slice(0, 60), shipping_phone: a.phone.replace(/\D/g, "").slice(-10),
+          shipping_address: a.address1.slice(0, 190), shipping_address_2: a.address2.slice(0, 190), shipping_city: a.city, shipping_state: a.state,
+          shipping_country: "India", shipping_pincode: a.pincode.replace(/\D/g, ""), ...(a.email ? { shipping_email: a.email } : {}),
+        }),
+      });
+      if (r.status === 401) throw new CourierAuthError("Shiprocket session expired");
+      return r.ok ? { ok: true } : { ok: false, error: msg(r.body) || `error ${r.status}` };
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Shiprocket didn't respond" };
+  }
+}

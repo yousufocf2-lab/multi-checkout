@@ -103,3 +103,18 @@ export async function cancelDelhiveryShipment(token: string, awb: string): Promi
     return { ok: false, error: e instanceof Error ? e.message : "network error" };
   }
 }
+
+/** New delivery name / phone / address for a booked shipment. Delhivery allows it until the parcel is picked up. */
+export async function editDelhiveryAddress(token: string, awb: string, a: { name: string; phone: string; address: string }): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${BASE()}/api/p/edit`, {
+      method: "POST", headers: { ...headers(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ waybill: awb, name: a.name.slice(0, 60), phone: a.phone, add: a.address.slice(0, 250) }), signal: AbortSignal.timeout(20_000),
+    });
+    const body = (await res.json().catch(() => null)) as { status?: boolean | string; remark?: string; error?: string } | null;
+    if (res.ok && (body?.status === true || String(body?.status).toLowerCase() === "true")) return { ok: true };
+    return { ok: false, error: String(body?.remark ?? body?.error ?? `Delhivery error ${res.status}`).slice(0, 200) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "network error" };
+  }
+}

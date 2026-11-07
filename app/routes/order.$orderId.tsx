@@ -51,6 +51,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     items: order.items.map((l) => ({ title: l.title, variantTitle: l.variantTitle, image: l.image, quantity: l.quantity, free: Boolean(l.free) })),
     address: `${order.customer.address1}${order.customer.address2 ? ", " + order.customer.address2 : ""}, ${order.customer.city} ${order.customer.pincode}`,
     continueUrl,
+    note: order.customerNote ?? null,
     pixel: shouldTrackPurchase(store, order)
       ? {
           id: store.metaPixelId!, value: purchaseValue(order), items: order.items.map((l) => l.variantId), count: order.items.reduce((n, l) => n + l.quantity, 0),
@@ -121,6 +122,12 @@ export default function OrderStatus() {
                 {d.savings > 0 && <div className="flex justify-between"><dt className="text-ink-soft">You saved</dt><dd className="num font-medium text-good">{formatINR(d.savings)}</dd></div>}
                 <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>
               </dl>
+              {d.note && (
+                <div className="mt-4 rounded-xl border border-[rgb(var(--brand)/.25)] bg-[rgb(var(--brand)/.06)] p-4 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Note from {d.store.name}</p>
+                  <p className="mt-1 whitespace-pre-line">{d.note}</p>
+                </div>
+              )}
               <ul className="mt-5 space-y-3">
                 {d.items.map((l, i) => (
                   <li key={i} className="flex items-center gap-3">

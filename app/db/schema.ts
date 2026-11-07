@@ -208,6 +208,15 @@ export const kycDocuments = pgTable(
 );
 
 /** One row per connected Shopify store. */
+export type FieldRule = "required" | "optional" | "hidden";
+export type AccountSettings = {
+  enabled: boolean;
+  name: "full" | "first" | "none"; nameRequired: boolean;
+  phone: FieldRule; phoneVerify: boolean;
+  email: FieldRule; emailVerify: boolean;
+  address: FieldRule; addressLine2: boolean; landmark: boolean;
+};
+
 export const stores = pgTable("stores", {
   id: serial("id").primaryKey(),
   ownerId: integer("owner_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
@@ -294,6 +303,8 @@ export const stores = pgTable("stores", {
   metaCatalogSyncedAt: timestamp("meta_catalog_synced_at", { withTimezone: true }),
   metaCatalogError: text("meta_catalog_error"),
   metaCatalogCount: integer("meta_catalog_count").notNull().default(0),
+  // Customer accounts on the store's website: what to ask for and how to verify (see app/lib/customer-accounts.ts)
+  accountSettings: jsonb("account_settings").$type<AccountSettings>(),
   // Google Ads: connected with "Connect Google" (OAuth). Refresh token never leaves the server.
   googleAdsCustomerId: text("google_ads_customer_id"), // digits only, e.g. 1234567890
   googleLoginCustomerId: text("google_login_customer_id"), // manager (MCC) account the store reaches it through, if any
@@ -819,6 +830,9 @@ export type OrderCustomer = {
   label?: "home" | "work"; // "Save address as"
 };
 
+/** Something that happened to an order after it was placed (address changed, note edited…). */
+export type OrderEvent = { at: string; by: string; text: string };
+
 export type OrderLine = {
   variantId: string;
   productId?: string;
@@ -860,6 +874,9 @@ export const orders = pgTable(
     shipError: text("ship_error"), // last automatic shipment booking error (website orders)
     shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
     courierRef: text("courier_ref"), // the order's id in the courier's panel (e.g. Shiprocket order id)
+    staffNote: text("staff_note"), // only the store owner and their team see it
+    customerNote: text("customer_note"), // shown to the customer on their order page and account
+    timeline: jsonb("timeline").$type<OrderEvent[]>().notNull().default([]), // edits made after the order was placed
     confirmAt: timestamp("confirm_at", { withTimezone: true }),
     waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery
@@ -1501,4 +1518,46 @@ export const metaCatalogItems = pgTable(
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.storeId, t.retailerId] })],
+);
+
+/** A shopper's account on one store's website. Orders are matched by verified phone / email. */
+export const storeCustomers = pgTable(
+  "store_customers",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    firstName: text("first_name").notNull().default(""),
+    lastName: text("last_name").notNull().default(""),
+    phone: text("phone"), // 10 digits
+    email: text("email"), // lowercase
+    phoneVerifiedAt: timestamp("phone_verified_at", { withTimezone: true }),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    passwordHash: text("password_hash"),
+    address: jsonb("address").$type<{ address1: string; address2: string; landmark: string; city: string; state: string; pincode: string } | null>(),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("store_customers_phone_key").on(t.storeId, t.phone).where(sql`phone is not null`),
+    uniqueIndex("store_customers_email_key").on(t.storeId, t.email).where(sql`email is not null`),
+  ],
+);
+export type StoreCustomer = typeof storeCustomers.$inferSelect;
+
+/** One-time codes for shoppers logging in to a store's website. */
+export const customerOtps = pgTable(
+  "customer_otps",
+  {
+    id: text("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(), // phone | email
+    target: text("target").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    ip: text("ip"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("customer_otps_target_idx").on(t.storeId, t.target, t.createdAt)],
 );

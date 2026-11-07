@@ -2,7 +2,7 @@ import { gatewayName } from "~/lib/gateways/catalog";
 import { courierById } from "~/lib/courier-catalog";
 import { SHIP_STATUS_LABELS } from "~/lib/rto-shield";
 import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
-import { Form, Link, useLocation, useSearchParams, useNavigate } from "@remix-run/react";
+import { Form, Link, useLocation, useNavigation, useSearchParams, useNavigate } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
 import { INDIAN_STATES } from "~/lib/states";
@@ -17,7 +17,7 @@ export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
   shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; tip?: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
-  payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; shipStatusRaw?: string | null; shipError?: string | null; courierRef?: string | null; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
+  payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; shipStatusRaw?: string | null; shipError?: string | null; courierRef?: string | null; staffNote?: string | null; customerNote?: string | null; timeline?: { at: string; by: string; text: string }[]; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
   manualTags: string[]; tags: string[]; channel: string;
 };
 
@@ -365,6 +365,18 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
 }
 
 function OrderDetails({ o }: { o: OrderRow }) {
+  return (
+    <div className="space-y-4">
+      <OrderDetailsGrid o={o} />
+      <div className="grid gap-4 border-t border-rule pt-4 sm:grid-cols-2">
+        <NotesBlock o={o} />
+        <Timeline o={o} />
+      </div>
+    </div>
+  );
+}
+
+function OrderDetailsGrid({ o }: { o: OrderRow }) {
   const paid = orderValuePaise(o);
   const okStatus = o.status === "paid" || o.status === "cod_placed";
   return (
@@ -396,9 +408,7 @@ function OrderDetails({ o }: { o: OrderRow }) {
         {o.refunded > 0 && <div className="flex justify-between text-bad"><dt>Refunded</dt><dd>−{inr(o.refunded)}</dd></div>}
       </dl>
       <div className="space-y-2 text-sm">
-        <p className="text-xs font-medium text-ink-soft">Delivery address</p>
-        <p className="text-ink-soft">{o.customer.firstName} {o.customer.lastName}, <a className="num underline" href={`tel:+91${o.customer.phone}`}>{o.customer.phone}</a></p>
-        <p className="text-ink-soft">{o.customer.address1}{o.customer.address2 ? `, ${o.customer.address2}` : ""}, {o.customer.city}, {o.customer.state} {o.customer.pincode}</p>
+        <AddressBlock o={o} />
         <div><p className="mb-1 text-xs font-medium text-ink-soft">Tags</p><div className="flex flex-wrap gap-1"><Tags o={o} /></div></div>
         <Form method="post" className="flex gap-1.5"><input type="hidden" name="intent" value="tagAdd"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input name="tag" maxLength={32} placeholder="Add a manual tag" className="input min-w-0 py-1.5 text-[12px]"/><button className="btn-secondary px-2.5 py-1.5 text-xs">Add</button></Form>
         {o.manualTags.map((tag) => <Form key={tag} method="post" className="inline-flex"><input type="hidden" name="intent" value="tagRemove"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input type="hidden" name="tag" value={tag}/><button className="rounded-md border border-rule px-2 py-1 text-[11px] text-ink-soft hover:bg-paper">Remove “{tag}”</button></Form>)}
@@ -496,4 +506,91 @@ function CopyLink({ url }: { url: string }) {
       {done ? "Copied" : "Copy link"}
     </button>
   );
+}
+
+function AddressBlock({ o }: { o: OrderRow }) {
+  const [edit, setEdit] = useState(false);
+  const c = o.customer;
+  const nav = useNavigation();
+  const saving = nav.state !== "idle" && nav.formData?.get("intent") === "address" && nav.formData?.get("orderId") === o.id;
+  useEffect(() => { if (nav.state === "idle") setEdit(false); }, [nav.state]);
+  if (!edit) {
+    return (
+      <div>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-ink-soft">Delivery address</p>
+          <button type="button" onClick={() => setEdit(true)} className="text-[12px] font-medium text-ink underline-offset-2 hover:underline">Edit</button>
+        </div>
+        <p className="mt-1 text-ink-soft">{c.firstName} {c.lastName}, <a className="num underline" href={`tel:+91${c.phone}`}>{c.phone}</a>{c.email ? <>, {c.email}</> : null}</p>
+        <p className="text-ink-soft">{c.address1}{c.address2 ? `, ${c.address2}` : ""}, {c.city}, {c.state} {c.pincode}</p>
+      </div>
+    );
+  }
+  return (
+    <Form method="post" className="space-y-2 rounded-xl bg-white p-3 shadow-[0_0_0_1px_rgba(0,0,0,.08)]">
+      <input type="hidden" name="intent" value="address" /><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
+      <p className="text-[12.5px] font-semibold">Edit delivery address</p>
+      <div className="grid grid-cols-2 gap-2">
+        <AddrField name="firstName" label="First name" value={c.firstName} required />
+        <AddrField name="lastName" label="Last name" value={c.lastName} />
+        <AddrField name="phone" label="Mobile" value={c.phone} inputMode="numeric" required />
+        <AddrField name="email" label="Email" value={c.email ?? ""} type="email" />
+        <AddrField name="address1" label="Address" value={c.address1} wide required />
+        <AddrField name="address2" label="Apartment, landmark" value={c.address2 ?? ""} wide />
+        <AddrField name="city" label="City" value={c.city} required />
+        <label className="block text-[11.5px] font-medium text-ink-soft">State
+          <select name="state" defaultValue={c.state} className="input mt-1 py-1.5 text-[13px]">{INDIAN_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}</select>
+        </label>
+        <AddrField name="pincode" label="Pincode" value={c.pincode} inputMode="numeric" maxLength={6} required />
+      </div>
+      {(o.awb || o.courierRef) && <p className="text-[11.5px] text-ink-soft">This order is already with {o.courier ? courierById(o.courier)?.name ?? o.courier : "the courier"}. We'll send the new address to them too (allowed until pickup).</p>}
+      <div className="flex gap-2 pt-1">
+        <button className="btn-primary px-3 py-1.5 text-xs" disabled={saving}>{saving ? "Saving…" : "Save address"}</button>
+        <button type="button" onClick={() => setEdit(false)} className="btn-secondary px-3 py-1.5 text-xs">Cancel</button>
+      </div>
+    </Form>
+  );
+}
+
+function NotesBlock({ o }: { o: OrderRow }) {
+  const nav = useNavigation();
+  const saving = nav.state !== "idle" && nav.formData?.get("intent") === "notes" && nav.formData?.get("orderId") === o.id;
+  return (
+    <Form method="post" className="space-y-3">
+      <input type="hidden" name="intent" value="notes" /><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
+      <label className="block">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-ink-soft"><Icon name="lock" className="h-3.5 w-3.5" />Staff note <span className="font-normal text-ink-faint">· only you and your team see this</span></span>
+        <textarea name="staffNote" defaultValue={o.staffNote ?? ""} rows={2} maxLength={2000} placeholder="e.g. Customer asked for evening delivery" className="input mt-1 py-1.5 text-[13px]" />
+      </label>
+      <label className="block">
+        <span className="flex items-center gap-1.5 text-xs font-medium text-ink-soft"><Icon name="user" className="h-3.5 w-3.5" />Note for the customer <span className="font-normal text-ink-faint">· shown on their order page</span></span>
+        <textarea name="customerNote" defaultValue={o.customerNote ?? ""} rows={2} maxLength={2000} placeholder="e.g. Your order ships tomorrow with a free gift" className="input mt-1 py-1.5 text-[13px]" />
+      </label>
+      <button className="btn-secondary px-3 py-1.5 text-xs" disabled={saving}>{saving ? "Saving…" : "Save notes"}</button>
+    </Form>
+  );
+}
+
+function Timeline({ o }: { o: OrderRow }) {
+  const list = [...(o.timeline ?? [])].reverse();
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-ink-soft">History</p>
+      {list.length === 0 ? <p className="text-[12.5px] text-ink-faint">No changes since the order was placed.</p> : (
+        <ol className="space-y-2.5 border-l border-rule pl-3">
+          {list.slice(0, 12).map((e, i) => (
+            <li key={i} className="relative text-[12.5px]">
+              <span className="absolute -left-[17px] top-1.5 h-2 w-2 rounded-full bg-ink-faint" />
+              <p className="text-ink">{e.text}</p>
+              <p className="text-[11px] text-ink-faint">{e.by} · {new Date(e.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function AddrField({ name, label, value, wide, ...rest }: { name: string; label: string; value: string; wide?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return <label className={`block text-[11.5px] font-medium text-ink-soft ${wide ? "col-span-2" : ""}`}>{label}<input name={name} defaultValue={value} className="input mt-1 py-1.5 text-[13px]" {...rest} /></label>;
 }

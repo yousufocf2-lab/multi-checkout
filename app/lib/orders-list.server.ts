@@ -197,6 +197,7 @@ import { pushToShopify } from "./orders.server";
 import { syncOrderPayment } from "./gateways/index.server";
 import { gatewayName } from "./gateways/catalog";
 import { importShopifyOrdersCsv } from "./shopify-order-import.server";
+import { readAddress, updateOrderAddress, updateOrderNotes } from "./order-edit.server";
 
 /** Row actions on the orders list: send to Shopify, check payment with the gateway. */
 export async function handleOrderAction(viewer: Viewer, fd: FormData) {
@@ -222,6 +223,15 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
     const next = intent === "tagAdd" ? [...new Set([...tags, tag])].slice(0, 12) : tags.filter((t) => t !== tag);
     await db.update(orders).set({ manualTags: next, updatedAt: new Date() }).where(eq(orders.id, o.id));
     return json({ ok: intent === "tagAdd" ? "Tag added." : "Tag removed.", error: null });
+  }
+  const by = viewer.role === "admin" ? (viewer.staff?.name ?? "Growpefy") : (viewer.member?.name ?? viewer.name);
+  if (intent === "address") {
+    const r = await updateOrderAddress(store, o, readAddress(fd), by);
+    return "error" in r ? json({ ok: null, error: r.error }) : json({ ok: r.ok, error: null });
+  }
+  if (intent === "notes") {
+    const r = await updateOrderNotes(o, { staff: String(fd.get("staffNote") ?? ""), customer: String(fd.get("customerNote") ?? "") }, by);
+    return json({ ok: r.ok, error: null });
   }
   if (intent === "retry") {
     if (!["paid", "cod_placed"].includes(o.status)) return json({ ok: null, error: "This order can't be sent to Shopify" });
