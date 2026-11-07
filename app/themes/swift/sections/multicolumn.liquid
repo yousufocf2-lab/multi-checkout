@@ -1,0 +1,40 @@
+{%- assign cols = section.settings.columns | default: 3 -%}
+<section class="block mcol mcol--{{ section.settings.align | default: 'left' }}{% if section.settings.tinted %} mcol--tint{% endif %}">
+  <div class="wrap">
+    {%- if section.settings.heading != blank -%}<h2 class="mcol__title">{{ section.settings.heading | escape }}</h2>{%- endif -%}
+    {%- if section.settings.subheading != blank -%}<p class="mcol__sub">{{ section.settings.subheading | escape }}</p>{%- endif -%}
+    <div class="mcol__grid" style="--cols:{{ cols }}">
+      {%- for c in section.settings.items -%}
+      <div class="mcol__item">
+        {%- if c.image != blank -%}<img class="mcol__img" src="{{ c.image | img_url: 600 }}" alt="{{ c.title | escape }}" loading="lazy">{%- endif -%}
+        {%- if c.title != blank -%}<h3>{{ c.title | escape }}</h3>{%- endif -%}
+        {%- if c.text != blank -%}<p>{{ c.text | escape }}</p>{%- endif -%}
+        {%- if c.link_label != blank and c.link != blank -%}<a class="mcol__link" href="{{ c.link | safe_url | escape }}">{{ c.link_label | escape }} →</a>{%- endif -%}
+      </div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{
+  "name": "Multicolumn",
+  "settings": [
+    { "id": "heading", "type": "text", "label": "Heading", "default": "Why customers choose us" },
+    { "id": "subheading", "type": "text", "label": "Subheading", "default": "" },
+    { "id": "columns", "type": "range", "label": "Columns on desktop", "min": 2, "max": 4, "step": 1, "default": 3 },
+    { "id": "align", "type": "select", "label": "Text alignment", "options": ["left", "center"], "default": "center" },
+    { "id": "tinted", "type": "checkbox", "label": "Soft background", "default": false },
+    { "id": "items", "type": "list", "label": "Columns", "item_label": "column", "fields": [
+      { "id": "title", "type": "text", "label": "Title" },
+      { "id": "text", "type": "textarea", "label": "Text" },
+      { "id": "image", "type": "image", "label": "Image or icon" },
+      { "id": "link_label", "type": "text", "label": "Link text" },
+      { "id": "link", "type": "url", "label": "Link" }
+    ], "default": [
+      { "title": "Made to last", "text": "Quality materials and careful checks on every piece." },
+      { "title": "Delivered fast", "text": "Dispatched within a day, tracked to your door." },
+      { "title": "Easy returns", "text": "Changed your mind? Return it within 7 days." }
+    ] }
+  ]
+}
+{% endschema %}

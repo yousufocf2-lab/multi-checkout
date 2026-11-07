@@ -335,11 +335,8 @@ export default function ThemeEditor() {
                         onSelect={(id) => setSel({ group: g, id })} onToggle={(id) => toggle(g, id)} onReorder={(id, to) => reorder(g, id, to)}
                         onAdd={() => setAdding(adding === g ? null : g)} adding={adding === g}>
                         {adding === g && (
-                          <div className="ed-pop">
-                            {kinds.filter((k) => (g === "header" ? k.where === "header" : k.where === "template" || (g === "footer" && k.where === "footer"))).map((k) => (
-                              <button key={k.type} type="button" onClick={() => add(g, k.type)}><I n={iconOf(k.type)} />{k.name}</button>
-                            ))}
-                          </div>
+                          <SectionPicker kinds={kinds.filter((k) => (g === "header" ? k.where === "header" : k.where === "template" || (g === "footer" && k.where === "footer")))}
+                            onPick={(t) => add(g, t)} onClose={() => setAdding(null)} />
                         )}
                       </SectionList>
                     ))}
@@ -456,6 +453,11 @@ const ICONS: Record<string, string> = {
   bag: "M5 7h10l-1 10H6zM7.5 7V6a2.5 2.5 0 0 1 5 0v1",
   layers: "M10 3l7 4-7 4-7-4zM3 11l7 4 7-4",
   announce: "M4 8v4h2l5 3V5L6 8zM14 8.5a2 2 0 0 1 0 3",
+  code: "M7 6l-4 4 4 4M13 6l4 4-4 4M11 4l-2 12",
+  columns: "M3.5 4.5h3.5v11H3.5zM8.25 4.5h3.5v11h-3.5zM13 4.5h3.5v11H13z",
+  logos: "M3 7h4v6H3zM8 7h4v6H8zM13 7h4v6h-4z",
+  spacer: "M3 6h14M3 14h14M10 8v4M8.5 9.5L10 8l1.5 1.5M8.5 10.5L10 12l1.5-1.5",
+  search: "M9 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM17 17l-3.5-3.5",
 };
 function I({ n }: { n: string }) {
   return <svg className="ed-i" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={ICONS[n] ?? ICONS.sections} /></svg>;
@@ -463,6 +465,7 @@ function I({ n }: { n: string }) {
 const iconOf = (type: string) => ({
   header: "header", footer: "footer", announcement: "announce", hero: "image", "image-with-text": "image", "video-banner": "video",
   "product-grid": "grid", "collection-list": "grid", testimonials: "star", faq: "help", "trust-badges": "badge", "rich-text": "text",
+  "custom-liquid": "code", multicolumn: "columns", "logo-list": "logos", spacer: "spacer",
 } as Record<string, string>)[type] ?? (type.startsWith("main-") ? "bag" : "layers");
 
 function SectionList({ group, title, list, kindOf, sel, onSelect, onToggle, onReorder, onAdd, adding, children }: {
@@ -548,6 +551,10 @@ function Field({ s, value, onChange, storeId, categories }: { s: Setting; value:
     }
     case "select":
       return <div className="ed-f">{label}<div className="ed-select"><select id={id} value={str} onChange={(e) => onChange(e.target.value)}>{(s.options ?? []).map((o, i) => <option key={o} value={o}>{s.option_labels?.[i] ?? o[0].toUpperCase() + o.slice(1)}</option>)}</select><I n="chev" /></div></div>;
+    case "liquid":
+      return <CodeField id={id} label={s.label ?? "Code"} value={str} onChange={onChange} />;
+    case "collection_optional":
+      return <div className="ed-f">{label}<div className="ed-select"><select id={id} value={str} onChange={(e) => onChange(e.target.value)}><option value="">None</option><option value="all">All products</option>{categories.map((c) => <option key={c.handle} value={c.handle}>{c.title}</option>)}</select><I n="chev" /></div><span className="ed-hint">Loop over them with {"{% for p in products %}"}.</span></div>;
     case "collection":
       return <div className="ed-f">{label}<div className="ed-select"><select id={id} value={str} onChange={(e) => onChange(e.target.value)}><option value="">All products</option>{categories.map((c) => <option key={c.handle} value={c.handle}>{c.title}</option>)}</select><I n="chev" /></div></div>;
     case "image":
@@ -560,6 +567,152 @@ function Field({ s, value, onChange, storeId, categories }: { s: Setting; value:
     default:
       return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} className="ed-input" /></div>;
   }
+}
+
+/** What each section is for, so people can pick the right one. */
+const SECTION_INFO: Record<string, { cat: "Content" | "Products" | "Media" | "Trust" | "Layout" | "Advanced"; text: string }> = {
+  hero: { cat: "Media", text: "Big banner or slider with a heading and button" },
+  "image-with-text": { cat: "Media", text: "An image next to a heading, text and button" },
+  "video-banner": { cat: "Media", text: "Full-width video with text on top" },
+  "logo-list": { cat: "Media", text: "Brand, press or partner logos in a row" },
+  "product-grid": { cat: "Products", text: "Products from a category in a grid" },
+  "collection-list": { cat: "Products", text: "Your categories as image tiles" },
+  "rich-text": { cat: "Content", text: "A heading and a paragraph" },
+  multicolumn: { cat: "Content", text: "2 to 4 columns with image, title and text" },
+  faq: { cat: "Content", text: "Questions and answers that open and close" },
+  testimonials: { cat: "Trust", text: "Customer reviews with stars" },
+  "trust-badges": { cat: "Trust", text: "Delivery, COD, returns and secure payment icons" },
+  spacer: { cat: "Layout", text: "Empty space or a line between sections" },
+  "custom-liquid": { cat: "Advanced", text: "Your own Liquid, HTML, CSS or JavaScript" },
+  announcement: { cat: "Content", text: "Thin bar with an offer or message" },
+};
+const CATS = ["Media", "Products", "Content", "Trust", "Layout", "Advanced"] as const;
+
+function SectionPicker({ kinds, onPick, onClose }: { kinds: Kind[]; onPick: (type: string) => void; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.querySelector("input")?.focus();
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+  const match = (k: Kind) => !q || `${k.name} ${SECTION_INFO[k.type]?.text ?? ""}`.toLowerCase().includes(q.toLowerCase());
+  const list = kinds.filter(match);
+  const groups = CATS.map((c) => ({ c, items: list.filter((k) => (SECTION_INFO[k.type]?.cat ?? "Content") === c) })).filter((g) => g.items.length);
+  return (
+    <div className="ed-pick" ref={box} role="dialog" aria-label="Add section">
+      {kinds.length > 5 && (
+        <label className="ed-pick__search"><I n="search" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search sections" aria-label="Search sections" /></label>
+      )}
+      <div className="ed-pick__list">
+        {groups.map((g) => (
+          <div key={g.c}>
+            {groups.length > 1 && <p className="ed-pick__cat">{g.c}</p>}
+            {g.items.map((k) => (
+              <button key={k.type} type="button" className="ed-pick__item" onClick={() => onPick(k.type)}>
+                <span className="ed-pick__ic"><I n={iconOf(k.type)} /></span>
+                <span><b>{k.name}</b>{SECTION_INFO[k.type] && <small>{SECTION_INFO[k.type].text}</small>}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+        {!list.length && <p className="ed-muted" style={{ padding: "10px 8px" }}>No section matches “{q}”.</p>}
+      </div>
+    </div>
+  );
+}
+
+/** Ready-made code people can start from. Scripts run in a safe, separate frame automatically. */
+const SNIPPETS: { name: string; code: string }[] = [
+  { name: "WhatsApp chat button", code: `<a href="https://wa.me/91{{ shop.phone | remove: '+91' | remove: ' ' }}?text=Hi%20{{ shop.name | url_encode }}" target="_blank" class="btn btn--primary">
+  Chat with us on WhatsApp
+</a>` },
+  { name: "Products from a category", code: `<h2>Bestsellers</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+  {% for p in products %}
+    <a href="{{ p.url }}" style="text-decoration:none;color:inherit">
+      <img src="{{ p.featured_image | img_url: 400 }}" alt="{{ p.title | escape }}" style="width:100%;border-radius:12px">
+      <p style="margin:8px 0 2px;font-weight:600">{{ p.title }}</p>
+      <p style="margin:0">{{ p.price | money }}</p>
+    </a>
+  {% endfor %}
+</div>` },
+  { name: "Offer countdown (script)", code: `<div style="text-align:center;padding:16px;border-radius:12px;background:#111;color:#fff">
+  <b>Sale ends in</b> <span id="t" style="font-variant-numeric:tabular-nums"></span>
+</div>
+<script>
+  const end = new Date(Date.now() + 6 * 3600 * 1000);
+  setInterval(() => {
+    const s = Math.max(0, Math.floor((end - Date.now()) / 1000));
+    document.getElementById("t").textContent =
+      [s / 3600, (s % 3600) / 60, s % 60].map((n) => String(Math.floor(n)).padStart(2, "0")).join(":");
+  }, 1000);
+</script>` },
+  { name: "YouTube video", code: `<div style="aspect-ratio:16/9;border-radius:12px;overflow:hidden">
+  <iframe src="https://www.youtube.com/embed/VIDEO_ID" style="width:100%;height:100%;border:0" allowfullscreen></iframe>
+</div>` },
+  { name: "Google Map", code: `<iframe src="https://www.google.com/maps?q=Connaught+Place+New+Delhi&output=embed" style="width:100%;height:360px;border:0;border-radius:12px" loading="lazy"></iframe>` },
+  { name: "Two buttons", code: `<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+  <a href="{{ routes.all }}" class="btn btn--primary">Shop all</a>
+  <a href="{{ routes.root }}" class="btn btn--ghost">Learn more</a>
+</div>` },
+];
+
+function CodeField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (v: unknown) => void }) {
+  const [help, setHelp] = useState(false);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const lines = Math.max(1, value.split("\n").length);
+  const insert = (code: string) => {
+    if (value.trim() && !confirm("Replace your code with this example?")) return;
+    onChange(code);
+  };
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const t = e.currentTarget, a = t.selectionStart, b = t.selectionEnd;
+    const next = value.slice(0, a) + "  " + value.slice(b);
+    onChange(next);
+    requestAnimationFrame(() => { t.selectionStart = t.selectionEnd = a + 2; });
+  };
+  const usesScript = /<script\b|\son[a-z]+\s*=/i.test(value);
+  return (
+    <div className="ed-f">
+      <span className="ed-code__head">
+        <label htmlFor={id} className="ed-label">{label}</label>
+        <span className="ed-code__tools">
+        <button type="button" className="ed-link" onClick={(e) => (e.currentTarget.closest(".ed-panel") as HTMLElement | null)?.classList.toggle("ed-panel--wide")}>Wider</button>
+        <span className="ed-select ed-select--sm">
+          <select value="" onChange={(e) => { const sn = SNIPPETS.find((x) => x.name === e.target.value); if (sn) insert(sn.code); }} aria-label="Insert an example">
+            <option value="">Examples</option>{SNIPPETS.map((x) => <option key={x.name}>{x.name}</option>)}
+          </select><I n="chev" />
+        </span>
+        </span>
+      </span>
+      <div className="ed-code">
+        <div className="ed-code__nums" aria-hidden>{Array.from({ length: lines }, (_, i) => <span key={i}>{i + 1}</span>)}</div>
+        <textarea id={id} ref={area} value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKey} spellCheck={false} autoCapitalize="off" autoComplete="off"
+          wrap="off" rows={Math.min(24, Math.max(10, lines + 1))} placeholder={"<h2>{{ shop.name }}</h2>\n<p>Your own HTML, CSS and Liquid…</p>"} maxLength={50000} />
+      </div>
+      <span className="ed-hint">
+        {value.length.toLocaleString("en-IN")} / 50,000 · {usesScript ? "Has a script: runs in a secure frame." : "HTML and CSS show directly on the page."}
+        {" "}<button type="button" className="ed-link" onClick={() => setHelp((h) => !h)}>{help ? "Hide help" : "What can I use?"}</button>
+      </span>
+      {help && (
+        <div className="ed-code__help">
+          <p><b>Objects</b></p>
+          <ul>
+            <li><code>{"{{ shop.name }}"}</code>, <code>shop.phone</code>, <code>shop.logo</code>, <code>shop.brand_color</code></li>
+            <li><code>{"{% for p in products %}"}</code>: pick a category below. Each has <code>p.title</code>, <code>p.url</code>, <code>p.price | money</code>, <code>p.featured_image</code></li>
+            <li><code>product</code> on product pages, <code>collection</code> on category pages</li>
+            <li><code>collections</code> (your categories), <code>pages</code>, <code>routes.all</code>, <code>routes.cart</code>, <code>settings</code></li>
+          </ul>
+          <p><b>Filters</b>: <code>money</code>, <code>img_url: 600</code>, <code>escape</code>, <code>upcase</code>, <code>date</code>, <code>truncate</code> and the usual Liquid ones.</p>
+          <p><b>Safety</b>: plain HTML and CSS go straight into the page (unsafe bits removed). Code with <code>&lt;script&gt;</code> or <code>onclick</code> runs in its own secure frame that can't touch your store's data or cookies, and resizes itself. <code>include</code> and <code>render</code> aren't available.</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MediaField({ id, s, value, onChange, storeId }: { id: string; s: Setting; value: string; onChange: (v: unknown) => void; storeId: number }) {
@@ -711,6 +864,31 @@ const ED_CSS = `
 .ed-row__eye:hover{background:#e3e3e3;color:#303030}
 .ed-add{display:flex;align-items:center;gap:8px;height:32px;width:100%;padding:0 8px 0 20px;border-radius:8px;color:#005bd3 !important;font-weight:500}
 .ed-add:hover,.ed-add.on{background:#f6f6f6}
+.ed-pick{margin:6px 4px 0;border-radius:12px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.08),0 12px 28px -8px rgba(0,0,0,.25);overflow:hidden}
+.ed-pick__search{display:flex;align-items:center;gap:6px;margin:6px;padding:0 8px;height:30px;border-radius:8px;box-shadow:inset 0 0 0 1px #e3e3e3;color:#8a8a8a}
+.ed-pick__search:focus-within{box-shadow:inset 0 0 0 1.5px #005bd3}
+.ed-pick__search input{flex:1;min-width:0;border:0;outline:0;background:none;font:inherit;color:#303030}
+.ed-pick__list{max-height:min(60vh,460px);overflow-y:auto;padding:0 4px 4px}
+.ed-pick__cat{margin:8px 8px 2px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#8a8a8a}
+.ed-pick__item{display:flex !important;align-items:flex-start;gap:9px;width:100%;padding:6px 8px !important;border-radius:8px;text-align:left}
+.ed-pick__item:hover,.ed-pick__item:focus-visible{background:#f1f1f1;outline:0}
+.ed-pick__item b{display:block;font-weight:550}
+.ed-pick__item small{display:block;color:#8a8a8a;font-size:12px;line-height:1.35}
+.ed-pick__ic{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;background:#f1f1f1;color:#4a4a4a}
+.ed-panel.ed-panel--wide{width:min(620px,60vw)}
+.ed-code__tools{display:flex;align-items:center;gap:10px}
+.ed-code__head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ed-select--sm select{height:26px !important;font-size:12px !important}
+.ed-code{display:flex;margin-top:4px;border-radius:8px;background:#1e1f22;box-shadow:inset 0 0 0 1px #2b2d31;overflow:hidden}
+.ed-code:focus-within{box-shadow:0 0 0 2px #005bd3}
+.ed-code__nums{flex:none;padding:8px 6px 8px 8px;text-align:right;color:#5c6370;font:12px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:none;background:#191a1d}
+.ed-code__nums span{display:block}
+.ed-code textarea{flex:1;min-width:0;padding:8px 10px;border:0;outline:0;resize:vertical;background:transparent;color:#e6e6e6;font:12px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:2;white-space:pre;overflow:auto}
+.ed-code textarea::placeholder{color:#5c6370}
+.ed-code__help{margin-top:6px;padding:8px 10px;border-radius:8px;background:#f7f7f7;font-size:12px;line-height:1.5;color:#4a4a4a}
+.ed-code__help p{margin:4px 0}
+.ed-code__help ul{margin:2px 0 6px;padding-left:16px}
+.ed-code__help code{padding:0 3px;border-radius:4px;background:#ebebeb;font:11.5px ui-monospace,SFMono-Regular,Menlo,monospace}
 .ed-pop{margin:4px 4px 0;padding:4px;border-radius:10px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.08),0 8px 20px -6px rgba(0,0,0,.18)}
 .ed-pop button{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 8px;border-radius:6px;text-align:left}
 .ed-pop button:hover{background:#f1f1f1}

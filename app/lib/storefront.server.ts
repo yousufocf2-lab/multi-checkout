@@ -5,6 +5,7 @@ import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelTo
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
 import { footerPages } from "./store-pages.server";
+import { renderCustomLiquid } from "./custom-liquid.server";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, storeThemes, type CatalogItem, type CatalogVariant, type Store, type ThemeData, type ThemeTemplate } from "~/db.server";
 
 // ---------- theme files ----------
@@ -58,6 +59,8 @@ function engineFor(theme: string): Liquid {
   liquid.registerFilter("money", (paise: unknown) => formatMoney(Number(paise) || 0));
   liquid.registerFilter("img_url", (url: unknown, width?: unknown) => imgUrl(String(url ?? ""), Number(width) || 0));
   liquid.registerFilter("asset_content", (name: unknown) => files[`assets/${String(name)}`] ?? "");
+  // Links from section settings: only web, mail, phone and in-store paths (never javascript: and the like)
+  liquid.registerFilter("safe_url", (url: unknown) => safeUrl(String(url ?? "")));
 
   // {% section 'header' %}: renders one section file with its default settings (used in the layout)
   liquid.registerTag("section", class extends Tag {
@@ -74,6 +77,14 @@ function engineFor(theme: string): Liquid {
 
   engines.set(theme, liquid);
   return liquid;
+}
+
+export function safeUrl(url: string) {
+  const u = url.trim();
+  if (!u) return "";
+  if (/^(https?:\/\/|mailto:|tel:|\/(?!\/)|#|\?)/i.test(u)) return u;
+  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(u)) return `https://${u}`;
+  return "#";
 }
 
 export function formatMoney(paise: number) {
@@ -96,7 +107,21 @@ async function renderSection(theme: string, type: string, id: string, settings: 
   if (src == null) return `<!-- missing section ${type} -->`;
   const defaults = Object.fromEntries((schemaOf(src).settings ?? []).map((s) => [s.id, s.default ?? ""]));
   const liquid = engineFor(theme);
-  return liquid.renderFile(`sections/${type}`, { ...scope, section: { id, type, settings: { ...defaults, ...settings }, ...extra } });
+  const merged = { ...defaults, ...settings };
+  if (type === "custom-liquid") {
+    // The store's own code: rendered in a locked-down engine, then sanitized or framed (see custom-liquid.server.ts)
+    const custom = await renderCustomLiquid(String(merged.code ?? ""), { ...scope, products: extra.products ?? [], section: { id, settings: merged } }, {
+      id, editor: Boolean(scope.editor), vars: frameVars((scope.settings ?? {}) as Record<string, unknown>),
+    });
+    extra = { ...extra, custom_html: custom.html, custom_mode: custom.mode };
+  }
+  return liquid.renderFile(`sections/${type}`, { ...scope, section: { id, type, settings: merged, ...extra } });
+}
+
+/** Theme colours and fonts as CSS variables, for code running in a sandboxed frame. */
+function frameVars(st: Record<string, unknown>) {
+  const safe = (v: unknown, d: string) => (typeof v === "string" && /^[#\w\s(),.%-]{1,40}$/.test(v) ? v : d);
+  return `--brand:${safe(st.color_brand, "#111827")};--ink:${safe(st.color_text, "#14171a")};--soft:${safe(st.color_muted, "#5a6169")};--bg:${safe(st.color_bg, "#ffffff")};--font-body:"${safe(st.font_body, "DM Sans")}"`;
 }
 
 /** Extra data a section needs before it renders (product grids load their products). */
@@ -270,6 +295,12 @@ export async function baseScope(ctx: ShopContext) {
 /** Section data loader shared by every page: product grids get their products. */
 export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): SectionData {
   return async (type, settings) => {
+    if (type === "custom-liquid") {
+      // Custom code can loop over products from a chosen category
+      const category = String(settings.collection ?? "");
+      if (!category) return { products: [] };
+      return { products: await loadProducts(ctx, { category: category === "all" ? undefined : category, limit: Math.min(24, Number(settings.limit) || 8) }) };
+    }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
     const products = await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });

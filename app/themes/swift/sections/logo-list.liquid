@@ -1,0 +1,29 @@
+<section class="block logos">
+  <div class="wrap">
+    {%- if section.settings.heading != blank -%}<p class="logos__title">{{ section.settings.heading | escape }}</p>{%- endif -%}
+    <div class="logos__row{% if section.settings.grayscale %} logos__row--gray{% endif %}">
+      {%- for l in section.settings.items -%}
+        {%- if l.image != blank -%}
+          {%- if l.link != blank -%}<a href="{{ l.link | safe_url | escape }}" class="logos__item">{%- else -%}<span class="logos__item">{%- endif -%}
+          <img src="{{ l.image | img_url: 300 }}" alt="{{ l.name | escape }}" loading="lazy" style="max-height:{{ section.settings.height | default: 40 }}px">
+          {%- if l.link != blank -%}</a>{%- else -%}</span>{%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{
+  "name": "Logo list",
+  "settings": [
+    { "id": "heading", "type": "text", "label": "Heading", "default": "As seen in" },
+    { "id": "height", "type": "range", "label": "Logo height", "min": 20, "max": 90, "step": 2, "unit": "px", "default": 40 },
+    { "id": "grayscale", "type": "checkbox", "label": "Grey logos (colour on hover)", "default": true },
+    { "id": "items", "type": "list", "label": "Logos", "item_label": "logo", "fields": [
+      { "id": "name", "type": "text", "label": "Name (for screen readers)" },
+      { "id": "image", "type": "image", "label": "Logo" },
+      { "id": "link", "type": "url", "label": "Link (optional)" }
+    ], "default": [] }
+  ]
+}
+{% endschema %}
