@@ -14,8 +14,9 @@
   }
   function px() { if (window.fbq) try { window.fbq.apply(null, arguments); } catch (e) {} }
   function cid(id) { id = String(id); return id.indexOf("gp:") === 0 ? id : "gp:" + id; } // same ids as the Meta catalog and checkout
+  function ids(id, alt) { return alt ? [cid(id), alt] : [cid(id)]; } // plus the old Shopify catalog id when there is one
   function add(line) {
-    px("track", "AddToCart", { content_ids: [cid(line.variantId)], content_type: "product", value: line.price * line.qty / 100, currency: "INR", contents: [{ id: cid(line.variantId), quantity: line.qty }] });
+    px("track", "AddToCart", { content_ids: ids(line.variantId, line.metaAlt), content_type: "product", value: line.price * line.qty / 100, currency: "INR", contents: [{ id: cid(line.variantId), quantity: line.qty }] });
     var c = load(); var found = c.find(function (l) { return l.variantId === line.variantId; });
     if (found) found.qty = Math.min(20, found.qty + line.qty); else c.push(line);
     save(c);
@@ -139,7 +140,7 @@
 
   // ---------- quick add on product cards ----------
   function lineOf(product, v, qty) {
-    return { variantId: v.id, itemId: product.id, title: product.title, variantTitle: v.title === "Default" ? "" : v.title, price: v.price, image: v.image || product.image, url: product.url, qty: qty || 1 };
+    return { variantId: v.id, itemId: product.id, title: product.title, variantTitle: v.title === "Default" ? "" : v.title, price: v.price, image: v.image || product.image, url: product.url, qty: qty || 1, metaAlt: v.meta_alt || null };
   }
   function pickSheet(product, src) {
     var vals = product.options.map(function (o, i) { var v = product.variants.find(function (x) { return x.available; }) || product.variants[0]; return v.option_values[i]; });
@@ -223,14 +224,27 @@
       var so = form.querySelector("[data-soldout]"); if (so) so.hidden = !out;
       if (current.image && main) { main.src = current.image; if (slides) slides.scrollTo({ left: 0 }); }
     }
+    // ?variant= from ads, Meta catalog and old Shopify links: Growpefy id, gp:<id> or Shopify's variant number
+    (function preselect() {
+      var want = new URLSearchParams(location.search).get("variant");
+      if (!want) return;
+      want = String(want).replace(/^gp:/, "");
+      var v = product.variants.find(function (x) { return String(x.id) === want || (x.source && String(x.source) === want); });
+      if (!v) return;
+      v.option_values.forEach(function (val, i) {
+        var radios = form.querySelectorAll('input[name="option' + i + '"]');
+        radios.forEach(function (r) { r.checked = r.value === val; });
+        var sel = form.querySelector('select[name="option' + i + '"]'); if (sel) sel.value = val;
+      });
+    })();
     form.addEventListener("change", paint);
-    setTimeout(function () { var v = chosen(); px("track", "ViewContent", { content_ids: [cid(v.id)], content_type: "product", content_name: product.title, value: v.price / 100, currency: "INR" }); }, 0);
+    setTimeout(function () { var v = chosen(); px("track", "ViewContent", { content_ids: ids(v.id, v.meta_alt), content_type: "product", content_name: product.title, value: v.price / 100, currency: "INR" }); }, 0);
     form.querySelectorAll("[data-qty]").forEach(function (b) {
       b.addEventListener("click", function () { var i = form.querySelector('input[name="qty"]'); i.value = Math.max(1, Math.min(20, (parseInt(i.value, 10) || 1) + parseInt(b.getAttribute("data-qty"), 10))); });
     });
     function lineFor() {
       var q = Math.max(1, Math.min(20, parseInt(form.querySelector('input[name="qty"]').value, 10) || 1));
-      return { variantId: current.id, itemId: product.id, title: product.title, variantTitle: current.title === "Default" ? "" : current.title, price: current.price, image: current.image || product.image, url: product.url, qty: q };
+      return { variantId: current.id, itemId: product.id, title: product.title, variantTitle: current.title === "Default" ? "" : current.title, price: current.price, image: current.image || product.image, url: product.url, qty: q, metaAlt: current.meta_alt || null };
     }
     form.addEventListener("submit", function (e) {
       e.preventDefault();

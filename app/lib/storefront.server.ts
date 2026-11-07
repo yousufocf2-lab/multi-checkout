@@ -217,6 +217,10 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
   const variantDrops = vs.map((v) => ({
     id: v.id, title: v.title, option_values: v.optionValues, price: v.pricePaise, compare_at_price: v.compareAtPaise ?? 0,
     available: v.stock == null || v.stock > 0 || Boolean((item.extra as { continueSelling?: boolean } | null)?.continueSelling), image: v.imageUrl ? imgUrl(v.imageUrl, 1100) : null, sku: v.sku,
+    // Shopify's variant number, so old links and ads with ?variant=<Shopify id> open the right variant
+    source: v.sourceId ? String(v.sourceId).replace(/^.*\//, "") : null,
+    // The id Shopify's Facebook channel used in the Meta catalog, so pixel events still match an older Shopify catalog
+    meta_alt: v.sourceId && item.sourceId ? `shopify_IN_${String(item.sourceId).replace(/^.*\//, "")}_${String(v.sourceId).replace(/^.*\//, "")}` : null,
   }));
   const cheapest = variantDrops.filter((v) => v.available).sort((a, b) => a.price - b.price)[0] ?? variantDrops[0];
   const price = cheapest?.price ?? 0;
