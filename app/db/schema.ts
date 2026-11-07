@@ -1378,6 +1378,12 @@ export const storePages = pgTable(
     published: boolean("published").notNull().default(false),
     inFooter: boolean("in_footer").notNull().default(true),
     position: integer("position").notNull().default(0),
+    /** Search results: own title / description (empty = page title / first lines of text). */
+    seoTitle: text("seo_title"),
+    seoDescription: text("seo_description"),
+    /** "narrow" (reading width) or "wide" (full site width). */
+    layout: text("layout").notNull().default("narrow"),
+    hideTitle: boolean("hide_title").notNull().default(false),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("store_pages_handle_idx").on(t.storeId, t.handle)],

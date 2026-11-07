@@ -120,7 +120,7 @@ async function renderSection(theme: string, type: string, id: string, settings: 
 }
 
 /** Theme colours and fonts as CSS variables, for code running in a sandboxed frame. */
-function frameVars(st: Record<string, unknown>) {
+export function frameVars(st: Record<string, unknown>) {
   const safe = (v: unknown, d: string) => (typeof v === "string" && /^[#\w\s(),.%-]{1,40}$/.test(v) ? v : d);
   return `--brand:${safe(st.color_brand, "#111827")};--ink:${safe(st.color_text, "#14171a")};--soft:${safe(st.color_muted, "#5a6169")};--bg:${safe(st.color_bg, "#ffffff")};--font-body:"${safe(st.font_body, "DM Sans")}"`;
 }
@@ -191,7 +191,8 @@ export async function renderPage(theme: string, template: string, scope: Record<
 
 // ---------- data (Liquid "drops") ----------
 
-export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look };
+/** owner: the store's own team is looking (preview/draft), so unpublished pages may be shown. */
+export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look; owner?: boolean };
 
 /** The store's saved design: live for shoppers, the draft for the editor. */
 export async function themeLook(storeId: number, mode: "live" | "draft" | "editor" = "live"): Promise<Look> {
@@ -330,9 +331,9 @@ export async function previewContext(request: Request, slug: string | undefined)
       const { presetById, applyPreset } = await import("./theme-presets");
       const p = presetById(preset);
       const base = (await themeLook(store.id, "draft")).data ?? defaultThemeData("swift");
-      if (p) return { store, root: `/s/${store.slug}`, preview: true, look: { data: applyPreset(base, p), editor: false } };
+      if (p) return { store, root: `/s/${store.slug}`, preview: true, owner: true, look: { data: applyPreset(base, p), editor: false } };
     }
-    if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id, mode) };
+    if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, owner: true, look: await themeLook(store.id, mode) };
   }
   return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id) };
 }

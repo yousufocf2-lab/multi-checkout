@@ -4,8 +4,10 @@ import { eq, or } from "drizzle-orm";
 import { checkoutSessions, db, stores } from "~/db.server";
 import { catalogLines, GP_PREFIX } from "./catalog.server";
 import { clientIp } from "./orders.server";
-import { publishedPage } from "./store-pages.server";
-import { baseScope, html, loadProduct, loadProducts, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
+import { pageByHandle, publishedPage } from "./store-pages.server";
+import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
+import { PAGE_BLOCKS_CSS } from "./page-blocks";
+import { baseScope, frameVars, html, loadProduct, loadProducts, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
 
@@ -56,10 +58,23 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
 }
 
 export async function infoPage(ctx: ShopContext, handle: string) {
-  const page = (await publishedPage(ctx.store.id, handle)) ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
+  type P = { title: string; handle: string; bodyHtml: string; seoTitle?: string | null; seoDescription?: string | null; layout?: string; hideTitle?: boolean; published?: boolean };
+  const page: P | null = (await publishedPage(ctx.store.id, handle))
+    ?? (ctx.owner ? await pageByHandle(ctx.store.id, handle) : null)
+    ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
   if (!page) throw new Response("Not found", { status: 404 });
   const scope = await baseScope(ctx);
-  return html(await renderPage(THEME, "page", { ...scope, template: "page", page: { title: page.title, content: page.bodyHtml, handle: page.handle }, page_title: page.title, canonical_url: canonical(ctx, `/pages/${handle}`) }, sectionData(ctx), ctx.look));
+  // Page content works like a Custom Liquid section: Liquid + HTML/CSS shown directly, code with scripts in a secure frame.
+  const settings = (scope as { settings?: Record<string, unknown> }).settings ?? {};
+  const out = await renderCustomLiquid(page.bodyHtml, { ...scope, page: { title: page.title, handle: page.handle } }, { id: `page-${page.handle}`.slice(0, 40), editor: false, vars: frameVars(settings) });
+  const content = out.error ? sanitize(page.bodyHtml) : out.html;
+  const plain = content.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\{\{[^}]*\}\}/g, "").replace(/\s+/g, " ").trim();
+  return html(await renderPage(THEME, "page", {
+    ...scope, template: "page",
+    page: { title: page.title, content, handle: page.handle, layout: page.layout === "wide" ? "wide" : "narrow", hide_title: Boolean(page.hideTitle), draft: page.published === false, blocks_css: PAGE_BLOCKS_CSS },
+    page_title: page.seoTitle || page.title, page_description: page.seoDescription || plain.slice(0, 160),
+    canonical_url: canonical(ctx, `/pages/${handle}`),
+  }, sectionData(ctx), ctx.look));
 }
 
 export async function cartPage(ctx: ShopContext) {

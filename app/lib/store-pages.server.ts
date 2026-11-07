@@ -17,6 +17,12 @@ export async function publishedPage(storeId: number, handle: string) {
   return p ?? null;
 }
 
+/** Any page by handle, published or not (for the owner's preview). */
+export async function pageByHandle(storeId: number, handle: string) {
+  const [p] = await db.select().from(storePages).where(and(eq(storePages.storeId, storeId), eq(storePages.handle, handle))).limit(1);
+  return p ?? null;
+}
+
 export async function footerPages(storeId: number) {
   return db.select({ title: storePages.title, handle: storePages.handle }).from(storePages)
     .where(and(eq(storePages.storeId, storeId), eq(storePages.published, true), eq(storePages.inFooter, true)))
@@ -32,11 +38,21 @@ async function freeHandle(storeId: number, wanted: string, exceptId?: number) {
   for (let i = 2; ; i++) if (!used.has(`${base}-${i}`)) return `${base}-${i}`;
 }
 
-export async function savePage(storeId: number, input: { title: string; handle?: string; bodyHtml: string; published: boolean; inFooter: boolean }, id?: number) {
-  const title = input.title.trim();
+export type PageInput = {
+  title: string; handle?: string; bodyHtml: string; published: boolean; inFooter: boolean;
+  seoTitle?: string | null; seoDescription?: string | null; layout?: string; hideTitle?: boolean;
+};
+
+export async function savePage(storeId: number, input: PageInput, id?: number) {
+  const title = input.title.trim().slice(0, 200);
   if (!title) throw new Error("Give the page a title.");
+  if (input.bodyHtml.length > 200_000) throw new Error("The page is too long. Keep it under 200,000 characters.");
   const handle = await freeHandle(storeId, input.handle?.trim() || title, id);
-  const values = { title, handle, bodyHtml: input.bodyHtml, published: input.published, inFooter: input.inFooter, updatedAt: new Date() };
+  const values = {
+    title, handle, bodyHtml: input.bodyHtml, published: input.published, inFooter: input.inFooter, updatedAt: new Date(),
+    seoTitle: input.seoTitle?.trim().slice(0, 120) || null, seoDescription: input.seoDescription?.trim().slice(0, 320) || null,
+    layout: input.layout === "wide" ? "wide" : "narrow", hideTitle: Boolean(input.hideTitle),
+  };
   if (id) {
     await db.update(storePages).set(values).where(and(eq(storePages.storeId, storeId), eq(storePages.id, id)));
     return id;
