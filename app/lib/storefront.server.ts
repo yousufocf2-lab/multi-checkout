@@ -9,7 +9,7 @@ import { renderCustomLiquid } from "./custom-liquid.server";
 import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
 import { accountSettings } from "./customer-accounts";
 
-const accountsOn = (s: Store) => s.platform === "growpefy" && accountSettings(s.accountSettings).enabled;
+const accountsOn = (s: Store) => accountSettings(s.accountSettings).enabled;
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, storeThemes, type CatalogItem, type CatalogVariant, type Store, type ThemeData, type ThemeTemplate } from "~/db.server";
 
 // ---------- theme files ----------

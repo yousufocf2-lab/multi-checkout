@@ -22,7 +22,7 @@ function storeInfo(ctx: ShopContext) {
 
 function enabledSettings(store: Store) {
   const s = accountSettings(store.accountSettings);
-  if (!s.enabled || store.platform !== "growpefy") throw new Response("Not found", { status: 404 });
+  if (!s.enabled) throw new Response("Not found", { status: 404 });
   return s;
 }
 

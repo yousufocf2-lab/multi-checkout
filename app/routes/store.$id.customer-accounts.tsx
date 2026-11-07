@@ -58,7 +58,7 @@ export default function CustomerAccounts() {
     <Form method="post" className="mx-auto max-w-[760px] space-y-4">
       {a?.ok && <Notice tone="success">{a.ok}</Notice>}
       {a?.error && <Notice tone="error">{a.error}</Notice>}
-      {!d.growpefy && <Notice>Customer accounts are for stores selling on their Growpefy website. Shopify and WooCommerce stores use their own accounts.</Notice>}
+      {!d.growpefy && <Notice>These accounts are for your Growpefy website. Your {"Shopify / WooCommerce"} store keeps its own customer accounts.</Notice>}
 
       <Card>
         <label className="flex items-start gap-3 pt-4">
