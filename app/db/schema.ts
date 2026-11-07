@@ -1260,7 +1260,7 @@ export type StoreDocument = typeof storeDocuments.$inferSelect;
 /** What the business sells: decides menu names, item fields and themes (lib/business-types.ts). */
 export type BusinessType = "store" | "restaurant" | "coaching" | "hotel" | "services" | "events";
 /** Photo or video clip of an item (images column holds both, in display order). */
-export type ItemImage = { url: string; alt?: string; type?: "image" | "video"; poster?: string };
+export type ItemImage = { url: string; alt?: string; type?: "image" | "video"; poster?: string; src?: string /* original URL when copied from another platform */ };
 export type ItemOption = { name: string; values: string[] };
 
 /** Something the business sells: a product, dish, course, room, service or event (kind follows the business type). */

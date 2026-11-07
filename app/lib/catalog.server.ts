@@ -6,6 +6,7 @@ import { toHandle } from "./business-types";
 import { rupeesToPaise, type PricedLine } from "./pricing";
 import { fetchCatalogPage } from "./shopify.server";
 import { orderName } from "./store-profile";
+import { IMAGE_TYPES, MAX_IMAGE_BYTES, mediaReady, uploadMedia } from "./media.server";
 
 export type ItemStatus = "active" | "draft" | "archived";
 
@@ -224,6 +225,28 @@ export async function deleteCategory(storeId: number, id: number) {
 }
 
 /**
+ * Copies a photo from Shopify's CDN into Growpefy's media storage, so the website keeps working after the Shopify
+ * store closes. Keeps the Shopify URL if storage isn't set up or the copy fails. `known` avoids copying twice.
+ */
+async function copyShopifyImage(storeId: number, url: string | null | undefined, known: Map<string, string>): Promise<string | null> {
+  if (!url) return null;
+  if (known.has(url)) return known.get(url)!;
+  if (!mediaReady() || !/^https:\/\/cdn\.shopify\.com\//i.test(url)) return url;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(25_000) });
+    const type = (r.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+    const size = Number(r.headers.get("content-length")) || 0;
+    if (!r.ok || !r.body || !(type in IMAGE_TYPES) || size > MAX_IMAGE_BYTES) return url;
+    const up = await uploadMedia(storeId, type, r.body, size);
+    known.set(url, up.url);
+    return up.url;
+  } catch (e) {
+    console.warn(`[catalog-import] image copy failed store=${storeId}: ${e instanceof Error ? e.message : e}`);
+    return url;
+  }
+}
+
+/**
  * Copies the store's Shopify products, variants, photos and collections into the Growpefy catalog.
  * Safe to run again: items already imported are updated (matched by their Shopify id), nothing is duplicated.
  */
@@ -255,24 +278,31 @@ export async function importFromShopify(store: Store) {
       }
 
       const status: ItemStatus = p.status === "ACTIVE" ? "active" : p.status === "ARCHIVED" ? "archived" : "draft";
-      const images = p.media.nodes.flatMap((m): ItemImage[] => {
-        if (m.image) return [{ url: m.image.url, alt: m.image.altText ?? undefined, type: "image" }];
+      const [existing] = await db.select({ id: catalogItems.id, images: catalogItems.images }).from(catalogItems).where(and(eq(catalogItems.storeId, store.id), eq(catalogItems.sourceId, p.id))).limit(1);
+      // Photos already copied on an earlier import are reused
+      const known = new Map<string, string>();
+      for (const im of existing?.images ?? []) if (im.src) known.set(im.src, im.url);
+      const images = (await Promise.all(p.media.nodes.map(async (m): Promise<ItemImage[]> => {
+        if (m.image) {
+          const url = (await copyShopifyImage(store.id, m.image.url, known)) ?? m.image.url;
+          return [{ url, alt: m.image.altText ?? undefined, type: "image", ...(url !== m.image.url ? { src: m.image.url } : {}) }];
+        }
         const mp4 = m.sources?.find((s) => s.mimeType === "video/mp4") ?? m.sources?.[0];
-        return mp4 ? [{ url: mp4.url, type: "video", poster: m.preview?.image?.url }] : [];
-      });
+        const poster = m.preview?.image?.url ? (await copyShopifyImage(store.id, m.preview.image.url, known)) ?? undefined : undefined;
+        return mp4 ? [{ url: mp4.url, type: "video", poster }] : [];
+      }))).flat();
       const options = p.options.filter((o) => !(o.name === "Title" && o.optionValues.length === 1 && o.optionValues[0].name === "Default Title"))
         .map((o) => ({ name: o.name, values: o.optionValues.map((v) => v.name) }));
-      const vs: VariantInput[] = p.variants.nodes.map((v) => ({
+      const vs: VariantInput[] = await Promise.all(p.variants.nodes.map(async (v) => ({
         title: v.title === "Default Title" ? "Default" : v.title,
         optionValues: options.length ? v.selectedOptions.map((s) => s.value) : [],
         sku: v.sku || null,
         pricePaise: rupeesToPaise(v.price) ?? 0,
         compareAtPaise: rupeesToPaise(v.compareAtPrice),
         stock: v.inventoryItem?.tracked ? v.inventoryQuantity ?? 0 : null,
-        imageUrl: v.image?.url ?? null,
+        imageUrl: v.image?.url ? await copyShopifyImage(store.id, v.image.url, known) : null,
         sourceId: v.id,
-      }));
-      const [existing] = await db.select({ id: catalogItems.id }).from(catalogItems).where(and(eq(catalogItems.storeId, store.id), eq(catalogItems.sourceId, p.id))).limit(1);
+      })));
       const id = await saveItem(store, {
         title: p.title, handle: existing ? undefined : p.handle, descriptionHtml: p.descriptionHtml ?? "", status,
         vendor: p.vendor, productType: p.productType || null, tags: p.tags, images, options, variants: vs.length ? vs : [{ title: "Default", optionValues: [], sku: null, pricePaise: 0, compareAtPaise: null, stock: null }],

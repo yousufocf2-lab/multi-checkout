@@ -13,11 +13,11 @@ export function SettingsHeader({ icon, title, children }: { icon: IconName; titl
   );
 }
 
-export function Card({ title, description, action, children, className = "", flush }: {
-  title?: string; description?: React.ReactNode; action?: React.ReactNode; children?: React.ReactNode; className?: string; flush?: boolean;
+export function Card({ title, description, action, children, className = "", flush, id }: {
+  title?: string; description?: React.ReactNode; action?: React.ReactNode; children?: React.ReactNode; className?: string; flush?: boolean; id?: string;
 }) {
   return (
-    <section className={`panel overflow-hidden ${className}`}>
+    <section id={id} className={`panel overflow-hidden ${className}`}>
       {(title || action) && (
         <header className="flex items-start gap-3 px-4 pb-2 pt-3.5">
           <div className="min-w-0 flex-1">

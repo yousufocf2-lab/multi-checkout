@@ -6,11 +6,16 @@ import { useEffect, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { Card, Dialog } from "~/components/settings-ui";
 import { storeHost } from "~/lib/urls.server";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, like, ne, sql } from "drizzle-orm";
+import { Link } from "@remix-run/react";
+import { orders, shippingRates, storePages } from "~/db.server";
+import { onlineReady } from "~/lib/gateways/index.server";
+import { themeRow } from "~/lib/themes.server";
+import { storePath } from "~/lib/store-code";
 import { CopyField, Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
-import { catalogAllowed } from "~/lib/catalog.server";
+import { catalogAllowed, catalogStats } from "~/lib/catalog.server";
 import { env } from "~/lib/env.server";
 import { addHostname, cfConfigured, CONNECT_HOST, hostnameState, removeHostname } from "~/lib/cloudflare.server";
 
@@ -26,6 +31,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const site = catalogAllowed(viewer, store);
+  // Moving from Shopify / WooCommerce: what's left before the domain can point at Growpefy
+  const launch = site && store.platform !== "growpefy" ? await launchChecklist(store) : null;
   // Cloudflare mode: check the domain's state with Cloudflare while it isn't live yet
   let detail: string | null = null;
   if (site && cfConfigured() && store.storefrontDomain && store.storefrontDomainStatus !== "live") {
@@ -49,17 +56,40 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     checkoutHost: storeHost(store),
     checkoutDomain: store.checkoutDomain,
     storeWebsite: store.platform !== "growpefy" ? store.storefrontUrl?.replace(/^https?:\/\//, "").replace(/\/+$/, "") ?? null : null,
-    platform: store.platform,
+    platform: store.platform, storefrontEnabled: store.storefrontEnabled, launch,
     domain: store.storefrontDomain, target: cfConfigured() ? CONNECT_HOST() : store.storefrontDnsTarget, status: store.storefrontDomainStatus,
   });
+}
+
+async function launchChecklist(store: typeof stores.$inferSelect) {
+  const [stats, theme, pages, rates, gpOrders] = await Promise.all([
+    catalogStats(store.id), themeRow(store.id),
+    db.select({ n: sql<number>`count(*)::int` }).from(storePages).where(and(eq(storePages.storeId, store.id), eq(storePages.published, true))),
+    db.select({ n: sql<number>`count(*)::int` }).from(shippingRates).where(and(eq(shippingRates.storeId, store.id), eq(shippingRates.active, true))),
+    db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(eq(orders.storeId, store.id), like(orders.shopifyOrderId, "gp:%"))),
+  ]);
+  const base = storePath(store.id);
+  return [
+    { id: "products", title: "Bring your products", text: "Products, variants, photos and categories from your old store. Photos are copied to Growpefy.", done: Number(stats.active) > 0, to: `${base}/catalog`, cta: "Import products" },
+    { id: "theme", title: "Design the website", text: "Pick a theme, add your logo, banners and menu, then publish.", done: Boolean(theme?.publishedAt), to: `${base}/themes`, cta: "Open themes" },
+    { id: "pages", title: "Add policy pages", text: "Privacy, refund, shipping, terms and contact. Payment gateways check these.", done: (pages[0]?.n ?? 0) >= 4, to: `${base}/pages`, cta: "Add pages" },
+    { id: "payments", title: "Payment gateway", text: "Your gateway keeps working on the same domain.", done: onlineReady(store), to: `${base}/payments`, cta: "Check payments" },
+    { id: "shipping", title: "Delivery charges", text: "Free or paid delivery, COD charges and areas you ship to.", done: (rates[0]?.n ?? 0) > 0, to: `${base}/shipping`, cta: "Set delivery" },
+    { id: "test", title: "Place a test order", text: "Order from the Growpefy address before switching the domain.", done: (gpOrders[0]?.n ?? 0) > 0, to: `/s/${store.slug}`, cta: "Open website" },
+    { id: "domain", title: "Point your domain here", text: "Last step. Your old store stops showing once the DNS changes.", done: store.storefrontDomainStatus === "live", to: "#connect", cta: "Connect domain" },
+  ];
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
-  if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
   const fd = await request.formData();
   const intent = fd.get("intent");
+  if (intent === "enableStore") {
+    await db.update(stores).set({ storefrontEnabled: true }).where(eq(stores.id, store.id));
+    return json({ ok: "Growpefy Store is on for this store. Follow the launch checklist below.", error: null });
+  }
+  if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
   if (intent === "domain") {
     const g = kycGate(viewer, "connecting your domain");
     if (g) return json({ ok: null, error: g }, { status: 400 });
@@ -149,11 +179,19 @@ export default function Website() {
             ))}
           </ul>
         </div>
-        {!site && <p className="border-t border-rule px-4 py-2.5 text-[12px] text-ink-faint">Your website domain is managed in {d.platform === "woocommerce" ? "WordPress" : "Shopify"}. For a checkout on your own domain, talk to the Growpefy team.</p>}
+        {!site && <p className="border-t border-rule px-4 py-2.5 text-[12px] text-ink-faint">Your website domain is managed in {d.platform === "woocommerce" ? "WordPress" : "Shopify"} right now.</p>}
       </Card>
 
+      {!site && (
+        <Card title={`Move your website to Growpefy Store`} description={`Run the whole website on Growpefy instead of ${d.platform === "woocommerce" ? "WooCommerce" : "Shopify"}: same domain, same product links, your products and photos copied over, orders and checkout in one place. Your current website keeps working until you switch the domain.`}>
+          <Form method="post"><button name="intent" value="enableStore" className="btn-primary btn">Start moving</button></Form>
+        </Card>
+      )}
+
+      {d.launch && <LaunchChecklist steps={d.launch} live={live} onConnect={() => (domain ? document.getElementById("dns")?.scrollIntoView({ behavior: "smooth" }) : setConnect(true))} />}
+
       {site && domain && !live && (
-        <Card title={status === "requested" ? "We're preparing your domain" : `Point ${bare} to Growpefy`}
+        <Card className="scroll-mt-4" id="dns" title={status === "requested" ? "We're preparing your domain" : `Point ${bare} to Growpefy`}
           description={status === "requested" ? "The record to add will appear here, usually within a few hours." : "Add this record where you bought the domain (GoDaddy, Hostinger, Cloudflare and others)."}>
           {target && (
             <div className="space-y-3">
@@ -193,5 +231,32 @@ export default function Website() {
         </Card>
       )}
     </div>
+  );
+}
+
+function LaunchChecklist({ steps, live, onConnect }: { steps: { id: string; title: string; text: string; done: boolean; to: string; cta: string }[]; live: boolean; onConnect: () => void }) {
+  const done = steps.filter((x) => x.done).length;
+  const next = steps.find((x) => !x.done);
+  return (
+    <Card title={live ? "Your website runs on Growpefy" : "Launch checklist"} description={live ? "Everything is moved. You can close your old store's plan once you've checked a few orders." : `${done} of ${steps.length} done. Switch the domain last, after a test order.`} flush>
+      <ol className="divide-y divide-rule border-t border-rule">
+        {steps.map((x, i) => (
+          <li key={x.id} className={`flex items-center gap-3 px-4 py-2.5 ${next?.id === x.id ? "bg-[#fafafa]" : ""}`}>
+            {x.done
+              ? <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#303030] text-white"><Icon name="check" className="h-3 w-3" strokeWidth={3} /></span>
+              : <span className="num flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-dashed border-[#8a8a8a] text-[10.5px] text-ink-soft">{i + 1}</span>}
+            <div className="min-w-0 flex-1">
+              <p className={`text-[13px] font-medium ${x.done ? "text-ink-soft" : ""}`}>{x.title}</p>
+              <p className="text-[12px] text-ink-faint">{x.text}</p>
+            </div>
+            {!x.done && (x.to.startsWith("#")
+              ? <button type="button" onClick={onConnect} className={next?.id === x.id ? "btn-primary btn shrink-0" : "btn-secondary btn shrink-0"}>{x.cta}</button>
+              : x.to.startsWith("/s/")
+                ? <a href={x.to} target="_blank" rel="noreferrer" className={next?.id === x.id ? "btn-primary btn shrink-0" : "btn-secondary btn shrink-0"}>{x.cta}</a>
+                : <Link to={x.to} className={next?.id === x.id ? "btn-primary btn shrink-0" : "btn-secondary btn shrink-0"}>{x.cta}</Link>)}
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
