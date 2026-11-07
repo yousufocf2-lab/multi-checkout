@@ -28,7 +28,13 @@
     { "id": "card_ratio", "type": "select", "label": "Photo shape", "default": "square", "options": ["square", "portrait", "landscape"] },
     { "id": "card_radius", "type": "range", "label": "Photo corner roundness", "min": 0, "max": 28, "step": 1, "unit": "px", "default": 12 },
     { "id": "card_show_discount", "type": "checkbox", "label": "Show “% off” badge", "default": true },
-    { "id": "card_show_quick_add", "type": "checkbox", "label": "Show “Add to cart” button on cards", "default": false }
+    { "id": "card_quick_icon", "type": "checkbox", "label": "Show quick-add cart icon on the photo", "default": true },
+    { "id": "card_icon_style", "type": "select", "label": "Quick-add icon", "default": "basket", "options": ["basket", "trolley", "plus"] },
+    { "id": "card_icon_position", "type": "select", "label": "Icon position", "default": "bottom-right", "options": ["bottom-right", "bottom-left", "top-right"] },
+    { "id": "card_icon_size", "type": "range", "label": "Icon button size", "min": 28, "max": 56, "step": 2, "unit": "px", "default": 38 },
+    { "id": "card_icon_bg", "type": "color", "label": "Icon background", "default": "#ffffff" },
+    { "id": "card_icon_color", "type": "color", "label": "Icon colour", "default": "#14171a" },
+    { "id": "card_show_quick_add", "type": "checkbox", "label": "Also show an “Add to cart” button under cards", "default": false }
   ] },
   { "name": "Product page", "settings": [
     { "id": "pdp_points", "type": "textarea", "label": "Highlights under Buy now (one per line)", "default": "Cash on delivery available\nExtra discount when you pay online\nShips within 24 hours" },

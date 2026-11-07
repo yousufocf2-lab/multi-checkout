@@ -19,6 +19,107 @@
   }
   paintCount();
 
+  // ---------- checkout (shared by cart page and "Buy now") ----------
+  function startCheckout(lines, done) {
+    return fetch(root + "/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines.map(function (l) { return { variantId: l.variantId, qty: l.qty }; }) }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.url) { location.href = d.url; return; } done(d.error || "Couldn't open checkout. Please try again."); })
+      .catch(function () { done("No internet. Please try again."); });
+  }
+
+  // ---------- fly to cart ----------
+  var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function cartTarget() {
+    var list = document.querySelectorAll(".header__cart");
+    for (var i = 0; i < list.length; i++) { var r = list[i].getBoundingClientRect(); if (r.width && r.bottom > 0) return list[i]; }
+    return null;
+  }
+  function bump(cart) {
+    if (!cart) return;
+    cart.classList.remove("is-bump"); void cart.offsetWidth; cart.classList.add("is-bump");
+    var n = cart.querySelector("[data-cart-count]");
+    if (n) { n.classList.remove("is-pop"); void n.offsetWidth; n.classList.add("is-pop"); }
+  }
+  function flyToCart(src, image) {
+    var cart = cartTarget();
+    if (!cart || reduce) { bump(cart); return; }
+    var from = src && src.getBoundingClientRect();
+    if (!from || !from.width) { bump(cart); return; }
+    var size = Math.min(from.width, from.height, 220);
+    var x = from.left + from.width / 2 - size / 2, y = from.top + from.height / 2 - size / 2;
+    var to = cart.getBoundingClientRect();
+    var el;
+    if (image) { el = document.createElement("img"); el.src = image; el.alt = ""; }
+    else { el = document.createElement("div"); el.style.background = "var(--brand)"; }
+    el.className = "fly-cart";
+    el.style.cssText += ";left:" + x + "px;top:" + y + "px;width:" + size + "px;height:" + size + "px";
+    document.body.appendChild(el);
+    var dx = to.left + to.width / 2 - (x + size / 2), dy = to.top + to.height / 2 - (y + size / 2);
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      el.style.transform = "translate(" + dx + "px," + dy + "px) scale(" + (18 / size) + ")";
+      el.style.opacity = "0.35"; el.style.borderRadius = "50%";
+    }); });
+    var finished = false;
+    function end() { if (finished) return; finished = true; el.remove(); bump(cart); }
+    el.addEventListener("transitionend", end); setTimeout(end, 800);
+  }
+  function afterAdd(src, image, label) {
+    if (body.getAttribute("data-after-add") === "cart") { location.href = root + "/cart"; return; }
+    flyToCart(src, image);
+    toast(label || "Added to cart");
+  }
+
+  // ---------- quick add on product cards ----------
+  function lineOf(product, v, qty) {
+    return { variantId: v.id, itemId: product.id, title: product.title, variantTitle: v.title === "Default" ? "" : v.title, price: v.price, image: v.image || product.image, url: product.url, qty: qty || 1 };
+  }
+  function pickSheet(product, src) {
+    var vals = product.options.map(function (o, i) { var v = product.variants.find(function (x) { return x.available; }) || product.variants[0]; return v.option_values[i]; });
+    var sheet = document.createElement("div");
+    sheet.className = "qa-sheet";
+    sheet.innerHTML = '<div class="qa-sheet__box" role="dialog" aria-modal="true" aria-label="Choose options">' +
+      '<div class="qa-sheet__head">' + (product.image ? '<img src="' + esc(product.image) + '" alt="">' : "") + '<div><p class="qa-sheet__title">' + esc(product.title) + '</p><p class="qa-sheet__price" data-p></p></div><button type="button" class="qa-sheet__close" data-x aria-label="Close">×</button></div>' +
+      product.options.map(function (o, i) {
+        return '<fieldset class="opt"><legend>' + esc(o.name) + '</legend><div class="opt__values">' + o.values.map(function (val) {
+          return '<label class="pill"><input type="radio" name="qo' + i + '" value="' + esc(val) + '"' + (val === vals[i] ? " checked" : "") + '><span>' + esc(val) + "</span></label>";
+        }).join("") + "</div></fieldset>";
+      }).join("") +
+      '<button type="button" class="btn btn--primary btn--block" data-go>Add to cart</button></div>';
+    document.body.appendChild(sheet);
+    var go = sheet.querySelector("[data-go]");
+    function cur() { return product.variants.find(function (v) { return v.option_values.every(function (x, i) { return x === vals[i]; }); }); }
+    function paintSheet() {
+      var v = cur();
+      sheet.querySelector("[data-p]").textContent = v ? money(v.price) : "";
+      go.disabled = !v || !v.available; go.textContent = !v ? "Not available" : v.available ? "Add to cart" : "Sold out";
+    }
+    function close() { sheet.classList.remove("is-on"); document.removeEventListener("keydown", onKey); setTimeout(function () { sheet.remove(); }, 200); }
+    function onKey(e) { if (e.key === "Escape") close(); }
+    sheet.addEventListener("change", function (e) { var m = /^qo(\d+)$/.exec(e.target.name || ""); if (m) { vals[+m[1]] = e.target.value; paintSheet(); } });
+    sheet.addEventListener("click", function (e) { if (e.target === sheet || e.target.closest("[data-x]")) close(); });
+    document.addEventListener("keydown", onKey);
+    go.addEventListener("click", function () {
+      var v = cur(); if (!v || !v.available) return;
+      add(lineOf(product, v)); close(); afterAdd(src, v.image || product.image);
+    });
+    paintSheet();
+    requestAnimationFrame(function () { sheet.classList.add("is-on"); go.focus(); });
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-quick-add]");
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    var card = b.closest("[data-card]"); if (!card) return;
+    var product; try { product = JSON.parse(card.getAttribute("data-product")); } catch (err) { return; }
+    var src = card.querySelector(".card__media img, .card__media video") || card.querySelector(".card__media");
+    var avail = product.variants.filter(function (v) { return v.available; });
+    if (!avail.length) { toast("Sold out"); return; }
+    if (product.variants.length > 1) { pickSheet(product, src); return; }
+    add(lineOf(product, avail[0]));
+    b.classList.remove("is-done"); void b.offsetWidth; b.classList.add("is-done");
+    afterAdd(src, avail[0].image || product.image);
+  });
+
   // Product videos in grids: play silently on loop while on screen, pause when scrolled away (saves data)
   var vids = document.querySelectorAll("video[data-inview-play]");
   if (vids.length) {
@@ -66,8 +167,16 @@
       e.preventDefault();
       if (!current || !current.available) return;
       var now = e.submitter && e.submitter.value === "now";
-      add(lineFor());
-      if (now) location.href = root + "/cart?go=1"; else toast("Added to cart");
+      var line = lineFor();
+      if (now) {
+        // Buy now: only this product goes to checkout; the saved cart is left as it is
+        var b = e.submitter, label = b.textContent;
+        b.disabled = true; b.textContent = "Opening secure checkout…";
+        startCheckout([line], function (err) { b.disabled = false; b.textContent = label; toast(err); });
+        return;
+      }
+      add(line);
+      afterAdd(main || form, line.image);
     });
     var sticky = document.querySelector("[data-sticky]");
     var buyBtn = form.querySelector("[data-buy]");
@@ -122,13 +231,7 @@
     function checkout() {
       var c = load(); if (!c.length) return;
       btn.disabled = true; btn.textContent = "Opening secure checkout…";
-      fetch(root + "/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: c.map(function (l) { return { variantId: l.variantId, qty: l.qty }; }) }) })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d.url) { location.href = d.url; return; }
-          btn.disabled = false; btn.textContent = "Checkout"; note.hidden = false; note.textContent = d.error || "Couldn't open checkout. Please try again.";
-        })
-        .catch(function () { btn.disabled = false; btn.textContent = "Checkout"; note.hidden = false; note.textContent = "No internet. Please try again."; });
+      startCheckout(c, function (err) { btn.disabled = false; btn.textContent = "Checkout"; note.hidden = false; note.textContent = err; });
     }
     btn.addEventListener("click", checkout);
     render();

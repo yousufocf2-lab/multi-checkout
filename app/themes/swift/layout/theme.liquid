@@ -34,6 +34,9 @@
     --card-ratio:{{ ratio }};
     --radius:{{ settings.card_radius | default: 14 }}px;
     --logo-width:{{ settings.logo_width | default: 140 }}px;
+    --qa-size:{{ settings.card_icon_size | default: 38 }}px;
+    --qa-bg:{{ settings.card_icon_bg | default: '#ffffff' }};
+    --qa-ink:{{ settings.card_icon_color | default: '#14171a' }};
   }</style>
   {% if settings.custom_css != blank %}<style>{{ settings.custom_css }}</style>{% endif %}
   {% if editor %}<style>[data-gp-section]{display:contents}[data-gp-section]>*{cursor:pointer}[data-gp-section]>*:hover{outline:1px dashed #2563eb;outline-offset:-1px}[data-gp-section].gp-hl>*{outline:2px solid #2563eb!important;outline-offset:-2px}</style>{% endif %}
