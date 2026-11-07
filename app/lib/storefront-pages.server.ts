@@ -12,7 +12,7 @@ import { requestHost, storeBaseUrl } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
 
 const THEME = "swift";
-const canonical = (ctx: ShopContext, path: string) => ctx.store.platform === "growpefy" && ctx.store.storefrontDomain ? `https://${ctx.store.storefrontDomain}${path}` : "";
+const canonical = (ctx: ShopContext, path: string) => !ctx.preview && ctx.store.storefrontDomain ? `https://${ctx.store.storefrontDomain}${path}` : "";
 
 /** The store whose own domain this request came in on (www.brand.com or brand.com). Null when none. */
 export async function domainContext(request: Request): Promise<ShopContext | null> {
@@ -38,7 +38,7 @@ export async function homePage(ctx: ShopContext) {
 
 export async function productPage(ctx: ShopContext, handle: string, reviewSubmitted = false) {
   const product = (await loadProduct(ctx, handle)) ?? (handle === SAMPLE && ctx.look?.editor ? sampleProduct(ctx) : null);
-  if (!product) throw new Response("Not found", { status: 404 });
+  if (!product) throw await notFound(ctx, "This product isn't available any more. Have a look at everything else in the shop.");
   const scope = await baseScope(ctx);
   const reviewData = product.id ? await reviewsForProduct(ctx.store.id, Number(product.id)) : { rows: [], count: 0, average: 0 };
   return html(await renderPage(THEME, "product", {
@@ -51,7 +51,7 @@ export async function productPage(ctx: ShopContext, handle: string, reviewSubmit
 export async function collectionPage(ctx: ShopContext, handle: string) {
   const scope = await baseScope(ctx);
   const cat = handle === "all" ? null : scope.collections.find((c) => c.handle === handle);
-  if (handle !== "all" && !cat) throw new Response("Not found", { status: 404 });
+  if (handle !== "all" && !cat) throw await notFound(ctx, "This category isn't available. Have a look at everything in the shop.");
   const products = await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
   return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, handle === "all" ? "/products/all" : `/category/${handle}`) }, sectionData(ctx), ctx.look));
@@ -62,7 +62,7 @@ export async function infoPage(ctx: ShopContext, handle: string) {
   const page: P | null = (await publishedPage(ctx.store.id, handle))
     ?? (ctx.owner ? await pageByHandle(ctx.store.id, handle) : null)
     ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
-  if (!page) throw new Response("Not found", { status: 404 });
+  if (!page) throw await notFound(ctx);
   const scope = await baseScope(ctx);
   // Page content works like a Custom Liquid section: Liquid + HTML/CSS shown directly, code with scripts in a secure frame.
   const settings = (scope as { settings?: Record<string, unknown> }).settings ?? {};
@@ -75,6 +75,18 @@ export async function infoPage(ctx: ShopContext, handle: string) {
     page_title: page.seoTitle || page.title, page_description: page.seoDescription || plain.slice(0, 160),
     canonical_url: canonical(ctx, `/pages/${handle}`),
   }, sectionData(ctx), ctx.look));
+}
+
+/** A friendly "page not found" in the store's own theme (header, footer, a link back to the shop), status 404. */
+export async function notFound(ctx: ShopContext, note = "The page you're looking for doesn't exist or has moved.") {
+  const scope = await baseScope(ctx);
+  const all = `${ctx.root}/products/all`;
+  const content = `<div style="text-align:center;padding:24px 0 8px"><p style="margin:0 0 20px">${note}</p><p style="margin:0"><a href="${all}" style="display:inline-block;padding:12px 28px;background:#111;color:#fff;text-decoration:none">Continue shopping</a></p></div>`;
+  return html(await renderPage(THEME, "page", {
+    ...scope, template: "page",
+    page: { title: "Page not found", content, handle: "not-found", layout: "narrow", hide_title: false, draft: false, blocks_css: "" },
+    page_title: "Page not found", page_description: "", canonical_url: "",
+  }, sectionData(ctx), ctx.look), 404);
 }
 
 export async function cartPage(ctx: ShopContext) {

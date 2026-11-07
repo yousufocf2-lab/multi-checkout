@@ -62,12 +62,31 @@ app.use((req, res, next) => {
 // Every other path (checkout /c, /pay, /order, /media, /api, /dashboard, /login, assets) works as on growpefy.com.
 const checkoutRootHost = String(process.env.CHECKOUT_DOMAIN || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "");
 const STOREFRONT_PATH = /^\/($|products?\/|category\/|collections\/|pages\/|cart\/?$|checkout\/?$)/; // /account is a normal page on every host
+/** Shopify-style paths -> ours. Null when the path needs no change. */
+function legacyPath(p) {
+  let m;
+  const loc = p.match(/^\/[a-z]{2}(?:-[a-z]{2})?(\/(?:products|collections|pages|policies|cart|search|account)(?:\/.*)?)$/i);
+  if (loc) p = loc[1];
+  if ((m = p.match(/^\/collections\/[^/]+\/products\/([^/.]+)/))) return `/product/${m[1]}`;
+  if ((m = p.match(/^\/products\/([^/.]+)\.(?:js|json|oembed|xml|atom)$/))) return `/product/${m[1]}`;
+  if ((m = p.match(/^\/policies\/([^/]+)\/?$/))) return `/pages/${m[1]}`;
+  if (/^\/(?:search|collections\/?|collections\/(?:vendors|types))\/?$/.test(p)) return "/products/all";
+  if ((m = p.match(/^\/collections\/([^/]+)\/?$/))) return m[1] === "all" ? "/products/all" : `/category/${m[1]}`;
+  if (/^\/account\/(?:login|register)\/?$/.test(p)) return "/account";
+  return loc ? p : null;
+}
+
 app.use((req, res, next) => {
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase().replace(/:\d+$/, "");
   const ours = !host || host === canonicalHost || isOtherHost(host) || host === "localhost" || host === "127.0.0.1"
     || (checkoutRootHost && (host === checkoutRootHost || host.endsWith("." + checkoutRootHost)));
   if (!ours) {
     if (req.path === "/admin" || req.path.startsWith("/admin/")) return res.redirect(302, "/dashboard");
+    // Links from an old Shopify site (ads, Google, bookmarks): send them to the same thing here, query kept (utm, fbclid, variant)
+    if (req.method === "GET" || req.method === "HEAD") {
+      const moved = legacyPath(req.path);
+      if (moved && moved !== req.path) return res.redirect(301, moved + (req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : ""));
+    }
     if (STOREFRONT_PATH.test(req.path) || req.path === "/favicon.ico") {
       const rest = req.url === "/" ? "" : req.url.replace(/\/$/, "") ;
       req.url = req.originalUrl = "/sfhost" + (rest.startsWith("/?") ? rest.slice(1) : rest);

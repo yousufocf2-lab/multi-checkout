@@ -15,7 +15,7 @@ const response = (body: string) => new Response(body, { headers: { "Content-Type
 
 export const loader = async ({ request }: { request: Request }) => {
   const ctx = await domainContext(request);
-  if (ctx?.store.platform === "growpefy" && ctx.store.storefrontDomain) {
+  if (ctx?.store.storefrontDomain) {
     const [products, collections, pages] = await Promise.all([
       db.select({ handle: catalogItems.handle, updatedAt: catalogItems.updatedAt }).from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), eq(catalogItems.status, "active"))).orderBy(asc(catalogItems.handle)).limit(50_000),
       db.select({ handle: catalogCategories.handle, createdAt: catalogCategories.createdAt }).from(catalogCategories).where(eq(catalogCategories.storeId, ctx.store.id)).orderBy(asc(catalogCategories.handle)).limit(10_000),

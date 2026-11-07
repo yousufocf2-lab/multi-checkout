@@ -8,7 +8,7 @@ const PRIVATE = ["/dashboard", "/c/", "/pay/", "/order/", "/wallet/", "/api/", "
 /** growpefy.com: index the website. Store checkout domains (*.checkout.growpefy.com): index nothing. */
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const ctx = await domainContext(request);
-  const body = ctx?.store.platform === "growpefy" && ctx.store.storefrontDomain
+  const body = ctx?.store.storefrontDomain
     ? `User-agent: *\nAllow: /\nDisallow: /c/\nDisallow: /pay/\nDisallow: /order/\n\nSitemap: https://${ctx.store.storefrontDomain}/sitemap.xml\n`
     : isAppHost(request)
     ? `User-agent: *\nAllow: /\n${PRIVATE.map((p) => `Disallow: ${p}`).join("\n")}\n\nSitemap: ${SITE_URL}/sitemap.xml\n`
