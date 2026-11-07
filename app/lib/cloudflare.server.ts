@@ -103,8 +103,23 @@ export async function findHostname(hostname: string) {
   return list.find((h) => h.hostname === hostname) ?? null;
 }
 
+/**
+ * Cloudflare can't serve a store's domain until the zone has a fallback origin ("zone does not have a fallback
+ * origin set"). If it's missing, run the one-time setup (connect.* record, Worker, route, fallback origin) now.
+ */
+let fallbackOk = false;
+export async function ensureFallback() {
+  if (fallbackOk || !cfConfigured()) return;
+  const fb = await fallbackStatus().catch(() => null);
+  if (fb?.origin && fb.status !== "error") { fallbackOk = true; return; }
+  const steps = await setupCloudflare();
+  console.log(`[cloudflare] fallback origin was missing, setup ran: ${steps.join(" · ")}`);
+  fallbackOk = true;
+}
+
 /** Adds the store's domain to Cloudflare (certificate by HTTP validation once the CNAME points to connect.*). */
 export async function addHostname(hostname: string) {
+  await ensureFallback().catch((e) => console.error("[cloudflare] setup:", e instanceof Error ? e.message : e));
   const found = await findHostname(hostname);
   if (found) return found;
   const z = await zone();
@@ -123,6 +138,7 @@ export async function removeHostname(hostname: string) {
 
 /** live = hostname active and certificate issued. */
 export async function hostnameState(hostname: string): Promise<{ state: "missing" | "pending" | "live"; detail: string | null }> {
+  await ensureFallback().catch((e) => console.error("[cloudflare] setup:", e instanceof Error ? e.message : e));
   const h = await findHostname(hostname);
   if (!h) return { state: "missing", detail: null };
   const ssl = h.ssl?.status ?? "";
