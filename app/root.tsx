@@ -6,9 +6,11 @@ import {
   Scripts,
   ScrollRestoration,
   isRouteErrorResponse,
+  useLocation,
   useNavigation,
   useRouteError,
 } from "@remix-run/react";
+import { TabSession } from "~/components/TabSession";
 import { useEffect, useState } from "react";
 import stylesheet from "./tailwind.css?url";
 import { asset } from "~/lib/asset";
@@ -62,8 +64,11 @@ function NavigationProgress() {
 }
 
 export default function App() {
+  const { pathname } = useLocation();
+  const admin = /^\/(dashboard|store\/|onboarding)/.test(pathname);
   return (
     <>
+      {admin && <TabSession />}
       <NavigationProgress />
       <Outlet />
     </>

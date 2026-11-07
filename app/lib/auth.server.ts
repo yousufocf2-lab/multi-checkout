@@ -14,9 +14,13 @@ const scrypt = promisify(crypto.scrypt) as (pw: string, salt: Buffer, len: numbe
 
 type SessionData = { admin?: boolean; uid?: number; tid?: number; seen?: number; at?: number };
 
-/** Logged out after this long without activity (dashboard pings while the user is active). */
-export const IDLE_MS = (Number(process.env.SESSION_IDLE_MINUTES) > 0 ? Number(process.env.SESSION_IDLE_MINUTES) : 10) * 60 * 1000;
-const isIdle = (seen: number | undefined) => !seen || Date.now() - seen > IDLE_MS;
+/**
+ * No logout for inactivity. The login lasts until the browser closes (session cookie), and the dashboard
+ * logs out on its own when it's opened again after every admin tab was closed (see TabSession).
+ * SESSION_IDLE_MINUTES, if set, brings back an inactivity limit.
+ */
+export const IDLE_MS = Number(process.env.SESSION_IDLE_MINUTES) > 0 ? Number(process.env.SESSION_IDLE_MINUTES) * 60 * 1000 : 0;
+const isIdle = (seen: number | undefined) => IDLE_MS > 0 && (!seen || Date.now() - seen > IDLE_MS);
 
 let storage: ReturnType<typeof createCookieSessionStorage<SessionData>> | null = null;
 function getStorage() {
@@ -27,7 +31,7 @@ function getStorage() {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 24, // rolling; idle limit is enforced by `seen`
+      // No maxAge: a session cookie, gone when the browser closes
       secrets: [env.sessionSecret],
     },
   });
@@ -310,7 +314,7 @@ export async function loginStamp(request: Request) {
 export async function endSession(request: Request, reason?: string) {
   const st = getStorage();
   const s = await st.getSession(request.headers.get("Cookie"));
-  return redirect(reason === "idle" ? "/login?expired=1" : "/login", { headers: { "Set-Cookie": await st.destroySession(s) } });
+  return redirect(reason === "idle" ? "/login?expired=1" : reason === "closed" ? "/login?closed=1" : "/login", { headers: { "Set-Cookie": await st.destroySession(s) } });
 }
 
 /** Marks the session as active now. Returns a Set-Cookie value, or null if the session is gone or idle. */
