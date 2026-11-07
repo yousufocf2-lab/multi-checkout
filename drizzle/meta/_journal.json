@@ -414,6 +414,13 @@
       "when": 1794332800000,
       "tag": "0058_page_options",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794419200000,
+      "tag": "0059_meta_catalog",
+      "breakpoints": true
     }
   ]
 }

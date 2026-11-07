@@ -1,5 +1,6 @@
 // Growpefy Store catalog: items (products / dishes / courses ...), their variants and categories.
 import { and, asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
+import { nudgeCatalog } from "./meta-catalog.server";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, type ItemImage, type ItemOption, type Store } from "~/db.server";
 import type { Viewer } from "./auth.server";
 import { toHandle } from "./business-types";
@@ -87,6 +88,7 @@ export async function catalogFacets(storeId: number) {
 export async function deleteItems(storeId: number, ids: number[]) {
   if (!ids.length) return;
   await db.delete(catalogItems).where(and(eq(catalogItems.storeId, storeId), inArray(catalogItems.id, ids)));
+  nudgeCatalog(storeId);
 }
 
 /** Every variant with its stock, for the Inventory page. */
@@ -104,6 +106,7 @@ export async function listInventory(storeId: number, q?: string) {
 /** Set or adjust stock of one variant (null = stop tracking). */
 export async function setStock(storeId: number, variantId: number, stock: number | null) {
   await db.update(catalogVariants).set({ stock: stock == null ? null : Math.max(0, Math.round(stock)) }).where(and(eq(catalogVariants.storeId, storeId), eq(catalogVariants.id, variantId)));
+  nudgeCatalog(storeId);
 }
 
 export async function renameCategory(storeId: number, id: number, title: string) {
@@ -161,7 +164,7 @@ export async function saveItem(store: Store, input: ItemInput, id?: number) {
   if (input.variants.length === 0) throw new Error("Add a price.");
   if (input.variants.some((v) => v.pricePaise < 0)) throw new Error("Price can't be negative.");
   const handle = await freeHandle(store.id, input.handle?.trim() || input.title, id);
-  return db.transaction(async (tx) => {
+  const savedId = await db.transaction(async (tx) => {
     const values = {
       title: input.title.trim(), handle, descriptionHtml: input.descriptionHtml, status: input.status,
       vendor: input.vendor ?? null, productType: input.productType ?? null, tags: input.tags, images: input.images, options: input.options,
@@ -199,15 +202,19 @@ export async function saveItem(store: Store, input: ItemInput, id?: number) {
     }
     return itemId!;
   });
+  nudgeCatalog(store.id);
+  return savedId;
 }
 
 export async function setItemsStatus(storeId: number, ids: number[], status: ItemStatus) {
   if (!ids.length) return;
   await db.update(catalogItems).set({ status, updatedAt: new Date() }).where(and(eq(catalogItems.storeId, storeId), inArray(catalogItems.id, ids)));
+  nudgeCatalog(storeId);
 }
 
 export async function deleteItem(storeId: number, id: number) {
   await db.delete(catalogItems).where(and(eq(catalogItems.storeId, storeId), eq(catalogItems.id, id)));
+  nudgeCatalog(storeId);
 }
 
 export async function createCategory(storeId: number, title: string) {
@@ -375,5 +382,6 @@ export async function placeCatalogOrder(store: Store, order: { id: string; items
     .where(eq(stores.id, store.id))
     .returning({ n: stores.orderSeq, prefix: stores.orderPrefix, suffix: stores.orderSuffix });
   const name = seq?.n ? orderName(seq.prefix, seq.n, seq.suffix) : `#GP${order.id.slice(0, 6).toUpperCase()}`;
+  nudgeCatalog(store.id); // stock may have dropped
   return { id: `${GP_PREFIX}${order.id}`, name };
 }

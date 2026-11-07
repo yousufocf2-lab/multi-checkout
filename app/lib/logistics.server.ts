@@ -47,6 +47,10 @@ export async function connectCourier(store: Store, courierId: string, input: Inp
         username: v("username") || undefined,
         // keep the saved password when the form leaves it empty
         password: v("password") ? seal(v("password")) : existing?.creds.password,
+        ...(info.id === "shiprocket" ? {
+          pickupName: v("pickupName").slice(0, 80) || undefined,
+          token: existing?.creds.token || randomBytes(20).toString("hex"), // key for Shiprocket's status webhook
+        } : {}),
       };
     }
     const t = await PROVIDERS[info.id].test(creds);
@@ -313,7 +317,7 @@ export async function shipmentList(storeId: number, opts: { filter: ShipFilter; 
   return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE };
 }
 
-const SYNC_EVERY_MS = 60 * 60_000;
+const SYNC_EVERY_MS = 30 * 60_000;
 declare global {
   // eslint-disable-next-line no-var
   var __shipmentWatcher: ReturnType<typeof setInterval> | undefined;

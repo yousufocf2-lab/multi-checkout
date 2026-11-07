@@ -12,7 +12,10 @@
     var n = load().reduce(function (s, l) { return s + l.qty; }, 0);
     document.querySelectorAll("[data-cart-count]").forEach(function (el) { el.textContent = n; el.hidden = n === 0; });
   }
+  function px() { if (window.fbq) try { window.fbq.apply(null, arguments); } catch (e) {} }
+  function cid(id) { id = String(id); return id.indexOf("gp:") === 0 ? id : "gp:" + id; } // same ids as the Meta catalog and checkout
   function add(line) {
+    px("track", "AddToCart", { content_ids: [cid(line.variantId)], content_type: "product", value: line.price * line.qty / 100, currency: "INR", contents: [{ id: cid(line.variantId), quantity: line.qty }] });
     var c = load(); var found = c.find(function (l) { return l.variantId === line.variantId; });
     if (found) found.qty = Math.min(20, found.qty + line.qty); else c.push(line);
     save(c);
@@ -221,6 +224,7 @@
       if (current.image && main) { main.src = current.image; if (slides) slides.scrollTo({ left: 0 }); }
     }
     form.addEventListener("change", paint);
+    setTimeout(function () { var v = chosen(); px("track", "ViewContent", { content_ids: [cid(v.id)], content_type: "product", content_name: product.title, value: v.price / 100, currency: "INR" }); }, 0);
     form.querySelectorAll("[data-qty]").forEach(function (b) {
       b.addEventListener("click", function () { var i = form.querySelector('input[name="qty"]'); i.value = Math.max(1, Math.min(20, (parseInt(i.value, 10) || 1) + parseInt(b.getAttribute("data-qty"), 10))); });
     });

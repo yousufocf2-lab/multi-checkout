@@ -62,11 +62,13 @@ export const COURIERS: CourierInfo[] = [
       "Log in to Shiprocket and open Settings → API → Configure.",
       "Click “Create an API User”. Use a new email (it must be different from your Shiprocket login) and set a password.",
       "Enter that API user's email and password here. We log in for you and refresh the session automatically.",
+      "New website orders then appear in your Shiprocket panel on their own. AWB, status and cancellations from Shiprocket come back to Growpefy.",
     ],
     link: { label: "Open Shiprocket API settings", href: "https://app.shiprocket.in/api-user" },
     fields: [
       { name: "email", label: "API user email", placeholder: "api@yourbrand.com", type: "email" },
       { name: "password", label: "API user password", placeholder: "Password of the API user", type: "password" },
+      { name: "pickupName", label: "Pickup location name", placeholder: "Primary", optional: true, hint: "Exactly as in Shiprocket → Settings → Pickup addresses. Empty = your first pickup address." },
     ],
   },
   {

@@ -33,13 +33,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     shopify: storeConnected(store),
     platform: platformName(store),
     hookUrl: `${env.appUrl}/api/shipnex/${store.id}`,
+    srHookUrl: `${env.appUrl}/api/ship-hook/${store.id}`,
     accounts: accounts.map((a) => ({
       courier: a.courier, status: a.status, lastError: a.lastError,
       viaShopify: Boolean(a.creds.viaShopify),
       who: a.courier === "shipnex" ? null : a.creds.viaShopify ? `Tracked from ${platformName(store)}` : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
       clientName: a.creds.clientName ?? a.creds.label ?? null,
       pickupName: a.creds.pickupName ?? null,
-      secret: a.courier === "shipnex" ? a.creds.token ?? null : null,
+      secret: a.courier === "shipnex" || a.courier === "shiprocket" ? a.creds.token ?? null : null,
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
     })),
     summary,
@@ -187,7 +188,7 @@ export default function Logistics() {
         ))}
       </section>
 
-      {openInfo && <ConnectSheet c={openInfo} a={byId.get(openInfo.id)} error={r?.courier === openInfo.id ? r.error : null} hookUrl={d.hookUrl} onClose={() => setOpen(null)} />}
+      {openInfo && <ConnectSheet c={openInfo} a={byId.get(openInfo.id)} error={r?.courier === openInfo.id ? r.error : null} hookUrl={openInfo.id === "shiprocket" ? d.srHookUrl : d.hookUrl} onClose={() => setOpen(null)} />}
     </div>
   );
 }
@@ -303,6 +304,14 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
           <Form method="post" className="space-y-3">
             <input type="hidden" name="courier" value={c.id} />
             {error && <Notice tone="error">{error}</Notice>}
+            {c.id === "shiprocket" && a?.secret && !a.viaShopify && (
+              <div className="space-y-2 rounded-xl bg-paper p-3 text-xs">
+                <p className="font-semibold">Live status (optional, recommended)</p>
+                <p className="text-[11px] text-ink-soft">In Shiprocket open Settings → API → Webhooks, turn on the shipment-status webhook and paste these. Status then updates the moment it changes instead of every 30 minutes.</p>
+                <Copy label="URL" value={hookUrl} />
+                <Copy label="Token (x-api-key)" value={a.secret} />
+              </div>
+            )}
             {c.kind === "push" && a?.secret && (
               <div className="space-y-2 rounded-xl bg-paper p-3 text-xs">
                 <Copy label="Webhook URL" value={hookUrl} />

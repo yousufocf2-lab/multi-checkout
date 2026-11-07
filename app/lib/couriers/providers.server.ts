@@ -31,9 +31,9 @@ async function testLogin(label: string, login: () => Promise<string>): Promise<T
 
 // ---------------- Shiprocket ----------------
 // Login with an API user (Settings → API → Configure). Token lasts 10 days; we refresh every 8.
-const SR = () => base("SHIPROCKET_BASE_URL", "https://apiv2.shiprocket.in") + "/v1/external";
+export const SR = () => base("SHIPROCKET_BASE_URL", "https://apiv2.shiprocket.in") + "/v1/external";
 
-async function shiprocketLogin(c: CourierCreds) {
+export async function shiprocketLogin(c: CourierCreds) {
   const r = await http(`${SR()}/auth/login`, { method: "POST", body: JSON.stringify({ email: c.email, password: unseal(c.password) }), label: "Shiprocket" });
   if (r.ok && r.body?.token) return String(r.body.token);
   if (r.status >= 400 && r.status < 500) throw new CourierAuthError(`Shiprocket didn't accept this email and password${msg(r.body) ? ` (${msg(r.body)})` : ""}. Use the API user from Settings → API, not your main Shiprocket login.`);

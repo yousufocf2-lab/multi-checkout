@@ -288,6 +288,12 @@ export const stores = pgTable("stores", {
   metaCapiToken: text("meta_capi_token"), // optional; falls back to metaAccessToken
   metaApiVersion: text("meta_api_version").notNull().default("v23.0"),
   metaFireCodPurchase: boolean("meta_fire_cod_purchase").notNull().default(true),
+  // Facebook & Instagram catalog (Growpefy Store products): only changed products are sent to Meta
+  metaCatalogId: text("meta_catalog_id"),
+  metaCatalogOn: boolean("meta_catalog_on").notNull().default(false),
+  metaCatalogSyncedAt: timestamp("meta_catalog_synced_at", { withTimezone: true }),
+  metaCatalogError: text("meta_catalog_error"),
+  metaCatalogCount: integer("meta_catalog_count").notNull().default(0),
   // Google Ads: connected with "Connect Google" (OAuth). Refresh token never leaves the server.
   googleAdsCustomerId: text("google_ads_customer_id"), // digits only, e.g. 1234567890
   googleLoginCustomerId: text("google_login_customer_id"), // manager (MCC) account the store reaches it through, if any
@@ -853,6 +859,7 @@ export const orders = pgTable(
     confirmStatus: text("confirm_status"),
     shipError: text("ship_error"), // last automatic shipment booking error (website orders)
     shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
+    courierRef: text("courier_ref"), // the order's id in the courier's panel (e.g. Shiprocket order id)
     confirmAt: timestamp("confirm_at", { withTimezone: true }),
     waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery
@@ -1482,4 +1489,16 @@ export const teamActivity = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("team_activity_owner_idx").on(t.scope, t.ownerId, t.createdAt)],
+);
+
+/** What Growpefy last sent to a store's Meta catalog, per product variant (to send only what changed). */
+export const metaCatalogItems = pgTable(
+  "meta_catalog_items",
+  {
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    retailerId: text("retailer_id").notNull(),
+    hash: text("hash").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.storeId, t.retailerId] })],
 );

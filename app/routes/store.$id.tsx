@@ -36,6 +36,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   website: { title: "Domains", description: "Your own domain and the free Growpefy address.", icon: "globe", guide: "domains" },
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout", back: "checkout" },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
+  "meta-catalog": { title: "Facebook & Instagram", description: "Your products in Meta's catalog, kept up to date automatically.", icon: "ads" },
   logistics: { title: "Shipments", description: "Connect couriers to track shipments and unlock RTO Shield.", icon: "shipping", guide: "logistics" },
   funnel: { title: "Analytics", description: "Store visits, checkout conversion and orders.", icon: "chart", guide: "analytics" },
   "rto-shield": { title: "RTO Shield", description: "Block COD based on a customer's delivery history.", icon: "shield", guide: "rto-shield" },

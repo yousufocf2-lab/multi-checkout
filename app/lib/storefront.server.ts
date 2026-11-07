@@ -288,7 +288,7 @@ export async function loadCategories(ctx: ShopContext) {
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id)]);
   return {
-    shop: { name: ctx.store.name, slug: ctx.store.slug, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
+    shop: { name: ctx.store.name, slug: ctx.store.slug, meta_pixel: /^\d{5,20}$/.test(ctx.store.metaPixelId ?? "") ? ctx.store.metaPixelId : null, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
     routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart` },
     collections, pages: pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` })), preview: ctx.preview,
   };

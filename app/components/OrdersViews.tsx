@@ -17,7 +17,7 @@ export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
   shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; tip?: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
-  payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
+  payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; shipStatusRaw?: string | null; shipError?: string | null; courierRef?: string | null; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
   manualTags: string[]; tags: string[]; channel: string;
 };
 
@@ -289,7 +289,11 @@ function FulfillPill({ o }: { o: OrderRow }) {
   if (s === "rto" || s === "rto_transit") return <Pill tone="red" title={title}>{s === "rto" ? "Returned to origin" : "RTO in transit"}</Pill>;
   if (s === "returned") return <Pill tone="gray" title={title}>Returned</Pill>;
   if (s === "cancelled") return <Pill tone="gray" title={title}>Cancelled</Pill>;
-  if (o.awb || s) return <Pill tone="blue" title={title}>{(SHIP_STATUS_LABELS as Record<string, string>)[s ?? "in_transit"] ?? "Fulfilled"}</Pill>;
+  // The courier's own words for where it is now ("Out for delivery", "Pickup scheduled", "New in Shiprocket")
+  const live = o.shipStatusRaw ? o.shipStatusRaw.toLowerCase().replace(/(^|\s)\S/g, (m) => m.toUpperCase()).slice(0, 28) : null;
+  if (o.awb || s) return <Pill tone="blue" title={title}>{live ?? (SHIP_STATUS_LABELS as Record<string, string>)[s ?? "in_transit"] ?? "Fulfilled"}</Pill>;
+  if (o.courierRef) return <Pill tone="blue" title={title}>{live ?? `Sent to ${courier ?? "courier"}`}</Pill>;
+  if (o.shipError) return <Pill tone="red" title={o.shipError}>Courier error</Pill>;
   return <Pill tone="yellow">Unfulfilled</Pill>;
 }
 function FulfillmentStatusPill({ o }: { o: OrderRow }) {

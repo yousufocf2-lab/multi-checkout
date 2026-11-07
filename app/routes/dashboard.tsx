@@ -172,10 +172,11 @@ export default function DashboardLayout() {
     ] },
   ];
   const storeChannels: NavNode[] = [
-    { label: "Storefront", to: storeHref("themes"), icon: "stores", match: /\/(editor|themes|pages(\/\d+)?|reviews)$|next=(editor|themes|pages|reviews)\b/, show: storefront && may("online_store"), children: [
+    { label: "Storefront", to: storeHref("themes"), icon: "stores", match: /\/(editor|themes|pages(\/\d+)?|reviews|meta-catalog)$|next=(editor|themes|pages|reviews|meta-catalog)\b/, show: storefront && may("online_store"), children: [
       { label: "Themes", to: storeHref("themes"), match: /\/themes$|next=themes/, show: true },
       { label: "Site pages", to: storeHref("pages"), match: /\/pages(\/|$)|next=pages/, show: true },
       { label: "Product reviews", to: storeHref("reviews"), match: /\/reviews$|next=reviews/, show: true },
+      { label: "Facebook & Instagram", to: storeHref("meta-catalog"), match: /\/meta-catalog$|next=meta-catalog/, show: true },
     ] },
   ];
   // ---- store settings navigation ----
