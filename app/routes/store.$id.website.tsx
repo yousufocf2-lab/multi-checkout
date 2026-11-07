@@ -17,6 +17,7 @@ import { db, stores } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed, catalogStats } from "~/lib/catalog.server";
 import { env } from "~/lib/env.server";
+import { DomainGuide } from "~/components/DomainGuide";
 import { addHostname, cfConfigured, CONNECT_HOST, hostnameState, removeHostname } from "~/lib/cloudflare.server";
 
 /** "https://Brand.com/" -> "www.brand.com"; "shop.brand.com" stays as it is. Null when it isn't a domain. */
@@ -200,11 +201,27 @@ export default function Website() {
                 <CopyField label="Name / Host" value={domain.split(".").length > 2 ? domain.split(".").slice(0, -2).join(".") : "@"} />
                 <CopyField label="Value / Points to" value={target} />
               </div>
-              {domain.startsWith("www.") && <p className="text-[12.5px] text-ink-soft">Then turn on <b>forwarding</b> from {bare} to https://{domain} in the same place, so both addresses open your store. Delete any old A or CNAME records for www first.</p>}
-              <p className="text-[12.5px] text-ink-soft">It usually starts working within 30 minutes (sometimes a few hours). The secure lock (https) is added automatically. Refresh this page to check.</p>
-              {detail && <p className="text-[11.5px] text-ink-faint">Status: {detail}</p>}
+              <div className="border-t border-rule pt-4"><DomainGuide domain={domain} target={target} coming={detail} /></div>
             </div>
           )}
+        </Card>
+      )}
+
+      {site && live && domain && target && (
+        <Card title="Setup guide" description={`Connected. If ${bare} (without www) or the old website still opens, follow these steps.`}>
+          <details><summary className="cursor-pointer text-[13px] font-medium">Show steps for your domain provider</summary><div className="mt-4"><DomainGuide domain={domain} target={target} /></div></details>
+        </Card>
+      )}
+
+      {site && !domain && (
+        <Card title="How connecting your domain works">
+          <ol className="space-y-2 text-[13px]">
+            <li className="flex gap-2"><b className="w-5 shrink-0">1.</b><span>Click <b>Connect your domain</b> and type the address you own, e.g. www.yourbrand.com.</span></li>
+            <li className="flex gap-2"><b className="w-5 shrink-0">2.</b><span>Add <b>one CNAME record</b> where you bought it (GoDaddy, Hostinger, BigRock, Namecheap, Cloudflare…). We show the exact steps for each.</span></li>
+            <li className="flex gap-2"><b className="w-5 shrink-0">3.</b><span>Forward the address without www to the www one, so both open your store.</span></li>
+            <li className="flex gap-2"><b className="w-5 shrink-0">4.</b><span>Wait 10–30 minutes. The secure lock (https) is free and added for you.</span></li>
+          </ol>
+          <p className="mt-3 text-[12px] text-ink-faint">Tip: connect the www address (www.yourbrand.com). It's the most reliable way with every domain provider.</p>
         </Card>
       )}
 
