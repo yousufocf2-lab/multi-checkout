@@ -44,7 +44,7 @@ export async function productPage(ctx: ShopContext, handle: string, reviewSubmit
   return html(await renderPage(THEME, "product", {
     ...scope, template: "product", product,
     reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_submitted: reviewSubmitted,
-    page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/product/${handle}`),
+    page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/product/${product.handle || handle}`),
   }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }
 

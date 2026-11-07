@@ -2,7 +2,7 @@
 // layout + JSON templates listing sections, each section a Liquid file with a {% schema %} of settings).
 // Themes ship in app/themes/<name>; later a store's own copy (edited in "Edit code") will live in the database.
 import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelToken } from "liquidjs";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
 import { footerPages } from "./store-pages.server";
 import { renderCustomLiquid } from "./custom-liquid.server";
@@ -281,7 +281,13 @@ export async function loadProducts(ctx: ShopContext, opts: { category?: string; 
 }
 
 export async function loadProduct(ctx: ShopContext, handle: string) {
-  const [item] = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), eq(catalogItems.handle, handle), eq(catalogItems.status, "active"))).limit(1);
+  let [item] = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), eq(catalogItems.handle, handle), eq(catalogItems.status, "active"))).limit(1);
+  // Imported handles were cut to 80 characters; old Shopify/ad links still carry the full handle. Match the longest stored handle the link starts with.
+  if (!item && handle.length > 40) {
+    [item] = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), eq(catalogItems.status, "active"),
+      sql`length(${catalogItems.handle}) >= 40`, sql`${handle} like replace(replace(${catalogItems.handle}, '_', '\\_'), '%', '\\%') || '%'`))
+      .orderBy(sql`length(${catalogItems.handle}) desc`).limit(1);
+  }
   if (!item) return null;
   const vmap = await variantsFor([item.id]);
   return productDrop(ctx, item, vmap.get(item.id) ?? []);
