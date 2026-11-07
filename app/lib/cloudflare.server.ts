@@ -47,11 +47,32 @@ const WORKER_JS = `export default {
     headers.set("x-gp-ip", request.headers.get("cf-connecting-ip") || "");
     headers.delete("host");
     const target = new URL(url.pathname + url.search, env.ORIGIN);
+    // Files like /favicon.ico would come from Cloudflare's cache for growpefy.com: give them the store's own cache key
+    if (url.pathname === "/favicon.ico" || url.pathname === "/robots.txt" || url.pathname === "/sitemap.xml") target.searchParams.set("gph", url.hostname);
     const init = { method: request.method, headers, redirect: "manual" };
     if (request.method !== "GET" && request.method !== "HEAD") init.body = request.body;
     return fetch(target.toString(), init);
   },
 };`;
+
+/** Uploads the forwarding Worker (code below). Runs on every server start so Worker changes go live with the app. */
+async function deployWorker(account: string) {
+  const form = new FormData();
+  form.append("metadata", JSON.stringify({
+    main_module: "worker.js", compatibility_date: "2024-09-23",
+    bindings: [{ type: "plain_text", name: "ORIGIN", text: env.appUrl }, { type: "secret_text", name: "PROXY_KEY", text: process.env.CF_PROXY_KEY }],
+  }));
+  form.append("worker.js", new Blob([WORKER_JS], { type: "application/javascript+module" }), "worker.js");
+  await cf(`/accounts/${account}/workers/scripts/${WORKER}`, { method: "PUT", body: form });
+}
+
+let workerSynced = false;
+export async function syncWorker() {
+  if (workerSynced || !cfConfigured()) return;
+  workerSynced = true;
+  await deployWorker((await zone()).account);
+  console.log("[cloudflare] forwarding Worker updated");
+}
 
 /** One-time setup: connect.<zone> record, the forwarding Worker + its route, and the fallback origin. Safe to run again. */
 export async function setupCloudflare() {
@@ -68,14 +89,9 @@ export async function setupCloudflare() {
   steps.push(`DNS record ${name} ready`);
 
   // 2. The Worker that forwards store domains to the app
-  const form = new FormData();
-  form.append("metadata", JSON.stringify({
-    main_module: "worker.js", compatibility_date: "2024-09-23",
-    bindings: [{ type: "plain_text", name: "ORIGIN", text: env.appUrl }, { type: "secret_text", name: "PROXY_KEY", text: process.env.CF_PROXY_KEY }],
-  }));
-  form.append("worker.js", new Blob([WORKER_JS], { type: "application/javascript+module" }), "worker.js");
-  await cf(`/accounts/${z.account}/workers/scripts/${WORKER}`, { method: "PUT", body: form });
+  await deployWorker(z.account);
   steps.push("Forwarding Worker deployed");
+
 
   // 3. Run it for every proxied hostname in the zone (connect.* and every store's domain)
   const routes = await cf<{ id: string; pattern: string; script?: string }[]>(`/zones/${z.id}/workers/routes`);
