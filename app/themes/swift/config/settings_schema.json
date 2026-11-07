@@ -41,7 +41,8 @@
     { "id": "pdp_sticky_buy", "type": "checkbox", "label": "Sticky “Buy now” bar on phones", "default": true }
   ] },
   { "name": "Cart", "settings": [
-    { "id": "cart_after_add", "type": "select", "label": "After “Add to cart”", "default": "stay", "options": ["stay", "cart"] },
+    { "id": "cart_type", "type": "select", "label": "Cart opens as", "default": "drawer", "options": ["drawer", "page"] },
+    { "id": "cart_after_add", "type": "select", "label": "After “Add to cart”", "default": "drawer", "options": ["drawer", "stay", "cart"] },
     { "id": "cart_note", "type": "text", "label": "Line under the subtotal", "default": "Delivery and online-payment discount are shown at checkout." }
   ] },
   { "name": "Social media and WhatsApp", "settings": [

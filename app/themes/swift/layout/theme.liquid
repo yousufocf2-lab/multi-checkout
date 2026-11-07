@@ -41,7 +41,7 @@
   {% if settings.custom_css != blank %}<style>{{ settings.custom_css }}</style>{% endif %}
   {% if editor %}<style>[data-gp-section]{display:contents}[data-gp-section]>*{cursor:pointer}[data-gp-section]>*:hover{outline:1px dashed #2563eb;outline-offset:-1px}[data-gp-section].gp-hl>*{outline:2px solid #2563eb!important;outline-offset:-2px}</style>{% endif %}
 </head>
-<body data-shop="{{ shop.slug }}" data-root="{{ routes.base }}" data-after-add="{{ settings.cart_after_add | default: 'stay' }}">
+<body data-shop="{{ shop.slug }}" data-root="{{ routes.base }}" data-after-add="{{ settings.cart_after_add | default: 'drawer' }}" data-cart-type="{{ settings.cart_type | default: 'drawer' }}">
   {{ content_for_header_group }}
   <main id="main">{{ content_for_layout }}</main>
   {{ content_for_footer_group }}
@@ -50,6 +50,23 @@
     <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.4.6-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 .9c.3.1.5.2.5.3.1.2.1.7-.1 1.3z"/></svg>
   </a>
   {%- endif -%}
+  {%- unless settings.cart_type == 'page' -%}
+  <div class="drawer" data-drawer hidden>
+    <div class="drawer__shade" data-drawer-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer__head"><h2 id="drawer-title">Cart <span class="drawer__n" data-drawer-n></span></h2><button type="button" class="drawer__x" data-drawer-close aria-label="Close cart"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <div class="drawer__body"><div class="drawer__lines" data-lines></div>
+        <div class="drawer__empty" data-lines-empty hidden><p>Your cart is empty.</p><a href="{{ routes.all }}" class="btn btn--primary">Continue shopping</a></div>
+      </div>
+      <div class="drawer__foot" data-lines-summary hidden>
+        <div class="drawer__row"><span>Subtotal</span><b data-lines-subtotal></b></div>
+        {%- if settings.cart_note != blank -%}<p class="drawer__note">{{ settings.cart_note }}</p>{%- endif -%}
+        <button type="button" class="btn btn--primary btn--block" data-lines-checkout>Checkout</button>
+        <p class="drawer__note drawer__err" data-lines-error hidden></p>
+      </div>
+    </aside>
+  </div>
+  {%- endunless -%}
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script>{{ 'theme.js' | asset_content }}</script>
   {%- unless editor -%}
