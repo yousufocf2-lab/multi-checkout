@@ -16,8 +16,8 @@ import { checkoutRoot, isAppHost, requestHost, slugFromHost } from "~/lib/urls.s
 import { PLANS, feePct, rupeesLabel } from "~/lib/plans";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [
-  ...siteMeta("Growpefy · Checkout and store platform with COD & RTO control",
-    "One-page checkout for D2C brands in India with monthly plans, COD verification, RTO controls, payment gateways, prepaid offers and ads analytics.",
+  ...siteMeta("Growpefy · One workspace to run your commerce business",
+    "Build and publish your storefront, manage products and orders, and run payments, shipping, customer accounts and growth from Growpefy.",
     "/", { ld: [productLd, faqLd(FAQ)] }),
   ...verifyMeta(data?.verify),
 ];
@@ -36,7 +36,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
 const FAQ: [string, string][] = [
   ["How long does setup take?", "Most stores go live in an afternoon: add your payment gateway keys, set your COD and offer rules, and our team connects your store with you on a call."],
-  ["Can I keep my current website?", "Yes. Our team connects your existing store to the Growpefy checkout, and every order is created back in your store with items, discounts and stock. Growpefy Store, to run your whole website on Growpefy, is launching soon."],
+  ["Can I bring my existing store?", "Yes. You can connect supported sales channels and bring your catalog into Growpefy. You can also build and publish a storefront hosted on Growpefy."],
   ["Can I see my Meta and Google ads in Growpefy?", "Yes. Connect Meta Ads and Google Ads to see spend, cost per order and ROAS next to your real checkout orders, and which platform is working better. Purchases are sent back to Meta (Conversions API) and Google Ads so both can optimise."],
   ["Which payment gateways can I connect?", "PayU, Razorpay, Cashfree Payments, PhonePe, Paytm, Easebuzz and CCAvenue, using your own merchant account so money settles straight to your bank. You can connect up to three and choose the order: if the primary can't take a payment, the next one is used."],
   ["What does Growpefy charge?", "Plans start at ₹1,000 per month. Smart Checkout transaction fees and OTP or WhatsApp message usage are itemized on a monthly invoice, with 18% GST shown separately."],
@@ -54,7 +54,7 @@ export default function Home() {
       <ProofStrip />
       <Problem />
       <Pillars />
-      <Tour />
+      <PlatformSteps />
       <UseCases />
       <Integrations />
       <AdsBand />
@@ -83,7 +83,7 @@ export default function Home() {
 
       <OtherServices />
 
-      <CtaBand loggedIn={d.loggedIn} />
+      <CtaBand loggedIn={d.loggedIn} title="Build your next chapter on Growpefy." text="Bring your products, shape a storefront around your brand, and manage the work behind every order in one place." />
     </SiteLayout>
   );
 }
@@ -121,40 +121,65 @@ function OtherServices() {
 
 function Hero({ loggedIn }: { loggedIn: boolean }) {
   return (
-    <section className="relative overflow-hidden">
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(55%_50%_at_85%_10%,rgba(11,93,75,.12),transparent_70%),radial-gradient(40%_40%_at_70%_80%,rgba(45,212,150,.12),transparent_70%)]" />
+    <section className="relative isolate overflow-hidden bg-[#101820] text-white">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(48%_60%_at_88%_14%,rgba(74,222,183,.19),transparent_70%),radial-gradient(38%_55%_at_12%_90%,rgba(70,112,195,.20),transparent_72%)]" />
       <div aria-hidden className="pointer-events-none absolute inset-0 opacity-50 [background-image:linear-gradient(rgba(11,22,48,.045)_1px,transparent_1px),linear-gradient(90deg,rgba(11,22,48,.045)_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(70%_60%_at_60%_30%,#000,transparent)]" />
-      <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-16 pt-12 sm:px-6 sm:pt-20 lg:grid-cols-[1.02fr_1fr] lg:pb-24">
+      <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-4 pb-20 pt-14 sm:px-6 sm:pb-24 sm:pt-20 lg:grid-cols-[.88fr_1.12fr] lg:gap-10 lg:py-24">
         <div>
-          <p className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-pine-tint/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[.12em] text-pine-dark">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Checkout + COD risk, in one workspace
+          <p className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[.06] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.14em] text-emerald-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,.8)]" />The commerce workspace built for your next stage
           </p>
-          <h1 className="mt-5 text-[40px] font-semibold leading-[1.04] tracking-tight sm:text-[58px]">
-            Make every checkout decision <span className="relative whitespace-nowrap text-pine">work harder.<svg aria-hidden viewBox="0 0 300 12" className="absolute -bottom-1.5 left-0 h-2.5 w-full text-emerald-400" preserveAspectRatio="none"><path d="M2 9C60 3 140 2 298 7" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" /></svg></span>
+          <h1 className="mt-6 max-w-2xl text-[42px] font-semibold leading-[1.02] tracking-[-.045em] sm:text-[60px] lg:text-[66px]">
+            Your whole business. <span className="bg-gradient-to-r from-emerald-200 via-teal-200 to-sky-200 bg-clip-text text-transparent">Moving as one.</span>
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
-            Build a checkout that fits your store, offer smarter payment choices, and control COD risk, all from one platform.
+          <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg sm:leading-8">
+            Build your storefront, bring products to life, manage orders and delivery, and understand what is driving growth—all in one considered workspace.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link to={loggedIn ? "/dashboard" : "/signup"} className="btn-primary px-6 py-3.5 text-[15px]">{loggedIn ? "Go to dashboard" : "Get started"}<Icon name="arrow" className="nudge h-4 w-4" /></Link>
-            <a href="#how" className="btn-secondary px-6 py-3.5 text-[15px]">See how it works</a>
+            <Link to={loggedIn ? "/dashboard" : "/signup"} className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-[#101820] shadow-[0_12px_36px_-18px_rgba(255,255,255,.55)] transition hover:-translate-y-0.5 hover:bg-emerald-50">{loggedIn ? "Open your workspace" : "Start building"}<Icon name="arrow" className="nudge h-4 w-4" /></Link>
+            <a href="#platform" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/[.04] px-5 py-3.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/[.08]">Explore the platform</a>
           </div>
-          <div className="mt-8 border-t border-rule pt-5">
-            <p className="text-xs font-medium text-ink-faint">Built for growing ecommerce brands</p>
-            <ul className="mt-2.5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink-soft">
-              {[["rupee", `${GATEWAY_TILES.length} payment gateways`], ["shipping", `${API_COURIERS.length} courier APIs`], ["ads", "Meta + Google Ads analytics"]].map(([i, t]) => (
-                <li key={t} className="flex items-center gap-1.5"><Icon name={i as IconName} className="h-4 w-4 text-pine" />{t}</li>
+          <div className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-xs font-medium text-slate-300 sm:text-sm">
+              {[["stores", "Storefront & themes"], ["orders", "Orders & operations"], ["trend", "Growth insights"]].map(([i, t]) => (
+                <span key={t} className="flex items-center gap-2"><Icon name={i as IconName} className="h-4 w-4 text-emerald-200" />{t}</span>
               ))}
-            </ul>
           </div>
         </div>
-        <HeroVisual />
+        <WorkspaceVisual />
       </div>
     </section>
   );
 }
 
-/** Checkout preview in the middle with three connected panels: payments & offers, a COD rule, recovery & analytics. */
+/** A product mockup that introduces Growpefy as a complete commerce workspace. */
+function WorkspaceVisual() {
+  const rows = [["#GP-2841", "Aarav Mehta", "Paid", "Preparing", "₹2,490"], ["#GP-2840", "Isha Verma", "COD", "Ready to ship", "₹1,280"], ["#GP-2839", "Kabir Shah", "Paid", "Delivered", "₹3,750"]];
+  return <div className="relative mx-auto w-full max-w-[680px] lg:ml-auto" aria-label="Illustration of a Growpefy commerce workspace">
+    <div aria-hidden className="absolute -inset-8 rounded-[40px] bg-gradient-to-br from-emerald-300/20 via-sky-400/10 to-violet-400/15 blur-3xl" />
+    <div className="relative overflow-hidden rounded-[22px] border border-white/15 bg-[#f7f8fa] p-1.5 shadow-[0_40px_100px_-38px_rgba(0,0,0,.8)] transition-transform duration-700 hover:-translate-y-1 sm:rounded-[28px] sm:p-2">
+      <div className="overflow-hidden rounded-[17px] border border-slate-200 bg-white sm:rounded-[21px]">
+        <div className="flex h-12 items-center justify-between border-b border-slate-200 px-4 sm:h-14 sm:px-5">
+          <div className="flex items-center gap-2"><img src="/brand/growpefy-icon.svg" alt="" className="h-6 w-6" /><span className="text-xs font-bold tracking-tight text-slate-800 sm:text-sm">Growpefy</span><span className="ml-2 hidden rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500 sm:inline">Store workspace</span></div>
+          <div className="flex items-center gap-2"><span className="hidden rounded-full border border-slate-200 px-2.5 py-1 text-[10px] font-medium text-slate-500 sm:inline">Last 30 days</span><span className="h-7 w-7 rounded-full bg-gradient-to-br from-slate-700 to-slate-500" /></div>
+        </div>
+        <div className="grid min-h-[330px] grid-cols-[92px_1fr] sm:min-h-[390px] sm:grid-cols-[144px_1fr]">
+          <aside className="space-y-1 border-r border-slate-200 bg-[#fafbfc] p-2 sm:p-3">{["Overview", "Orders", "Products", "Online store", "Customers", "Marketing", "Analytics"].map((item, n) => <div key={item} className={`flex items-center gap-2 rounded-lg px-2 py-2 text-[9px] font-medium sm:px-2.5 sm:text-[11px] ${n === 1 ? "bg-slate-900 text-white shadow-sm" : "text-slate-500"}`}><span className={`h-1.5 w-1.5 rounded-full ${n === 1 ? "bg-emerald-300" : "bg-slate-300"}`} />{item}</div>)}</aside>
+          <div className="min-w-0 p-3 sm:p-5">
+            <div className="flex items-start justify-between gap-2"><div><p className="text-[9px] font-semibold uppercase tracking-[.13em] text-slate-400 sm:text-[10px]">Store overview</p><p className="mt-1 text-base font-semibold tracking-tight text-slate-900 sm:text-xl">Good morning, Amir</p></div><span className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-[9px] font-semibold text-white sm:text-[10px]">View store</span></div>
+            <div className="mt-4 grid grid-cols-3 gap-2 sm:mt-5 sm:gap-3">{[["Orders", "1,284", "+12.8%"], ["Revenue", "₹8.42L", "+8.4%"], ["Visitors", "24.6K", "+18.2%"]].map(([label, value, change]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3.5"><p className="text-[8px] font-medium text-slate-400 sm:text-[10px]">{label}</p><p className="mt-1 text-sm font-semibold tracking-tight text-slate-900 sm:text-lg">{value}</p><p className="mt-1 text-[8px] font-medium text-emerald-700 sm:text-[9px]">↗ {change}</p></div>)}</div>
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 sm:mt-4 sm:p-4"><div className="flex items-center justify-between"><div><p className="text-[10px] font-semibold text-slate-800 sm:text-xs">Recent orders</p><p className="mt-0.5 text-[8px] text-slate-400 sm:text-[9px]">Your sales, from one clear view</p></div><span className="text-[8px] font-semibold text-slate-500 sm:text-[9px]">View all →</span></div>
+              <div className="mt-3 space-y-2">{rows.map((row) => <div key={row[0]} className="grid grid-cols-[1fr_auto] items-center gap-1 border-t border-slate-100 pt-2 text-[8px] sm:grid-cols-[1fr_1.1fr_.7fr_1fr_auto] sm:text-[9px]"><span className="font-semibold text-slate-700">{row[0]}<span className="ml-2 font-normal text-slate-400 sm:hidden">{row[1]}</span></span><span className="hidden text-slate-500 sm:block">{row[1]}</span><span className="hidden w-fit rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 sm:block">{row[2]}</span><span className="hidden text-slate-500 sm:block">{row[3]}</span><span className="text-right font-semibold text-slate-800">{row[4]}</span></div>)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div className="seq absolute -bottom-5 -left-2 rounded-2xl border border-white/20 bg-white p-3 text-slate-900 shadow-[0_20px_45px_-22px_rgba(0,0,0,.65)] sm:-left-7 sm:p-4" style={{ "--d": "250ms" } as React.CSSProperties}><p className="flex items-center gap-2 text-[10px] font-semibold sm:text-xs"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-50 text-sky-700"><Icon name="design" className="h-4 w-4" /></span>Storefront is ready to publish</p><p className="mt-1 pl-9 text-[9px] text-slate-500 sm:text-[10px]">Your brand, your storefront</p></div>
+    <div className="seq absolute -right-1 top-14 rounded-2xl border border-white/20 bg-white p-3 text-slate-900 shadow-[0_20px_45px_-22px_rgba(0,0,0,.65)] sm:-right-5 sm:top-20 sm:p-4" style={{ "--d": "500ms" } as React.CSSProperties}><p className="flex items-center gap-2 text-[10px] font-semibold sm:text-xs"><span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,.5)]" />Orders keep moving</p><p className="mt-1 pl-4 text-[9px] text-slate-500 sm:text-[10px]">Payments · shipping · updates</p></div>
+  </div>;
+}
+
+/** Legacy checkout illustration retained for the feature tour below. */
 function HeroVisual() {
   return (
     <div className="relative mx-auto w-full max-w-[460px] pb-6 lg:max-w-none" aria-hidden>
@@ -251,15 +276,15 @@ function ProofStrip() {
 
 function Problem() {
   const items: [IconName, string, string][] = [
-    ["cart", "Checkout friction", "Long forms and slow pages lose customers who were ready to buy, especially on mobile."],
-    ["alert", "COD uncertainty", "Fake orders and refused parcels eat margin, but turning COD off loses real buyers too."],
-    ["layers", "Disconnected tools", "Offers in one app, OTP in another, courier data in a spreadsheet. Nothing talks to each other."],
-    ["eye", "Weak visibility", "Hard to see which payment option, offer or ad actually brought a profitable order."],
+    ["design", "A storefront that feels like you", "Choose a ready-made starting point and shape your pages around your brand and products."],
+    ["box", "Products in their place", "Organise your catalog, collections, pricing and inventory from a workspace built for daily work."],
+    ["orders", "Orders with a clear next step", "Keep payment, fulfilment and delivery details together, so teams know what needs attention."],
+    ["trend", "A view of the whole journey", "Bring store activity, customer interactions and growth signals into a connected picture."],
   ];
   return (
     <section>
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
-        <SectionHead eyebrow="The problem" title="Where ecommerce orders quietly leak" text="Most stores lose money between 'Buy now' and 'Delivered', and the fixes are spread across too many tools." />
+        <SectionHead eyebrow="Built for the full journey" title="The everyday work behind every sale" text="A storefront is just the beginning. Your catalog, customer experience and fulfilment all need to work together as your business grows." />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {items.map(([icon, t, x], i) => (
             <div key={t} className="spot group rounded-2xl border border-rule bg-white p-6" {...rv(i)}>
@@ -279,28 +304,28 @@ function Problem() {
 function Pillars() {
   const pillars: { icon: IconName; tone: "blue" | "mint" | "violet"; name: string; title: string; text: string; points: string[]; visual: React.ReactNode }[] = [
     {
-      icon: "design", tone: "blue", name: "Checkout Builder", title: "A checkout that looks like your brand",
-      text: "One fast page from Buy Now or the cart, with your logo, colors and fonts.",
-      points: ["Mobile-first, phone number first", "Saved addresses behind OTP", "Coupons, bank offers and free gifts", "Prepaid, COD and partial COD"],
+      icon: "design", tone: "blue", name: "Storefront studio", title: "Build a storefront around your brand",
+      text: "Start with Growpefy themes, shape your pages and publish a store that feels distinctly yours.",
+      points: ["Theme and page editing", "Desktop and mobile layouts", "Products, collections and content", "Your storefront, ready to publish"],
       visual: <MiniCheckout />,
     },
     {
-      icon: "shield", tone: "mint", name: "COD Protection", title: "Keep COD for real buyers",
-      text: "Rules you set decide who sees COD, using order history and courier data.",
-      points: ["OTP before COD orders", "Block lists by phone, pincode, city or state", "Courier delivery history (RTO Shield)", "WhatsApp order confirmation"],
+      icon: "orders", tone: "mint", name: "Store operations", title: "Keep every order moving",
+      text: "Bring the work around each sale into one practical place, from payment to fulfilment.",
+      points: ["Orders, customers and inventory", "Payment and fulfilment status", "Shipping integrations and tracking", "Customer accounts and order history"],
       visual: <MiniRule />,
     },
     {
-      icon: "trend", tone: "violet", name: "Analytics & Recovery", title: "See what's working, win back carts",
-      text: "Orders, abandoned checkouts and ad spend in one dashboard for every store.",
-      points: ["Abandoned checkout recovery on WhatsApp", "Meta ads ROAS and cost per order", "Courier performance: delivered vs RTO", "Compare stores side by side"],
+      icon: "trend", tone: "violet", name: "Growth & insight", title: "Make decisions with more context",
+      text: "Understand activity across your storefront and operations, then connect the tools that help you grow.",
+      points: ["Store traffic and sales analytics", "Discounts, coupons and customer reviews", "Meta and Google Ads connections", "WhatsApp and recovery workflows"],
       visual: <MiniChart />,
     },
   ];
   return (
     <section id="platform" className="scroll-mt-20 border-t border-rule bg-gradient-to-b from-paper/70 to-white">
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
-        <SectionHead eyebrow="The platform" title="More control from checkout to delivery" text="Configure checkout experiences, payment incentives, COD verification and order-risk rules without juggling disconnected tools." />
+        <SectionHead eyebrow="One connected workspace" title="From storefront to fulfilled order" text="A flexible commerce platform for the work around your business: publish your site, manage your catalog, serve customers and keep orders moving." />
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
           {pillars.map((p, i) => (
             <article key={p.name} className="spot group flex flex-col overflow-hidden rounded-2xl border border-rule bg-white" {...rv(i)}>
@@ -325,8 +350,8 @@ function MiniCheckout() {
   return (
     <div aria-hidden className="absolute left-1/2 top-6 w-[220px] -translate-x-1/2 rounded-2xl border border-rule bg-white p-3 shadow-lift transition-transform duration-500 group-hover:-translate-y-1.5">
       <div className="flex items-center gap-2 rounded-lg border-2 border-pine px-2 py-1.5"><Icon name="phone" className="h-3.5 w-3.5 text-ink-faint" /><span className="num text-xs font-semibold">+91 98••• •••21</span><Icon name="check" className="ml-auto h-3.5 w-3.5 text-emerald-600" strokeWidth={2.4} /></div>
-      <div className="mt-2 rounded-lg bg-paper px-2 py-1.5 text-[10px] text-ink-soft"><span className="font-semibold text-ink">Home</span> · Sector 21, Gurugram</div>
-      <div className="mt-2 rounded-lg bg-pine py-1.5 text-center text-[11px] font-semibold text-white">Continue</div>
+      <div className="mt-2 rounded-lg bg-paper px-2 py-1.5 text-[10px] text-ink-soft"><span className="font-semibold text-ink">Featured collection</span> · New season</div>
+      <div className="mt-2 rounded-lg bg-pine py-1.5 text-center text-[11px] font-semibold text-white">Explore products</div>
     </div>
   );
 }
@@ -342,7 +367,7 @@ function MiniRule() {
 function MiniChart() {
   return (
     <div aria-hidden className="absolute inset-x-6 top-6 rounded-2xl border border-rule bg-white p-3 shadow-lift transition-transform duration-500 group-hover:-translate-y-1.5">
-      <div className="flex justify-between text-[10px] text-ink-faint"><span>Recovered checkouts</span><span className="font-semibold text-emerald-600">this week</span></div>
+      <div className="flex justify-between text-[10px] text-ink-faint"><span>Store activity</span><span className="font-semibold text-emerald-600">Illustrative</span></div>
       <svg viewBox="0 0 200 60" className="mt-2 h-20 w-full">
         <defs><linearGradient id="mc" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#0B5D4B" stopOpacity=".25" /><stop offset="1" stopColor="#0B5D4B" stopOpacity="0" /></linearGradient></defs>
         <path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 10 L200 60 L0 60Z" fill="url(#mc)" />
@@ -355,11 +380,33 @@ function MiniChart() {
 // ---------------- 05 Walkthrough ----------------
 
 const TOUR: { icon: IconName; title: string; text: string; pane: () => JSX.Element }[] = [
-  { icon: "stores", title: "Connect your store", text: "Sign up and our team connects your store with you. Products, prices and stock stay where they are.", pane: PaneConnect },
-  { icon: "rupee", title: "Add payments & gateways", text: "Add up to three gateways in priority order and set prepaid discounts and COD charges.", pane: PaneGateways },
-  { icon: "shield", title: "Set COD & offer rules", text: "OTP, block lists, courier-based COD rules, coupons, bank offers and free gifts.", pane: PaneRules },
-  { icon: "zap", title: "Go live", text: "Switch it on. Checkout opens Growpefy and every order lands back in your store.", pane: PaneLive },
+  { icon: "design", title: "Shape your storefront", text: "Choose a theme and create a store experience that carries your brand across every page.", pane: PaneConnect },
+  { icon: "box", title: "Bring in your products", text: "Build your catalog and collections so shoppers can find what they came for.", pane: PaneGateways },
+  { icon: "settings", title: "Set up how you sell", text: "Connect payments, shipping and customer workflows to fit your operating needs.", pane: PaneRules },
+  { icon: "zap", title: "Publish and keep moving", text: "Launch your storefront, then manage new orders and customers from one workspace.", pane: PaneLive },
 ];
+function PlatformSteps() {
+  const steps: [IconName, string, string, string][] = [
+    ["design", "Create your storefront", "Choose a theme, shape your pages and bring your brand online.", "Theme studio"],
+    ["box", "Build your catalog", "Add products, organize collections and keep inventory in view.", "Products · Collections"],
+    ["orders", "Run the day-to-day", "Manage orders, payments, fulfilment and customer updates together.", "Orders · Shipping · Customers"],
+  ];
+  return <section id="how" className="scroll-mt-20 overflow-hidden bg-[#101820] text-white">
+    <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-24">
+      <div aria-hidden className="pointer-events-none absolute -right-24 top-0 h-96 w-96 rounded-full bg-sky-400/10 blur-3xl" />
+      <SectionHead dark eyebrow="A clear path to launch" title="Start with a store. Grow into a system." text="Move from the first storefront draft to the daily work of running a growing commerce business." />
+      <div className="relative mt-12 grid gap-4 md:grid-cols-3">
+        {steps.map(([icon, title, text, label], i) => <article key={title} className="seq group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[.045] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[.075]" style={{ "--d": `${i * 120}ms` } as React.CSSProperties}>
+          <div className="flex items-center justify-between"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10 text-emerald-200"><Icon name={icon} className="h-5 w-5" /></span><span className="text-[10px] font-semibold uppercase tracking-[.14em] text-slate-500">0{i + 1}</span></div>
+          <h3 className="mt-8 text-lg font-semibold tracking-tight">{title}</h3><p className="mt-2 min-h-12 text-sm leading-relaxed text-slate-300">{text}</p>
+          <div className="mt-6 flex items-center gap-2 rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-[10px] font-medium text-slate-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />{label}<Icon name="arrow" className="ml-auto h-3.5 w-3.5" /></div>
+          {i < steps.length - 1 && <span aria-hidden className="absolute -right-3 top-1/2 z-10 hidden h-px w-6 bg-gradient-to-r from-emerald-300/60 to-transparent md:block" />}
+        </article>)}
+      </div>
+    </div>
+  </section>;
+}
+
 const STEP_MS = 6000;
 
 function Tour() {
@@ -386,7 +433,7 @@ function Tour() {
     <section id="how" className="scroll-mt-20 bg-[#0B1A16] text-white">
       <div className="relative mx-auto max-w-6xl overflow-hidden px-4 py-20 sm:px-6 sm:py-24">
         <div aria-hidden className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-pine-tint0/20 blur-3xl" />
-        <SectionHead dark eyebrow="How it works" title="Live in an afternoon, in four steps" text="A guided setup in the dashboard walks you through each step. Our team can join you on a call." />
+        <SectionHead dark eyebrow="A clear path to launch" title="Set up your store, step by step" text="Create your storefront, add your catalog, connect the tools you need and publish when you are ready." />
         <div ref={box} className="relative mt-12 grid gap-6 lg:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}>
           <div role="tablist" aria-label="Setup steps" className="space-y-2">
             {TOUR.map((s, n) => {
@@ -428,15 +475,15 @@ function Browser({ children, title }: { children: React.ReactNode; title: string
 }
 function PaneConnect() {
   return (
-    <Browser title="growpefy.com/dashboard/stores/new">
-      <p className="text-sm font-semibold">Connect your store</p>
+    <Browser title="Growpefy · Store setup">
+      <p className="text-sm font-semibold">Create your storefront</p>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-xl border border-pine bg-pine-tint p-3 text-pine"><Icon name="globe" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Your website</p><p className="text-[10px] font-semibold">Live</p></div>
-        <div className="rounded-xl border border-rule p-3 text-ink-faint"><Icon name="stores" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Growpefy Store</p><p className="text-[10px]">Soon</p></div>
-        <div className="rounded-xl border border-rule p-3 text-ink-faint"><Icon name="phone" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Mobile app</p><p className="text-[10px]">Soon</p></div>
+        <div className="rounded-xl border border-pine bg-pine-tint p-3 text-pine"><Icon name="design" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Choose a theme</p><p className="text-[10px] font-semibold">Your brand</p></div>
+        <div className="rounded-xl border border-rule p-3 text-ink-faint"><Icon name="box" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Add products</p><p className="text-[10px]">Your catalog</p></div>
+        <div className="rounded-xl border border-rule p-3 text-ink-faint"><Icon name="globe" className="mx-auto h-5 w-5" /><p className="mt-1 font-semibold">Connect domain</p><p className="text-[10px]">When ready</p></div>
       </div>
-      <div className="mt-3 rounded-lg border border-rule px-3 py-2 text-xs text-ink-soft">yourbrand.com</div>
-      <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"><Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />Products and stock read live from your store</div>
+      <div className="mt-3 rounded-lg border border-rule px-3 py-2 text-xs text-ink-soft">yourbrand.growpefy.com</div>
+      <div className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"><Icon name="check" className="h-3.5 w-3.5" strokeWidth={2.4} />A storefront you can make your own</div>
     </Browser>
   );
 }
@@ -490,15 +537,15 @@ function PaneLive() {
 
 function UseCases() {
   const items: [IconName, string, string][] = [
-    ["sparkle", "New online store", "Launch with a polished checkout, prepaid offers and OTP from day one, without stitching apps together."],
-    ["shield", "High-COD store", "Keep COD open for genuine buyers while OTP, block lists and courier history filter out repeat refusers."],
-    ["stores", "Multi-store operator", "Run several stores from one login with one view of orders, wallets and ad performance."],
-    ["trend", "Growing D2C brand", "Add backup gateways, recover abandoned checkouts and see cost per order as you scale ad spend."],
+    ["sparkle", "Launching a new brand", "Create a polished storefront, add your first products and get the basics of selling in one place."],
+    ["box", "Growing product range", "Organise products and collections, update your catalog and shape the shopping experience around them."],
+    ["stores", "A team running daily orders", "Keep orders, customers, fulfilment and shipping activity visible to the people who need it."],
+    ["trend", "A brand ready to scale", "Connect sales channels and growth tools as your business and operating needs expand."],
   ];
   return (
     <section>
       <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-24">
-        <SectionHead eyebrow="Use cases" title="Built around the way your store operates" text="From payment-method rules and promotional offers to courier signals and multi-store visibility, set up a workflow that fits your business." />
+        <SectionHead eyebrow="Who it is for" title="A workspace for every stage of commerce" text="Bring together the tools and daily workflows your business needs, with room to grow as your operations evolve." />
         <div className="mt-12 grid gap-4 sm:grid-cols-2">
           {items.map(([icon, t, x], i) => (
             <div key={t} className="spot group flex gap-5 rounded-2xl border border-rule bg-white p-6" {...rv(i)}>

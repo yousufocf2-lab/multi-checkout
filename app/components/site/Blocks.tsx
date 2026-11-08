@@ -25,7 +25,7 @@ export function IconTile({ icon, tone = "blue", className = "" }: { icon: IconNa
   return <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-300 group-hover:scale-110 ${t} ${className}`}><Icon name={icon} className="h-5 w-5" /></span>;
 }
 
-export function CtaBand({ loggedIn, title = "Ready to improve your checkout workflow?", text = "Explore Growpefy and see how the tools fit your store. Set up takes an afternoon, and our team helps you go live." }: { loggedIn: boolean; title?: string; text?: string }) {
+export function CtaBand({ loggedIn, title = "Ready to build your store on Growpefy?", text = "Create a storefront that fits your brand and bring the work behind every order into one place." }: { loggedIn: boolean; title?: string; text?: string }) {
   return (
     <section className="px-4 pb-20 sm:px-6">
       <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-[#0B1A16] px-6 py-14 text-center text-white sm:px-12 sm:py-16" {...rv()}>

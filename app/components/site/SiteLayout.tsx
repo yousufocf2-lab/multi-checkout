@@ -39,13 +39,13 @@ export const crumbLd = (name: string, path: string): Ld => ({
 /** The product itself (homepage and pricing). */
 export const productLd: Ld = {
   "@context": "https://schema.org", "@type": "SoftwareApplication", name: "Growpefy",
-  applicationCategory: "BusinessApplication", applicationSubCategory: "Ecommerce checkout",
+  applicationCategory: "BusinessApplication", applicationSubCategory: "Commerce platform",
   operatingSystem: "Web", url: SITE_URL, image: `${SITE_URL}/brand/og-image.jpg`, publisher: { "@id": ORG_ID },
-  description: "One-page checkout for D2C brands with COD and RTO controls, up to three payment gateways with automatic backup, offers, abandoned cart recovery and Meta and Google ads analytics.",
+  description: "A commerce workspace to build and publish storefronts, manage products and orders, and connect payments, shipping and growth tools.",
   offers: { "@type": "Offer", price: "1000", priceCurrency: "INR", description: "Growpefy plans start at ₹1,000 per month, plus transaction and messaging usage and applicable GST." },
   featureList: [
-    "One-page checkout", "COD verification with OTP", "RTO Shield using courier history", "Up to 3 payment gateways with automatic backup",
-    "Prepaid discounts, partial COD, coupons and bank offers", "Abandoned checkout recovery on WhatsApp", "Meta and Google ads analytics", "Multi-store dashboard",
+    "Storefront themes and page editing", "Product catalog and collections", "Orders, inventory and customer accounts", "Payments and shipping integrations",
+    "Discounts, coupons and customer reviews", "WhatsApp workflows", "Meta and Google ads connections", "Store analytics",
   ],
 };
 
@@ -65,7 +65,7 @@ export function siteMeta(title: string, description: string, path = "/", opts: {
     { property: "og:image", content: image },
     { property: "og:image:width", content: "1200" },
     { property: "og:image:height", content: "630" },
-    { property: "og:image:alt", content: "Growpefy: checkout and COD risk management for ecommerce brands" },
+    { property: "og:image:alt", content: "Growpefy: a commerce workspace for storefronts, products and orders" },
     { name: "twitter:card", content: "summary_large_image" },
     { name: "twitter:title", content: title },
     { name: "twitter:description", content: description },
@@ -87,7 +87,7 @@ export function verifyMeta(v: { google?: string | null; bing?: string | null } |
 export const rv = (i = 0) => ({ "data-reveal": "", style: { "--d": `${Math.min(i, 8) * 70}ms` } as React.CSSProperties });
 
 const NAV = [
-  { to: "/#platform", label: "Product" },
+  { to: "/#platform", label: "Platform" },
   { to: "/#integrations", label: "Integrations" },
   { to: "/pricing", label: "Pricing" },
   { to: "/services", label: "Services" },
@@ -183,7 +183,7 @@ export function SiteLayout({ loggedIn, company, children }: { loggedIn: boolean;
         <div className="relative mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div>
             <BrandLockup tone="light" className="h-8" />
-            <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">Checkout, payment choices and COD risk controls for growing ecommerce brands, in one workspace.</p>
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-slate-400">A commerce workspace to build your storefront, manage operations and grow your business.</p>
             <a href={`mailto:${SUPPORT_EMAIL}`} className="group mt-5 inline-flex items-center gap-2 text-sm font-medium text-white">
               <Icon name="mail" className="h-4 w-4 text-emerald-300" />{SUPPORT_EMAIL}<Icon name="arrow" className="nudge h-3.5 w-3.5 text-slate-400" />
             </a>
