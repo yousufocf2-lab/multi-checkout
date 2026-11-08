@@ -25,6 +25,9 @@ export default defineConfig(({ command }) => ({
           route("/apps/growpefy/c/:sessionId", "routes/c.$sessionId.tsx", { id: "proxy-checkout" });
           route("/apps/growpefy/order/:orderId", "routes/order.$orderId.tsx", { id: "proxy-order" });
           route("/apps/growpefy/api/pincode/:pin", "routes/api.pincode.$pin.ts", { id: "proxy-pincode" });
+          // A store that moved off Shopify keeps /apps/growpefy links on its own domain (now served by Growpefy directly)
+          route("/apps/growpefy/pay/:orderId", "routes/pay.$orderId.tsx", { id: "own-pay" });
+          route("/apps/growpefy/pg/:gateway/return", "routes/pg.$gateway.return.ts", { id: "own-pg-return" });
         }),
     }),
     tsconfigPaths(),

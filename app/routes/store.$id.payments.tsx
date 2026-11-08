@@ -13,7 +13,7 @@ import { Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { GATEWAYS } from "~/lib/gateways/catalog";
-import { onlineReady } from "~/lib/gateways/index.server";
+import { onlineReady, ownSiteHost } from "~/lib/gateways/index.server";
 import { METHOD_LABEL, resolvePaymentMethods, type PayMethod } from "~/lib/payment-methods";
 import { storePath } from "~/lib/store-code";
 import { parseGateways } from "~/lib/store-form.server";
@@ -27,7 +27,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const pm = resolvePaymentMethods(store.paymentMethods, store);
   return json({
     storeId: store.id, smart: store.smartCheckout, online: onlineReady(store), platform: store.platform,
-    storefrontUrl: store.storefrontUrl, payuViaStorefront: store.payuViaStorefront,
+    storefrontUrl: store.storefrontUrl, payuViaStorefront: store.payuViaStorefront, ownSite: ownSiteHost(store),
     gateways: view.gatewayViews, webhookBase: view.webhookBase,
     methods: { prepaid: pm.prepaid.on, cod: pm.cod.on, partial: pm.partial.on },
     supported: GATEWAYS.map((g) => g.name),
@@ -93,7 +93,12 @@ export default function Payments() {
         action={<span className={`shrink-0 whitespace-nowrap rounded-md px-1.5 py-px text-[11.5px] font-medium ${d.online ? "bg-[#cdfee1] text-[#0c5132]" : "bg-[#fff1e3] text-[#5e4200]"}`}>{d.online ? "Taking online payments" : "Not connected"}</span>}>
         <Form method="post" className="space-y-3">
           <GatewaysEditor initial={d.gateways} errors={(a?.errors ?? {}) as Record<string, string>} webhookBase={d.webhookBase} />
-          {d.platform === "shopify" && (
+          {d.ownSite ? (
+            <p className="flex items-start gap-2 rounded-lg bg-[#f1f8f5] px-3 py-2.5 text-[12.5px] text-ink-soft shadow-[inset_0_0_0_1px_#d5ebe1]">
+              <Icon name="globe" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pine" />
+              <span>Payments start from <b className="font-medium text-ink">{d.ownSite}</b>. In your gateway account, the registered website should be <b className="font-medium text-ink">https://{d.ownSite}</b>.</span>
+            </p>
+          ) : d.platform === "shopify" && (
             <label className="flex cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2.5 shadow-[inset_0_0_0_1px_#ebebeb]">
               <input type="checkbox" name="payuViaStorefront" defaultChecked={d.payuViaStorefront} className="mt-0.5 h-4 w-4" />
               <span className="text-[13px]"><b className="font-medium">Start payments from your own website</b>

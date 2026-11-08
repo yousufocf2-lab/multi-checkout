@@ -26,6 +26,14 @@ export const ADAPTERS: Record<string, GatewayAdapter> = { payu, cashfree, razorp
 export const PROXY_PATH = "/apps/growpefy";
 export const proxyBase = (store: Pick<Store, "storefrontUrl">) => `${store.storefrontUrl.replace(/\/+$/, "")}${PROXY_PATH}`;
 
+type SiteFields = Pick<Store, "storefrontEnabled" | "storefrontDomain" | "storefrontDomainStatus">;
+/**
+ * The store's own domain when its website runs on Growpefy Store and the domain is live (www.brand.com).
+ * Payments start there, so gateways that only accept the registered website (PayU, Cashfree, CCAvenue) see the brand's domain.
+ */
+export const ownSiteHost = (store: SiteFields) =>
+  store.storefrontEnabled && store.storefrontDomainStatus === "live" && store.storefrontDomain ? store.storefrontDomain.toLowerCase() : null;
+
 /** The store's gateways in priority order (stores from before gateways existed use their PayU keys). */
 export function storeGateways(store: Pick<Store, "gateways" | "payuKey" | "payuSalt" | "payuMode">): StoreGateway[] {
   const list = (store.gateways ?? []).filter((g) => ADAPTERS[g.id]).slice(0, MAX_GATEWAYS);
@@ -45,8 +53,11 @@ export const onlineReady = (store: Parameters<typeof storeGateways>[0]) => activ
 export const primaryGatewayName = (store: Parameters<typeof storeGateways>[0]) => gatewayById(activeGateways(store)[0]?.id)?.short ?? null;
 
 /** Where the customer goes to pay: the store's own website when that's switched on, else the checkout domain. */
-export const payUrl = (store: Pick<Store, "storefrontUrl" | "payuViaStorefront">, orderId: string, retry = false) =>
-  `${store.payuViaStorefront ? `${proxyBase(store)}/pay/${orderId}` : `/pay/${orderId}`}${retry ? "?retry=1" : ""}`;
+export const payUrl = (store: Pick<Store, "storefrontUrl" | "payuViaStorefront"> & SiteFields, orderId: string, retry = false) => {
+  const own = ownSiteHost(store);
+  const at = own ? `https://${own}/pay/${orderId}` : store.payuViaStorefront ? `${proxyBase(store)}/pay/${orderId}` : `/pay/${orderId}`;
+  return `${at}${retry ? "?retry=1" : ""}`;
+};
 
 /** Each try gets its own id; the first try uses the order id (max 22 chars, fits every gateway). */
 const newTxn = (order: Order) => (order.payAttempts.length ? `${order.id}N${crypto.randomBytes(3).toString("hex").toUpperCase().slice(0, 5)}` : order.id);
@@ -290,6 +301,7 @@ export async function handleWebhook(gatewayId: string, body: Record<string, unkn
 /** Back to the checkout or order page on the store's own host. */
 /** Thank-you page: on the store's domain when the order was placed there (App Proxy), else the store's Growpefy address. */
 export const orderPageUrl = (store: Store, order: Order) =>
-  order.tracking?.proxyOrigin ? `${order.tracking.proxyOrigin}${PROXY_PATH}/order/${order.id}` : `${storeBaseUrl(store)}/order/${order.id}`;
+  order.tracking?.proxyOrigin ? `${order.tracking.proxyOrigin}${PROXY_PATH}/order/${order.id}`
+    : `${ownSiteHost(store) ? `https://${ownSiteHost(store)}` : storeBaseUrl(store)}/order/${order.id}`;
 
 
