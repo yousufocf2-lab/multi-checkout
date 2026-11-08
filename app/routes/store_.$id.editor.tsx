@@ -725,7 +725,7 @@ function MediaField({ id, s, value, onChange, storeId }: { id: string; s: Settin
   const upload = async (f: File) => {
     setBusy(true); setErr(null);
     try {
-      const r = await fetch(`${storePath(storeId)}/media`, { method: "POST", headers: { "Content-Type": f.type }, body: f });
+      const r = await fetch(`${storePath(storeId)}/media`, { method: "POST", headers: { "Content-Type": f.type, "X-File-Name": encodeURIComponent(f.name) }, body: f });
       const j = await r.json();
       if (!r.ok || !j.url) throw new Error(j.error ?? "Upload failed");
       onChange(j.url);

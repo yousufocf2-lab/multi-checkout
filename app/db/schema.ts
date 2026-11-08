@@ -240,6 +240,7 @@ export const stores = pgTable("stores", {
   wooSecret: text("woo_secret"),
   // Branding
   logoUrl: text("logo_url"),
+  filesSyncedAt: timestamp("files_synced_at", { withTimezone: true }), // Files library filled from the media bucket once
   primaryColor: text("primary_color").notNull().default("#111827"),
   supportPhone: text("support_phone"),
   theme: jsonb("theme").$type<Partial<CheckoutTheme>>().notNull().default({}), // checkout design, see lib/theme.ts
@@ -1574,3 +1575,25 @@ export const customerOtps = pgTable(
   },
   (t) => [index("customer_otps_target_idx").on(t.storeId, t.target, t.createdAt)],
 );
+
+/** Files library: every photo, video and document a store uploaded (the file itself is in the media bucket). */
+export const storeFiles = pgTable(
+  "store_files",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    key: text("key").notNull().unique(), // bucket key: stores/<id>/<yyyy>/<mm>/<random>.<ext>
+    url: text("url").notNull(),
+    name: text("name").notNull(), // original file name
+    kind: text("kind").$type<"image" | "video" | "document">().notNull(),
+    mime: text("mime").notNull(),
+    bytes: integer("bytes").notNull().default(0),
+    width: integer("width"),
+    height: integer("height"),
+    alt: text("alt").notNull().default(""),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("store_files_store_idx").on(t.storeId, t.createdAt)],
+);
+export type StoreFile = typeof storeFiles.$inferSelect;

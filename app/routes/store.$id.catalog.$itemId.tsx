@@ -580,6 +580,7 @@ function sendFile(url: string, blob: Blob, onPct: (n: number) => void) {
     const x = new XMLHttpRequest();
     x.open("POST", url);
     x.setRequestHeader("Content-Type", blob.type);
+    if (blob instanceof File && blob.name) x.setRequestHeader("X-File-Name", encodeURIComponent(blob.name));
     x.upload.onprogress = (e) => e.lengthComputable && onPct(Math.round((e.loaded / e.total) * 100));
     x.onload = () => {
       let d: { url?: string; type?: "image" | "video"; error?: string } = {};
