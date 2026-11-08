@@ -4,7 +4,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { and, eq } from "drizzle-orm";
 import { Icon } from "~/components/Icons";
 import { EmptyState } from "~/components/ui";
@@ -160,9 +160,9 @@ export default function Calls() {
           <p className="mt-1 max-w-xs text-[12.5px] text-ink-faint">{d.tab === "queue" ? "New orders show up here on their own. This page refreshes every 30 seconds." : d.tab === "follow_up" ? "Orders you move to follow-up wait here until it's time to call again." : "Confirmed and cancelled calls of today show here."}</p>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {d.board.orders.map((o) => <OrderCall key={o.id} o={o} d={d} onDone={setToast} />)}
-        </ul>
+        d.tab === "done"
+          ? <ul className="space-y-3">{d.board.orders.map((o) => <OrderCall key={o.id} o={o} d={d} onDone={setToast} />)}</ul>
+          : <Deck d={d} onDone={setToast} />
       )}
 
       {toast && (toast.ok || toast.error) && (
@@ -172,12 +172,77 @@ export default function Calls() {
   );
 }
 
-function OrderCall({ o, d, onDone }: { o: O; d: D; onDone: (r: Res) => void }) {
+/**
+ * One order at a time, like a stack of cards: swipe left for the next order, right for the previous
+ * (arrow keys on a computer). After Confirmed / Follow-up / Cancel the order leaves the queue and the next one slides in.
+ */
+function Deck({ d, onDone }: { d: D; onDone: (r: Res) => void }) {
+  const list = d.board.orders;
+  const [idx, setIdx] = useState(0);
+  const [dir, setDir] = useState<1 | -1>(1);
+  const [dx, setDx] = useState(0);
+  const start = useRef<{ x: number; y: number; lock: "x" | "y" | null } | null>(null);
+  const i = Math.min(idx, Math.max(0, list.length - 1));
+  useEffect(() => { if (idx !== i) setIdx(i); }, [idx, i]);
+  const go = useCallback((step: 1 | -1) => {
+    setDir(step);
+    setIdx((v) => Math.max(0, Math.min(list.length - 1, v + step)));
+  }, [list.length]);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea, select")) return;
+      if (e.key === "ArrowRight") go(1); else if (e.key === "ArrowLeft") go(-1);
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [go]);
+  const o = list[i];
+  if (!o) return null;
+  const onTouchStart = (e: React.TouchEvent) => { const t = e.touches[0]; start.current = { x: t.clientX, y: t.clientY, lock: null }; };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const s0 = start.current; if (!s0) return;
+    const t = e.touches[0]; const x = t.clientX - s0.x, y = t.clientY - s0.y;
+    if (!s0.lock && (Math.abs(x) > 8 || Math.abs(y) > 8)) s0.lock = Math.abs(x) > Math.abs(y) ? "x" : "y";
+    if (s0.lock === "x") setDx((i === 0 && x > 0) || (i === list.length - 1 && x < 0) ? x / 4 : x);
+  };
+  const onTouchEnd = () => {
+    const s0 = start.current; start.current = null;
+    if (s0?.lock === "x" && Math.abs(dx) > 70) go(dx < 0 ? 1 : -1);
+    setDx(0);
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 px-1">
+        <button type="button" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-90" /></button>
+        <div className="min-w-0 flex-1">
+          <p className="text-center text-[12.5px] font-medium">Order <span className="num">{i + 1}</span> of <span className="num">{list.length}</span></p>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-pine transition-[width] duration-300" style={{ width: `${((i + 1) / list.length) * 100}%` }} /></div>
+        </div>
+        <button type="button" onClick={() => go(1)} disabled={i >= list.length - 1} aria-label="Next order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 -rotate-90" /></button>
+      </div>
+      <div className="touch-pan-y overflow-hidden" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+        <ul key={o.id} className={dir > 0 ? "cl-next" : "cl-prev"} style={dx ? { transform: `translateX(${dx}px) rotate(${dx / 60}deg)`, transition: "none" } : { transition: "transform .2s ease-out" }}>
+          <OrderCall o={o} d={d} onDone={onDone} onNext={i < list.length - 1 ? () => go(1) : undefined} />
+        </ul>
+      </div>
+      <p className="text-center text-[11.5px] text-ink-faint sm:hidden">Swipe left for the next order</p>
+    </div>
+  );
+}
+
+function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => void; onNext?: () => void }) {
   const f = useFetcher<Res>();
   const [panel, setPanel] = useState<null | "follow" | "cancel" | "address" | "notes">(null);
   const [note, setNote] = useState("");
+  const thenNext = useRef(false);
   const busy = f.state !== "idle";
-  useEffect(() => { if (f.state === "idle" && f.data) { onDone(f.data); if (f.data.ok) setPanel(null); } }, [f.state, f.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (f.state !== "idle" || !f.data) return;
+    onDone(f.data);
+    if (f.data.ok) { setPanel(null); if (thenNext.current && onNext) onNext(); }
+    thenNext.current = false;
+  }, [f.state, f.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const c = o.customer;
   const send = (intent: string, extra: Record<string, string> = {}) => f.submit({ intent, orderId: o.id, note, ...extra }, { method: "post" });
   const tel = `+91${c.phone}`;
@@ -223,13 +288,13 @@ function OrderCall({ o, d, onDone }: { o: O; d: D; onDone: (r: Res) => void }) {
         )}
         {o.log.length > 0 && <p className="text-[11.5px] text-ink-faint">{o.log[0].text} · {o.log[0].by} · {at(o.log[0].at)}</p>}
 
-        {panel === "address" && <AddressForm o={o} f={f} />}
+        {panel === "address" && <AddressForm o={o} f={f} onNext={onNext ? () => { thenNext.current = true; } : undefined} />}
         {panel === "notes" && (
           <f.Form method="post" className="space-y-2 rounded-xl bg-[#f6f6f7] p-3">
             <input type="hidden" name="intent" value="notes" /><input type="hidden" name="orderId" value={o.id} />
             <label className="block"><span className="label">Staff note (only your team sees it)</span><textarea name="staffNote" defaultValue={o.staffNote} rows={2} maxLength={1000} className="input mt-1 text-[13px]" /></label>
             <label className="block"><span className="label">Note for the customer (shows on their order page)</span><textarea name="customerNote" defaultValue={o.customerNote} rows={2} maxLength={500} className="input mt-1 text-[13px]" /></label>
-            <div className="flex justify-end gap-2"><button type="button" className="btn-secondary btn h-8" onClick={() => setPanel(null)}>Close</button><button type="submit" className="btn-primary btn h-8" disabled={busy}>Save notes</button></div>
+            <div className="flex justify-end gap-2"><button type="button" className="btn-secondary btn h-8" onClick={() => setPanel(null)}>Close</button><button type="submit" className="btn-secondary btn h-8" disabled={busy}>Save</button>{onNext && <button type="submit" className="btn-primary btn h-8" disabled={busy} onClick={() => { thenNext.current = true; }}>Save &amp; next</button>}</div>
           </f.Form>
         )}
         {panel === "follow" && (
@@ -265,11 +330,14 @@ function OrderCall({ o, d, onDone }: { o: O; d: D; onDone: (r: Res) => void }) {
           <button type="button" onClick={() => setPanel(panel === "notes" ? null : "notes")} aria-label="Notes" className={`flex h-10 w-10 items-center justify-center rounded-xl ${panel === "notes" ? "bg-ink text-white" : "bg-white text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3]"}`}><Icon name="book" className="h-4 w-4" /></button>
         </div>
       )}
+      {onNext && o.call !== "confirmed" && o.call !== "cancelled" && (
+        <button type="button" onClick={onNext} className="flex w-full items-center justify-center gap-1 border-t border-rule py-2 text-[12.5px] font-medium text-ink-soft hover:bg-black/[.02]">Skip for now<Icon name="chevron" className="h-3.5 w-3.5 -rotate-90" /></button>
+      )}
     </li>
   );
 }
 
-function AddressForm({ o, f }: { o: O; f: ReturnType<typeof useFetcher<Res>> }) {
+function AddressForm({ o, f, onNext }: { o: O; f: ReturnType<typeof useFetcher<Res>>; onNext?: () => void }) {
   const c = o.customer;
   return (
     <f.Form method="post" className="grid grid-cols-2 gap-2 rounded-xl bg-[#f6f6f7] p-3">
@@ -282,7 +350,7 @@ function AddressForm({ o, f }: { o: O; f: ReturnType<typeof useFetcher<Res>> }) 
       <input name="city" defaultValue={c.city} placeholder="City" className="input h-9 text-[13px]" aria-label="City" />
       <input name="pincode" defaultValue={c.pincode} inputMode="numeric" maxLength={6} placeholder="Pincode" className="input h-9 text-[13px]" aria-label="Pincode" />
       <select name="state" defaultValue={c.state} className="input col-span-2 h-9 text-[13px]" aria-label="State">{INDIAN_STATES.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}</select>
-      <div className="col-span-2 flex justify-end"><button type="submit" className="btn-primary btn h-8" disabled={f.state !== "idle"}>Save address</button></div>
+      <div className="col-span-2 flex justify-end gap-2"><button type="submit" className="btn-secondary btn h-8" disabled={f.state !== "idle"}>Save address</button>{onNext && <button type="submit" className="btn-primary btn h-8" disabled={f.state !== "idle"} onClick={onNext}>Save &amp; next</button>}</div>
     </f.Form>
   );
 }
@@ -335,7 +403,11 @@ function Team({ d }: { d: D }) {
 const CSS = `
 @keyframes cl-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 @keyframes cl-pop { from { opacity: 0; transform: translate(-50%, 6px) } to { opacity: 1; transform: translate(-50%, 0) } }
+@keyframes cl-next { from { opacity: 0; transform: translateX(40px) } to { opacity: 1; transform: none } }
+@keyframes cl-prev { from { opacity: 0; transform: translateX(-40px) } to { opacity: 1; transform: none } }
+.cl-next { animation: cl-next .25s cubic-bezier(.2,.7,.2,1) both }
+.cl-prev { animation: cl-prev .25s cubic-bezier(.2,.7,.2,1) both }
 .cl-in { animation: cl-in .25s ease-out both }
 .cl-pop { animation: cl-pop .2s ease-out both }
-@media (prefers-reduced-motion: reduce) { .cl-in, .cl-pop { animation: none } }
+@media (prefers-reduced-motion: reduce) { .cl-in, .cl-pop, .cl-next, .cl-prev { animation: none } }
 `;

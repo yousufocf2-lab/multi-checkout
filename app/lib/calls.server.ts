@@ -55,6 +55,8 @@ export async function callBoard(store: Store, me: number | null, tab: string) {
   await assignCalls(store);
   const team = await callersFor(store);
   const since = istStart();
+  const sinceIso = since.toISOString(); // raw SQL parameters must be strings, not Date objects
+  const windowIso = new Date(Date.now() - WINDOW_DAYS * 86400_000).toISOString();
   const cols = {
     id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status,
     total: orders.total, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
@@ -72,10 +74,10 @@ export async function callBoard(store: Store, me: number | null, tab: string) {
   // Team summary (today): per caller, how many are waiting, confirmed, in follow-up, cancelled
   const stats = await db.select({
     m: orders.assignedTo,
-    waiting: sql<number>`count(*) filter (where ${orders.callStatus} is null and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.createdAt} >= ${new Date(Date.now() - WINDOW_DAYS * 86400_000)})::int`,
+    waiting: sql<number>`count(*) filter (where ${orders.callStatus} is null and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.createdAt} >= ${windowIso}::timestamptz)::int`,
     follow: sql<number>`count(*) filter (where ${orders.callStatus} = 'follow_up' and ${orders.status} in ('paid','cod_placed'))::int`,
-    confirmed: sql<number>`count(*) filter (where ${orders.callStatus} = 'confirmed' and ${orders.callAt} >= ${since})::int`,
-    cancelled: sql<number>`count(*) filter (where ${orders.callStatus} = 'cancelled' and ${orders.callAt} >= ${since})::int`,
+    confirmed: sql<number>`count(*) filter (where ${orders.callStatus} = 'confirmed' and ${orders.callAt} >= ${sinceIso}::timestamptz)::int`,
+    cancelled: sql<number>`count(*) filter (where ${orders.callStatus} = 'cancelled' and ${orders.callAt} >= ${sinceIso}::timestamptz)::int`,
   }).from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.assignedTo, team.length ? team.map((t) => t.id) : [-1]))).groupBy(orders.assignedTo);
   const byM = new Map(stats.map((r) => [r.m, r]));
 
