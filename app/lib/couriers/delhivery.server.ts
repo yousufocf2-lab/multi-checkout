@@ -61,7 +61,7 @@ export type DelhiveryShipment = {
  * Creates one forward shipment in Delhivery (manifest). Delhivery assigns the AWB (waybill).
  * pickup = the pickup location (warehouse) name exactly as registered in Delhivery One.
  */
-export async function createDelhiveryShipment(token: string, pickup: string, s: DelhiveryShipment): Promise<{ ok: true; awb: string } | { ok: false; error: string }> {
+export async function createDelhiveryShipment(token: string, pickup: string, s: DelhiveryShipment): Promise<{ ok: true; awb: string } | { ok: false; error: string; unserviceable?: boolean }> {
   const data = {
     shipments: [{
       name: s.name.slice(0, 100), add: s.address.slice(0, 250), pin: s.pin, city: s.city, state: s.state, country: "India", phone: s.phone,
@@ -83,6 +83,9 @@ export async function createDelhiveryShipment(token: string, pickup: string, s: 
     const pkg = body?.packages?.[0];
     if (pkg?.waybill && String(pkg.status ?? "").toLowerCase() === "success") return { ok: true, awb: String(pkg.waybill) };
     const why = [pkg?.remarks, body?.rmk].flat().filter(Boolean).join(" ").slice(0, 300);
+    // "Crashing while saving package due to exception '332602 is non serviceable pincode'…" → plain words
+    const pin = /(\d{6})\s+is\s+non[-\s]?serviceable/i.exec(why)?.[1];
+    if (pin) return { ok: false, error: `Delhivery doesn't deliver to pincode ${pin}${s.cod ? " for COD" : ""} from your pickup location (${pickup}).`, unserviceable: true };
     return { ok: false, error: why || `Delhivery couldn't create the shipment (${res.status}).` };
   } catch (e) {
     return { ok: false, error: `Couldn't reach Delhivery: ${e instanceof Error ? e.message : "network error"}` };

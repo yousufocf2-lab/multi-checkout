@@ -11,6 +11,8 @@ import { stateName } from "./states";
 import { codAmount } from "./store-fulfil.server";
 
 const RETRY_MS = 30 * 60_000; // a failed booking is tried again after 30 minutes
+const RETRY_PIN_MS = 24 * 3600_000; // the courier doesn't deliver to that pincode: try again next day, not every 30 minutes
+const isPinError = (e: string) => /non[-\s]?serviceable|not serviceable|doesn't deliver to pincode/i.test(e);
 const WAIT_MS = 10 * 60_000; // give the customer 10 minutes (wrong address, cancel) before booking
 const DEFAULT_WEIGHT_G = 500;
 const BOOKS = ["delhivery", "shiprocket"]; // couriers we can send orders to
@@ -79,9 +81,10 @@ export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount
 export async function runAutoShip() {
   const accs = (await db.select().from(courierAccounts).where(and(inArray(courierAccounts.courier, BOOKS), eq(courierAccounts.status, "connected"))).orderBy(asc(courierAccounts.createdAt)))
     .filter(bookable);
-  const perStore = new Map<number, CourierAccount>();
-  for (const a of accs) if (!perStore.has(a.storeId)) perStore.set(a.storeId, a);
-  for (const [storeId, acc] of perStore) {
+  // Every courier a store can book with, oldest connection first: the next one takes orders the first can't deliver
+  const perStore = new Map<number, CourierAccount[]>();
+  for (const a of accs) perStore.set(a.storeId, [...(perStore.get(a.storeId) ?? []), a]);
+  for (const [storeId, couriers] of perStore) {
     const [store] = await db.select().from(stores).where(and(eq(stores.id, storeId), eq(stores.active, true))).limit(1);
     if (!store) continue;
     const list = await db.select().from(orders).where(and(
@@ -89,7 +92,24 @@ export async function runAutoShip() {
       or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
       or(isNull(orders.shipBookAt), lt(orders.shipBookAt, new Date(Date.now() - RETRY_MS))),
     )).limit(50);
-    for (const o of list) if (readyToBook(store, o)) await bookOrder(store, o, acc);
+    for (const o of list) {
+      if (!readyToBook(store, o)) continue;
+      let r: { ok: boolean; error?: string } = { ok: false };
+      const errors: string[] = [];
+      for (const acc of couriers) {
+        r = await bookOrder(store, o, acc);
+        if (r.ok) break;
+        errors.push(r.error ?? "");
+        if (!isPinError(r.error ?? "")) break; // only a pincode problem moves on to the next courier
+      }
+      if (!r.ok && errors.length && errors.every(isPinError)) {
+        // Wait a day before trying again (shipBookAt in the future = skipped until then)
+        await db.update(orders).set({
+          shipError: errors.length > 1 ? `None of your couriers deliver to pincode ${o.customer.pincode}. Book it by hand.` : errors[0],
+          shipBookAt: new Date(Date.now() + RETRY_PIN_MS - RETRY_MS),
+        }).where(eq(orders.id, o.id));
+      }
+    }
   }
   await pullShiprocketChanges().catch((e) => console.error("[auto-ship] shiprocket pull", e));
 }
