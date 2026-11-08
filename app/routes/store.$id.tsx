@@ -6,16 +6,12 @@ import { DiscountPicker } from "~/components/DiscountPicker";
 import { LearnMore, StatusBadge } from "~/components/ui";
 import { can, requireStore, requireViewer } from "~/lib/auth.server";
 import { storeBaseUrl } from "~/lib/urls.server";
-import { rupees } from "~/lib/wallet";
-import { getWallet, stateOf } from "~/lib/wallet.server";
 import { storePath } from "~/lib/store-code";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const s = await requireStore(viewer, params.id);
-  const w = await getWallet(s.id);
-  const locked = viewer.role !== "admin" && (stateOf(w) === "locked" || w.status === "suspended");
-  return json({ locked, balance: w.balancePaise, canSettings: can(viewer, "settings"), store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : s.platform === "growpefy" ? true : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : s.platform === "growpefy" ? "Growpefy" : "Shopify" } });
+  return json({ canSettings: can(viewer, "settings"), store: { id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, checkout: storeBaseUrl(s), connected: s.platform === "woocommerce" ? Boolean(s.wooSecret) : s.platform === "growpefy" ? true : Boolean(s.adminToken), platform: s.platform === "woocommerce" ? "WooCommerce" : s.platform === "growpefy" ? "Growpefy" : "Shopify" } });
 }
 
 const TITLES: Record<string, { title: string; description: string; icon: IconName; guide?: string; back?: string }> = {
@@ -37,6 +33,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout", back: "checkout" },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
   "customer-accounts": { title: "Customer accounts", description: "Shopper login on your website: what to ask for and how they verify.", icon: "users" },
+  live: { title: "Live view", description: "Who's on your website and checkout right now.", icon: "eye" },
   "meta-catalog": { title: "Facebook & Instagram", description: "Your products in Meta's catalog, kept up to date automatically.", icon: "ads" },
   logistics: { title: "Shipments", description: "Connect couriers to track shipments and unlock RTO Shield.", icon: "shipping", guide: "logistics" },
   funnel: { title: "Analytics", description: "Store visits, checkout conversion and orders.", icon: "chart", guide: "analytics" },
@@ -45,12 +42,10 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   install: { title: "Store connection", description: "Connect your store, payments, webhooks and the checkout button.", icon: "setup", guide: "install" },
 };
 
-/** Pages an owner can't open while the wallet is past its negative limit. Checkout itself never stops. */
-const LOCKED = new Set(["ads", "gifts", "design"]);
 
 /** Store pages share a slim header; the section menu lives in the sidebar. */
 export default function StoreLayout() {
-  const { store, locked, balance, canSettings } = useLoaderData<typeof loader>();
+  const { store, canSettings } = useLoaderData<typeof loader>();
   const section = useLocation().pathname.split("/")[3] ?? "";
   const t = TITLES[section];
   return (
@@ -78,14 +73,7 @@ export default function StoreLayout() {
           </div>
         </div>
       )}
-      {locked && LOCKED.has(section) ? (
-        <div className="panel mx-auto max-w-xl px-6 py-10 text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-bad"><Icon name="wallet" className="h-6 w-6" /></span>
-          <h2 className="mt-4 text-lg font-semibold">Recharge to unlock {t?.title.toLowerCase() ?? "this page"}</h2>
-          <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-soft">Your wallet is at {rupees(balance)}, past its limit. Checkout, OTP and order confirmations keep working. Recharge to use this page again.</p>
-          <Link to={`${storePath(store.id)}/wallet`} className="btn-primary mt-5">Recharge wallet</Link>
-        </div>
-      ) : <Outlet />}
+      <Outlet />
     </>
   );
 }

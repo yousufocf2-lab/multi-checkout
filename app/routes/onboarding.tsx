@@ -269,7 +269,7 @@ export default function Onboarding() {
             <Badges k={k} />
             <div className="rounded-xl border border-rule bg-surface p-4 text-xs leading-relaxed text-ink-soft">
               <p className="mb-1 flex items-center gap-2 text-sm font-medium text-ink"><Icon name="shield" className="h-4 w-4 text-pine" />Why we ask</p>
-              KYC keeps Growpefy safe for every brand and lets us issue GST invoices for your wallet recharges. Your documents are stored securely and never shared.
+              KYC keeps Growpefy safe for every brand and lets us issue GST invoices for your monthly bills. Your documents are stored securely and never shared.
             </div>
           </div>
         </aside>
@@ -576,7 +576,7 @@ function StepTax({ k, errors, busy }: { k: KycData; errors: KycErrors; busy: boo
         <label className="flex cursor-pointer items-center justify-between gap-3">
           <span>
             <span className="flex items-center gap-2 text-sm font-medium">GST registration<Opt />{gstLive?.ok && <VerifiedBadge label="Verified business" />}</span>
-            <span className="block text-xs text-ink-faint">Add your GSTIN to claim input credit on recharges and get the Verified business badge.</span>
+            <span className="block text-xs text-ink-faint">Add your GSTIN to claim input credit on your bills and get the Verified business badge.</span>
           </span>
           <input type="checkbox" name="hasGst" checked={hasGst} onChange={(e) => setHasGst(e.target.checked)} className="peer sr-only" />
           <span aria-hidden className={`relative h-6 w-10 shrink-0 rounded-full transition ${hasGst ? "bg-brand" : "bg-rule-strong"}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${hasGst ? "left-[18px]" : "left-0.5"}`} /></span>

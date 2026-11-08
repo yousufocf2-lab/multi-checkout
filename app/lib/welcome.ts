@@ -48,7 +48,7 @@ Reply here if you have any questions.`,
 Your account is ready. To go live:
 1. Finish your business details
 2. Connect your store
-3. Recharge your wallet and switch on the checkout
+3. Choose your plan and switch on the checkout
 
 Log in at growpefy.com/login. Need help? Reply to this message and our team will set it up with you.`,
   app: `Hi {{1}}, thanks for your app enquiry! 📱

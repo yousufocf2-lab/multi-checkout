@@ -91,7 +91,7 @@ export async function sendRecovery(store: Store, s: SessionRow, step: number) {
     await db.update(checkoutSessions).set({ recoverySent: step + 1, recoveryAt: new Date() }).where(eq(checkoutSessions.id, s.id));
     const tx = await chargeUsage(store.id, "wa_recovery", `rec:${s.id}:${step + 1}`, `Abandoned cart · message ${step + 1}`);
     await logOutbound(store.id, phone, {
-      kind: "template", waMessageId: body.messages[0].id, chargedPaise: tx ? Math.abs(tx.entry.amountPaise) : 0,
+      kind: "template", waMessageId: body.messages[0].id, chargedPaise: tx?.chargedPaise ?? 0,
       name: [c.firstName, c.lastName].filter(Boolean).join(" "),
       body: `Abandoned cart reminder ${step + 1} · ${itemsText(s)}\n[Complete my order]`,
     }).catch(() => {});

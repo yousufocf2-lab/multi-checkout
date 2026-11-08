@@ -283,7 +283,7 @@ export async function sendOrderConfirmation(store: Store, order: Order) {
     const tx = await chargeUsage(store.id, "wa_confirm", `order:${order.id}`, `Order confirmation · ${order.shopifyOrderName ?? order.id.slice(0, 10)}`);
     const pay = order.paymentMethod === "cod" ? "Cash on Delivery" : order.paymentMethod === "partial" ? "Partial COD" : "Paid online";
     await logOutbound(store.id, phone, {
-      kind: "template", orderId: order.id, waMessageId: body.messages[0].id, chargedPaise: tx ? Math.abs(tx.entry.amountPaise) : 0,
+      kind: "template", orderId: order.id, waMessageId: body.messages[0].id, chargedPaise: tx?.chargedPaise ?? 0,
       name: `${order.customer.firstName} ${order.customer.lastName}`.trim(),
       body: `Order confirmation · ${order.shopifyOrderName ?? order.id} · ${formatINR(order.total)} · ${pay}${m.waButtons ? "\n[✅ Confirm order]  [❌ Cancel order]" : ""}`,
     }).catch((e) => console.error("[inbox] log:", e));

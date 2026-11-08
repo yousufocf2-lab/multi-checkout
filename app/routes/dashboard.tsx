@@ -16,8 +16,6 @@ import { startNativeOrdersWatcher } from "~/lib/native-orders.server";
 import { db, stores as storesTable, storeThemes } from "~/db.server";
 import { and, inArray, isNotNull, sql } from "drizzle-orm";
 import { selectCookie, selectedStore } from "~/lib/selection.server";
-import { rupees } from "~/lib/wallet";
-import { stateOf, walletsFor } from "~/lib/wallet.server";
 import { supportBadge } from "~/lib/support.server";
 import { upcomingDemos } from "~/lib/leads.server";
 import { adminUnread } from "~/lib/admin-inbox.server";
@@ -59,8 +57,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
   const touched = await touchSession(request);
   if (touched) headers.append("Set-Cookie", touched);
-  const ws = await walletsFor(list.map((s) => s.id)).catch(() => []);
-  // Growpefy Store websites count as "live" once the design is published or their domain is connected; till then no wallet alerts
+  // Growpefy Store websites count as "live" once the design is published or their domain is connected
   const own = list.filter((s) => s.platform === "growpefy");
   const published = new Set(own.length
     ? await db.select({ id: storeThemes.storeId }).from(storeThemes).where(and(inArray(storeThemes.storeId, own.map((s) => s.id)), isNotNull(storeThemes.publishedAt))).then((r) => r.map((x) => x.id)).catch(() => [])
@@ -90,7 +87,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isTeam: Boolean(team),
     },
     idleMs: IDLE_MS,
-    wallets: ws.map((w) => ({ storeId: w.storeId, balance: w.balancePaise, state: stateOf(w), limit: w.negativeLimitPaise })),
     stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType, live: isLive(s) })),
     selected,
   }, { headers });
@@ -111,7 +107,7 @@ type StoreItem = ReturnType<typeof useLoaderData<typeof loader>>["stores"][numbe
 const STORE_TOOL = /^\/dashboard(\/?$|\/orders|\/ads$|\/compare$)|^\/store\//;
 
 export default function DashboardLayout() {
-  const { kycPending, viewer, stores, selected, wallets, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
+  const { kycPending, viewer, stores, selected, idleMs, dropshipAlerts, waPending, connectPending, support, nextDemo, login, adminWa, hasPasskey } = useLoaderData<typeof loader>();
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useState(false);
   const [themeMode, setThemeMode] = useState<"light" | "dark">("light");
@@ -133,12 +129,6 @@ export default function DashboardLayout() {
   const adsHref = focus ? `${storePath(focus.id)}/ads` : "/dashboard/ads";
   const here = location.pathname + location.search;
   const adminHome = "/dashboard/select?store=all&to=%2Fdashboard";
-  const RANK = { ok: 0, low: 1, negative: 2, locked: 3 } as const;
-  const focusWallet = focus ? wallets.find((w) => w.storeId === focus.id) ?? null : null;
-  const liveIds = new Set(stores.filter((s) => s.live).map((s) => s.id));
-  const worst = [...wallets].filter((w) => liveIds.has(w.storeId)).sort((a, b) => RANK[b.state] - RANK[a.state])[0] ?? null;
-  const alertWallet = !may("billing") ? null : focus ? (focus.live ? focusWallet : null) : isAdmin ? null : worst;
-  const alertStore = alertWallet ? stores.find((s) => s.id === alertWallet.storeId) ?? null : null;
   const own = focus?.platform === "growpefy";
   const storefront = Boolean(isAdmin || focus?.storefront);
   const site = storefront && may("settings");
@@ -166,7 +156,8 @@ export default function DashboardLayout() {
       { label: "RTO Shield", to: storeHref("rto-shield"), match: /\/rto-shield$|next=rto-shield/, show: true },
       { label: "RTO Suite", to: storeHref("rto"), match: /\/rto$|next=rto\b/, show: true },
     ] },
-    { label: "Analytics", to: storeHref("funnel"), icon: "chart", match: /\/(funnel|diagnostics)$|next=(funnel|diagnostics)\b/, show: may("analytics"), children: [
+    { label: "Analytics", to: storeHref("live"), icon: "chart", match: /\/(live|funnel|diagnostics)$|next=(live|funnel|diagnostics)\b/, show: may("analytics"), children: [
+      { label: "Live view", to: storeHref("live"), match: /\/live$|next=live\b/, show: true },
       { label: "Checkout funnel", to: storeHref("funnel"), match: /\/funnel$|next=funnel/, show: true },
       { label: "Checkout diagnostics", to: storeHref("diagnostics"), match: /\/diagnostics$|next=diagnostics/, show: isAdmin },
     ] },
@@ -183,7 +174,7 @@ export default function DashboardLayout() {
   const storeSettings: NavNode[] = [
     { label: "Business profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
     { label: "Customer accounts", to: storeHref("customer-accounts"), icon: "user", match: /\/customer-accounts$|next=customer-accounts/, show: may("settings") },
-    { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing"), badge: focusWallet && focus?.live && focusWallet.state !== "ok" ? "Low" : undefined },
+    { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing") },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
     { label: "Checkout experience", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },
@@ -322,13 +313,10 @@ export default function DashboardLayout() {
         {nextDemo && <DemoBar demo={nextDemo} login={login} />}
         {idleMs > 0 && <IdleLogout idleMs={idleMs} />}
         <div className={`mx-auto px-4 pb-24 pt-5 sm:px-7 lg:px-8 lg:pb-12 lg:pt-7 ${inSettings ? "max-w-[960px]" : "max-w-[1320px]"}`}>
-          {alertWallet && alertStore && alertWallet.state !== "ok" && !location.pathname.endsWith("/wallet") && (
-            <WalletBanner state={alertWallet.state} balance={alertWallet.balance} store={alertStore.name} showStore={stores.length > 1} to={`${storePath(alertStore.id)}/wallet`} />
-          )}
           {kycPending && (
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-[#fff1e3] px-4 py-2.5 text-[13px] text-[#5e4200] shadow-[0_0_0_1px_rgba(178,132,0,.25)]">
               <Icon name="alert" className="h-4 w-4 shrink-0" />
-              <span className="flex-1">Complete your KYC to go live: connect your domain, add payment gateways and recharge your wallet.</span>
+              <span className="flex-1">Complete your KYC to go live: connect your domain, add payment gateways and choose your plan.</span>
               <Link to="/onboarding" className="btn-primary">Complete KYC</Link>
             </div>
           )}
@@ -505,22 +493,6 @@ function IdleLogout({ idleMs: IDLE_MS }: { idleMs: number }) {
           <button type="button" className="btn-primary flex-1" onClick={() => { try { localStorage.setItem(ACTIVE_KEY, String(Date.now())); } catch { /* */ } fetch("/session/ping", { method: "POST" }).catch(() => {}); setLeft(null); }}>Stay logged in</button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function WalletBanner({ state, balance, store, showStore, to }: { state: "low" | "negative" | "locked"; balance: number; store: string; showStore: boolean; to: string }) {
-  const who = showStore ? `${store} wallet` : "Wallet";
-  const copy = {
-    low: { tone: "bg-[#fff1e3] text-[#5e4200] shadow-[0_0_0_1px_rgba(178,132,0,.25)]", text: `${who} balance is low (${rupees(balance)}). Recharge soon to keep everything running.` },
-    negative: { tone: "bg-[#ffeedd] text-[#6a3200] shadow-[0_0_0_1px_rgba(200,90,0,.25)]", text: `${who} is below ₹0 (${rupees(balance)}). Checkout keeps working, but recharge before you reach the limit.` },
-    locked: { tone: "bg-[#fee9e8] text-[#8e1f0b] shadow-[0_0_0_1px_rgba(200,40,20,.25)]", text: `${who} has crossed its limit (${rupees(balance)}). Promo and tracking messages are paused and some features are locked. Checkout, OTP and order confirmations still work.` },
-  }[state];
-  return (
-    <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] ${copy.tone}`} role="status">
-      <Icon name="wallet" className="h-4 w-4 shrink-0" />
-      <p className="min-w-0 flex-1">{copy.text}</p>
-      <Link to={to} className="btn-primary">Recharge</Link>
     </div>
   );
 }

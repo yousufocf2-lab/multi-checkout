@@ -152,8 +152,8 @@ export async function reverseSaleFee(store: Store, order: Order) {
 export async function canUse(storeId: number, type: UsageType) {
   if (await accountFor(storeId)) return true;
   const w = await getWallet(storeId);
+  // Monthly billing replaced the wallet: only an admin suspension still pauses promotional messages
   if (w.status === "suspended") return type === "otp" || type === "wa_confirm";
-  if (stateOf(w) === "locked") return type === "otp" || type === "wa_confirm";
   return true;
 }
 
@@ -166,9 +166,11 @@ export async function chargeUsage(storeId: number, type: UsageType, refId: strin
   const rate = (await ratesFor(w))[USAGE_RATE_KEY[type]] ?? 0;
   if (rate <= 0) return null;
   if (await accountFor(storeId)) {
-    return recordBillingUsage({ storeId, type, amountPaise: rate, refType: "message", refId, note });
+    const billed = await recordBillingUsage({ storeId, type, amountPaise: rate, refType: "message", refId, note });
+    return billed ? { chargedPaise: rate } : null;
   }
-  return postTransaction({ walletId: w.id, type, amountPaise: -rate, refType: "message", refId, note });
+  const tx = await postTransaction({ walletId: w.id, type, amountPaise: -rate, refType: "message", refId, note });
+  return tx ? { chargedPaise: Math.abs(tx.entry.amountPaise) } : null;
 }
 
 // ---------------- manual adjustments (super admin) ----------------

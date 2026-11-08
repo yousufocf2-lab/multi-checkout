@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
 import { HomeView } from "~/components/HomeView";
@@ -149,7 +150,7 @@ function StoreHome() {
         <RangePicker current={overview.range} />
         {stores.length > 1 && !locked && <StoreFilter stores={stores} selected={picked} />}
         {!single && <span className="hidden h-7 items-center gap-1 rounded-lg px-2 text-[12.5px] text-ink-soft sm:inline-flex"><Icon name="stores" className="h-3.5 w-3.5" />{scopeName}</span>}
-        {tasks.liveCheckouts > 0 && (
+        {single ? <LiveChip base={single.base} /> : tasks.liveCheckouts > 0 && (
           <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white px-2.5 text-[12.5px] font-medium shadow-[0_0_0_1px_rgba(0,0,0,.08)]" title="Checkouts active in the last 5 minutes">
             <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#29845a] opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-[#29845a]" /></span>
             {tasks.liveCheckouts} in checkout now
@@ -159,5 +160,27 @@ function StoreHome() {
       </div>
       <HomeView data={overview} tasks={tasks} setup={setup} leaders={leaders} single={single} showStoreColumn={!single} />
     </>
+  );
+}
+
+/** "12 live now" chip on a store's overview: polls the Live view numbers and opens the Live view. */
+function LiveChip({ base }: { base: string }) {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const pull = async () => {
+      if (document.visibilityState !== "visible") return;
+      try { const r = await fetch(`${base}/live/data`, { cache: "no-store" }); if (r.ok) { const d = (await r.json()) as { total: number }; if (alive) setN(d.total); } } catch { /* keep last */ }
+    };
+    void pull();
+    const t = setInterval(pull, 10_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [base]);
+  if (n == null) return null;
+  return (
+    <Link to={`${base}/live`} className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white px-2.5 text-[12.5px] font-medium shadow-[0_0_0_1px_rgba(0,0,0,.08)] hover:bg-black/[.02]" title="Visitors on your website and checkout right now">
+      <span className="relative flex h-2 w-2">{n > 0 && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#29845a] opacity-60" />}<span className={`relative inline-flex h-2 w-2 rounded-full ${n > 0 ? "bg-[#29845a]" : "bg-black/20"}`} /></span>
+      <span className="num">{n}</span> live now
+    </Link>
   );
 }

@@ -9,7 +9,7 @@ export const CALLBACK_REASONS = [
   { id: "orders", label: "Orders & store sync" },
   { id: "rto", label: "RTO Suite & RTO Shield" },
   { id: "logistics", label: "Couriers & logistics" },
-  { id: "wallet", label: "Wallet, recharge & GST invoice" },
+  { id: "wallet", label: "Plan, bills & GST invoice" },
   { id: "ads", label: "Meta ads & analytics" },
   { id: "whatsapp", label: "WhatsApp messages & recovery" },
   { id: "offers", label: "Discounts, coupons & offers" },

@@ -217,8 +217,8 @@ export default function WalletPage() {
       {invoiceNotice === "mismatch" && <Notice tone="error">The received payment amount did not match the invoice. Contact Growpefy support before retrying.</Notice>}
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
       {res?.error && <Notice tone="error">{res.error}</Notice>}
-      {d.wallet.status === "suspended" && <Notice tone="error">This wallet is suspended by the admin. Only OTP and order confirmation messages go out.</Notice>}
-      {d.wallet.state === "locked" && (
+      {d.dropship && d.wallet.status === "suspended" && <Notice tone="error">This wallet is suspended by the admin. Only OTP and order confirmation messages go out.</Notice>}
+      {d.dropship && d.wallet.state === "locked" && (
         <Notice tone="error">
           Your balance is below the allowed limit of {rupees(-d.wallet.negativeLimit, 0)}. Checkout keeps working, but promotional and tracking messages are paused
           and some dashboard features are locked. Recharge to unlock everything.
@@ -227,7 +227,7 @@ export default function WalletPage() {
 
       {d.account ? <BillingOverview d={d} /> : <SubscriptionPanel d={d} />}
       {/* Existing wallet remains the fulfilment wallet for dropshipping stores. */}
-      {(d.dropship || !d.account) && <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
+      {d.dropship && <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
         <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl" />
         <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
@@ -247,7 +247,7 @@ export default function WalletPage() {
         </div>
       </section>}
 
-      {(d.dropship || !d.account) && <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      {d.dropship && <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <RechargeCard d={d} />
         <section className="panel">
           <h2 className="border-b border-rule px-5 py-4 text-[15px] font-semibold">Your rates</h2>
@@ -271,9 +271,9 @@ export default function WalletPage() {
         </section>
       </div>}
 
-      {(d.dropship || !d.account) && <UsageCard usage={d.usage} />}
-      {(d.dropship || !d.account) && <Ledger d={d} />}
-      {(d.dropship || !d.account) && <Recharges d={d} />}
+      {d.dropship && <UsageCard usage={d.usage} />}
+      {d.dropship && <Ledger d={d} />}
+      {d.dropship && <Recharges d={d} />}
       <Billing d={d} field={res?.field} />
       {d.isAdmin && <AdminPanel d={d} />}
     </div>

@@ -536,6 +536,26 @@ export default function Checkout() {
     return () => { document.removeEventListener("visibilitychange", vis); window.removeEventListener("error", err); window.removeEventListener("unhandledrejection", rej); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (stepRef.current !== step) cx("step", { step }); stepRef.current = step; }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ---- Live view: the store sees this checkout as a live visitor while the page is open ----
+  const liveCart = useRef({ q: 0, v: 0 });
+  liveCart.current = { q: lines.reduce((n, l) => n + l.quantity, 0), v: itemsValue };
+  useEffect(() => {
+    const url = cxCfg.url.replace(/\/api\/cx-event$/, "/api/live");
+    const beat = (leave?: boolean) => {
+      try {
+        const body = JSON.stringify({ c: cxCfg.s, d: window.matchMedia("(min-width: 861px)").matches ? "desktop" : "mobile", q: liveCart.current.q, v: liveCart.current.v, e: leave ? "leave" : undefined });
+        if (leave && navigator.sendBeacon?.(url, body)) return;
+        void fetch(url, { method: "POST", body, keepalive: true, mode: "no-cors" }).catch(() => {});
+      } catch { /* live view only */ }
+    };
+    beat();
+    const t = setInterval(() => { if (document.visibilityState === "visible") beat(); }, 15_000);
+    const vis = () => { if (document.visibilityState === "visible") beat(); };
+    const leave = () => beat(true);
+    document.addEventListener("visibilitychange", vis);
+    window.addEventListener("pagehide", leave);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); window.removeEventListener("pagehide", leave); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (nav.state !== "submitting" || !nav.formData) return;
     const intent = String(nav.formData.get("intent") ?? "");

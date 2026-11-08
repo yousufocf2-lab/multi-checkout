@@ -58,7 +58,7 @@ export function welcomeEmail(kind: "lead" | "signup", rawName: string, rawBody: 
   const steps = lead ? "" : `
 <tr><td style="padding:8px 36px 4px">
   <p style="margin:0 0 12px;font-family:${FONT};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${G.green}">Go live in 3 steps</p>
-  ${[["Business details", "PAN, GST and address. Takes 2 minutes."], ["Connect your store", "Shopify or WooCommerce, with our step-by-step guide."], ["Recharge and switch on", "Add wallet balance and your checkout is live."]].map(([t, d], i) => `
+  ${[["Business details", "PAN, GST and address. Takes 2 minutes."], ["Connect your store", "Shopify or WooCommerce, with our step-by-step guide."], ["Choose a plan and go live", "Pick a monthly plan and your checkout is live."]].map(([t, d], i) => `
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 10px"><tr>
     <td width="40" valign="top"><div style="width:30px;height:30px;border-radius:15px;background:${G.green};color:#fff;font-family:${FONT};font-size:14px;font-weight:700;line-height:30px;text-align:center">${i + 1}</div></td>
     <td valign="top" style="padding:2px 0 0"><p style="margin:0;font-family:${FONT};font-size:15px;font-weight:700;color:${G.ink}">${t}</p><p style="margin:2px 0 0;font-family:${FONT};font-size:13px;line-height:1.5;color:${G.faint}">${d}</p></td>

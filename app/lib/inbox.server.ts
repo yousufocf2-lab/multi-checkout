@@ -138,7 +138,7 @@ export async function sendReply(store: Store, convId: number, text: string, by: 
   const r = await postToMeta({ to: `91${conv.phone}`, type: "text", text: { body, preview_url: false } });
   if (!r.id) return { ok: false, error: r.error ?? "Couldn't send" };
   const tx = await chargeUsage(store.id, "wa_reply", `wa:${r.id}`, `Inbox reply to +91 ${conv.phone.slice(0, 2)}xxxxxx${conv.phone.slice(-2)}`).catch(() => null);
-  await logOutbound(store.id, conv.phone, { kind: "text", body, waMessageId: r.id, sentBy: by, chargedPaise: tx ? Math.abs(tx.entry.amountPaise) : 0 });
+  await logOutbound(store.id, conv.phone, { kind: "text", body, waMessageId: r.id, sentBy: by, chargedPaise: tx?.chargedPaise ?? 0 });
   return { ok: true };
 }
 
@@ -157,7 +157,7 @@ export async function sendFollowup(store: Store, convId: number, by: string): Pr
   });
   if (!r.id) return { ok: false, error: r.error ?? "Couldn't send" };
   const tx = await chargeUsage(store.id, "wa_followup", `wa:${r.id}`, `Inbox follow-up to +91 ${conv.phone.slice(0, 2)}xxxxxx${conv.phone.slice(-2)}`).catch(() => null);
-  await logOutbound(store.id, conv.phone, { kind: "followup", body: `Follow-up sent: ${store.name} asked the customer to reply`, waMessageId: r.id, sentBy: by, chargedPaise: tx ? Math.abs(tx.entry.amountPaise) : 0 });
+  await logOutbound(store.id, conv.phone, { kind: "followup", body: `Follow-up sent: ${store.name} asked the customer to reply`, waMessageId: r.id, sentBy: by, chargedPaise: tx?.chargedPaise ?? 0 });
   return { ok: true };
 }
 

@@ -86,6 +86,25 @@
     function send(){if(sent)return;sent=true;v.cls=Math.round(v.cls*1000)/1000;var body=JSON.stringify(v);if(!navigator.sendBeacon||!navigator.sendBeacon('/api/vitals',body))fetch('/api/vitals',{method:'POST',body:body,keepalive:true,mode:'no-cors'})}
     addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')send()});addEventListener('pagehide',send);
   }catch(e){}})();
+  /* Live view: a small heartbeat while the page is open (random tab id, page, device, where the visit came from, cart size) */
+  (function(){try{
+    var u=sessionStorage.getItem('gp_visit_id');if(!u)return;
+    var src=sessionStorage.getItem('gp_src');
+    if(src==null){var q=new URLSearchParams(location.search),ua=navigator.userAgent,ref='';try{ref=document.referrer?new URL(document.referrer).hostname:''}catch(e){}
+      src=q.get('utm_source')||(/Instagram/i.test(ua)?'instagram':/FBAN|FBAV|FB_IAB/i.test(ua)?'facebook':'')||(q.get('fbclid')?'facebook':q.get('gclid')?'google':'')||(ref&&ref!==location.hostname?ref:'')||'direct';
+      try{sessionStorage.setItem('gp_src',src)}catch(e){}}
+    var shop={{ shop.slug | json }},root=document.body.getAttribute('data-root')||'',dev=matchMedia('(min-width:861px)').matches?'desktop':'mobile';
+    var title=(document.title||'').replace(/\s+·\s+[^·]+$/,'');
+    function cart(){try{var c=JSON.parse(localStorage.getItem('gp_cart_'+document.body.getAttribute('data-shop'))||'[]');return c.reduce(function(a,l){a.q+=l.qty||0;a.v+=(l.price||0)*(l.qty||0);return a},{q:0,v:0})}catch(e){return{q:0,v:0}}}
+    function beat(leave){var c=cart(),b=JSON.stringify({s:shop,u:u,p:location.pathname,r:root,d:dev,t:title,src:src,q:c.q,v:c.v,e:leave?'leave':undefined});
+      if(leave){if(!navigator.sendBeacon||!navigator.sendBeacon('/api/live',b))fetch('/api/live',{method:'POST',body:b,keepalive:true,mode:'no-cors'});return}
+      fetch('/api/live',{method:'POST',body:b,keepalive:true,mode:'no-cors'}).catch(function(){})}
+    var t;function loop(){clearInterval(t);t=setInterval(function(){if(document.visibilityState==='visible')beat()},15000)}
+    beat();loop();
+    var d;document.addEventListener('gp:cart',function(){clearTimeout(d);d=setTimeout(function(){beat()},400)});
+    addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'){beat();loop()}});
+    addEventListener('pagehide',function(){beat(true)});
+  }catch(e){}})();
   </script>
   {%- endunless -%}
   {% if editor %}<script>
