@@ -22,6 +22,7 @@ export const OWNER_PERMS: (Perm & { group: "Sell" | "Grow" | "Manage" })[] = [
   { id: "orders", label: "Orders", description: "Orders, draft orders, abandoned checkouts and orders to ship.", group: "Sell" },
   { id: "products", label: "Products", description: "Products, collections, inventory and media.", group: "Sell" },
   { id: "inbox", label: "WhatsApp inbox", description: "Read and reply to customers on WhatsApp.", group: "Sell" },
+  { id: "confirm", label: "Order confirmation (calling)", description: "Gets new orders in turn to call the customer: confirm, follow up or cancel, fix the address and add notes. Sees mobile numbers only of their own orders.", group: "Sell" },
   { id: "rto", label: "Shipping & RTO", description: "Shipping rates, couriers, shipments, RTO Shield and RTO suite.", group: "Sell" },
   { id: "ads", label: "Marketing & ads", description: "Meta and Google ad reports, profit share.", group: "Grow" },
   { id: "offers", label: "Discounts & offers", description: "Discounts, coupons, bank offers and free gifts.", group: "Grow" },
@@ -34,7 +35,7 @@ export const OWNER_PERMS: (Perm & { group: "Sell" | "Grow" | "Manage" })[] = [
 ];
 
 /** Older logins were given broader permissions; these keep them working after the split. */
-const IMPLIES: Record<string, string[]> = { settings: ["products", "online_store", "developer"], orders: ["analytics"] };
+const IMPLIES: Record<string, string[]> = { settings: ["products", "online_store", "developer"], orders: ["analytics", "confirm"] };
 export function effectivePerms(scope: Scope, perms: string[]) {
   if (scope === "platform") return perms;
   return [...new Set(perms.flatMap((p) => [p, ...(IMPLIES[p] ?? [])]))];
@@ -55,6 +56,7 @@ export const OWNER_ROLES: OwnerRole[] = [
   { id: "admin", label: "Administrator", group: "Organization", description: "Everything, including the team. Give this to a partner or co-owner.", perms: ["orders", "products", "inbox", "rto", "ads", "offers", "analytics", "online_store", "billing", "settings", "developer", "team"] },
   { id: "manager", label: "Store manager", group: "Store", description: "Runs the store day to day. No billing or team changes.", perms: ["orders", "products", "inbox", "rto", "ads", "offers", "analytics", "online_store", "settings"] },
   { id: "orders", label: "Order & fulfilment", group: "Store", description: "Confirms, packs and ships orders, handles RTO.", perms: ["orders", "inbox", "rto"] },
+  { id: "caller", label: "Order confirmation (calling)", group: "Store", description: "Calls customers to confirm new orders. Orders are shared out in turn between everyone with this role.", perms: ["confirm"] },
   { id: "support", label: "Customer support", group: "Store", description: "Answers customers and looks up their orders.", perms: ["orders", "inbox"] },
   { id: "marketing", label: "Marketer", group: "Store", description: "Ads, discounts and the numbers behind them.", perms: ["ads", "offers", "analytics", "orders"] },
   { id: "merchandiser", label: "Merchandiser", group: "Store", description: "Adds products, prices and stock, runs product offers.", perms: ["products", "offers"] },
@@ -79,7 +81,8 @@ const STORE_SECTION: Record<string, string> = {
   products: "open",
   promotions: "offers", "to-ship": "orders", profit: "ads",
   catalog: "products", collections: "products", inventory: "products", media: "products", themes: "online_store", editor: "online_store",
-  pages: "online_store", website: "settings", integrations: "developer", drafts: "orders",
+  pages: "online_store", website: "settings", integrations: "developer", drafts: "orders", calls: "confirm",
+  live: "analytics", files: "products",
 };
 
 function needFor(scope: Scope, path: string): Need {

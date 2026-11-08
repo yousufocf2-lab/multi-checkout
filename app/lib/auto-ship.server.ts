@@ -9,6 +9,7 @@ import { cancelShiprocketOrder, createShiprocketOrder, shiprocketOrderState } fr
 import { mapStatusText } from "./couriers/common.server";
 import { stateName } from "./states";
 import { codAmount } from "./store-fulfil.server";
+import { ruleAllows, shipRuleOf } from "./ship-rule";
 
 const RETRY_MS = 30 * 60_000; // a failed booking is tried again after 30 minutes
 const RETRY_PIN_MS = 24 * 3600_000; // the courier doesn't deliver to that pincode: try again next day, not every 30 minutes
@@ -17,12 +18,10 @@ const WAIT_MS = 10 * 60_000; // give the customer 10 minutes (wrong address, can
 const DEFAULT_WEIGHT_G = 500;
 const BOOKS = ["delhivery", "shiprocket"]; // couriers we can send orders to
 
-/** Should this order be booked now? COD orders waiting for WhatsApp confirmation wait for the customer's "Confirm". */
+/** Should this order be booked now? The store's shipping rule decides (all orders, or only confirmed ones). */
 function readyToBook(store: Store, o: Order) {
-  if (o.confirmStatus === "cancelled") return false;
   if (Date.now() - o.createdAt.getTime() < WAIT_MS) return false;
-  const needsConfirm = store.confirmEnabled && store.confirmWhatsapp && (o.paymentMethod === "prepaid" ? store.confirmWaPrepaid : store.confirmWaCod);
-  return !needsConfirm || o.confirmStatus === "confirmed" || o.paymentMethod === "prepaid";
+  return ruleAllows(shipRuleOf(store), o);
 }
 
 const variantNum = (id: string) => Number(id.replace(/^gp:/, ""));
@@ -86,7 +85,7 @@ export async function runAutoShip() {
   for (const a of accs) perStore.set(a.storeId, [...(perStore.get(a.storeId) ?? []), a]);
   for (const [storeId, couriers] of perStore) {
     const [store] = await db.select().from(stores).where(and(eq(stores.id, storeId), eq(stores.active, true))).limit(1);
-    if (!store || !store.autoShip) continue; // the store ships by hand from the Orders page
+    if (!store || shipRuleOf(store).mode === "off") continue; // the store ships by hand from the Orders page
     const list = await db.select().from(orders).where(and(
       eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), like(orders.shopifyOrderId, "gp:%"), isNull(orders.awb), isNull(orders.courierRef),
       or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
@@ -150,7 +149,11 @@ async function pullShiprocketChanges() {
 declare global { var __autoShip: NodeJS.Timeout | undefined; }
 export function startAutoShip() {
   if (globalThis.__autoShip || !process.env.DATABASE_URL) return;
-  globalThis.__autoShip = setInterval(() => void runAutoShip().catch((e) => console.error("[auto-ship]", e)), 5 * 60_000);
+  globalThis.__autoShip = setInterval(() => {
+    void runAutoShip().catch((e) => console.error("[auto-ship]", e));
+    // New orders reach the calling team even when nobody has the page open
+    void import("./calls.server").then((m) => m.assignAllCalls()).catch((e) => console.error("[calls]", e));
+  }, 5 * 60_000);
   globalThis.__autoShip.unref?.();
 }
 

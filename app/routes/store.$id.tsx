@@ -33,6 +33,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   design: { title: "Checkout design", description: "Colors, fonts, logo and layout of your checkout.", icon: "cart", guide: "checkout", back: "checkout" },
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
   "customer-accounts": { title: "Customer accounts", description: "Shopper login on your website: what to ask for and how they verify.", icon: "users" },
+  calls: { title: "Order confirmation", description: "Call customers to confirm new orders.", icon: "phone" },
   files: { title: "Files", description: "Photos, videos and documents for your website.", icon: "layers" },
   live: { title: "Live view", description: "Who's on your website and checkout right now.", icon: "eye" },
   "meta-catalog": { title: "Facebook & Instagram", description: "Your products in Meta's catalog, kept up to date automatically.", icon: "ads" },

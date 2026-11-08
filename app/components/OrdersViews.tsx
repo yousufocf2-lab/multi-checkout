@@ -398,7 +398,7 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
         <td><PaymentPill o={o} /></td>
         <td><FulfillmentStatusPill o={o} /></td>
         <td className={`whitespace-nowrap ${strike}`}>{itemsLabel(o)}</td>
-        <td onClick={(e) => e.stopPropagation()}><span className="flex items-center gap-1.5"><FulfillPill o={o} /><ShipButton o={o} /></span></td>
+        <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}><span className="inline-flex items-center gap-1 align-middle"><FulfillPill o={o} /><ShipButton o={o} /></span></td>
         <td className={`max-w-[160px] truncate ${strike}`}>{o.shipping ? o.shippingTitle ?? "Standard" : "Free delivery"}</td>
         <td><Tags o={o} compact /></td>
       </tr>
@@ -652,6 +652,8 @@ type OrderActionsCtx = {
 };
 const OrderActions = createContext<OrderActionsCtx>({ couriers: {}, busy: false, sel: new Set(), toggle: () => {}, ship: () => {}, cancel: () => {} });
 
+/** Small inline "Ship" next to the status pill: text-sized, same height as the pill. */
+const SHIP_LINK = "inline-flex h-[22px] items-center gap-0.5 whitespace-nowrap rounded-md px-1.5 text-[11.5px] font-medium leading-none text-[#005bd3] transition hover:bg-[#005bd3]/[.08] disabled:opacity-40";
 const canShip = (o: OrderRow) => (o.status === "paid" || o.status === "cod_placed") && !o.awb && !o.courierRef && o.confirmStatus !== "cancelled";
 const canCancel = (o: OrderRow) => ["paid", "cod_placed", "pending_payment", "cod_placing"].includes(o.status) && o.shipStatus !== "delivered";
 /** Online money that a cancel can send back (prepaid, or a Partial COD advance). */
@@ -679,9 +681,9 @@ function CourierMenu({ label, choices, onPick, disabled, small }: { label: strin
   return (
     <div className="relative" ref={ref}>
       <button type="button" disabled={disabled} onClick={() => setOpen((x) => !x)} aria-expanded={open}
-        className={`btn-secondary btn ${small ? "h-6 px-2 text-[11.5px]" : "h-7 px-2.5 text-[12px]"}`}><Icon name="shipping" className="h-3.5 w-3.5" />{label}<Icon name="chevron" className="h-3 w-3" /></button>
+        className={small ? SHIP_LINK : "btn-secondary btn h-7 px-2.5 text-[12px]"}>{!small && <Icon name="shipping" className="h-3.5 w-3.5" />}{label}<Icon name="chevron" className={small ? "h-2.5 w-2.5 opacity-70" : "h-3 w-3"} /></button>
       {open && (
-        <div className="absolute left-0 z-40 mt-1 w-48 rounded-xl bg-white p-1 shadow-[0_0_0_1px_rgba(0,0,0,.08),0_12px_32px_-12px_rgba(0,0,0,.3)]">
+        <div className="absolute right-0 z-40 mt-1 w-44 rounded-xl bg-white p-1 shadow-[0_0_0_1px_rgba(0,0,0,.08),0_12px_32px_-12px_rgba(0,0,0,.3)]">
           <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Ship with</p>
           {choices.map((c) => <button key={c.id} type="button" onClick={() => { setOpen(false); onPick(c.id); }} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-paper">{c.name}</button>)}
         </div>
@@ -696,8 +698,8 @@ function ShipButton({ o, big }: { o: OrderRow; big?: boolean }) {
   const list = a.couriers[o.storeId] ?? [];
   if (!canShip(o) || !list.length) return null;
   if (list.length > 1) return <CourierMenu label="Ship" choices={list} onPick={(c) => a.ship([o.id], c)} disabled={a.busy} small={!big} />;
-  return <button type="button" disabled={a.busy} onClick={() => a.ship([o.id], list[0].id)} title={`Book with ${list[0].name}`}
-    className={`btn-secondary btn ${big ? "h-7 px-3 text-xs" : "h-6 px-2 text-[11.5px]"}`}><Icon name="shipping" className="h-3.5 w-3.5" />{big ? `Ship with ${list[0].name}` : "Ship"}</button>;
+  if (!big) return <button type="button" disabled={a.busy} onClick={() => a.ship([o.id], list[0].id)} title={`Book with ${list[0].name}`} className={SHIP_LINK}>Ship<Icon name="arrow" className="h-2.5 w-2.5 opacity-70" /></button>;
+  return <button type="button" disabled={a.busy} onClick={() => a.ship([o.id], list[0].id)} className="btn-secondary btn h-7 px-3 text-xs"><Icon name="shipping" className="h-3.5 w-3.5" />Ship with {list[0].name}</button>;
 }
 
 function CancelButton({ o }: { o: OrderRow }) {

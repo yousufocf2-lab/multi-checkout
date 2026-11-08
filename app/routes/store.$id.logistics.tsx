@@ -14,6 +14,8 @@ import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
 import { SHIP_STATUS_LABELS, type ShipStatus } from "~/lib/rto-shield";
 import { storePath } from "~/lib/store-code";
 import { db, stores } from "~/db.server";
+import { cleanShipRule, shipRuleOf, type ShipRule } from "~/lib/ship-rule";
+import { callersFor } from "~/lib/calls.server";
 import { eq } from "drizzle-orm";
 
 const maskEmail = (e?: string) => (e ? e.replace(/^(.{2})[^@]*/, "$1•••") : null);
@@ -32,7 +34,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   ]);
   return json({
     storeId: store.id,
-    autoShip: store.autoShip,
+    rule: shipRuleOf(store),
+    waConfirm: store.confirmEnabled && store.confirmWhatsapp,
+    callers: await callersFor(store).then((l) => l.length).catch(() => 0),
     canBook: accounts.some((a) => a.status === "connected" && !a.creds.viaShopify && ((a.courier === "delhivery" && a.creds.token && a.creds.pickupName) || (a.courier === "shiprocket" && a.creds.email && a.creds.password))),
     shopify: storeConnected(store),
     platform: platformName(store),
@@ -72,10 +76,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const r = await syncStoreShipments(store, { force: true });
     return json<R>({ ok: `Synced. ${r.linked} new shipment${r.linked === 1 ? "" : "s"} found, ${r.updated} status update${r.updated === 1 ? "" : "s"}.`, error: null });
   }
-  if (intent === "autoShip") {
-    const on = fd.get("on") === "1";
-    await db.update(stores).set({ autoShip: on }).where(eq(stores.id, store.id));
-    return json<R>({ ok: on ? "Orders will be booked with your courier automatically." : "Automatic booking is off. Ship orders from the Orders page.", error: null });
+  if (intent === "shipRule") {
+    const rule = cleanShipRule({ mode: String(fd.get("mode")) as ShipRule["mode"], by: String(fd.get("by")) as ShipRule["by"], prepaidNow: fd.get("prepaidNow") === "on" });
+    await db.update(stores).set({ shipRule: rule, autoShip: rule.mode !== "off" }).where(eq(stores.id, store.id));
+    return json<R>({ ok: "Shipping rules saved.", error: null });
   }
   if (intent === "disconnect") {
     await disconnectCourier(store.id, courier);
@@ -175,24 +179,7 @@ export default function Logistics() {
         </section>
       )}
 
-      {d.canBook && (
-        <section className="panel flex flex-wrap items-center gap-4 p-5">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pine-tint text-pine"><Icon name="zap" className="h-5 w-5" /></span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-[15px] font-semibold">Book shipments automatically</h2>
-            <p className="mt-0.5 text-[12.5px] text-ink-soft">{d.autoShip
-              ? "On: website orders go to your courier 10 minutes after they're placed (COD orders after the customer confirms on WhatsApp, if that's on). The courier creates the AWB and takes the shipping charge from its wallet."
-              : "Off: nothing goes to the courier on its own. Ship orders when you're ready from Orders: the Ship button on each order, or select many and ship together."}</p>
-          </div>
-          <Form method="post" className="shrink-0">
-            <input type="hidden" name="intent" value="autoShip" /><input type="hidden" name="on" value={d.autoShip ? "0" : "1"} />
-            <button type="submit" role="switch" aria-checked={d.autoShip} aria-label="Book shipments automatically"
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${d.autoShip ? "bg-pine" : "bg-black/20"}`}>
-              <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition ${d.autoShip ? "translate-x-[22px]" : "translate-x-0.5"}`} />
-            </button>
-          </Form>
-        </section>
-      )}
+      {d.canBook && <ShipRules d={d} />}
 
       {mine.length > 0 && <Performance d={d} />}
       {mine.length > 0 && <Shipments d={d} />}
@@ -546,6 +533,67 @@ function Shipments({ d }: { d: D }) {
           <button type="button" className="btn-quiet" disabled={!sh.hasMore} onClick={() => go({ page: String(sh.page + 1) })}>Older →</button>
         </div>
       )}
+    </section>
+  );
+}
+
+const MODES: { id: ShipRule["mode"]; title: string; text: string }[] = [
+  { id: "off", title: "Ship by hand", text: "Nothing goes to the courier on its own. Use Ship on the Orders page, one order or many." },
+  { id: "all", title: "Ship every order", text: "Every order goes to your courier 10 minutes after it's placed." },
+  { id: "confirmed", title: "Ship confirmed orders", text: "Only orders confirmed by the customer on WhatsApp or by your calling team." },
+];
+const BY: { id: ShipRule["by"]; title: string }[] = [
+  { id: "whatsapp", title: "Customer on WhatsApp" }, { id: "team", title: "Calling team" }, { id: "either", title: "Either one" },
+];
+
+/** Shipping rules: when orders are booked with the courier automatically. */
+function ShipRules({ d }: { d: D }) {
+  const [mode, setMode] = useState(d.rule.mode);
+  const [by, setBy] = useState(d.rule.by);
+  const [prepaidNow, setPrepaidNow] = useState(d.rule.prepaidNow);
+  const dirty = mode !== d.rule.mode || by !== d.rule.by || prepaidNow !== d.rule.prepaidNow;
+  const base = storePath(d.storeId);
+  return (
+    <section className="panel p-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pine-tint text-pine"><Icon name="zap" className="h-[18px] w-[18px]" /></span>
+        <div><h2 className="text-[15px] font-semibold">Shipping rules</h2><p className="text-[12.5px] text-ink-soft">When your orders are booked with the courier on their own. The courier creates the AWB and takes the shipping charge from its wallet.</p></div>
+      </div>
+      <Form method="post" className="mt-4 space-y-4">
+        <input type="hidden" name="intent" value="shipRule" />
+        <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Shipping mode">
+          {MODES.map((m) => (
+            <label key={m.id} className={`cursor-pointer rounded-xl p-3 transition ${mode === m.id ? "bg-pine-tint/60 shadow-[inset_0_0_0_1.5px_#0B5D4B]" : "shadow-[inset_0_0_0_1px_#e3e3e3] hover:bg-black/[.015]"}`}>
+              <span className="flex items-center gap-2 text-[13px] font-semibold"><input type="radio" name="mode" value={m.id} checked={mode === m.id} onChange={() => setMode(m.id)} className="h-3.5 w-3.5 accent-[#0B5D4B]" />{m.title}</span>
+              <span className="mt-1 block pl-[22px] text-[12px] leading-snug text-ink-soft">{m.text}</span>
+            </label>
+          ))}
+        </div>
+        {mode === "confirmed" ? (
+          <div className="space-y-3 rounded-xl bg-[#f6f6f7] p-3.5">
+            <div>
+              <p className="text-[12.5px] font-medium">Confirmed by</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {BY.map((b) => (
+                  <label key={b.id} className={`cursor-pointer rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition ${by === b.id ? "bg-white text-ink shadow-[0_0_0_1.5px_#0B5D4B]" : "bg-white/60 text-ink-soft shadow-[0_0_0_1px_#e3e3e3] hover:text-ink"}`}>
+                    <input type="radio" name="by" value={b.id} checked={by === b.id} onChange={() => setBy(b.id)} className="sr-only" />{b.title}
+                  </label>
+                ))}
+              </div>
+              {by !== "team" && !d.waConfirm && <p className="mt-1.5 text-[12px] text-[#8a6100]">WhatsApp order confirmation is off. <Link to={`${base}/rto#confirm`} className="font-medium underline">Turn it on</Link>{by === "either" ? " or use the calling team." : "."}</p>}
+              {by !== "whatsapp" && !d.callers && <p className="mt-1.5 text-[12px] text-[#8a6100]">No calling team yet. <Link to="/dashboard/team" className="font-medium underline">Add a team member</Link> with the "Order confirmation (calling)" role.</p>}
+            </div>
+            <label className="flex cursor-pointer items-start gap-2.5">
+              <input type="checkbox" name="prepaidNow" checked={prepaidNow} onChange={(e) => setPrepaidNow(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#0B5D4B]" />
+              <span className="text-[12.5px]"><b className="font-medium">Prepaid orders ship right away</b><span className="block text-ink-faint">No WhatsApp or call confirmation needed when the customer has already paid.</span></span>
+            </label>
+          </div>
+        ) : <><input type="hidden" name="by" value={by} />{prepaidNow && <input type="hidden" name="prepaidNow" value="on" />}</>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="flex items-center gap-1.5 text-[12px] text-ink-faint"><Icon name="shield" className="h-3.5 w-3.5" />Orders cancelled on WhatsApp or by your calling team are never shipped.</p>
+          <SubmitButton intent="shipRule" className="btn-primary btn h-8" busyText="Saving" disabled={!dirty}>Save rules</SubmitButton>
+        </div>
+      </Form>
     </section>
   );
 }

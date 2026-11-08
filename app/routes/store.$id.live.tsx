@@ -103,7 +103,7 @@ export default function LiveView() {
       {/* ---------- hero ---------- */}
       <section className="panel lv-hero relative overflow-hidden p-0">
         <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-          <div className="relative flex items-center gap-5 px-5 py-5 sm:px-6">
+          <div className="relative flex items-center gap-4 px-4 py-4 sm:gap-5 sm:px-6 sm:py-5">
             <Radar on={data.total > 0} />
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-[12px] font-medium text-ink-soft">
@@ -112,15 +112,15 @@ export default function LiveView() {
                   <span className={`h-1.5 w-1.5 rounded-full ${ok ? "lv-blink bg-[#1f8f5f]" : "bg-[#c47f00]"}`} />{ok ? "LIVE" : "Reconnecting"}
                 </span>
               </p>
-              <p className="mt-1 text-[44px] font-semibold leading-none tracking-tight"><AnimatedNumber value={data.total} /></p>
+              <p className="mt-1 text-[38px] font-semibold leading-none tracking-tight sm:text-[44px]"><AnimatedNumber value={data.total} /></p>
               <p className="mt-2 text-[12px] text-ink-faint">
                 {data.peak.n > 0 ? <>Peak today <b className="num font-semibold text-ink-soft">{data.peak.n}</b> at {new Date(data.peak.at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}</> : "Peak today will show here"}
                 <span className="mx-1.5">·</span>updates every few seconds
               </p>
             </div>
           </div>
-          <div className="border-t border-rule px-5 pb-3 pt-4 md:border-l md:border-t-0 sm:px-6">
-            <div className="mb-1 flex items-center justify-between text-[11.5px] text-ink-faint"><span>Last 30 minutes</span><span className="flex gap-3">
+          <div className="border-t border-rule px-4 pb-3 pt-3 md:border-l md:border-t-0 sm:px-6 sm:pt-4">
+            <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11.5px] text-ink-faint"><span>Last 30 minutes</span><span className="flex gap-3">
               <span>Carts <b className="num font-semibold text-ink">{inr(data.cartValuePaise)}</b></span>
               <span><Icon name="phone" className="mr-0.5 inline h-3 w-3" /><b className="num font-semibold text-ink">{data.devices.mobile}</b></span>
               <span><Icon name="overview" className="mr-0.5 inline h-3 w-3" /><b className="num font-semibold text-ink">{data.devices.desktop}</b></span>
@@ -132,9 +132,9 @@ export default function LiveView() {
 
       {/* ---------- where visitors are ---------- */}
       <section className="panel p-0">
-        <div className="flex items-center justify-between border-b border-rule px-5 py-3">
+        <div className="flex items-center justify-between border-b border-rule px-4 py-3 sm:px-5">
           <h2 className="text-[14px] font-semibold">Where visitors are</h2>
-          <span className="text-[11.5px] text-ink-faint">Each dot is one visitor · <span className="inline-block h-2 w-2 rounded-full bg-ink-faint align-middle" /> mobile <span className="ml-1 inline-block h-2 w-2 rounded-[3px] bg-ink-faint align-middle" /> desktop</span>
+          <span className="hidden text-[11.5px] text-ink-faint sm:inline">Each dot is one visitor · <span className="inline-block h-2 w-2 rounded-full bg-ink-faint align-middle" /> mobile <span className="ml-1 inline-block h-2 w-2 rounded-[3px] bg-ink-faint align-middle" /> desktop</span>
         </div>
         <StageMap data={data} />
       </section>
@@ -142,14 +142,14 @@ export default function LiveView() {
       {/* ---------- visitors + activity ---------- */}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         <section className="panel p-0">
-          <div className="flex items-center justify-between border-b border-rule px-5 py-3">
+          <div className="flex items-center justify-between border-b border-rule px-4 py-3 sm:px-5">
             <h2 className="text-[14px] font-semibold">Active visitors</h2>
             <span className="num text-[12px] text-ink-faint">{data.total}</span>
           </div>
           {data.visitors.length ? (
-            <ul className="max-h-[420px] divide-y divide-rule overflow-y-auto">
+            <ul className="max-h-[480px] divide-y divide-rule overflow-y-auto sm:max-h-[420px]">
               {data.visitors.slice().reverse().map((v) => (
-                <li key={v.key} className="lv-in flex items-center gap-3 px-5 py-2.5">
+                <li key={v.key} className="lv-in flex items-center gap-3 px-4 py-2.5 sm:px-5">
                   <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: `hsl(${v.hue} 55% 52%)` }}>
                     {v.known ? v.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() : v.name.slice(-2)}
                     <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white" style={{ background: STAGE[v.stage].color }} />
@@ -161,7 +161,7 @@ export default function LiveView() {
                     <p className="truncate text-[11.5px] text-ink-faint">{v.stage === "checkout" && v.step ? `On ${STEP[v.step as 1 | 2 | 3]} · ` : ""}{v.source} · {v.device === "desktop" ? "Desktop" : "Mobile"}{v.stage !== "checkout" ? ` · ${v.pages} page${v.pages === 1 ? "" : "s"}` : ""}{v.cartQty ? ` · ${v.cartQty} in cart${v.cartPaise ? ` (${inr(v.cartPaise)})` : ""}` : ""}</p>
                   </div>
                   <span className="hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline" style={{ color: STAGE[v.stage].color, background: `${STAGE[v.stage].color}14` }}>{STAGE[v.stage].label}</span>
-                  <span className="num w-14 shrink-0 text-right text-[11.5px] text-ink-faint">{ago(t - v.since)}</span>
+                  <span className="num w-12 shrink-0 text-right text-[11px] text-ink-faint sm:w-14 sm:text-[11.5px]">{ago(t - v.since)}</span>
                 </li>
               ))}
             </ul>
@@ -169,9 +169,9 @@ export default function LiveView() {
         </section>
 
         <section className="panel p-0">
-          <div className="border-b border-rule px-5 py-3"><h2 className="text-[14px] font-semibold">Live activity</h2></div>
+          <div className="border-b border-rule px-4 py-3 sm:px-5"><h2 className="text-[14px] font-semibold">Live activity</h2></div>
           {data.events.length ? (
-            <ol className="max-h-[420px] overflow-y-auto px-5 py-3">
+            <ol className="max-h-[360px] overflow-y-auto px-4 py-3 sm:max-h-[420px] sm:px-5">
               {data.events.map((e) => (
                 <li key={e.id} className="lv-drop relative flex gap-3 pb-3 last:pb-0">
                   <span className="relative mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full" style={{ background: EVT[e.kind].bg, color: EVT[e.kind].fg }}>
@@ -210,7 +210,7 @@ const EVT = {
 
 function Radar({ on }: { on: boolean }) {
   return (
-    <span className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+    <span className="relative flex h-14 w-14 shrink-0 items-center justify-center sm:h-16 sm:w-16">
       {on && [0, 1, 2].map((i) => <span key={i} className="lv-ring absolute inset-0 rounded-full border-2 border-[#1f8f5f]" style={{ animationDelay: `${i * 0.8}s` }} />)}
       <span className={`relative flex h-9 w-9 items-center justify-center rounded-full ${on ? "bg-[#1f8f5f] text-white shadow-[0_0_0_6px_rgba(31,143,95,.12)]" : "bg-black/5 text-ink-faint"}`}>
         <Icon name="eye" className="h-[18px] w-[18px]" />
@@ -245,7 +245,31 @@ function Sparkline({ values }: { values: number[] }) {
 function StageMap({ data }: { data: LiveSnapshot }) {
   const max = Math.max(1, ...ORDER.map((s) => data.stages[s]));
   return (
-    <div className="grid grid-cols-5">
+    <>
+    {/* Phones: one row per stage, dots moving along a track */}
+    <ul className="divide-y divide-rule sm:hidden">
+      {ORDER.map((s) => {
+        const dots = data.visitors.filter((v) => v.stage === s);
+        const n = data.stages[s];
+        return (
+          <li key={s} className="flex items-center gap-3 px-4 py-2.5">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STAGE[s].color }} />
+            <span className="w-[104px] shrink-0 truncate text-[12.5px] font-medium text-ink-soft">{STAGE[s].label}</span>
+            <span className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-full bg-black/[.035]">
+              <span className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out" style={{ width: `${(n / max) * 100}%`, background: `${STAGE[s].color}1f` }} />
+              {dots.slice(0, 24).map((v) => {
+                const hx = hash(v.key);
+                return <span key={v.key} className="lv-dot absolute top-1/2 -mt-[5px]" style={{ left: `${6 + hx * 86}%` }}>
+                  <span className={`lv-float block h-2.5 w-2.5 ${v.device === "desktop" ? "rounded-[3px]" : "rounded-full"}`} style={{ background: STAGE[s].color, animationDelay: `${-hx * 3}s` }} />
+                </span>;
+              })}
+            </span>
+            <span className="w-7 shrink-0 text-right text-[16px] font-semibold leading-none" style={{ color: n ? STAGE[s].color : undefined }}><AnimatedNumber value={n} /></span>
+          </li>
+        );
+      })}
+    </ul>
+    <div className="hidden grid-cols-5 sm:grid">
       {ORDER.map((s, i) => {
         const dots = data.visitors.filter((v) => v.stage === s);
         return (
@@ -270,15 +294,16 @@ function StageMap({ data }: { data: LiveSnapshot }) {
         );
       })}
     </div>
+    </>
   );
 }
 
 function Bars({ title, rows, total, color }: { title: string; rows: { label: string; n: number }[]; total: number; color: string }) {
   return (
     <section className="panel p-0">
-      <div className="border-b border-rule px-5 py-3"><h2 className="text-[14px] font-semibold">{title}</h2></div>
+      <div className="border-b border-rule px-4 py-3 sm:px-5"><h2 className="text-[14px] font-semibold">{title}</h2></div>
       {rows.length ? (
-        <ul className="space-y-2.5 px-5 py-4">
+        <ul className="space-y-2.5 px-4 py-4 sm:px-5">
           {rows.map((r) => (
             <li key={r.label}>
               <div className="flex items-center justify-between gap-3 text-[12.5px]"><span className="truncate">{r.label}</span><span className="num shrink-0 text-ink-soft">{r.n}</span></div>

@@ -119,7 +119,7 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
     orders: rows.slice(0, PAGE).map(({ order: o, store }) => {
       const premium = o.checkoutChannel === "premium_checkout" || (!o.checkoutChannel && Boolean(o.sessionId && store.smartCheckout));
       const history = o.checkoutChannel === "shopify_history";
-      return { ...o, storeName: names.get(o.storeId) ?? "", channel: history ? "Shopify History" : premium ? "Premium Checkout" : "Native", tags: [...new Set([...(o.manualTags ?? []), ...(history ? ["Shopify History"] : []), ...(premium ? ["Smart Checkout"] : []), ...(o.confirmStatus || o.waMessageId ? ["WhatsApp"] : [])])] };
+      return { ...o, storeName: names.get(o.storeId) ?? "", channel: history ? "Shopify History" : premium ? "Premium Checkout" : "Native", tags: [...new Set([...(o.manualTags ?? []), ...(history ? ["Shopify History"] : []), ...(premium ? ["Smart Checkout"] : []), ...(o.confirmStatus || o.waMessageId ? ["WhatsApp"] : []), ...(o.callStatus ? [o.callStatus === "confirmed" ? "Confirmed on call" : o.callStatus === "cancelled" ? "Cancelled on call" : "Call follow-up"] : [])])] };
     }),
     hasMore: rows.length > PAGE,
     page,

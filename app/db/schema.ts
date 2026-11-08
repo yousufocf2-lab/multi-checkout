@@ -242,6 +242,8 @@ export const stores = pgTable("stores", {
   logoUrl: text("logo_url"),
   filesSyncedAt: timestamp("files_synced_at", { withTimezone: true }), // Files library filled from the media bucket once
   autoShip: boolean("auto_ship").notNull().default(true), // website orders go to the courier on their own; off = ship by hand from Orders
+  shipRule: jsonb("ship_rule").$type<import("~/lib/ship-rule").ShipRule>(), // when orders go to the courier on their own (null = from autoShip + WhatsApp settings)
+  callRr: integer("call_rr").notNull().default(0), // round-robin pointer for the calling team
   primaryColor: text("primary_color").notNull().default("#111827"),
   supportPhone: text("support_phone"),
   theme: jsonb("theme").$type<Partial<CheckoutTheme>>().notNull().default({}), // checkout design, see lib/theme.ts
@@ -883,6 +885,14 @@ export const orders = pgTable(
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancelReason: text("cancel_reason"),
     cancelledBy: text("cancelled_by"),
+    // Calling team (order confirmation by phone)
+    assignedTo: integer("assigned_to"), // team_members.id
+    assignedAt: timestamp("assigned_at", { withTimezone: true }),
+    callStatus: text("call_status").$type<"confirmed" | "follow_up" | "cancelled">(),
+    callAt: timestamp("call_at", { withTimezone: true }),
+    callBy: text("call_by"),
+    followUpAt: timestamp("follow_up_at", { withTimezone: true }),
+    callAttempts: integer("call_attempts").notNull().default(0),
     confirmAt: timestamp("confirm_at", { withTimezone: true }),
     waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery

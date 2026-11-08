@@ -1,4 +1,5 @@
 // Growpefy Store → Orders to ship: website orders waiting for an AWB. Mark shipped, or download for a courier upload.
+import { shipRuleOf } from "~/lib/ship-rule";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useActionData, useLoaderData } from "@remix-run/react";
@@ -19,7 +20,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const list = await ordersToShip(store.id);
   const [dl] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "delhivery"))).limit(1);
   return json({
-    autoShip: store.autoShip && Boolean(dl?.creds.token && dl.creds.pickupName),
+    autoShip: shipRuleOf(store).mode !== "off" && Boolean(dl?.creds.token && dl.creds.pickupName),
     couriers: COURIERS.filter((c) => c.id !== "other").map((c) => ({ id: c.id, name: c.name })),
     orders: list.map((o) => ({
       id: o.id, name: o.shopifyOrderName ?? o.id, shipError: o.shipError, confirm: o.confirmStatus, at: o.createdAt.toISOString(), cod: codAmount(o), total: o.total, method: o.paymentMethod,
