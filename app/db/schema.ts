@@ -815,6 +815,7 @@ export type TrackingInfo = {
   ua?: string;
   sourceUrl?: string;
   proxyOrigin?: string; // https://<store domain> when the checkout ran on the store's domain (Shopify App Proxy)
+  src?: string; // where the website visit came from (utm_source / referrer), for Live view
 };
 
 export type OrderCustomer = {

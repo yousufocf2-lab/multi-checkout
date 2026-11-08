@@ -1,8 +1,9 @@
-import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, not as negate, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, notInArray, not as negate, or, sql, type SQL } from "drizzle-orm";
 import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, stores, type Store } from "~/db.server";
 import { addDays, resolveRange, type Range } from "./dates";
 import { storeBaseUrl } from "./urls.server";
+import { liveSessions } from "./live.server";
 
 export const PAGE = 50;
 
@@ -144,10 +145,13 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
     inArray(checkoutSessions.storeId, ids.length ? ids : [-1]),
     gte(checkoutSessions.createdAt, from),
     lt(checkoutSessions.createdAt, to),
-    sql`${checkoutSessions.updatedAt} < now() - interval '30 minutes'`,
+    // Abandoned a few minutes after the last activity, as long as nobody is still on that checkout page
+    sql`${checkoutSessions.updatedAt} < now() - interval '3 minutes'`,
     sql`not exists (select 1 from ${orders} o where o.session_id = ${checkoutSessions.id} and o.status in ('paid','cod_placed'))`,
     isNotNull(checkoutSessions.cartSnapshot),
   ];
+  const stillOpen = [...liveSessions(ids)];
+  if (stillOpen.length) where.push(notInArray(checkoutSessions.id, stillOpen));
   if (withPhone) where.push(sql`length(coalesce(${checkoutSessions.customer}->>'phone', '')) = 10`);
 
   const rows = await db
@@ -183,7 +187,7 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
         city: c.city ?? "",
         cart: s.cartSnapshot ?? [],
         value: (s.cartValue ?? 0) / 100,
-        stage: s.paymentAttempted ? "Payment not completed" : c.phone ? "Left after contact details" : "Left at cart",
+        stage: s.paymentAttempted ? "Payment not completed" : c.address1 ? "Left after address" : c.phone ? "Left after contact details" : "Left at cart",
         lastActive: s.updatedAt.toISOString(),
         link: expired ? null : link,
       };

@@ -16,12 +16,17 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const b = JSON.parse((await request.text()).slice(0, 2000)) as Record<string, unknown>;
     let storeId: number | null = null;
+    let source = typeof b.src === "string" ? b.src : undefined;
+    let session: string | undefined;
     let visitor = typeof b.u === "string" && ID.test(b.u) ? b.u : "";
     let path = typeof b.p === "string" ? b.p.split("?")[0].slice(0, 240) : "/";
 
     if (typeof b.c === "string" && ID.test(b.c)) {
       // Checkout page: one visitor per checkout session
-      storeId = await storeForSession(b.c);
+      const s = await storeForSession(b.c);
+      storeId = s.storeId;
+      source = s.source || "direct";
+      session = b.c;
       visitor = `c-${b.c}`;
       path = "/checkout";
     } else if (typeof b.s === "string" && b.s) {
@@ -44,7 +49,7 @@ export async function action({ request }: ActionFunctionArgs) {
       visitor, path,
       title: typeof b.t === "string" ? b.t : undefined,
       device: b.d === "desktop" ? "desktop" : "mobile",
-      source: typeof b.src === "string" ? b.src : undefined,
+      source, session, step: Number(b.st) || undefined,
       cartQty: Number(b.q) || 0, cartPaise: Number(b.v) || 0,
       leave: b.e === "leave",
     });

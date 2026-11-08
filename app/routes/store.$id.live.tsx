@@ -1,7 +1,7 @@
 // Live view: visitors on the store's website and checkout right now, refreshed every few seconds.
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
+import { Link, useLoaderData } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { Notice } from "~/components/ui";
@@ -26,6 +26,7 @@ const STAGE: Record<Stage, { label: string; color: string }> = {
   cart: { label: "In cart", color: "#e8a317" },
   checkout: { label: "In checkout", color: "#1f8f5f" },
 };
+const STEP = { 1: "Mobile number", 2: "Address", 3: "Payment" } as const;
 const ORDER: Stage[] = ["home", "browsing", "product", "cart", "checkout"];
 const inr = (p: number) => `₹${(p / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0) / 4294967295; };
@@ -150,12 +151,14 @@ export default function LiveView() {
               {data.visitors.slice().reverse().map((v) => (
                 <li key={v.key} className="lv-in flex items-center gap-3 px-5 py-2.5">
                   <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: `hsl(${v.hue} 55% 52%)` }}>
-                    {v.name.slice(-2)}
+                    {v.known ? v.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() : v.name.slice(-2)}
                     <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white" style={{ background: STAGE[v.stage].color }} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium">{v.page}</p>
-                    <p className="truncate text-[11.5px] text-ink-faint">{v.source} · {v.device === "desktop" ? "Desktop" : "Mobile"} · {v.pages} page{v.pages === 1 ? "" : "s"}{v.cartQty ? ` · ${v.cartQty} in cart${v.cartPaise ? ` (${inr(v.cartPaise)})` : ""}` : ""}</p>
+                    {v.known ? (
+                      <p className="flex min-w-0 items-center gap-1.5 text-[13px]"><b key={v.name} className="lv-glow truncate font-semibold">{v.name}</b>{v.place && <span key={v.place} className="lv-glow flex min-w-0 items-center gap-0.5 truncate text-[12px] text-ink-soft"><Icon name="route" className="h-3 w-3 shrink-0" />{v.place}</span>}</p>
+                    ) : <p className="truncate text-[13px] font-medium">{v.page}</p>}
+                    <p className="truncate text-[11.5px] text-ink-faint">{v.stage === "checkout" && v.step ? `On ${STEP[v.step as 1 | 2 | 3]} · ` : ""}{v.source} · {v.device === "desktop" ? "Desktop" : "Mobile"}{v.stage !== "checkout" ? ` · ${v.pages} page${v.pages === 1 ? "" : "s"}` : ""}{v.cartQty ? ` · ${v.cartQty} in cart${v.cartPaise ? ` (${inr(v.cartPaise)})` : ""}` : ""}</p>
                   </div>
                   <span className="hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline" style={{ color: STAGE[v.stage].color, background: `${STAGE[v.stage].color}14` }}>{STAGE[v.stage].label}</span>
                   <span className="num w-14 shrink-0 text-right text-[11.5px] text-ink-faint">{ago(t - v.since)}</span>
@@ -177,6 +180,7 @@ export default function LiveView() {
                   <div className="min-w-0 flex-1">
                     <p className="text-[12.5px] font-medium leading-tight">{e.text}</p>
                     {e.sub && <p className="truncate text-[11.5px] text-ink-faint">{e.sub}</p>}
+                    {e.kind === "left" && <Link to="/dashboard/orders/abandoned" className="text-[11.5px] font-medium text-[#005bd3] hover:underline">Saved in abandoned checkouts →</Link>}
                   </div>
                   <span className="num shrink-0 text-[11px] text-ink-faint">{ago(t - e.at)}</span>
                 </li>
@@ -200,6 +204,8 @@ const EVT = {
   cart: { icon: "cart", bg: "#fff3dc", fg: "#a96f00" },
   checkout: { icon: "rupee", bg: "#e3f1ea", fg: "#1f6f4a" },
   order: { icon: "check", bg: "#1f8f5f", fg: "#ffffff" },
+  details: { icon: "user", bg: "#e6f4f3", fg: "#0b7c77" },
+  left: { icon: "alert", bg: "#fdeceb", fg: "#b42318" },
 } as const;
 
 function Radar({ on }: { on: boolean }) {
@@ -309,6 +315,7 @@ const CSS = `
 @keyframes lv-pop { 0% { transform: scale(0) } 70% { transform: scale(1.5) } 100% { transform: scale(1) } }
 @keyframes lv-float { 0%, 100% { transform: translate(0, 0) } 33% { transform: translate(3px, -4px) } 66% { transform: translate(-3px, 2px) } }
 @keyframes lv-draw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
+@keyframes lv-glow { 0% { background: rgba(31,143,95,.18); border-radius: 4px } 100% { background: transparent } }
 @keyframes lv-fade { from { opacity: 0 } to { opacity: 1 } }
 .lv-hero { background: radial-gradient(120% 140% at 0% 0%, rgba(31,143,95,.07), transparent 55%), #fff; }
 .lv-ring { animation: lv-ring 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
@@ -321,5 +328,6 @@ const CSS = `
 .lv-float { animation: lv-float 3.4s ease-in-out infinite; }
 .lv-draw { stroke-dasharray: 1; animation: lv-draw 1.1s ease-out both; }
 .lv-fade { animation: lv-fade 1.1s ease-out both; }
-@media (prefers-reduced-motion: reduce) { .lv-ring, .lv-ping, .lv-blink, .lv-bump, .lv-in, .lv-drop, .lv-dot, .lv-float, .lv-draw, .lv-fade { animation: none !important; transition: none !important; } }
+.lv-glow { animation: lv-glow 1.6s ease-out; padding: 0 2px; margin: 0 -2px; }
+@media (prefers-reduced-motion: reduce) { .lv-ring, .lv-ping, .lv-blink, .lv-bump, .lv-in, .lv-drop, .lv-dot, .lv-float, .lv-draw, .lv-fade, .lv-glow { animation: none !important; transition: none !important; } }
 `;

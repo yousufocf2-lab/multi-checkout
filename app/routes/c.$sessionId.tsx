@@ -29,6 +29,7 @@ import { fetchLines, fetchUpsellProducts } from "~/lib/platform.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
+import { checkoutDetails } from "~/lib/live.server";
 import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.server";
 import { env } from "~/lib/env.server";
 import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.server";
@@ -209,6 +210,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       pincode: keep("pincode", 6), city: keep("city"), state: keep("state", 4), address1: keep("address1", 300), address2: keep("address2", 300),
     };
     await db.update(checkoutSessions).set({ customer: draft, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
+    checkoutDetails(store.id, session.id, draft); // Live view: name and a short address as soon as they're typed
     return json({ saved: true });
   }
 
@@ -535,7 +537,7 @@ export default function Checkout() {
     window.addEventListener("unhandledrejection", rej);
     return () => { document.removeEventListener("visibilitychange", vis); window.removeEventListener("error", err); window.removeEventListener("unhandledrejection", rej); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (stepRef.current !== step) cx("step", { step }); stepRef.current = step; }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (stepRef.current !== step) { cx("step", { step }); stepRef.current = step; (window as Window & { __gpLiveBeat?: () => void }).__gpLiveBeat?.(); } }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
   // ---- Live view: the store sees this checkout as a live visitor while the page is open ----
   const liveCart = useRef({ q: 0, v: 0 });
   liveCart.current = { q: lines.reduce((n, l) => n + l.quantity, 0), v: itemsValue };
@@ -543,12 +545,13 @@ export default function Checkout() {
     const url = cxCfg.url.replace(/\/api\/cx-event$/, "/api/live");
     const beat = (leave?: boolean) => {
       try {
-        const body = JSON.stringify({ c: cxCfg.s, d: window.matchMedia("(min-width: 861px)").matches ? "desktop" : "mobile", q: liveCart.current.q, v: liveCart.current.v, e: leave ? "leave" : undefined });
+        const body = JSON.stringify({ c: cxCfg.s, st: stepRef.current, d: window.matchMedia("(min-width: 861px)").matches ? "desktop" : "mobile", q: liveCart.current.q, v: liveCart.current.v, e: leave ? "leave" : undefined });
         if (leave && navigator.sendBeacon?.(url, body)) return;
         void fetch(url, { method: "POST", body, keepalive: true, mode: "no-cors" }).catch(() => {});
       } catch { /* live view only */ }
     };
     beat();
+    (window as Window & { __gpLiveBeat?: () => void }).__gpLiveBeat = () => beat();
     const t = setInterval(() => { if (document.visibilityState === "visible") beat(); }, 15_000);
     const vis = () => { if (document.visibilityState === "visible") beat(); };
     const leave = () => beat(true);

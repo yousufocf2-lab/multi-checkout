@@ -98,9 +98,17 @@ export async function cartPage(ctx: ShopContext) {
  * Cart -> the Growpefy checkout. Items go in as "gp:<variant id>" so the checkout prices them from the store's own
  * catalog and keeps the order in Growpefy (nothing is created on Shopify).
  */
+/** Meta pixel's first-party cookies on the store's domain (_fbp browser id, _fbc ad click id) for Conversions API matching. */
+function metaCookies(request: Request) {
+  const jar = request.headers.get("cookie") ?? "";
+  const get = (k: string) => { const m = jar.match(new RegExp(`(?:^|;\\s*)${k}=([^;]+)`)); if (!m) return undefined; try { return decodeURIComponent(m[1]).slice(0, 200); } catch { return undefined; } };
+  const fbp = get("_fbp"), fbc = get("_fbc");
+  return { ...(fbp && /^fb\.\d\./.test(fbp) ? { fbp } : {}), ...(fbc && /^fb\.\d\./.test(fbc) ? { fbc } : {}) };
+}
+
 export async function startCheckout(request: Request, ctx: ShopContext) {
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-  let body: { lines?: { variantId?: unknown; qty?: unknown }[] } = {};
+  let body: { lines?: { variantId?: unknown; qty?: unknown }[]; src?: unknown } = {};
   try { body = await request.json(); } catch { return reply({ error: "Your cart couldn't be read. Please try again." }, 400); }
 
   const merged = new Map<string, number>();
@@ -121,7 +129,11 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
   await db.insert(checkoutSessions).values({
     id, storeId: ctx.store.id,
     items: lines.map((l) => ({ variantId: l.variantId, quantity: l.quantity })),
-    tracking: { ip: clientIp(request), ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined, sourceUrl: request.headers.get("referer")?.slice(0, 500) ?? undefined },
+    tracking: {
+      ip: clientIp(request), ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined, sourceUrl: request.headers.get("referer")?.slice(0, 500) ?? undefined,
+      ...metaCookies(request),
+      ...(typeof body.src === "string" && body.src ? { src: body.src.replace(/[^\w.\- ]/g, "").slice(0, 60) } : {}),
+    },
   });
   const sum = (xs: { quantity: number }[]) => xs.reduce((n, x) => n + x.quantity, 0);
   return reply({ url: `${storeBaseUrl(ctx.store)}/c/${id}`, note: sum(lines) < sum(items) ? "Some items were sold out and were left out." : null });

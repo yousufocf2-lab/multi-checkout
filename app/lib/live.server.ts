@@ -10,8 +10,10 @@ export const STAGES: Stage[] = ["home", "browsing", "product", "cart", "checkout
 type Visitor = {
   id: string; path: string; title: string; stage: Stage; device: "mobile" | "desktop";
   source: string; cartQty: number; cartPaise: number; firstSeen: number; lastSeen: number; expires: number; pages: number;
+  // Checkout only: what the customer has typed so far, and the step they're on
+  name?: string; place?: string; step?: 1 | 2 | 3; session?: string;
 };
-type LiveEvent = { id: number; at: number; kind: "join" | "cart" | "checkout" | "order"; text: string; sub?: string };
+type LiveEvent = { id: number; at: number; kind: "join" | "cart" | "checkout" | "order" | "details" | "left"; text: string; sub?: string; session?: string };
 type StoreLive = { visitors: Map<string, Visitor>; events: LiveEvent[]; history: { minute: number; n: number }[]; peak: { day: string; n: number; at: number } };
 
 const ALIVE_MS = 45_000; // a heartbeat keeps a visitor for this long
@@ -36,7 +38,12 @@ function push(b: StoreLive, e: Omit<LiveEvent, "id" | "at">) {
 }
 
 function prune(b: StoreLive, now = Date.now()) {
-  for (const [k, v] of b.visitors) if (v.expires <= now) b.visitors.delete(k);
+  for (const [k, v] of b.visitors) {
+    if (v.expires > now) continue;
+    b.visitors.delete(k);
+    // Someone who typed their details and went away: it's now an abandoned checkout (unless an order came in)
+    if (v.session && (v.name || v.place)) push(b, { kind: "left", text: `${v.name || "A customer"} left checkout`, sub: [v.place, v.cartPaise ? inr(v.cartPaise) : ""].filter(Boolean).join(" · ") || undefined, session: v.session });
+  }
   const n = b.visitors.size;
   const minute = Math.floor(now / 60_000);
   const last = b.history[b.history.length - 1];
@@ -73,7 +80,7 @@ export function sourceLabel(raw: string) {
   return raw.replace(/^www\./, "").slice(0, 30) || "Direct";
 }
 
-export type Beat = { visitor: string; path: string; title?: string; device?: string; source?: string; cartQty?: number; cartPaise?: number; leave?: boolean };
+export type Beat = { visitor: string; path: string; title?: string; device?: string; source?: string; cartQty?: number; cartPaise?: number; leave?: boolean; step?: number; session?: string };
 
 export function heartbeat(storeId: number, beat: Beat) {
   const b = bucket(storeId);
@@ -88,16 +95,51 @@ export function heartbeat(storeId: number, beat: Beat) {
   const cartPaise = Math.max(0, Math.min(1e10, Math.round(Number(beat.cartPaise) || 0)));
   if (!v) {
     const source = sourceLabel(clean(beat.source, 60));
-    b.visitors.set(beat.visitor, { id: beat.visitor, path, title, stage, device: beat.device === "desktop" ? "desktop" : "mobile", source, cartQty, cartPaise, firstSeen: now, lastSeen: now, expires: now + ALIVE_MS, pages: 1 });
+    b.visitors.set(beat.visitor, { id: beat.visitor, path, title, stage, device: beat.device === "desktop" ? "desktop" : "mobile", source, cartQty, cartPaise, firstSeen: now, lastSeen: now, expires: now + ALIVE_MS, pages: 1, session: beat.session, step: stepOf(beat.step) });
     if (stage === "checkout") push(b, { kind: "checkout", text: "Started checkout", sub: cartPaise ? inr(cartPaise) : undefined });
     else push(b, { kind: "join", text: `New visitor from ${source}`, sub: title || pageName(path) });
   } else {
     if (v.path !== path) v.pages++;
     if (cartQty > v.cartQty) push(b, { kind: "cart", text: "Added to cart", sub: `${cartQty} item${cartQty === 1 ? "" : "s"}${cartPaise ? ` · ${inr(cartPaise)}` : ""}` });
     if (stage === "checkout" && v.stage !== "checkout") push(b, { kind: "checkout", text: "Started checkout", sub: cartPaise ? inr(cartPaise) : undefined });
-    Object.assign(v, { path, title: title || v.title, stage, cartQty, cartPaise: cartPaise || (cartQty ? v.cartPaise : 0), lastSeen: now, expires: now + ALIVE_MS });
+    Object.assign(v, { path, title: title || v.title, stage, cartQty, cartPaise: cartPaise || (cartQty ? v.cartPaise : 0), lastSeen: now, expires: now + ALIVE_MS, step: stepOf(beat.step) ?? v.step });
   }
   prune(b, now);
+}
+
+const stepOf = (n: unknown) => (n === 1 || n === 2 || n === 3 ? n : undefined);
+
+/**
+ * The checkout saved what the customer typed (name, address): show it on their live visitor right away.
+ * Only the first name and a short place (city + pincode) are shown; the full details stay in the order/abandoned pages.
+ */
+export function checkoutDetails(storeId: number, sessionId: string, c: { firstName?: string; lastName?: string; city?: string; pincode?: string; address1?: string }) {
+  const b = bucket(storeId);
+  const now = Date.now();
+  const key = `c-${sessionId}`;
+  let v = b.visitors.get(key);
+  if (!v) {
+    v = { id: key, path: "/checkout", title: "", stage: "checkout", device: "mobile", source: "Direct", cartQty: 0, cartPaise: 0, firstSeen: now, lastSeen: now, expires: now + ALIVE_MS, pages: 1, session: sessionId };
+    b.visitors.set(key, v);
+  }
+  const name = [c.firstName, c.lastName].map((x) => (x ?? "").trim()).filter(Boolean).join(" ").replace(/[<>]/g, "").slice(0, 40);
+  const place = [(c.city ?? "").trim(), /^\d{6}$/.test(c.pincode ?? "") ? c.pincode : ""].filter(Boolean).join(" ").replace(/[<>]/g, "").slice(0, 40);
+  const hadAddress = Boolean(v.place);
+  if (name && !v.name) push(b, { kind: "details", text: `${name} is checking out`, sub: v.cartPaise ? inr(v.cartPaise) : undefined, session: sessionId });
+  if (name) v.name = name;
+  if (place && (c.address1 ?? "").trim().length >= 3) {
+    v.place = place;
+    if (!hadAddress) push(b, { kind: "details", text: `${v.name || "Customer"} added address`, sub: place, session: sessionId });
+  }
+  v.lastSeen = now; v.expires = Math.max(v.expires, now + ALIVE_MS);
+}
+
+/** Checkout sessions that still have someone on the page (not abandoned yet). */
+export function liveSessions(storeIds: number[]) {
+  const out = new Set<string>();
+  const now = Date.now();
+  for (const id of storeIds) for (const v of live.get(id)?.visitors.values() ?? []) if (v.session && v.expires > now) out.add(v.session);
+  return out;
 }
 
 const inr = (p: number) => `₹${(p / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -112,14 +154,17 @@ function pageName(path: string) {
 }
 
 // Checkout sessions → store (cached, a checkout heartbeat only carries the session id)
-const sessionStore = new Map<string, { storeId: number | null; at: number }>();
+const sessionStore = new Map<string, { storeId: number | null; source: string; at: number }>();
 export async function storeForSession(sessionId: string) {
   const hit = sessionStore.get(sessionId);
-  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.storeId;
-  const [s] = await db.select({ storeId: checkoutSessions.storeId }).from(checkoutSessions).where(eq(checkoutSessions.id, sessionId)).limit(1);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit;
+  const [s] = await db.select({ storeId: checkoutSessions.storeId, tracking: checkoutSessions.tracking }).from(checkoutSessions).where(eq(checkoutSessions.id, sessionId)).limit(1);
   if (sessionStore.size > 20_000) sessionStore.clear();
-  sessionStore.set(sessionId, { storeId: s?.storeId ?? null, at: Date.now() });
-  return s?.storeId ?? null;
+  const t = s?.tracking;
+  const source = t?.src || (t?.fbc ? "facebook" : t?.gclid ? "google" : "") || (t?.sourceUrl && /utm_source=([^&]+)/.exec(t.sourceUrl)?.[1]) || "";
+  const row = { storeId: s?.storeId ?? null, source, at: Date.now() };
+  sessionStore.set(sessionId, row);
+  return row;
 }
 
 const avatarHue = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360; return h; };
@@ -139,7 +184,7 @@ export async function liveSnapshot(storeId: number) {
 
   // Orders placed in the last 30 minutes join the activity feed
   const since = new Date(now - 30 * 60_000);
-  const recent = await db.select({ id: orders.id, total: orders.total, method: orders.paymentMethod, status: orders.status, createdAt: orders.createdAt, customer: orders.customer })
+  const recent = await db.select({ id: orders.id, sessionId: orders.sessionId, total: orders.total, method: orders.paymentMethod, status: orders.status, createdAt: orders.createdAt, customer: orders.customer })
     .from(orders).where(and(eq(orders.storeId, storeId), gte(orders.createdAt, since), inArray(orders.status, ["paid", "cod_placed"])))
     .orderBy(desc(orders.createdAt)).limit(10).catch(() => []);
   const orderEvents = recent.map((o, i) => ({
@@ -147,7 +192,9 @@ export async function liveSnapshot(storeId: number) {
     text: `Order placed${o.customer?.city ? ` · ${o.customer.city}` : ""}`,
     sub: `${inr(o.total)} · ${o.method === "cod" ? "COD" : o.method === "partial" ? "Partial COD" : "Prepaid"}`,
   }));
-  const events = [...b.events, ...orderEvents].sort((a, b) => b.at - a.at).slice(0, 25).map((e) => ({ ...e, id: e.kind === "order" ? `o${e.at}` : `e${e.id}` }));
+  const ordered = new Set(recent.map((o) => o.sessionId).filter(Boolean));
+  const events = [...b.events.filter((e) => !(e.kind === "left" && e.session && ordered.has(e.session))), ...orderEvents].sort((a, b) => b.at - a.at).slice(0, 25)
+    .map((e) => ({ at: e.at, kind: e.kind, text: e.text, sub: e.sub, id: e.kind === "order" ? `o${e.at}` : `e${e.id}` }));
 
   const minute = Math.floor(now / 60_000);
   const byMinute = new Map(b.history.map((h) => [h.minute, h.n]));
@@ -163,7 +210,8 @@ export async function liveSnapshot(storeId: number) {
     pages: tally((v) => v.title || pageName(v.path)),
     sources: tally((v) => v.source),
     visitors: list.sort((a, b) => a.firstSeen - b.firstSeen).slice(0, 60).map((v) => ({
-      key: v.id.slice(-10), name: `Visitor ${v.id.replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase()}`, hue: avatarHue(v.id),
+      key: v.id.slice(-10), name: v.name || `Visitor ${v.id.replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase()}`, known: Boolean(v.name), hue: avatarHue(v.id),
+      place: v.place ?? null, step: v.step ?? null,
       page: v.title || pageName(v.path), stage: v.stage, device: v.device, source: v.source,
       since: v.firstSeen, pages: v.pages, cartQty: v.cartQty, cartPaise: v.cartPaise,
     })),

@@ -25,7 +25,7 @@
 
   // ---------- checkout (shared by cart page and "Buy now") ----------
   function startCheckout(lines, done) {
-    return fetch(root + "/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines.map(function (l) { return { variantId: l.variantId, qty: l.qty }; }) }) })
+    return fetch(root + "/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ src: (function () { try { return sessionStorage.getItem("gp_src") || ""; } catch (e) { return ""; } })(), lines: lines.map(function (l) { return { variantId: l.variantId, qty: l.qty }; }) }) })
       .then(function (r) { return r.json(); })
       .then(function (d) { if (d.url) { location.href = d.url; return; } done(d.error || "Couldn't open checkout. Please try again."); })
       .catch(function () { done("No internet. Please try again."); });
