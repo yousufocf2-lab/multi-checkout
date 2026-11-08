@@ -140,7 +140,7 @@ export default function LiveView() {
       </section>
 
       {/* ---------- visitors + activity ---------- */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         <section className="panel p-0">
           <div className="flex items-center justify-between border-b border-rule px-4 py-3 sm:px-5">
             <h2 className="text-[14px] font-semibold">Active visitors</h2>
@@ -191,7 +191,7 @@ export default function LiveView() {
       </div>
 
       {/* ---------- pages + sources ---------- */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Bars title="Top pages right now" rows={data.pages} total={data.total} color="#0e9f9a" />
         <Bars title="Where they came from" rows={data.sources} total={data.total} color="#5b6cf0" />
       </div>

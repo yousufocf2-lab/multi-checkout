@@ -22,6 +22,10 @@
   body { font-feature-settings: "ss01", "cv11"; }
   :focus-visible { outline: 2px solid rgb(var(--brand)); outline-offset: 2px; }
   .num { font-variant-numeric: tabular-nums; }
+  /* Dashboard: a long word (a product title, a URL) must never make the page wider than the phone.
+     Grid children default to "as wide as my content"; let them shrink so truncate/wrap works. */
+  .admin-main { overflow-x: clip; }
+  .admin-main .grid > * { min-width: 0; }
 }
 
 @layer components {

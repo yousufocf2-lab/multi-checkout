@@ -310,7 +310,7 @@ export default function DashboardLayout() {
         </div>
       )}
 
-      <main className="relative min-h-[calc(100vh-56px)] min-w-0 bg-[#f3f4f6] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
+      <main className="admin-main relative min-h-[calc(100vh-56px)] min-w-0 bg-[#f3f4f6] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
         <ActionLoader stores={stores} />
         {nextDemo && <DemoBar demo={nextDemo} login={login} />}
         {idleMs > 0 && <IdleLogout idleMs={idleMs} />}

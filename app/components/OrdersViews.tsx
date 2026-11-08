@@ -425,11 +425,11 @@ function OrderDetailsGrid({ o }: { o: OrderRow }) {
   const paid = orderValuePaise(o);
   const okStatus = o.status === "paid" || o.status === "cod_placed";
   return (
-    <div className="grid gap-5 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
       <div>
         <p className="mb-2 text-xs font-medium text-ink-soft">Items</p>
         <ul className="space-y-1.5 text-sm">
-          {o.items.map((l, i) => <li key={i} className="flex justify-between gap-3"><span className="min-w-0 truncate">{l.title}{l.variantTitle ? `, ${l.variantTitle}` : ""} ×{l.quantity}</span><span className="num">{l.free ? <b className="text-good">FREE</b> : inr(l.pricePaise * l.quantity)}</span></li>)}
+          {o.items.map((l, i) => <li key={i} className="flex justify-between gap-3"><span className="line-clamp-2 min-w-0 break-words sm:truncate">{l.title}{l.variantTitle ? `, ${l.variantTitle}` : ""} ×{l.quantity}</span><span className="num">{l.free ? <b className="text-good">FREE</b> : inr(l.pricePaise * l.quantity)}</span></li>)}
         </ul>
       </div>
       <dl className="num space-y-1 text-sm">
