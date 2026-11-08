@@ -241,6 +241,7 @@ export const stores = pgTable("stores", {
   // Branding
   logoUrl: text("logo_url"),
   filesSyncedAt: timestamp("files_synced_at", { withTimezone: true }), // Files library filled from the media bucket once
+  autoShip: boolean("auto_ship").notNull().default(true), // website orders go to the courier on their own; off = ship by hand from Orders
   primaryColor: text("primary_color").notNull().default("#111827"),
   supportPhone: text("support_phone"),
   theme: jsonb("theme").$type<Partial<CheckoutTheme>>().notNull().default({}), // checkout design, see lib/theme.ts
@@ -879,6 +880,9 @@ export const orders = pgTable(
     staffNote: text("staff_note"), // only the store owner and their team see it
     customerNote: text("customer_note"), // shown to the customer on their order page and account
     timeline: jsonb("timeline").$type<OrderEvent[]>().notNull().default([]), // edits made after the order was placed
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    cancelledBy: text("cancelled_by"),
     confirmAt: timestamp("confirm_at", { withTimezone: true }),
     waMessageId: text("wa_message_id"),
     advance: integer("advance"), // Partial COD: paise paid online now; the rest (total - advance) is collected on delivery

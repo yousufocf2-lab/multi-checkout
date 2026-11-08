@@ -2,8 +2,8 @@ import { gatewayName } from "~/lib/gateways/catalog";
 import { courierById } from "~/lib/courier-catalog";
 import { SHIP_STATUS_LABELS } from "~/lib/rto-shield";
 import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
-import { Form, Link, useLocation, useNavigation, useSearchParams, useNavigate } from "@remix-run/react";
-import { useEffect, useRef, useState } from "react";
+import { Form, Link, useFetcher, useLocation, useNavigation, useSearchParams, useNavigate } from "@remix-run/react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
 import { INDIAN_STATES } from "~/lib/states";
 import { Icon } from "./Icons";
@@ -19,6 +19,7 @@ export type OrderRow = {
   shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; tip?: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
   payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; shipStatusRaw?: string | null; shipError?: string | null; courierRef?: string | null; staffNote?: string | null; customerNote?: string | null; timeline?: { at: string; by: string; text: string }[]; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
   manualTags: string[]; tags: string[]; channel: string;
+  cancelledAt?: string | null; cancelReason?: string | null; cancelledBy?: string | null;
 };
 
 const TAGS = [
@@ -52,10 +53,23 @@ export type OrdersSummary = { count: number; value: number; prepaid: number; cod
 
 const rupee = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 
-export function OrdersView({ orders, hasMore, page, showStore, filters: f, summary, products, tagOptions = [], deliveryOptions = [] }: {
+export function OrdersView({ orders, hasMore, page, showStore, filters: f, summary, products, tagOptions = [], deliveryOptions = [], couriers = {}, cancelReasons = [] }: {
   orders: OrderRow[]; hasMore: boolean; page: number; showStore: boolean;
   filters: OrdersFilterState; summary: OrdersSummary; products: string[]; tagOptions?: string[]; deliveryOptions?: string[]; exportHref?: string;
+  couriers?: Record<number, { id: string; name: string }[]>; cancelReasons?: string[];
 }) {
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [cancelIds, setCancelIds] = useState<string[] | null>(null);
+  const act = useFetcher<{ ok: string | null; error: string | null }>();
+  const [msg, setMsg] = useState<{ ok: string | null; error: string | null } | null>(null);
+  useEffect(() => { if (act.state === "idle" && act.data) { setMsg(act.data); if (act.data.ok) setSel(new Set()); } }, [act.state, act.data]);
+  useEffect(() => { setSel(new Set()); }, [page, f.status, f.method, f.q]);
+  const toggle = (id: string) => setSel((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const ctx: OrderActionsCtx = {
+    couriers, busy: act.state !== "idle", sel, toggle,
+    ship: (ids, courier) => { setMsg(null); act.submit({ intent: "ship", orderIds: ids.join(","), courier: courier ?? "" }, { method: "post" }); },
+    cancel: (ids) => setCancelIds(ids),
+  };
   const link = useLink();
   const navigate = useNavigate();
   const extra = [f.status, f.method, f.min || f.max, f.product, f.tag, f.state, f.paymentStatus, f.fulfillment, f.deliveryStatus, f.returnStatus, f.labelStatus, f.deliveryMethod].filter(Boolean).length;
@@ -67,11 +81,23 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
     { label: "Partial COD", patch: { status: "", method: "partial" }, on: !f.status && f.method === "partial" },
     { label: "Awaiting payment", patch: { status: "pending", method: "" }, on: f.status === "pending" },
     { label: "Failed", patch: { status: "failed", method: "" }, on: f.status === "failed" },
+    { label: "Cancelled", patch: { status: "cancelled", method: "" }, on: f.status === "cancelled" },
   ];
   const n = (v: number) => v.toLocaleString("en-IN");
 
+  const selected = orders.filter((o) => sel.has(o.id));
+  const shipSel = selected.filter(canShip);
+  const shipChoices = uniqueCouriers(shipSel.map((o) => couriers[o.storeId] ?? []));
+  const allOn = orders.length > 0 && orders.every((o) => sel.has(o.id));
   return (
+    <OrderActions.Provider value={ctx}>
     <div className="space-y-3">
+      {msg && (msg.ok || msg.error) && (
+        <div className="space-y-1.5">
+          {msg.ok && <div className="flex items-start gap-2 rounded-xl bg-[#e3f1ea] px-3.5 py-2.5 text-[13px] text-[#0c5132]"><Icon name="check" className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{msg.ok}</span><button type="button" onClick={() => setMsg(null)} aria-label="Dismiss"><Icon name="close" className="h-3.5 w-3.5" /></button></div>}
+          {msg.error && <div className="flex items-start gap-2 rounded-xl bg-[#fee9e8] px-3.5 py-2.5 text-[13px] text-[#8e1f0b]"><Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0" /><span className="flex-1">{msg.error}</span><button type="button" onClick={() => setMsg(null)} aria-label="Dismiss"><Icon name="close" className="h-3.5 w-3.5" /></button></div>}
+        </div>
+      )}
       {/* metrics */}
       <section className="panel grid grid-cols-2 overflow-hidden sm:grid-cols-3 lg:grid-cols-[auto_repeat(6,minmax(0,1fr))]">
         <div className="col-span-2 flex items-center border-b border-rule px-3 py-2.5 sm:col-span-3 lg:col-span-1 lg:border-b-0 lg:border-r"><RangePicker current={f.range} /></div>
@@ -84,6 +110,18 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
       </section>
 
       <section className="panel relative">
+        {sel.size > 0 && (
+          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 border-b border-rule bg-[#f6f6f7] px-3 py-2 text-[12.5px]">
+            <label className="flex items-center gap-2 font-medium"><input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? new Set() : new Set(orders.map((o) => o.id)))} className="h-4 w-4" />{sel.size} selected</label>
+            <span className="mx-1 h-4 w-px bg-rule" />
+            {shipSel.length > 0 && (shipChoices.length > 1
+              ? <CourierMenu label={`Ship ${shipSel.length}`} choices={shipChoices} onPick={(c) => ctx.ship(shipSel.map((o) => o.id), c)} disabled={ctx.busy} />
+              : <button type="button" className="btn-secondary btn h-7 px-2.5 text-[12px]" disabled={ctx.busy || !shipChoices.length} title={shipChoices.length ? undefined : "Connect a courier first"} onClick={() => ctx.ship(shipSel.map((o) => o.id), shipChoices[0]?.id)}><Icon name="shipping" className="h-3.5 w-3.5" />Ship {shipSel.length}{shipChoices[0] ? ` with ${shipChoices[0].name}` : ""}</button>)}
+            {selected.some(canCancel) && <button type="button" className="btn h-7 px-2.5 text-[12px] text-bad hover:bg-red-50" disabled={ctx.busy} onClick={() => ctx.cancel(selected.filter(canCancel).map((o) => o.id))}><Icon name="close" className="h-3.5 w-3.5" />Cancel {selected.filter(canCancel).length}</button>}
+            {ctx.busy && <span className="text-ink-faint">Working…</span>}
+            <button type="button" className="ml-auto text-ink-soft hover:text-ink" onClick={() => setSel(new Set())}>Clear</button>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
           <select aria-label="Order view" value={views.find((v) => v.on)?.label ?? "All"} onChange={(e) => { const v = views.find((x) => x.label === e.target.value); if (v) navigate(link(v.patch)); }} className="h-8 rounded-lg border border-rule bg-surface px-2 text-[12.5px] font-medium text-ink">
             {views.map((v) => <option key={v.label}>{v.label}</option>)}
@@ -103,7 +141,7 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
             <ul className="divide-y divide-rule sm:hidden">{orders.map((o) => <OrderCard key={o.id} o={o} showStore={showStore} />)}</ul>
             <div className="hidden overflow-x-auto sm:block">
               <table className="table min-w-[1420px]">
-                <thead><tr><th>Order</th><th>Date</th><th>Customer</th>{showStore && <th>Store</th>}<th>Fulfill by</th><th>Channel</th><th className="text-right">Total</th><th>Payment status</th><th>Fulfillment status</th><th>Items</th><th>Delivery status</th><th>Delivery method</th><th>Tags</th></tr></thead>
+                <thead><tr><th className="w-8"><input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? new Set() : new Set(orders.map((o) => o.id)))} className="h-4 w-4" aria-label="Select all orders" /></th><th>Order</th><th>Date</th><th>Customer</th>{showStore && <th>Store</th>}<th>Fulfill by</th><th>Channel</th><th className="text-right">Total</th><th>Payment status</th><th>Fulfillment status</th><th>Items</th><th>Delivery status</th><th>Delivery method</th><th>Tags</th></tr></thead>
                 <tbody>{orders.map((o) => <OrderRowView key={o.id} o={o} showStore={showStore} />)}</tbody>
               </table>
             </div>
@@ -120,7 +158,10 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
           </div>
         </div>
       )}
+      {cancelIds && <CancelDialog ids={cancelIds} orders={orders.filter((o) => cancelIds.includes(o.id))} reasons={cancelReasons} busy={ctx.busy}
+        onClose={() => setCancelIds(null)} onConfirm={(reason, refund) => { setMsg(null); act.submit({ intent: "cancel", orderIds: cancelIds.join(","), reason, refund: refund ? "1" : "0" }, { method: "post" }); setCancelIds(null); }} />}
     </div>
+    </OrderActions.Provider>
   );
 }
 
@@ -271,6 +312,7 @@ function Pill({ tone, children, title }: { tone: keyof typeof PILL; children: Re
   return <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-medium ${PILL[tone]}`}><span aria-hidden className="h-1.5 w-1.5 rounded-full border-[1.5px] border-current" />{children}</span>;
 }
 function PaymentPill({ o }: { o: OrderRow }) {
+  if (o.status === "cancelled") return <Pill tone="gray" title={o.cancelReason ?? undefined}>{o.refundStatus === "full" ? "Refunded" : o.refundStatus === "pending" ? "Refund pending" : "Cancelled"}</Pill>;
   if (o.status === "failed") return <Pill tone="red">Failed</Pill>;
   if (o.status === "pending_payment" || o.status === "cod_placing") return <Pill tone="gray">Awaiting payment</Pill>;
   if (o.refundStatus === "full") return <Pill tone="gray">Refunded</Pill>;
@@ -280,6 +322,7 @@ function PaymentPill({ o }: { o: OrderRow }) {
   return <Pill tone="gray">Paid</Pill>;
 }
 function FulfillPill({ o }: { o: OrderRow }) {
+  if (o.status === "cancelled") return <Pill tone="gray" title={o.cancelReason ?? undefined}>Cancelled</Pill>;
   const ok = o.status === "paid" || o.status === "cod_placed";
   if (!ok) return <span className="text-ink-faint">—</span>;
   const s = o.shipStatus;
@@ -337,12 +380,14 @@ function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
 
 function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
   const [open, setOpen] = useState(false);
+  const actions = useContext(OrderActions);
   const paid = orderValuePaise(o);
-  const gone = o.refundStatus === "full" || o.status === "failed";
+  const gone = o.refundStatus === "full" || o.status === "failed" || o.status === "cancelled";
   const strike = gone ? "text-ink-faint line-through" : "";
   return (
     <>
-      <tr className={`cursor-pointer ${open ? "[&>td]:bg-paper" : ""}`} onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+      <tr className={`cursor-pointer ${open ? "[&>td]:bg-paper" : ""} ${actions.sel.has(o.id) ? "[&>td]:bg-[#f3f7fd]" : ""}`} onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={actions.sel.has(o.id)} onChange={() => actions.toggle(o.id)} className="h-4 w-4" aria-label={`Select order ${o.shopifyOrderName ?? o.id}`} /></td>
         <td className="whitespace-nowrap"><span className={`num font-semibold ${strike}`}>{o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`}</span> <ConfirmIcon s={o.confirmStatus} /></td>
         <td className={`whitespace-nowrap ${strike}`}>{shortWhen(o.createdAt)}</td>
         <td className={`max-w-[200px] truncate ${strike}`} title={`${o.customer.phone}, ${o.customer.city}`}>{o.customer.firstName} {o.customer.lastName}</td>
@@ -353,12 +398,12 @@ function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
         <td><PaymentPill o={o} /></td>
         <td><FulfillmentStatusPill o={o} /></td>
         <td className={`whitespace-nowrap ${strike}`}>{itemsLabel(o)}</td>
-        <td><FulfillPill o={o} /></td>
+        <td onClick={(e) => e.stopPropagation()}><span className="flex items-center gap-1.5"><FulfillPill o={o} /><ShipButton o={o} /></span></td>
         <td className={`max-w-[160px] truncate ${strike}`}>{o.shipping ? o.shippingTitle ?? "Standard" : "Free delivery"}</td>
         <td><Tags o={o} compact /></td>
       </tr>
       {open && (
-        <tr className="[&>td]:bg-paper"><td colSpan={showStore ? 13 : 12}><div className="py-2"><OrderDetails o={o} /></div></td></tr>
+        <tr className="[&>td]:bg-paper"><td colSpan={showStore ? 14 : 13}><div className="py-2"><OrderDetails o={o} /></div></td></tr>
       )}
     </>
   );
@@ -414,7 +459,10 @@ function OrderDetailsGrid({ o }: { o: OrderRow }) {
         {o.manualTags.map((tag) => <Form key={tag} method="post" className="inline-flex"><input type="hidden" name="intent" value="tagRemove"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input type="hidden" name="tag" value={tag}/><button className="rounded-md border border-rule px-2 py-1 text-[11px] text-ink-soft hover:bg-paper">Remove “{tag}”</button></Form>)}
         {(o.gatewayRef || o.payuMihpayid) && <p className="text-xs text-ink-faint">{gatewayName(o.gateway ?? "payu")} ID {o.gatewayRef ?? o.payuMihpayid}, checkout ID {o.id}</p>}
         {o.error && <p className="break-words text-xs text-bad">{o.error}</p>}
+        {o.status === "cancelled" && <p className="text-xs text-ink-soft">Cancelled{o.cancelledAt ? ` on ${when(o.cancelledAt)}` : ""}{o.cancelledBy ? ` by ${o.cancelledBy}` : ""}{o.cancelReason ? `: ${o.cancelReason}` : ""}</p>}
         <div className="flex flex-wrap gap-2 pt-1">
+          <ShipButton o={o} big />
+          <CancelButton o={o} />
           {okStatus && !o.shopifyOrderId && (
             <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
               <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to store</SubmitButton></Form>
@@ -593,4 +641,105 @@ function Timeline({ o }: { o: OrderRow }) {
 
 function AddrField({ name, label, value, wide, ...rest }: { name: string; label: string; value: string; wide?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) {
   return <label className={`block text-[11.5px] font-medium text-ink-soft ${wide ? "col-span-2" : ""}`}>{label}<input name={name} defaultValue={value} className="input mt-1 py-1.5 text-[13px]" {...rest} /></label>;
+}
+
+
+// ---------------- ship / cancel ----------------
+
+type OrderActionsCtx = {
+  couriers: Record<number, { id: string; name: string }[]>; busy: boolean; sel: Set<string>; toggle: (id: string) => void;
+  ship: (ids: string[], courier?: string) => void; cancel: (ids: string[]) => void;
+};
+const OrderActions = createContext<OrderActionsCtx>({ couriers: {}, busy: false, sel: new Set(), toggle: () => {}, ship: () => {}, cancel: () => {} });
+
+const canShip = (o: OrderRow) => (o.status === "paid" || o.status === "cod_placed") && !o.awb && !o.courierRef && o.confirmStatus !== "cancelled";
+const canCancel = (o: OrderRow) => ["paid", "cod_placed", "pending_payment", "cod_placing"].includes(o.status) && o.shipStatus !== "delivered";
+/** Online money that a cancel can send back (prepaid, or a Partial COD advance). */
+const refundablePaise = (o: OrderRow) => {
+  if (o.paymentMethod === "cod") return 0;
+  if (o.status !== "paid" && !(o.status === "cod_placed" && o.paymentMethod === "partial")) return 0;
+  const paid = o.amountPaid ?? (o.paymentMethod === "partial" ? o.advance ?? 0 : o.total);
+  return Math.max(0, paid - (o.refunded ?? 0));
+};
+function uniqueCouriers(lists: { id: string; name: string }[][]) {
+  const m = new Map<string, string>();
+  for (const l of lists) for (const c of l) m.set(c.id, c.name);
+  return [...m].map(([id, name]) => ({ id, name }));
+}
+
+function CourierMenu({ label, choices, onPick, disabled, small }: { label: string; choices: { id: string; name: string }[]; onPick: (id: string) => void; disabled?: boolean; small?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" disabled={disabled} onClick={() => setOpen((x) => !x)} aria-expanded={open}
+        className={`btn-secondary btn ${small ? "h-6 px-2 text-[11.5px]" : "h-7 px-2.5 text-[12px]"}`}><Icon name="shipping" className="h-3.5 w-3.5" />{label}<Icon name="chevron" className="h-3 w-3" /></button>
+      {open && (
+        <div className="absolute left-0 z-40 mt-1 w-48 rounded-xl bg-white p-1 shadow-[0_0_0_1px_rgba(0,0,0,.08),0_12px_32px_-12px_rgba(0,0,0,.3)]">
+          <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Ship with</p>
+          {choices.map((c) => <button key={c.id} type="button" onClick={() => { setOpen(false); onPick(c.id); }} className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-paper">{c.name}</button>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Ship" next to an unfulfilled order: books it with the store's courier (a menu when there's more than one). */
+function ShipButton({ o, big }: { o: OrderRow; big?: boolean }) {
+  const a = useContext(OrderActions);
+  const list = a.couriers[o.storeId] ?? [];
+  if (!canShip(o) || !list.length) return null;
+  if (list.length > 1) return <CourierMenu label="Ship" choices={list} onPick={(c) => a.ship([o.id], c)} disabled={a.busy} small={!big} />;
+  return <button type="button" disabled={a.busy} onClick={() => a.ship([o.id], list[0].id)} title={`Book with ${list[0].name}`}
+    className={`btn-secondary btn ${big ? "h-7 px-3 text-xs" : "h-6 px-2 text-[11.5px]"}`}><Icon name="shipping" className="h-3.5 w-3.5" />{big ? `Ship with ${list[0].name}` : "Ship"}</button>;
+}
+
+function CancelButton({ o }: { o: OrderRow }) {
+  const a = useContext(OrderActions);
+  if (!canCancel(o)) return null;
+  return <button type="button" disabled={a.busy} onClick={() => a.cancel([o.id])} className="btn h-7 px-3 text-xs text-bad hover:bg-red-50"><Icon name="close" className="h-3.5 w-3.5" />Cancel order</button>;
+}
+
+function CancelDialog({ ids, orders, reasons, busy, onClose, onConfirm }: { ids: string[]; orders: OrderRow[]; reasons: string[]; busy: boolean; onClose: () => void; onConfirm: (reason: string, refund: boolean) => void }) {
+  const list = reasons.length ? reasons : ["Customer changed their mind", "Other"];
+  const [reason, setReason] = useState(list[0]);
+  const [other, setOther] = useState("");
+  const paid = orders.filter((o) => refundablePaise(o) > 0);
+  const total = paid.reduce((n, o) => n + refundablePaise(o), 0);
+  const [refund, setRefund] = useState(true);
+  const shipped = orders.filter((o) => o.awb || o.courierRef).length;
+  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onClose]);
+  const n = ids.length;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md animate-fadein rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="cancel-title">
+        <h3 id="cancel-title" className="text-[15px] font-semibold">Cancel {n === 1 ? `order ${orders[0]?.shopifyOrderName ?? ""}` : `${n} orders`}?</h3>
+        <p className="mt-1 text-[13px] text-ink-soft">
+          {n === 1 ? "The order" : "These orders"} will move to Cancelled{shipped ? `, and ${shipped === 1 ? "its shipment is" : `${shipped} shipments are`} cancelled at the courier if not picked up yet` : ""}. Stock goes back to your products.
+        </p>
+        <label className="mt-4 block"><span className="label">Reason</span>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className="input mt-1">{list.map((r) => <option key={r}>{r}</option>)}</select>
+        </label>
+        {reason === "Other" && <input value={other} onChange={(e) => setOther(e.target.value)} maxLength={150} placeholder="Write the reason" className="input mt-2" />}
+        {paid.length > 0 && (
+          <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl px-3 py-2.5 shadow-[inset_0_0_0_1px_#e3e3e3]">
+            <input type="checkbox" checked={refund} onChange={(e) => setRefund(e.target.checked)} className="mt-0.5 h-4 w-4" />
+            <span className="text-[13px]"><b className="font-medium">Refund {inr(total)} to the customer{paid.length > 1 ? `s (${paid.length} paid orders)` : ""}</b>
+              <span className="block text-[12px] text-ink-faint">Sent back through the payment gateway the customer paid with. It reaches them in 5–7 working days.</span></span>
+          </label>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" className="btn-secondary btn" onClick={onClose}>Keep {n === 1 ? "order" : "orders"}</button>
+          <button type="button" className="btn btn-primary !bg-[#c5280c] hover:!bg-[#a52109]" disabled={busy || (reason === "Other" && !other.trim())}
+            onClick={() => onConfirm(reason === "Other" ? other.trim() : reason, paid.length > 0 && refund)}>Cancel {n === 1 ? "order" : `${n} orders`}</button>
+        </div>
+      </div>
+    </div>
+  );
 }

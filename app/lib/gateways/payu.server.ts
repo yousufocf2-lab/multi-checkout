@@ -1,7 +1,7 @@
 // PayU hosted checkout (form post). Hash formulas from PayU's docs; same as the original integration.
 import { and, eq, isNotNull } from "drizzle-orm";
 import { bankOffers, db, type StoreGateway } from "~/db.server";
-import { payuEndpoint, sha512, testPayu, verifyPayment, verifyPayuResponse, type PayuCreds } from "../payu.server";
+import { payuEndpoint, refundPayu, sha512, testPayu, verifyPayment, verifyPayuResponse, type PayuCreds } from "../payu.server";
 import { emailFor, rupees, toPaise, type GatewayAdapter } from "./types";
 
 const creds = (cfg: StoreGateway): PayuCreds => ({ payuKey: cfg.creds.key ?? null, payuSalt: cfg.creds.salt ?? null, payuMode: cfg.mode });
@@ -37,4 +37,11 @@ export const payu: GatewayAdapter = {
   },
   webhookTxn: (b) => (typeof b.txnid === "string" ? b.txnid : typeof b.merchantTransactionId === "string" ? b.merchantTransactionId : null),
   test: (cfg) => testPayu(creds(cfg)),
+  async refund(cfg, r) {
+    // PayU refunds by its payment id (mihpayid); look it up when the order doesn't have it
+    const mihpayid = r.ref && /^\d+$/.test(r.ref) ? r.ref : (await verifyPayment(creds(cfg), r.txn)).mihpayid;
+    if (!mihpayid) return { ok: false, error: "PayU payment ID not found for this order." };
+    const x = await refundPayu(creds(cfg), mihpayid, r.amountPaise, r.refundId);
+    return x.ok ? { ok: true, pending: true, ref: x.ref } : { ok: false, error: `PayU: ${x.msg}` };
+  },
 };

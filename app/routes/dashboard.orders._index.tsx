@@ -40,7 +40,7 @@ export default function AllOrders() {
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
       {res?.error && <Notice tone="error">{res.error}</Notice>}
       <OrdersView orders={d.orders} hasMore={d.hasMore} page={d.page} showStore={d.showStore}
-        filters={d.filters} summary={d.summary} products={d.products} tagOptions={d.tagOptions} deliveryOptions={d.deliveryOptions} exportHref={`/dashboard/orders/export.csv${search}`} />
+        filters={d.filters} summary={d.summary} products={d.products} tagOptions={d.tagOptions} deliveryOptions={d.deliveryOptions} couriers={d.couriers} cancelReasons={d.cancelReasons} exportHref={`/dashboard/orders/export.csv${search}`} />
     </div>
   );
 }

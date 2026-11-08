@@ -100,6 +100,24 @@ async function postService(store: PayuCreds, command: string, var1: string) {
   try { return JSON.parse(text) as Record<string, unknown>; } catch { return { raw: text } as Record<string, unknown>; }
 }
 
+/** Starts a refund at PayU (cancel_refund_transaction). PayU queues it; it reaches the customer in 5-7 working days. */
+export async function refundPayu(store: PayuCreds, mihpayid: string, amountPaise: number, tokenId: string) {
+  if (!store.payuKey || !store.payuSalt) throw new Error("PayU key and salt are not set");
+  const command = "cancel_refund_transaction";
+  const hash = sha512([store.payuKey, command, mihpayid, store.payuSalt].join("|"));
+  const res = await fetch(`${infoHost(store)}/merchant/postservice.php?form=2`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ key: store.payuKey, command, var1: mihpayid, var2: tokenId.slice(0, 20), var3: (amountPaise / 100).toFixed(2), hash }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  try { data = JSON.parse(text); } catch { data = { msg: text.slice(0, 200) }; }
+  const ok = String(data.status) === "1";
+  return { ok, msg: String(data.msg ?? data.error_code ?? `HTTP ${res.status}`).slice(0, 200), ref: data.request_id ? String(data.request_id) : null, raw: data };
+}
+
 export type PayuVerification = {
   status: "success" | "failure" | "pending" | "not_found";
   amountPaise: number | null;

@@ -15,6 +15,24 @@ const same = (a: string, b: string) => a.length === b.length && crypto.timingSaf
 
 export const razorpay: GatewayAdapter = {
   id: "razorpay",
+  async refund(cfg, r) {
+    // ref = Razorpay order id; the refund goes against its captured payment
+    let paymentId = r.ref && r.ref.startsWith("pay_") ? r.ref : null;
+    if (!paymentId && r.ref) {
+      const res = await fetch(`${API}/orders/${encodeURIComponent(r.ref)}/payments`, { headers: { Authorization: auth(cfg) }, signal: AbortSignal.timeout(10_000) });
+      const j = await readJson(res);
+      const items = (j.items as { id: string; status: string }[] | undefined) ?? [];
+      paymentId = items.find((p) => p.status === "captured")?.id ?? null;
+    }
+    if (!paymentId) return { ok: false, error: "Razorpay payment not found for this order." };
+    const res = await fetch(`${API}/payments/${encodeURIComponent(paymentId)}/refund`, {
+      method: "POST", headers: { Authorization: auth(cfg), "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: r.amountPaise, receipt: r.refundId.slice(0, 40), notes: { refund: r.refundId } }), signal: AbortSignal.timeout(15_000),
+    });
+    const j = await readJson(res);
+    if (!res.ok || !j.id) return { ok: false, error: err(j, res.status) };
+    return { ok: true, pending: j.status !== "processed", ref: String(j.id) };
+  },
   async start({ store, order, cfg, txn, amountPaise, returnUrl }) {
     if (!cfg.creds.keyId || !cfg.creds.keySecret) throw new Error("Razorpay key ID and secret are not set");
     const res = await fetch(`${API}/orders`, {

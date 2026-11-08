@@ -39,7 +39,12 @@ export interface GatewayAdapter {
   webhookTxn?(body: Record<string, unknown>): string | null;
   /** Checks the keys work. Returns a short message or throws. */
   test(cfg: StoreGateway): Promise<string>;
+  /** Refunds (part of) a successful payment back to the customer. refundId is unique per refund (retries don't double refund). */
+  refund?(cfg: StoreGateway, r: RefundRequest): Promise<RefundResult>;
 }
+
+export type RefundRequest = { txn: string; ref: string | null; amountPaise: number; refundId: string };
+export type RefundResult = { ok: true; pending: boolean; ref: string | null } | { ok: false; error: string };
 
 export const rupees = (paise: number) => (paise / 100).toFixed(2);
 export const toPaise = (v: unknown) => {

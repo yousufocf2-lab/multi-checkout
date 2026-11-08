@@ -86,7 +86,7 @@ export async function runAutoShip() {
   for (const a of accs) perStore.set(a.storeId, [...(perStore.get(a.storeId) ?? []), a]);
   for (const [storeId, couriers] of perStore) {
     const [store] = await db.select().from(stores).where(and(eq(stores.id, storeId), eq(stores.active, true))).limit(1);
-    if (!store) continue;
+    if (!store || !store.autoShip) continue; // the store ships by hand from the Orders page
     const list = await db.select().from(orders).where(and(
       eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), like(orders.shopifyOrderId, "gp:%"), isNull(orders.awb), isNull(orders.courierRef),
       or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),

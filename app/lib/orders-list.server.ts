@@ -36,6 +36,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   const push = (key: string, condition: SQL) => where.push(params.get(`${key}_not`) === "1" ? negate(condition) : condition);
   // Status: completed (paid online + COD placed) unless asked otherwise
   if (f.status === "failed") push("status", eq(orders.status, "failed"));
+  else if (f.status === "cancelled") push("status", eq(orders.status, "cancelled"));
   else if (f.status === "pending") push("status", sql`${orders.status} in ('pending_payment','cod_placing')`);
   else if (f.status === "refunded") push("status", sql`${orders.refundStatus} = 'full'`);
   else if (f.status === "open") push("status", sql`${orders.status} in ('paid','cod_placed','pending_payment','cod_placing')`);
@@ -127,6 +128,8 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
     products: (products as unknown as { title: string }[]).map((r) => r.title).filter(Boolean).sort((a, b) => a.localeCompare(b)),
     tagOptions: [...new Set(tagRows.flatMap((r) => r.manualTags ?? []).concat("Smart Checkout", "WhatsApp"))].sort((a, b) => a.localeCompare(b)),
     deliveryOptions: [...new Set(rows.map(({ order }) => order.shippingTitle).filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b)),
+    couriers: await courierChoices(ids),
+    cancelReasons: [...CANCEL_REASONS],
   };
 }
 
@@ -196,7 +199,8 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
 }
 
 import { json } from "@remix-run/node";
-import { requireStore, type Viewer } from "./auth.server";
+import { can, requireStore, type Viewer } from "./auth.server";
+import { CANCEL_REASONS, cancelOrders, courierChoices, shipOrders } from "./order-actions.server";
 import { pushToShopify } from "./orders.server";
 import { syncOrderPayment } from "./gateways/index.server";
 import { gatewayName } from "./gateways/catalog";
@@ -205,9 +209,9 @@ import { readAddress, updateOrderAddress, updateOrderNotes } from "./order-edit.
 
 /** Row actions on the orders list: send to Shopify, check payment with the gateway. */
 export async function handleOrderAction(viewer: Viewer, fd: FormData) {
-  const store = await requireStore(viewer, String(fd.get("storeId") ?? ""));
   const intent = fd.get("intent");
   if (intent === "import_shopify_history") {
+    const store = await requireStore(viewer, String(fd.get("storeId") ?? ""));
     const file = fd.get("file");
     if (!(file instanceof File) || !file.size) return json({ ok: null, error: "Choose Shopify's Orders CSV first." }, { status: 400 });
     if (file.size > 20 * 1024 * 1024) return json({ ok: null, error: "Order CSV must be smaller than 20 MB." }, { status: 400 });
@@ -218,6 +222,37 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
       return json({ ok: null, error: e instanceof Error ? e.message : "Order import failed." }, { status: 400 });
     }
   }
+  const by = viewer.role === "admin" ? (viewer.staff?.name ?? "Growpefy") : (viewer.member?.name ?? viewer.name);
+  // Ship / cancel one or many orders (the list may hold orders of several stores)
+  if (intent === "ship" || intent === "cancel") {
+    if (!can(viewer, "orders")) return json({ ok: null, error: "You don't have permission to change orders." });
+    const ids = String(fd.get("orderIds") ?? fd.get("orderId") ?? "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 100);
+    if (!ids.length) return json({ ok: null, error: "Select at least one order." });
+    const rows = await db.select({ id: orders.id, storeId: orders.storeId }).from(orders).where(inArray(orders.id, ids));
+    const byStore = new Map<number, string[]>();
+    for (const r of rows) byStore.set(r.storeId, [...(byStore.get(r.storeId) ?? []), r.id]);
+    const ok: string[] = [], errs: string[] = [], notes: string[] = [];
+    let refunded = 0, pending = 0;
+    for (const [sid, list] of byStore) {
+      const st = await requireStore(viewer, sid).catch(() => null);
+      if (!st) continue;
+      if (intent === "ship") {
+        const r = await shipOrders(st, list, String(fd.get("courier") ?? "") || null, by);
+        ok.push(...r.shipped);
+        errs.push(...r.failed.map((f) => (f.name ? `${f.name}: ${f.error}` : f.error)));
+        if (r.shipped.length && "courier" in r) notes.push(`Booked with ${r.courier}.`);
+      } else {
+        const r = await cancelOrders(st, list, { refund: fd.get("refund") === "1", reason: String(fd.get("reason") ?? "Other").slice(0, 200) || "Other", by });
+        ok.push(...r.done); errs.push(...r.failed.map((f) => `${f.name}: ${f.error}`)); notes.push(...r.notes);
+        refunded += r.refunded; pending += r.refundsPending;
+      }
+    }
+    const verb = intent === "ship" ? "shipped" : "cancelled";
+    const head = ok.length ? `${ok.length === 1 ? ok[0] : `${ok.length} orders`} ${verb}.` : "";
+    const money = refunded + pending ? ` Refund started for ${refunded + pending} order${refunded + pending === 1 ? "" : "s"}; it reaches the customer in 5–7 working days.` : "";
+    return json({ ok: head ? `${head}${money}${notes.length ? ` ${notes.join(" ")}` : ""}` : null, error: errs.length ? errs.slice(0, 6).join(" · ") + (errs.length > 6 ? ` · and ${errs.length - 6} more` : "") : head ? null : "Nothing was changed." });
+  }
+  const store = await requireStore(viewer, String(fd.get("storeId") ?? ""));
   const [o] = await db.select().from(orders).where(and(eq(orders.id, String(fd.get("orderId"))), eq(orders.storeId, store.id)));
   if (!o) return json({ ok: null, error: "Order not found" });
   if (intent === "tagAdd" || intent === "tagRemove") {
@@ -228,7 +263,6 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
     await db.update(orders).set({ manualTags: next, updatedAt: new Date() }).where(eq(orders.id, o.id));
     return json({ ok: intent === "tagAdd" ? "Tag added." : "Tag removed.", error: null });
   }
-  const by = viewer.role === "admin" ? (viewer.staff?.name ?? "Growpefy") : (viewer.member?.name ?? viewer.name);
   if (intent === "address") {
     const r = await updateOrderAddress(store, o, readAddress(fd), by);
     return "error" in r ? json({ ok: null, error: r.error }) : json({ ok: r.ok, error: null });
