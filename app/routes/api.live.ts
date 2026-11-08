@@ -29,7 +29,7 @@ export async function action({ request }: ActionFunctionArgs) {
       let hit = slugs.get(slug);
       if (!hit || Date.now() - hit.at > 10 * 60_000) {
         const s = await storeBySlug(slug);
-        hit = { id: s?.platform === "growpefy" ? s.id : null, at: Date.now() };
+        hit = { id: s && (s.platform === "growpefy" || s.storefrontEnabled) ? s.id : null, at: Date.now() };
         if (slugs.size > 5000) slugs.clear();
         slugs.set(slug, hit);
       }

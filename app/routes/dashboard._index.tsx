@@ -173,7 +173,7 @@ function LiveChip({ base }: { base: string }) {
       try { const r = await fetch(`${base}/live/data`, { cache: "no-store" }); if (r.ok) { const d = (await r.json()) as { total: number }; if (alive) setN(d.total); } } catch { /* keep last */ }
     };
     void pull();
-    const t = setInterval(pull, 10_000);
+    const t = setInterval(pull, 5_000);
     return () => { alive = false; clearInterval(t); };
   }, [base]);
   if (n == null) return null;

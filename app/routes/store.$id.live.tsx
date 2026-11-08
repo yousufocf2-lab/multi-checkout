@@ -18,7 +18,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   });
 }
 
-const POLL_MS = 5000;
+const POLL_MS = 3000;
 const STAGE: Record<Stage, { label: string; color: string }> = {
   home: { label: "Home page", color: "#5b6cf0" },
   browsing: { label: "Browsing", color: "#9b5de5" },
@@ -114,7 +114,7 @@ export default function LiveView() {
               <p className="mt-1 text-[44px] font-semibold leading-none tracking-tight"><AnimatedNumber value={data.total} /></p>
               <p className="mt-2 text-[12px] text-ink-faint">
                 {data.peak.n > 0 ? <>Peak today <b className="num font-semibold text-ink-soft">{data.peak.n}</b> at {new Date(data.peak.at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}</> : "Peak today will show here"}
-                <span className="mx-1.5">·</span>updates every 5 seconds
+                <span className="mx-1.5">·</span>updates every few seconds
               </p>
             </div>
           </div>

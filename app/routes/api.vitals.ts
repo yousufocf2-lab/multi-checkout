@@ -15,7 +15,7 @@ export async function action({ request }: ActionFunctionArgs) {
     let hit = ids.get(b.s);
     if (!hit || Date.now() - hit.at > 10 * 60_000) {
       const s = await storeBySlug(b.s.slice(0, 80));
-      hit = { id: s?.platform === "growpefy" ? s.id : null, at: Date.now() };
+      hit = { id: s && (s.platform === "growpefy" || s.storefrontEnabled) ? s.id : null, at: Date.now() };
       ids.set(b.s, hit);
     }
     if (!hit.id) return done;
