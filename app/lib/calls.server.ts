@@ -3,7 +3,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, orders, stores, teamMembers, type Order, type OrderEvent, type Store } from "~/db.server";
 import { cancelOrders } from "./order-actions.server";
-import { needsCall, shipRuleOf } from "./ship-rule";
 
 export const CALL_PERM = "confirm";
 const WINDOW_DAYS = 14; // orders older than this aren't put in anyone's queue
@@ -28,10 +27,11 @@ export async function assignCalls(store: Store) {
   const team = await callersFor(store);
   if (!team.length) return 0;
   const ids = team.map((m) => m.id);
-  const rule = shipRuleOf(store);
-  const waiting = (await db.select({ id: orders.id, assignedTo: orders.assignedTo, paymentMethod: orders.paymentMethod, confirmStatus: orders.confirmStatus })
-    .from(orders).where(open(store.id)).orderBy(asc(orders.createdAt)).limit(500))
-    .filter((o) => (o.assignedTo == null || !ids.includes(o.assignedTo)) && needsCall(rule, o));
+  // Every order of the last 14 days gets a caller, also ones already shipped or prepaid, so the team sees all of them
+  const waiting = (await db.select({ id: orders.id, assignedTo: orders.assignedTo }).from(orders)
+    .where(and(eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), gte(orders.createdAt, new Date(Date.now() - WINDOW_DAYS * 86400_000))))
+    .orderBy(asc(orders.createdAt)).limit(1000))
+    .filter((o) => o.assignedTo == null || !ids.includes(o.assignedTo));
   if (!waiting.length) return 0;
   let rr = store.callRr ?? 0;
   for (const o of waiting) {
@@ -47,7 +47,7 @@ const istStart = () => { const d = new Date(Date.now() + 5.5 * 3600_000); d.setU
 
 type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "callAttempts" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier">;
 
-export const CALL_TABS = ["to_call", "follow_up", "confirmed", "cancelled", "all"] as const;
+export const CALL_TABS = ["to_call", "follow_up", "confirmed", "cancelled", "shipped", "all"] as const;
 export type CallTab = (typeof CALL_TABS)[number];
 
 /**
@@ -73,7 +73,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   const to = new Date(new Date(`${until}T00:00:00+05:30`).getTime() + 86400_000);
   const base = and(
     eq(orders.storeId, store.id),
-    me == null ? sql`${orders.assignedTo} is not null` : eq(orders.assignedTo, me),
+    me == null ? undefined : eq(orders.assignedTo, me), // owner / managers: every order of the store
     inArray(orders.status, ["paid", "cod_placed", "cancelled"]),
     gte(orders.createdAt, from), lt(orders.createdAt, to),
   );
@@ -83,10 +83,12 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     callStatus: orders.callStatus, followUpAt: orders.followUpAt, callAttempts: orders.callAttempts, staffNote: orders.staffNote, customerNote: orders.customerNote,
     callAt: orders.callAt, callBy: orders.callBy, assignedTo: orders.assignedTo, timeline: orders.timeline, awb: orders.awb, courier: orders.courier,
   };
-  const [list, counts] = await Promise.all([
-    db.select({ ...cols, tab: bucket }).from(orders).where(tab === "all" ? base : and(base, sql`${bucket} = ${tab}`))
+  const shipped = sql`${orders.awb} is not null or ${orders.courierRef} is not null`;
+  const [list, counts, [ship]] = await Promise.all([
+    db.select({ ...cols, tab: bucket }).from(orders).where(tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`))
       .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last` : desc(orders.createdAt)).limit(300),
     db.select({ tab: bucket, n: sql<number>`count(*)::int` }).from(orders).where(base).groupBy(bucket),
+    db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(base, shipped)),
   ]);
   const n = Object.fromEntries(counts.map((c) => [c.tab, Number(c.n)])) as Partial<Record<CallTab, number>>;
 
@@ -114,7 +116,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   });
   return {
     me, team: team.map((t) => ({ ...t, ...(byM.get(t.id) ?? { waiting: 0, follow: 0, confirmed: 0, cancelled: 0 }), you: t.id === me })),
-    counts: { to_call: n.to_call ?? 0, follow_up: n.follow_up ?? 0, confirmed: n.confirmed ?? 0, cancelled: n.cancelled ?? 0, all: Object.values(n).reduce((a, b) => a + (b ?? 0), 0) },
+    counts: { to_call: n.to_call ?? 0, follow_up: n.follow_up ?? 0, confirmed: n.confirmed ?? 0, cancelled: n.cancelled ?? 0, shipped: Number(ship?.n ?? 0), all: Object.values(n).reduce((a, b) => a + (b ?? 0), 0) },
     orders: list.map(full),
   };
 }

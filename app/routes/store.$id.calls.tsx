@@ -125,6 +125,7 @@ export default function Calls() {
     { id: "follow_up", label: "Follow-up", n: c.follow_up, tone: "#5b6cf0" },
     { id: "confirmed", label: "Confirmed", n: c.confirmed, tone: "#1f8f5f" },
     { id: "cancelled", label: "Cancelled", n: c.cancelled, tone: "#c5280c" },
+    { id: "shipped", label: "Shipped", n: c.shipped, tone: "#1c5cab" },
     { id: "all", label: "All", n: c.all, tone: "" },
     { id: "team", label: "Team", n: null, tone: "" },
   ];
@@ -140,7 +141,7 @@ export default function Calls() {
   return (
     <div className="mx-auto max-w-4xl space-y-3">
       <style>{CSS}</style>
-      <section className="panel overflow-hidden p-0">
+      <section className="panel relative z-20 p-0">
         <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5">
           <RangePicker current={d.range} />
           <span className="ml-auto text-[12px] text-ink-faint">{d.manager ? "Whole team" : "Your orders"} · refreshes every 30 s</span>
@@ -210,7 +211,7 @@ function CallList({ d, onOpen }: { d: D; onOpen: (id: string) => void }) {
                   {o.tab === "follow_up" && o.followUpAt ? (due ? "Call now" : `Call at ${at(o.followUpAt)}`) : o.tab === "to_call" ? `Placed ${ago(o.at)}` : `${TAB_STYLE[o.tab]?.[0] ?? ""} ${via(o)}`}
                 </span>
               </span>
-              {d.tab === "all" && <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${TAB_STYLE[o.tab]?.[1] ?? ""}`}>{TAB_STYLE[o.tab]?.[0]}</span>}
+              {(d.tab === "all" || d.tab === "shipped") && <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${TAB_STYLE[o.tab]?.[1] ?? ""}`}>{TAB_STYLE[o.tab]?.[0]}</span>}
               <Icon name="chevron" className="h-4 w-4 shrink-0 -rotate-90 text-ink-faint" />
             </button>
           </li>
