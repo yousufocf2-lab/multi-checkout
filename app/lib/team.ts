@@ -82,7 +82,7 @@ const STORE_SECTION: Record<string, string> = {
   promotions: "offers", "to-ship": "orders", profit: "ads",
   catalog: "products", collections: "products", inventory: "products", media: "products", themes: "online_store", editor: "online_store",
   pages: "online_store", website: "settings", integrations: "developer", drafts: "orders", calls: "confirm",
-  live: "analytics", files: "products",
+  live: "analytics", files: "products", menus: "online_store",
 };
 
 function needFor(scope: Scope, path: string): Need {

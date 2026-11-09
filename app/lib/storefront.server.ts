@@ -4,6 +4,7 @@
 import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelToken } from "liquidjs";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
+import { menusForTheme } from "./menus.server";
 import { footerPages } from "./store-pages.server";
 import { renderCustomLiquid } from "./custom-liquid.server";
 import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
@@ -300,11 +301,12 @@ export async function loadCategories(ctx: ShopContext) {
 
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
-  const [collections, pageRows] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id)]);
+  const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
   return {
     shop: { name: ctx.store.name, slug: ctx.store.slug, favicon: storeIcon(ctx.store, (ctx.look?.data?.settings ?? null) as Record<string, unknown> | null), meta_pixel: /^\d{5,20}$/.test(ctx.store.metaPixelId ?? "") ? ctx.store.metaPixelId : null, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
-    routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart`, account: accountsOn(ctx.store) ? `${ctx.root}/account` : null },
+    routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart`, search: `${ctx.root}/search`, account: accountsOn(ctx.store) ? `${ctx.root}/account` : null },
     collections, pages: pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` })), preview: ctx.preview,
+    ...nav, // menus (by handle), header_menu, footer_menu
   };
 }
 
@@ -350,4 +352,13 @@ export async function previewContext(request: Request, slug: string | undefined)
     if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, owner: true, look: await themeLook(store.id, mode) };
   }
   return { store, root: `/s/${store.slug}`, preview: true, look: await themeLook(store.id) };
+}
+
+/** Products by id, in the order given (search results). */
+export async function loadProductsByIds(ctx: ShopContext, ids: number[]) {
+  if (!ids.length) return [];
+  const items = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), inArray(catalogItems.id, ids)));
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const vmap = await variantsFor(items.map((i) => i.id));
+  return ids.flatMap((id) => { const i = byId.get(id); return i ? [productDrop(ctx, i, vmap.get(id) ?? [])] : []; });
 }

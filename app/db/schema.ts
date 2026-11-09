@@ -1611,3 +1611,27 @@ export const storeFiles = pgTable(
   (t) => [index("store_files_store_idx").on(t.storeId, t.createdAt)],
 );
 export type StoreFile = typeof storeFiles.$inferSelect;
+
+/** Navigation menus a store builds (Storefront → Menus) and shows in its header or footer. */
+export type MenuItem = {
+  id: string; title: string;
+  kind: "home" | "all" | "category" | "product" | "page" | "url";
+  ref?: string; // handle of the category / product / page
+  url?: string; // custom link
+  children?: MenuItem[]; // one level of sub-items (a dropdown in the header)
+};
+export const storeMenus = pgTable(
+  "store_menus",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    handle: text("handle").notNull(),
+    items: jsonb("items").$type<MenuItem[]>().notNull().default([]),
+    inHeader: boolean("in_header").notNull().default(false),
+    inFooter: boolean("in_footer").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("store_menus_handle_idx").on(t.storeId, t.handle)],
+);
+export type StoreMenu = typeof storeMenus.$inferSelect;

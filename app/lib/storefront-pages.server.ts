@@ -7,9 +7,10 @@ import { clientIp } from "./orders.server";
 import { pageByHandle, publishedPage } from "./store-pages.server";
 import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
 import { PAGE_BLOCKS_CSS } from "./page-blocks";
-import { baseScope, frameVars, html, loadProduct, loadProducts, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
+import { baseScope, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
+import { searchProducts, suggest } from "./search.server";
 
 const THEME = "swift";
 const canonical = (ctx: ShopContext, path: string) => !ctx.preview && ctx.store.storefrontDomain ? `https://${ctx.store.storefrontDomain}${path}` : "";
@@ -137,4 +138,23 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
   });
   const sum = (xs: { quantity: number }[]) => xs.reduce((n, x) => n + x.quantity, 0);
   return reply({ url: `${storeBaseUrl(ctx.store)}/c/${id}`, note: sum(lines) < sum(items) ? "Some items were sold out and were left out." : null });
+}
+
+/** Search results: forgiving matches; when nothing is close, the nearest products and then the rest (never empty). */
+export async function searchPage(ctx: ShopContext, request: Request) {
+  const q = (new URL(request.url).searchParams.get("q") ?? "").trim().slice(0, 80);
+  const [scope, r] = await Promise.all([baseScope(ctx), searchProducts(ctx.store.id, q, 48)]);
+  const products = await loadProductsByIds(ctx, r.ids);
+  const collection = {
+    title: q ? `Results for “${q}”` : "Search", handle: "search", products,
+    description: q && !r.exact ? "We couldn't find an exact match, so here are the closest products." : "",
+    search: { q, exact: r.exact, categories: r.categories.map((c) => ({ title: c.title, url: `${ctx.root}/category/${c.handle}` })) },
+  };
+  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: "" }, sectionData(ctx), ctx.look));
+}
+
+/** JSON for the header's live search. */
+export async function searchSuggest(ctx: ShopContext, request: Request) {
+  const q = (new URL(request.url).searchParams.get("q") ?? "").trim().slice(0, 80);
+  return new Response(JSON.stringify(await suggest(ctx.store.id, ctx.root, q)), { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 }

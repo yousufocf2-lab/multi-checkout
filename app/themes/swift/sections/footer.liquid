@@ -10,11 +10,20 @@
         {%- if settings.social_youtube != blank -%}<a href="{{ settings.social_youtube }}" target="_blank" rel="noopener">YouTube</a>{%- endif -%}
       </p>
     </div>
+    {%- assign fmenu = footer_menu -%}
+    {%- if section.settings.menu != blank and menus[section.settings.menu] -%}{%- assign fmenu = menus[section.settings.menu] -%}{%- endif -%}
+    {%- if fmenu -%}
+    <div>
+      <p class="footer__head">{{ section.settings.menu_heading | default: fmenu.title }}</p>
+      {%- for l in fmenu.links -%}<a href="{{ l.url }}">{{ l.title }}</a>{%- for c in l.links -%}<a href="{{ c.url }}" style="padding-left:10px">{{ c.title }}</a>{%- endfor -%}{%- endfor -%}
+    </div>
+    {%- else -%}
     <div>
       <p class="footer__head">Shop</p>
       <a href="{{ routes.all }}">All products</a>
       {%- for c in collections limit: 5 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}
     </div>
+    {%- endif -%}
     {%- if pages.size > 0 -%}
     <div>
       <p class="footer__head">Help</p>
@@ -27,6 +36,8 @@
 {% schema %}
 { "name": "Footer", "settings": [
   { "id": "about", "type": "textarea", "label": "Short line about your brand", "default": "" },
+  { "id": "menu", "type": "menu", "label": "Menu (empty = the one set to Footer in Menus)", "default": "" },
+  { "id": "menu_heading", "type": "text", "label": "Menu heading (empty = menu name)", "default": "" },
   { "id": "show_powered", "type": "checkbox", "label": "Show “Powered by Growpefy”", "default": true }
 ] }
 {% endschema %}

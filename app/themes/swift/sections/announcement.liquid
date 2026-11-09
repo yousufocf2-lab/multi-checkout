@@ -1,6 +1,52 @@
-{%- if section.settings.text != blank -%}
-<div class="announce">{% if section.settings.link != blank %}<a href="{{ section.settings.link }}">{{ section.settings.text }}</a>{% else %}{{ section.settings.text }}{% endif %}</div>
+{%- assign s = section.settings -%}
+{%- comment -%} Messages: the first one, then any extra ones; they take turns when animated {%- endcomment -%}
+{%- assign msgs = s.messages -%}
+{%- if s.text != blank or msgs.size > 0 -%}
+{%- assign anim = s.animation | default: 'none' -%}
+{%- capture list -%}
+  {%- if s.text != blank -%}<span class="an-msg">{% if s.link != blank %}<a href="{{ s.link }}">{{ s.text }}</a>{% else %}{{ s.text }}{% endif %}</span>{%- endif -%}
+  {%- for m in msgs -%}{%- if m.text != blank -%}<span class="an-msg">{% if m.link != blank %}<a href="{{ m.link }}">{{ m.text }}</a>{% else %}{{ m.text }}{% endif %}</span>{%- endif -%}{%- endfor -%}
+{%- endcapture -%}
+<div class="announce an an--{{ anim }}{% if s.hide_mobile %} an--hide-m{% endif %}" data-an data-speed="{{ s.speed | default: 4 }}"
+  style="--an-size:{{ s.font_size | default: 13 }}px;--an-weight:{{ s.weight | default: 500 }};--an-pad:{{ s.padding | default: 8 }}px;--an-dur:{{ s.speed | default: 4 }}s;{% if s.bg != blank %}--an-bg:{{ s.bg }};{% endif %}{% if s.color != blank %}--an-c:{{ s.color }};{% endif %}{% if s.upper %}--an-upper:uppercase;--an-ls:.06em;{% endif %}" role="region" aria-label="Announcement">
+  {%- if anim == 'marquee' -%}
+    <div class="an-track" aria-hidden="false"><span class="an-run">{{ list }}</span><span class="an-run" aria-hidden="true">{{ list }}</span></div>
+  {%- else -%}
+    <div class="an-stack">{{ list }}</div>
+  {%- endif -%}
+  {%- if s.show_close -%}<button type="button" class="an-x" aria-label="Close announcement" data-an-close>✕</button>{%- endif -%}
+</div>
+<script>
+(function(){
+  var el=document.currentScript.previousElementSibling; if(!el||!el.hasAttribute('data-an'))return;
+  try{if(el.querySelector('[data-an-close]')&&sessionStorage.getItem('gp_an_closed')==='1'){el.remove();return}}catch(e){}
+  var x=el.querySelector('[data-an-close]'); if(x)x.addEventListener('click',function(){el.remove();try{sessionStorage.setItem('gp_an_closed','1')}catch(e){}});
+  if(!el.classList.contains('an--slide')&&!el.classList.contains('an--fade')&&!el.classList.contains('an--none'))return;
+  var items=el.querySelectorAll('.an-stack .an-msg'); if(!items.length)return;
+  var i=0; items[0].classList.add('is-on');
+  if(items.length<2||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  var ms=Math.max(2,Number(el.getAttribute('data-speed'))||4)*1000;
+  setInterval(function(){items[i].classList.remove('is-on');items[i].classList.add('is-off');var p=items[i];setTimeout(function(){p.classList.remove('is-off')},600);i=(i+1)%items.length;items[i].classList.add('is-on')},ms);
+})();
+</script>
 {%- endif -%}
 {% schema %}
-{ "name": "Announcement bar", "settings": [ { "id": "text", "type": "text", "label": "Text", "default": "Free delivery on prepaid orders · Cash on delivery available" }, { "id": "link", "type": "url", "label": "Link (optional)" } ] }
+{ "name": "Announcement bar", "settings": [
+  { "id": "text", "type": "text", "label": "Message", "default": "Free delivery on prepaid orders · Cash on delivery available" },
+  { "id": "link", "type": "url", "label": "Link (optional)" },
+  { "id": "messages", "type": "list", "label": "More messages (they take turns)", "item_label": "message", "fields": [
+    { "id": "text", "type": "text", "label": "Message" },
+    { "id": "link", "type": "url", "label": "Link (optional)" }
+  ], "default": [] },
+  { "id": "animation", "type": "select", "label": "Animation", "options": ["none", "marquee", "slide", "fade"], "option_labels": ["None (messages change without effect)", "Scrolling ticker", "Slide up, one at a time", "Fade, one at a time"], "default": "none" },
+  { "id": "speed", "type": "range", "label": "Speed (seconds per message / ticker loop ÷ 5)", "min": 2, "max": 12, "step": 1, "unit": "s", "default": 4 },
+  { "id": "bg", "type": "color", "label": "Background", "default": "" },
+  { "id": "color", "type": "color", "label": "Text colour", "default": "" },
+  { "id": "font_size", "type": "range", "label": "Text size", "min": 10, "max": 20, "step": 1, "unit": "px", "default": 13 },
+  { "id": "weight", "type": "select", "label": "Text weight", "options": ["400", "500", "600", "700"], "option_labels": ["Regular", "Medium", "Semibold", "Bold"], "default": "500" },
+  { "id": "upper", "type": "checkbox", "label": "CAPITALS", "default": false },
+  { "id": "padding", "type": "range", "label": "Bar height (space above and below)", "min": 2, "max": 20, "step": 1, "unit": "px", "default": 8 },
+  { "id": "show_close", "type": "checkbox", "label": "Let shoppers close it", "default": false },
+  { "id": "hide_mobile", "type": "checkbox", "label": "Hide on phones", "default": false }
+] }
 {% endschema %}

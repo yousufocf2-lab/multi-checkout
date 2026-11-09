@@ -61,7 +61,7 @@ app.use((req, res, next) => {
 // A store's own website domain (www.brand.com): storefront paths go to the /sfhost routes, /admin to the dashboard.
 // Every other path (checkout /c, /pay, /order, /media, /api, /dashboard, /login, assets) works as on growpefy.com.
 const checkoutRootHost = String(process.env.CHECKOUT_DOMAIN || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/:].*$/, "");
-const STOREFRONT_PATH = /^\/($|products?\/|category\/|collections\/|pages\/|cart\/?$|checkout\/?$)/; // /account is a normal page on every host
+const STOREFRONT_PATH = /^\/($|products?\/|category\/|collections\/|pages\/|cart\/?$|checkout\/?$|search\/?$|search\/suggest\/?$)/; // /account is a normal page on every host
 /** Shopify-style paths -> ours. Null when the path needs no change. */
 function legacyPath(p) {
   let m;
@@ -70,7 +70,7 @@ function legacyPath(p) {
   if ((m = p.match(/^\/collections\/[^/]+\/products\/([^/.]+)/))) return `/product/${m[1]}`;
   if ((m = p.match(/^\/products\/([^/.]+)\.(?:js|json|oembed|xml|atom)$/))) return `/product/${m[1]}`;
   if ((m = p.match(/^\/policies\/([^/]+)\/?$/))) return `/pages/${m[1]}`;
-  if (/^\/(?:search|collections\/?|collections\/(?:vendors|types))\/?$/.test(p)) return "/products/all";
+  if (/^\/(?:collections\/?|collections\/(?:vendors|types))\/?$/.test(p)) return "/products/all"; // /search is the store's own search page
   if ((m = p.match(/^\/collections\/([^/]+)\/?$/))) return m[1] === "all" ? "/products/all" : `/category/${m[1]}`;
   if (/^\/account\/(?:login|register)\/?$/.test(p)) return "/account";
   return loc ? p : null;

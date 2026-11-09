@@ -4,11 +4,12 @@ import type { ActionFunctionArgs, LinksFunction, LoaderFunctionArgs, MetaFunctio
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { and, asc, eq } from "drizzle-orm";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { catalogCategories, catalogItems, db, storePages, type ThemeData, type ThemeSection, type ThemeTemplate } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { themeManifest } from "~/lib/storefront.server";
+import { listMenus } from "~/lib/menus.server";
 import { editorState, publishDraft, saveDraft, THEME } from "~/lib/themes.server";
 import { storePath } from "~/lib/store-code";
 
@@ -23,11 +24,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
-  const [st, product, categories, page] = await Promise.all([
+  const [st, product, categories, page, menus] = await Promise.all([
     editorState(store.id),
     db.select({ handle: catalogItems.handle }).from(catalogItems).where(and(eq(catalogItems.storeId, store.id), eq(catalogItems.status, "active"))).orderBy(asc(catalogItems.id)).limit(1),
     db.select({ title: catalogCategories.title, handle: catalogCategories.handle }).from(catalogCategories).where(eq(catalogCategories.storeId, store.id)).orderBy(asc(catalogCategories.position), asc(catalogCategories.title)),
     db.select({ handle: storePages.handle }).from(storePages).where(and(eq(storePages.storeId, store.id), eq(storePages.published, true))).orderBy(asc(storePages.position)).limit(1),
+    listMenus(store.id),
   ]);
   const m = themeManifest(THEME);
   return json({
@@ -36,6 +38,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     data: st.data, hasDraft: st.hasDraft,
     samples: { product: product[0]?.handle ?? null, collection: categories[0]?.handle ?? "all", page: page[0]?.handle ?? null },
     categories,
+    menus: menus.map((m) => ({ title: m.title, handle: m.handle, where: m.inHeader ? "Header" : m.inFooter ? "Footer" : "" })),
   });
 }
 
@@ -281,6 +284,7 @@ export default function ThemeEditor() {
   const settingsGroups = L.manifest.settingsSchema as { name: string; settings: Setting[] }[];
 
   return (
+    <MenusCtx.Provider value={L.menus}>
     <div className="ed">
       <style dangerouslySetInnerHTML={{ __html: ED_CSS }} />
       {/* top bar */}
@@ -412,6 +416,7 @@ export default function ThemeEditor() {
         </main>
       </div>
     </div>
+    </MenusCtx.Provider>
   );
 }
 
@@ -510,8 +515,12 @@ function SectionList({ group, title, list, kindOf, sel, onSelect, onToggle, onRe
   );
 }
 
+/** The store's menus (Storefront → Menus), for "menu" settings. */
+const MenusCtx = createContext<{ title: string; handle: string; where: string }[]>([]);
+
 function Field({ s, value, onChange, storeId, categories }: { s: Setting; value: unknown; onChange: (v: unknown) => void; storeId: number; categories: { title: string; handle: string }[] }) {
   const id = `f-${s.id}-${useId().replace(/:/g, "")}`;
+  const menus = useContext(MenusCtx);
   const label = <label htmlFor={id} className="ed-label">{s.label ?? s.id}</label>;
   const str = value == null ? "" : String(value);
   switch (s.type) {
@@ -551,6 +560,16 @@ function Field({ s, value, onChange, storeId, categories }: { s: Setting; value:
     }
     case "select":
       return <div className="ed-f">{label}<div className="ed-select"><select id={id} value={str} onChange={(e) => onChange(e.target.value)}>{(s.options ?? []).map((o, i) => <option key={o} value={o}>{s.option_labels?.[i] ?? o[0].toUpperCase() + o.slice(1)}</option>)}</select><I n="chev" /></div></div>;
+    case "menu":
+      return (
+        <div className="ed-f">{label}
+          <div className="ed-select"><select id={id} value={str} onChange={(e) => onChange(e.target.value)}>
+            <option value="">{menus.find((m) => s.id === "menu" && m.where) ? "Default (set in Menus)" : "Default"}</option>
+            {menus.map((m) => <option key={m.handle} value={m.handle}>{m.title}{m.where ? ` · ${m.where}` : ""}</option>)}
+          </select><I n="chev" /></div>
+          <span className="ed-hint">Make and edit menus in Storefront → <a href={`${storePath(storeId)}/menus`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Menus</a>.</span>
+        </div>
+      );
     case "liquid":
       return <CodeField id={id} label={s.label ?? "Code"} value={str} onChange={onChange} />;
     case "collection_optional":

@@ -1,29 +1,163 @@
-<header class="header">
-  <div class="wrap header__row">
-    {%- comment -%} The logo always fits inside the header bar: these limits are inline !important, so settings or custom CSS can't push it out {%- endcomment -%}
-    <a href="{{ routes.root }}" class="header__logo" aria-label="{{ shop.name }} home" style="display:flex!important;align-items:center!important;height:48px!important;max-height:48px!important;overflow:hidden!important;flex:0 1 auto!important;min-width:0!important">
-      {%- assign logo = settings.logo | default: shop.logo -%}
-      {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" style="display:block!important;width:auto!important;height:auto!important;max-height:48px!important;max-width:min(var(--logo-width,140px),46vw)!important;object-fit:contain!important;position:static!important;transform:none!important;margin:0!important">{%- else -%}<span style="display:block;max-width:46vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ shop.name }}</span>{%- endif -%}
-    </a>
-    <nav class="header__nav" aria-label="Main">
-      {%- if section.settings.show_all -%}<a href="{{ routes.all }}">{{ section.settings.all_label }}</a>{%- endif -%}
-      {%- for c in collections limit: section.settings.menu_count -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}
-    </nav>
-    {%- if routes.account -%}
-    <a href="{{ routes.account }}" class="header__icon" aria-label="My account" title="My account">
-      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.9"/><path d="M4.5 20.2c1.3-3.6 4.2-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/></svg>
+{%- assign s = section.settings -%}
+{%- unless s.hidden -%}
+{%- comment -%} Menu: the one picked here, else the one set to "Header" in Storefront → Menus, else Shop all + categories {%- endcomment -%}
+{%- assign menu = header_menu -%}
+{%- if s.menu != blank and menus[s.menu] -%}{%- assign menu = menus[s.menu] -%}{%- endif -%}
+{%- assign stroke = '1.8' -%}{%- if s.icon_weight == 'thin' -%}{%- assign stroke = '1.4' -%}{%- elsif s.icon_weight == 'bold' -%}{%- assign stroke = '2.3' -%}{%- endif -%}
+{%- capture menu_links -%}
+  {%- if menu -%}
+    {%- for l in menu.links -%}
+      {%- if l.links.size > 0 -%}
+      <div class="hd-dd"><a href="{{ l.url }}" class="hd-link" aria-haspopup="true">{{ l.title }}<svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <div class="hd-dd__menu">{%- for c in l.links -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div></div>
+      {%- else -%}<a href="{{ l.url }}" class="hd-link">{{ l.title }}</a>{%- endif -%}
+    {%- endfor -%}
+  {%- else -%}
+    <a href="{{ routes.all }}" class="hd-link">Shop all</a>
+    {%- for c in collections limit: 4 -%}<a href="{{ c.url }}" class="hd-link">{{ c.title }}</a>{%- endfor -%}
+  {%- endif -%}
+{%- endcapture -%}
+{%- capture icons -%}
+  <div class="hd-icons">
+    {%- if s.show_search -%}
+    <button type="button" class="hd-icon" data-hd-search aria-label="Search" title="Search">
+      {%- if s.search_icon != blank -%}<img src="{{ s.search_icon }}" alt="">{%- else -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.8"/><path d="m20 20-3.6-3.6"/></svg>{%- endif -%}
+    </button>
+    {%- endif -%}
+    {%- if s.show_account and routes.account -%}
+    <a href="{{ routes.account }}" class="hd-icon header__icon" aria-label="My account" title="My account">
+      {%- if s.account_icon != blank -%}<img src="{{ s.account_icon }}" alt="">{%- else -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.9"/><path d="M4.5 20.2c1.3-3.6 4.2-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/></svg>{%- endif -%}
     </a>
     {%- endif -%}
-    <a href="{{ routes.cart }}" class="header__cart" aria-label="Cart">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6h15l-2 9H8L6 3H3"/><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/></svg>
+    {%- if s.show_cart -%}
+    <a href="{{ routes.cart }}" class="hd-icon header__cart" aria-label="Cart">
+      {%- if s.cart_icon != blank -%}<img src="{{ s.cart_icon }}" alt="">{%- else -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6h15l-2 9H8L6 3H3"/><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/></svg>{%- endif -%}
       <span class="header__count" data-cart-count hidden>0</span>
     </a>
+    {%- endif -%}
   </div>
+{%- endcapture -%}
+{%- capture logo_html -%}
+  {%- comment -%} The logo always fits inside the header bar (inline !important limits) {%- endcomment -%}
+  <a href="{{ routes.root }}" class="header__logo hd-logo" aria-label="{{ shop.name }} home">
+    {%- assign logo = settings.logo | default: shop.logo -%}
+    {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" style="display:block!important;width:auto!important;height:auto!important;max-height:calc(var(--hd-h) - 14px)!important;max-width:min(var(--hd-logo),46vw)!important;object-fit:contain!important;position:static!important;transform:none!important;margin:0!important">{%- else -%}<span class="hd-logo__text">{{ shop.name }}</span>{%- endif -%}
+  </a>
+{%- endcapture -%}
+<header class="header hd hd--{{ s.layout | default: 'left' }}{% if s.sticky %} hd--sticky{% endif %}{% unless s.border %} hd--flat{% endunless %}"
+  style="--hd-h:{{ s.height | default: 64 }}px;--hd-logo:{{ s.logo_size | default: 140 }}px;--hd-logo-m:{{ s.logo_mobile | default: 110 }}px;--hd-menu-size:{{ s.menu_size | default: 15 }}px;--hd-menu-weight:{{ s.menu_weight | default: 500 }};--hd-menu-gap:{{ s.menu_spacing | default: 22 }}px;--hd-icon:{{ s.icon_size | default: 22 }}px;{% if s.bg != blank %}--hd-bg:{{ s.bg }};{% endif %}{% if s.text != blank %}--hd-text:{{ s.text }};{% endif %}{% if s.menu_color != blank %}--hd-menu:{{ s.menu_color }};{% endif %}{% if s.icon_color != blank %}--hd-icon-c:{{ s.icon_color }};{% endif %}{% if s.menu_upper %}--hd-upper:uppercase;{% endif %}">
+  <div class="wrap hd__row">
+    {%- if s.mobile_menu -%}
+    <button type="button" class="hd-icon hd-burger" data-hd-drawer aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    {%- endif -%}
+    {%- if s.layout == 'center' -%}
+      <nav class="hd-nav hd-nav--side" aria-label="Main">{{ menu_links }}</nav>
+      {{ logo_html }}
+      {{ icons }}
+    {%- elsif s.layout == 'stacked' -%}
+      <span class="hd-spacer"></span>
+      {{ logo_html }}
+      {{ icons }}
+    {%- else -%}
+      {{ logo_html }}
+      <nav class="hd-nav hd-nav--{{ s.menu_align | default: 'left' }}" aria-label="Main">{{ menu_links }}</nav>
+      {{ icons }}
+    {%- endif -%}
+  </div>
+  {%- if s.layout == 'stacked' -%}<nav class="hd-nav hd-nav--below" aria-label="Main">{{ menu_links }}</nav>{%- endif -%}
+
+  {%- if s.show_search -%}
+  <div class="hd-search" data-hd-search-panel hidden>
+    <form action="{{ routes.search }}" method="get" class="wrap hd-search__bar" role="search">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.8"/><path d="m20 20-3.6-3.6"/></svg>
+      <input type="search" name="q" placeholder="{{ s.search_placeholder | default: 'Search products' }}" aria-label="Search products" autocomplete="off" data-hd-q>
+      <button type="button" class="hd-search__close" data-hd-search-close aria-label="Close search">✕</button>
+    </form>
+    <div class="wrap hd-search__results" data-hd-results></div>
+  </div>
+  {%- endif -%}
+  {%- if s.mobile_menu -%}
+  <div class="hd-drawer" data-hd-drawer-panel hidden>
+    <div class="hd-drawer__bg" data-hd-drawer-close></div>
+    <nav class="hd-drawer__panel" aria-label="Menu">
+      <div class="hd-drawer__head"><b>{{ shop.name }}</b><button type="button" data-hd-drawer-close aria-label="Close menu">✕</button></div>
+      {%- if menu -%}
+        {%- for l in menu.links -%}
+          {%- if l.links.size > 0 -%}
+          <details><summary>{{ l.title }}</summary><a href="{{ l.url }}">All {{ l.title }}</a>{%- for c in l.links -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</details>
+          {%- else -%}<a href="{{ l.url }}">{{ l.title }}</a>{%- endif -%}
+        {%- endfor -%}
+      {%- else -%}
+        <a href="{{ routes.all }}">Shop all</a>{%- for c in collections limit: 8 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}
+      {%- endif -%}
+    </nav>
+  </div>
+  {%- endif -%}
 </header>
+<script>
+(function(){
+  var h=document.currentScript.previousElementSibling; if(!h||!h.classList.contains('hd'))return;
+  var sp=h.querySelector('[data-hd-search-panel]'),q=h.querySelector('[data-hd-q]'),out=h.querySelector('[data-hd-results]');
+  var base={{ routes.search | json }},t,last='',ctl;
+  var money=function(p){return '₹'+Math.round(p/100).toLocaleString('en-IN')};
+  var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+  function open(){if(!sp)return;sp.hidden=false;document.documentElement.classList.add('hd-search-open');setTimeout(function(){q&&q.focus()},30)}
+  function close(){if(!sp)return;sp.hidden=true;document.documentElement.classList.remove('hd-search-open')}
+  function render(d,term){
+    if(!term){out.innerHTML='';return}
+    var html='';
+    if(!d.exact&&d.products.length)html+='<p class="hd-sr__note">No exact match for “'+esc(term)+'”. Closest products:</p>';
+    if(d.categories&&d.categories.length)html+='<p class="hd-sr__cats">'+d.categories.map(function(c){return '<a href="'+esc(c.url)+'">'+esc(c.title)+'</a>'}).join('')+'</p>';
+    html+=d.products.map(function(p){return '<a class="hd-sr" href="'+esc(p.url)+'">'+(p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy">':'<span class="hd-sr__ph"></span>')+'<span class="hd-sr__t">'+esc(p.title)+'</span><span class="hd-sr__p">'+(p.price?money(p.price):'')+(p.compare>p.price?' <s>'+money(p.compare)+'</s>':'')+'</span></a>'}).join('');
+    html+='<a class="hd-sr__all" href="'+esc(d.all)+'">See all results for “'+esc(term)+'” →</a>';
+    out.innerHTML=html;
+  }
+  function look(){
+    var term=(q.value||'').trim(); if(term===last)return; last=term;
+    if(!term){render(null,'');return}
+    if(ctl)ctl.abort(); ctl=window.AbortController?new AbortController():null;
+    fetch(base+'/suggest?q='+encodeURIComponent(term),{signal:ctl&&ctl.signal}).then(function(r){return r.json()}).then(function(d){if(term===last)render(d,term)}).catch(function(){});
+  }
+  h.querySelectorAll('[data-hd-search]').forEach(function(b){b.addEventListener('click',open)});
+  h.querySelectorAll('[data-hd-search-close]').forEach(function(b){b.addEventListener('click',close)});
+  if(q)q.addEventListener('input',function(){clearTimeout(t);t=setTimeout(look,180)});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape')close();if(e.key==='/'&&sp&&sp.hidden&&!/input|textarea|select/i.test((e.target||{}).tagName||'')){e.preventDefault();open()}});
+  var dr=h.querySelector('[data-hd-drawer-panel]'),burger=h.querySelector('[data-hd-drawer]');
+  function dopen(){if(!dr)return;dr.hidden=false;burger&&burger.setAttribute('aria-expanded','true');document.documentElement.classList.add('hd-drawer-open')}
+  function dclose(){if(!dr)return;dr.hidden=true;burger&&burger.setAttribute('aria-expanded','false');document.documentElement.classList.remove('hd-drawer-open')}
+  if(burger)burger.addEventListener('click',dopen);
+  h.querySelectorAll('[data-hd-drawer-close]').forEach(function(b){b.addEventListener('click',dclose)});
+})();
+</script>
+{%- endunless -%}
 {% schema %}
 { "name": "Header", "settings": [
-  { "id": "show_all", "type": "checkbox", "label": "Show “Shop all” link", "default": true },
-  { "id": "all_label", "type": "text", "label": "“Shop all” text", "default": "Shop all" },
-  { "id": "menu_count", "type": "range", "label": "Categories in the menu", "min": 0, "max": 8, "step": 1, "default": 4 }
+  { "id": "hidden", "type": "checkbox", "label": "Hide the header", "default": false },
+  { "id": "layout", "type": "select", "label": "Layout", "options": ["left", "center", "stacked"], "option_labels": ["Logo left, menu next to it", "Menu left, logo in the middle", "Logo in the middle, menu below"], "default": "left" },
+  { "id": "menu", "type": "menu", "label": "Menu (empty = the one set to Header in Menus)", "default": "" },
+  { "id": "menu_align", "type": "select", "label": "Menu position", "options": ["left", "center", "right"], "option_labels": ["Next to the logo", "Middle", "Right, before the icons"], "default": "left" },
+  { "id": "sticky", "type": "checkbox", "label": "Stay on top while scrolling", "default": true },
+  { "id": "border", "type": "checkbox", "label": "Line under the header", "default": true },
+  { "id": "mobile_menu", "type": "checkbox", "label": "Menu button on phones", "default": true },
+  { "id": "height", "type": "range", "label": "Header height", "min": 48, "max": 120, "step": 2, "unit": "px", "default": 64 },
+  { "id": "logo_size", "type": "range", "label": "Logo width (computer)", "min": 40, "max": 320, "step": 5, "unit": "px", "default": 140 },
+  { "id": "logo_mobile", "type": "range", "label": "Logo width (phone)", "min": 40, "max": 220, "step": 5, "unit": "px", "default": 110 },
+  { "id": "bg", "type": "color", "label": "Background", "default": "" },
+  { "id": "text", "type": "color", "label": "Text and store name", "default": "" },
+  { "id": "menu_color", "type": "color", "label": "Menu links", "default": "" },
+  { "id": "menu_size", "type": "range", "label": "Menu text size", "min": 11, "max": 22, "step": 1, "unit": "px", "default": 15 },
+  { "id": "menu_weight", "type": "select", "label": "Menu text weight", "options": ["400", "500", "600", "700"], "option_labels": ["Regular", "Medium", "Semibold", "Bold"], "default": "500" },
+  { "id": "menu_spacing", "type": "range", "label": "Space between menu links", "min": 8, "max": 56, "step": 2, "unit": "px", "default": 22 },
+  { "id": "menu_upper", "type": "checkbox", "label": "Menu in CAPITALS", "default": false },
+  { "id": "show_search", "type": "checkbox", "label": "Show search", "default": true },
+  { "id": "show_account", "type": "checkbox", "label": "Show account", "default": true },
+  { "id": "show_cart", "type": "checkbox", "label": "Show cart", "default": true },
+  { "id": "icon_color", "type": "color", "label": "Icon colour", "default": "" },
+  { "id": "icon_size", "type": "range", "label": "Icon size", "min": 16, "max": 34, "step": 1, "unit": "px", "default": 22 },
+  { "id": "icon_weight", "type": "select", "label": "Icon line", "options": ["thin", "regular", "bold"], "option_labels": ["Thin", "Regular", "Bold"], "default": "regular" },
+  { "id": "search_icon", "type": "image", "label": "Your own search icon (optional)" },
+  { "id": "account_icon", "type": "image", "label": "Your own account icon (optional)" },
+  { "id": "cart_icon", "type": "image", "label": "Your own cart icon (optional)" },
+  { "id": "search_placeholder", "type": "text", "label": "Search box hint", "default": "Search products" }
 ] }
 {% endschema %}
