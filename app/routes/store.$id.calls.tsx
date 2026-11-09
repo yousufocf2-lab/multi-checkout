@@ -10,7 +10,9 @@ import { Icon } from "~/components/Icons";
 import { EmptyState } from "~/components/ui";
 import { db, orders } from "~/db.server";
 import { can, requireStore, requireViewer, type Viewer } from "~/lib/auth.server";
-import { callBoard, callersFor, reassign, recordCall, teammateOrders } from "~/lib/calls.server";
+import { CALL_TABS, callBoard, callersFor, reassign, recordCall, teammateOrders, type CallTab } from "~/lib/calls.server";
+import { resolveRange } from "~/lib/dates";
+import { RangePicker } from "~/components/Overview";
 import { readAddress, updateOrderAddress, updateOrderNotes } from "~/lib/order-edit.server";
 import { CANCEL_REASONS } from "~/lib/order-actions.server";
 import { shipRuleOf } from "~/lib/ship-rule";
@@ -30,13 +32,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const sp = new URL(request.url).searchParams;
-  const tab = ["queue", "follow_up", "done", "team"].includes(sp.get("tab") ?? "") ? sp.get("tab")! : "queue";
+  const tab = [...CALL_TABS, "team"].includes(sp.get("tab") as CallTab) ? (sp.get("tab") as CallTab | "team") : "to_call";
   const me = await whoAmI(viewer, store);
-  const board = await callBoard(store, me, tab === "team" ? "queue" : tab);
+  if (!sp.get("range")) sp.set("range", "max"); // nothing hidden by default
+  const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
+  const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until);
   const member = Number(sp.get("member")) || null;
   const rule = shipRuleOf(store);
   return json({
-    base: storePath(store.id), tab, me, manager: me == null, rule,
+    base: storePath(store.id), tab, me, manager: me == null, rule, range,
     board: tab === "team" ? { ...board, orders: [] } : board,
     teammate: tab === "team" && member && board.team.some((t) => t.id === member)
       ? { id: member, orders: await teammateOrders(store, member, me != null && member !== me) } : null,
@@ -115,17 +119,17 @@ export default function Calls() {
   }, [revalidator]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); }, [toast]);
 
-  const me = d.board.team.find((t) => t.you);
-  const totals = d.manager
-    ? d.board.team.reduce((a, t) => ({ waiting: a.waiting + t.waiting, follow: a.follow + t.follow, confirmed: a.confirmed + t.confirmed, cancelled: a.cancelled + t.cancelled }), { waiting: 0, follow: 0, confirmed: 0, cancelled: 0 })
-    : me ?? { waiting: 0, follow: 0, confirmed: 0, cancelled: 0 };
-  const tabs = [
-    { id: "queue", label: "To call", n: totals.waiting },
-    { id: "follow_up", label: "Follow-up", n: totals.follow },
-    { id: "done", label: "Done today", n: totals.confirmed + totals.cancelled },
-    { id: "team", label: "Team", n: null as number | null },
+  const c = d.board.counts;
+  const tabs: { id: CallTab | "team"; label: string; n: number | null; tone: string }[] = [
+    { id: "to_call", label: "To call", n: c.to_call, tone: "#b26b00" },
+    { id: "follow_up", label: "Follow-up", n: c.follow_up, tone: "#5b6cf0" },
+    { id: "confirmed", label: "Confirmed", n: c.confirmed, tone: "#1f8f5f" },
+    { id: "cancelled", label: "Cancelled", n: c.cancelled, tone: "#c5280c" },
+    { id: "all", label: "All", n: c.all, tone: "" },
+    { id: "team", label: "Team", n: null, tone: "" },
   ];
   const tabLink = (t: string) => { const p = new URLSearchParams(params); p.set("tab", t); p.delete("member"); return `?${p}`; };
+  const [openId, setOpenId] = useState<string | null>(null);
 
   if (!d.board.team.length && d.manager) {
     return <EmptyState title="Add your calling team" action={<Link to="/dashboard/team" className="btn-primary">Add a team member</Link>}>
@@ -134,36 +138,38 @@ export default function Calls() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-3">
+    <div className="mx-auto max-w-4xl space-y-3">
       <style>{CSS}</style>
-      {/* today at a glance */}
-      <section className="panel grid grid-cols-4 divide-x divide-rule overflow-hidden p-0 text-center">
-        {[["To call", totals.waiting, "#b26b00"], ["Follow-up", totals.follow, "#5b6cf0"], ["Confirmed", totals.confirmed, "#1f8f5f"], ["Cancelled", totals.cancelled, "#c5280c"]].map(([l, n, c]) => (
-          <div key={l as string} className="px-1 py-2.5"><p className="num text-[20px] font-semibold leading-none" style={{ color: (n as number) ? (c as string) : undefined }}>{n as number}</p><p className="mt-1 text-[11px] text-ink-soft">{l as string}{l === "Confirmed" || l === "Cancelled" ? " today" : ""}</p></div>
-        ))}
+      <section className="panel overflow-hidden p-0">
+        <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5">
+          <RangePicker current={d.range} />
+          <span className="ml-auto text-[12px] text-ink-faint">{d.manager ? "Whole team" : "Your orders"} · refreshes every 30 s</span>
+        </div>
+        {/* status tabs with counts: every assigned order is in exactly one of them */}
+        <nav className="flex gap-1 overflow-x-auto px-2 py-2" aria-label="Order status">
+          {tabs.map((t) => (
+            <Link key={t.id} to={tabLink(t.id)} preventScrollReset aria-current={d.tab === t.id ? "page" : undefined}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${d.tab === t.id ? "bg-ink text-white" : "text-ink-soft hover:bg-black/[.04] hover:text-ink"}`}>
+              {t.label}
+              {t.n != null && <span className={`num rounded-md px-1.5 text-[11.5px] font-semibold ${d.tab === t.id ? "bg-white/20 text-white" : "bg-black/[.05]"}`} style={d.tab !== t.id && t.n && t.tone ? { color: t.tone } : undefined}>{t.n}</span>}
+            </Link>
+          ))}
+        </nav>
       </section>
-
-      <nav className="flex gap-1 overflow-x-auto rounded-xl bg-black/[.04] p-1" aria-label="Queues">
-        {tabs.map((t) => (
-          <Link key={t.id} to={tabLink(t.id)} preventScrollReset className={`flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-center text-[13px] font-medium transition ${d.tab === t.id ? "bg-white text-ink shadow-[0_1px_2px_rgba(0,0,0,.12)]" : "text-ink-soft hover:text-ink"}`}>
-            {t.label}{t.n != null && t.n > 0 && <span className="num ml-1 text-ink-faint">{t.n}</span>}
-          </Link>
-        ))}
-      </nav>
 
       {d.tab !== "team" && d.rule.mode === "confirmed" && d.rule.by !== "whatsapp" && <p className="px-1 text-[12px] text-ink-faint">Orders you confirm go to the courier automatically{d.rule.prepaidNow ? "; prepaid orders ship without a call" : ""}.</p>}
 
       {d.tab === "team" ? <Team d={d} /> : d.board.orders.length === 0 ? (
         <div className="panel flex flex-col items-center px-6 py-12 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-pine-tint text-pine"><Icon name="check" className="h-5 w-5" /></span>
-          <p className="mt-3 text-[14px] font-semibold">{d.tab === "queue" ? "All caught up" : d.tab === "follow_up" ? "No follow-ups" : "Nothing done yet today"}</p>
-          <p className="mt-1 max-w-xs text-[12.5px] text-ink-faint">{d.tab === "queue" ? "New orders show up here on their own. This page refreshes every 30 seconds." : d.tab === "follow_up" ? "Orders you move to follow-up wait here until it's time to call again." : "Confirmed and cancelled calls of today show here."}</p>
+          <p className="mt-3 text-[14px] font-semibold">{d.tab === "to_call" ? "All caught up" : "No orders here"}</p>
+          <p className="mt-1 max-w-xs text-[12.5px] text-ink-faint">{d.tab === "to_call" ? "New orders show up here on their own." : "Try another date range."}</p>
         </div>
       ) : (
-        d.tab === "done"
-          ? <ul className="space-y-3">{d.board.orders.map((o) => <OrderCall key={o.id} o={o} d={d} onDone={setToast} />)}</ul>
-          : <Deck d={d} onDone={setToast} />
+        <CallList d={d} onOpen={setOpenId} />
       )}
+
+      {openId && d.tab !== "team" && <Sheet d={d} startId={openId} onClose={() => setOpenId(null)} onDone={setToast} />}
 
       {toast && (toast.ok || toast.error) && (
         <div className={`cl-pop fixed bottom-5 left-1/2 z-[80] max-w-[90vw] -translate-x-1/2 rounded-lg px-3.5 py-2 text-[13px] font-medium text-white shadow-lg ${toast.error ? "bg-[#b42318]" : "bg-[#1a1a1a]"}`} role="status">{toast.error ?? toast.ok}</div>
@@ -172,61 +178,114 @@ export default function Calls() {
   );
 }
 
+const TAB_STYLE: Record<string, [string, string]> = {
+  to_call: ["To call", "bg-[#fff1e3] text-[#8a4b00]"], follow_up: ["Follow-up", "bg-[#eef0fe] text-[#3442b8]"],
+  confirmed: ["Confirmed", "bg-[#e3f1ea] text-[#1f6f4a]"], cancelled: ["Cancelled", "bg-[#fdeceb] text-[#b42318]"],
+};
+/** Why an order is in its tab when it wasn't the call that put it there. */
+function via(o: O) {
+  if (o.tab === "confirmed" && o.call !== "confirmed" && o.wa === "confirmed") return "on WhatsApp";
+  if (o.tab === "cancelled" && o.call !== "cancelled") return o.wa === "cancelled" ? "on WhatsApp" : o.status === "cancelled" ? "by the store" : "";
+  return o.callBy ? `by ${o.callBy}` : "";
+}
+
+/** The list: newest order first. Tap a row to open its card. */
+function CallList({ d, onOpen }: { d: D; onOpen: (id: string) => void }) {
+  const now = Date.now();
+  return (
+    <ul className="panel divide-y divide-rule overflow-hidden p-0">
+      {d.board.orders.map((o) => {
+        const due = o.tab === "follow_up" && o.followUpAt && new Date(o.followUpAt).getTime() <= now;
+        return (
+          <li key={o.id}>
+            <button type="button" onClick={() => onOpen(o.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-black/[.02] active:bg-black/[.04]">
+              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[.05] text-[12px] font-semibold text-ink-soft">
+                {(o.customer.firstName[0] ?? "?").toUpperCase()}{(o.customer.lastName[0] ?? "").toUpperCase()}
+                {due && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#5b6cf0]" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2"><b className="truncate text-[13.5px] font-semibold">{o.customer.firstName} {o.customer.lastName}</b><span className="num shrink-0 text-[11.5px] text-ink-faint">{o.name}</span></span>
+                <span className="block truncate text-[12px] text-ink-soft">{o.customer.city} · {o.method === "prepaid" ? "Prepaid" : o.method === "partial" ? "Partial COD" : "COD"} {inr(o.total)}{o.shipped ? " · Shipped" : ""}{d.manager && o.assignee ? ` · ${o.assignee}` : ""}</span>
+                <span className="block truncate text-[11.5px] text-ink-faint">
+                  {o.tab === "follow_up" && o.followUpAt ? (due ? "Call now" : `Call at ${at(o.followUpAt)}`) : o.tab === "to_call" ? `Placed ${ago(o.at)}` : `${TAB_STYLE[o.tab]?.[0] ?? ""} ${via(o)}`}
+                </span>
+              </span>
+              {d.tab === "all" && <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${TAB_STYLE[o.tab]?.[1] ?? ""}`}>{TAB_STYLE[o.tab]?.[0]}</span>}
+              <Icon name="chevron" className="h-4 w-4 shrink-0 -rotate-90 text-ink-faint" />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
- * One order at a time, like a stack of cards: swipe left for the next order, right for the previous
- * (arrow keys on a computer). After Confirmed / Follow-up / Cancel the order leaves the queue and the next one slides in.
+ * The order card over the list (full screen on a phone, a side panel on a computer). Swipe or use the arrows for the
+ * next / previous order of the same list. After Confirmed / Follow-up / Cancel the order moves to its tab and the next one opens.
  */
-function Deck({ d, onDone }: { d: D; onDone: (r: Res) => void }) {
+function Sheet({ d, startId, onClose, onDone }: { d: D; startId: string; onClose: () => void; onDone: (r: Res) => void }) {
   const list = d.board.orders;
-  const [idx, setIdx] = useState(0);
+  const [curId, setCurId] = useState(startId);
   const [dir, setDir] = useState<1 | -1>(1);
   const [dx, setDx] = useState(0);
+  const lastIdx = useRef(Math.max(0, list.findIndex((o) => o.id === startId)));
+  const advanceFrom = useRef<string | null>(null);
   const start = useRef<{ x: number; y: number; lock: "x" | "y" | null } | null>(null);
-  const i = Math.min(idx, Math.max(0, list.length - 1));
-  useEffect(() => { if (idx !== i) setIdx(i); }, [idx, i]);
+  let i = list.findIndex((o) => o.id === curId);
+  // The order left this list (moved to another tab): show the one that took its place
+  if (i < 0) i = Math.min(lastIdx.current, list.length - 1);
+  useEffect(() => {
+    if (i >= 0) lastIdx.current = i;
+    const o = list[i];
+    if (!o) { if (!list.length) onClose(); return; }
+    if (o.id !== curId) { setDir(1); setCurId(o.id); }
+    // After an action on a list that keeps the order (e.g. "All"), go to the next one
+    if (advanceFrom.current && advanceFrom.current === o.id && i < list.length - 1) { advanceFrom.current = null; setDir(1); setCurId(list[i + 1].id); }
+    else if (advanceFrom.current && advanceFrom.current !== o.id) advanceFrom.current = null;
+  }, [list, i, curId, onClose]);
   const go = useCallback((step: 1 | -1) => {
-    setDir(step);
-    setIdx((v) => Math.max(0, Math.min(list.length - 1, v + step)));
-  }, [list.length]);
+    const j = Math.max(0, Math.min(list.length - 1, i + step));
+    if (j !== i) { setDir(step); setCurId(list[j].id); }
+  }, [i, list]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, select")) return;
-      if (e.key === "ArrowRight") go(1); else if (e.key === "ArrowLeft") go(-1);
+      if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+      if (e.key === "ArrowRight") go(1); else if (e.key === "ArrowLeft") go(-1); else if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [go]);
+    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", k); document.body.style.overflow = prev; };
+  }, [go, onClose]);
   const o = list[i];
   if (!o) return null;
   const onTouchStart = (e: React.TouchEvent) => { const t = e.touches[0]; start.current = { x: t.clientX, y: t.clientY, lock: null }; };
   const onTouchMove = (e: React.TouchEvent) => {
     const s0 = start.current; if (!s0) return;
     const t = e.touches[0]; const x = t.clientX - s0.x, y = t.clientY - s0.y;
-    if (!s0.lock && (Math.abs(x) > 8 || Math.abs(y) > 8)) s0.lock = Math.abs(x) > Math.abs(y) ? "x" : "y";
+    if (!s0.lock && (Math.abs(x) > 10 || Math.abs(y) > 10)) s0.lock = Math.abs(x) > Math.abs(y) * 1.2 ? "x" : "y";
     if (s0.lock === "x") setDx((i === 0 && x > 0) || (i === list.length - 1 && x < 0) ? x / 4 : x);
   };
-  const onTouchEnd = () => {
-    const s0 = start.current; start.current = null;
-    if (s0?.lock === "x" && Math.abs(dx) > 70) go(dx < 0 ? 1 : -1);
-    setDx(0);
-  };
+  const onTouchEnd = () => { const s0 = start.current; start.current = null; if (s0?.lock === "x" && Math.abs(dx) > 70) go(dx < 0 ? 1 : -1); setDx(0); };
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 px-1">
-        <button type="button" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-90" /></button>
-        <div className="min-w-0 flex-1">
-          <p className="text-center text-[12.5px] font-medium">Order <span className="num">{i + 1}</span> of <span className="num">{list.length}</span></p>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-pine transition-[width] duration-300" style={{ width: `${((i + 1) / list.length) * 100}%` }} /></div>
+    <div className="fixed inset-0 z-[60] flex justify-end bg-black/30" onClick={onClose}>
+      <aside className="cl-sheet flex h-full w-full flex-col bg-[#f3f4f6] sm:max-w-[480px] sm:shadow-2xl" onClick={(e) => e.stopPropagation()} aria-label="Order card">
+        <div className="flex items-center gap-2 border-b border-rule bg-white px-3 py-2.5">
+          <button type="button" onClick={onClose} aria-label="Back to list" className="flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-ink-soft hover:bg-black/5"><Icon name="chevron" className="h-4 w-4 rotate-90" />List</button>
+          <div className="min-w-0 flex-1">
+            <p className="text-center text-[12.5px] font-medium"><span className="num">{i + 1}</span> of <span className="num">{list.length}</span></p>
+            <div className="mx-auto mt-1 h-1 max-w-[160px] overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-pine transition-[width] duration-300" style={{ width: `${((i + 1) / list.length) * 100}%` }} /></div>
+          </div>
+          <button type="button" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-90" /></button>
+          <button type="button" onClick={() => go(1)} disabled={i >= list.length - 1} aria-label="Next order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 -rotate-90" /></button>
         </div>
-        <button type="button" onClick={() => go(1)} disabled={i >= list.length - 1} aria-label="Next order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 -rotate-90" /></button>
-      </div>
-      <div className="touch-pan-y overflow-hidden" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
-        <ul key={o.id} className={dir > 0 ? "cl-next" : "cl-prev"} style={dx ? { transform: `translateX(${dx}px) rotate(${dx / 60}deg)`, transition: "none" } : { transition: "transform .2s ease-out" }}>
-          <OrderCall o={o} d={d} onDone={onDone} onNext={i < list.length - 1 ? () => go(1) : undefined} />
-        </ul>
-      </div>
-      <p className="text-center text-[11.5px] text-ink-faint sm:hidden">Swipe left for the next order</p>
+        <div className="flex-1 touch-pan-y overflow-y-auto overflow-x-hidden p-3" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+          <ul key={o.id} className={dir > 0 ? "cl-next" : "cl-prev"} style={dx ? { transform: `translateX(${dx}px) rotate(${dx / 60}deg)`, transition: "none" } : { transition: "transform .2s ease-out" }}>
+            <OrderCall o={o} d={d} onDone={(r) => { if (r.ok) advanceFrom.current = o.id; onDone(r); }} onNext={i < list.length - 1 ? () => go(1) : undefined} />
+          </ul>
+          <p className="mt-2 text-center text-[11.5px] text-ink-faint sm:hidden">Swipe left for the next order</p>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -258,6 +317,7 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => v
         </span>
         {o.wa && <span className={`rounded-md px-1.5 py-px font-medium ${o.wa === "confirmed" ? "bg-[#e3f1ea] text-[#1f6f4a]" : o.wa === "cancelled" ? "bg-[#fdeceb] text-[#b42318]" : "bg-black/[.05] text-ink-soft"}`}>WhatsApp: {o.wa === "sent" ? "no reply" : o.wa}</span>}
         {o.attempts > 0 && <span className="text-ink-faint">· {o.attempts} call{o.attempts === 1 ? "" : "s"}</span>}
+        {o.shipped && <span className="rounded-md bg-[#e9eef5] px-1.5 py-px font-medium text-[#1c5cab]">Shipped · {o.shipped.awb}</span>}
         {due && <span className="font-medium text-[#5b6cf0]">· call at {at(o.followUpAt!)}</span>}
         {o.call === "confirmed" && <span className="ml-auto rounded-md bg-[#e3f1ea] px-1.5 py-px font-semibold text-[#1f6f4a]">Confirmed</span>}
         {o.call === "cancelled" && <span className="ml-auto rounded-md bg-[#fdeceb] px-1.5 py-px font-semibold text-[#b42318]">Cancelled</span>}
@@ -278,7 +338,7 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => v
           <a href={`https://wa.me/91${c.phone}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="flex h-10 w-10 items-center justify-center rounded-xl text-[#1f8f5f] shadow-[inset_0_0_0_1px_#cfe5da] active:scale-[.98]"><Icon name="chat" className="h-4 w-4" /></a>
         </div>
         <p className="text-[13px] leading-snug"><Icon name="route" className="mr-1 inline h-3.5 w-3.5 text-ink-faint" />{[c.address1, c.address2, c.city, c.state, c.pincode].filter(Boolean).join(", ")}
-          {o.call !== "cancelled" && <button type="button" onClick={() => setPanel(panel === "address" ? null : "address")} className="ml-1.5 text-[12px] font-medium text-[#005bd3]">Edit</button>}</p>
+          {o.status !== "cancelled" && <button type="button" onClick={() => setPanel(panel === "address" ? null : "address")} className="ml-1.5 text-[12px] font-medium text-[#005bd3]">Edit</button>}</p>
         <p className="text-[12.5px] text-ink-soft"><Icon name="bag" className="mr-1 inline h-3.5 w-3.5 text-ink-faint" />{items}</p>
         {(o.staffNote || o.customerNote) && panel !== "notes" && (
           <div className="rounded-lg bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#6b5a27]">
@@ -322,15 +382,15 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => v
         )}
       </div>
 
-      {o.call !== "confirmed" && o.call !== "cancelled" && (
+      {o.status !== "cancelled" && (
         <div className="grid grid-cols-[1.3fr_1fr_1fr_auto] gap-1.5 border-t border-rule bg-[#fafafa] p-2">
-          <button type="button" disabled={busy} onClick={() => send("confirmed")} className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#1f8f5f] text-[13px] font-semibold text-white active:scale-[.98] disabled:opacity-50"><Icon name="check" className="h-4 w-4" />Confirmed</button>
+          <button type="button" disabled={busy || o.call === "confirmed"} onClick={() => send("confirmed")} className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#1f8f5f] text-[13px] font-semibold text-white active:scale-[.98] disabled:opacity-60"><Icon name="check" className="h-4 w-4" />{o.call === "confirmed" ? "Confirmed ✓" : "Confirmed"}</button>
           <button type="button" disabled={busy} onClick={() => setPanel(panel === "follow" ? null : "follow")} aria-expanded={panel === "follow"} className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[13px] font-semibold ${panel === "follow" ? "bg-[#5b6cf0] text-white" : "bg-white text-[#3442b8] shadow-[inset_0_0_0_1px_#d5d9fb]"}`}><Icon name="clock" className="h-4 w-4" />Follow-up</button>
           <button type="button" disabled={busy} onClick={() => setPanel(panel === "cancel" ? null : "cancel")} aria-expanded={panel === "cancel"} className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[13px] font-semibold ${panel === "cancel" ? "bg-[#c5280c] text-white" : "bg-white text-[#b42318] shadow-[inset_0_0_0_1px_#f3c7c2]"}`}><Icon name="close" className="h-4 w-4" />Cancel</button>
           <button type="button" onClick={() => setPanel(panel === "notes" ? null : "notes")} aria-label="Notes" className={`flex h-10 w-10 items-center justify-center rounded-xl ${panel === "notes" ? "bg-ink text-white" : "bg-white text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3]"}`}><Icon name="book" className="h-4 w-4" /></button>
         </div>
       )}
-      {onNext && o.call !== "confirmed" && o.call !== "cancelled" && (
+      {onNext && (
         <button type="button" onClick={onNext} className="flex w-full items-center justify-center gap-1 border-t border-rule py-2 text-[12.5px] font-medium text-ink-soft hover:bg-black/[.02]">Skip for now<Icon name="chevron" className="h-3.5 w-3.5 -rotate-90" /></button>
       )}
     </li>
@@ -403,6 +463,8 @@ function Team({ d }: { d: D }) {
 const CSS = `
 @keyframes cl-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 @keyframes cl-pop { from { opacity: 0; transform: translate(-50%, 6px) } to { opacity: 1; transform: translate(-50%, 0) } }
+@keyframes cl-sheet { from { transform: translateY(16px); opacity: .5 } to { transform: none; opacity: 1 } }
+.cl-sheet { animation: cl-sheet .22s cubic-bezier(.2,.7,.2,1) both }
 @keyframes cl-next { from { opacity: 0; transform: translateX(40px) } to { opacity: 1; transform: none } }
 @keyframes cl-prev { from { opacity: 0; transform: translateX(-40px) } to { opacity: 1; transform: none } }
 .cl-next { animation: cl-next .25s cubic-bezier(.2,.7,.2,1) both }

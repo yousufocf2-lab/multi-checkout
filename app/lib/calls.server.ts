@@ -45,54 +45,76 @@ export async function assignCalls(store: Store) {
 
 const istStart = () => { const d = new Date(Date.now() + 5.5 * 3600_000); d.setUTCHours(0, 0, 0, 0); return new Date(d.getTime() - 5.5 * 3600_000); };
 
-type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "callAttempts" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline">;
+type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "callAttempts" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier">;
+
+export const CALL_TABS = ["to_call", "follow_up", "confirmed", "cancelled", "all"] as const;
+export type CallTab = (typeof CALL_TABS)[number];
+
+/**
+ * Which tab an assigned order belongs to. Every assigned order is always in exactly one tab, so nothing disappears:
+ * confirmed / cancelled on the call, or by the customer on WhatsApp, or cancelled by the owner; shipped orders stay where they are.
+ */
+const bucket = sql<CallTab>`case
+  when ${orders.callStatus} = 'confirmed' then 'confirmed'
+  when ${orders.callStatus} = 'cancelled' or ${orders.status} = 'cancelled' or ${orders.confirmStatus} = 'cancelled' then 'cancelled'
+  when ${orders.callStatus} = 'follow_up' then 'follow_up'
+  when ${orders.confirmStatus} = 'confirmed' then 'confirmed'
+  else 'to_call' end`;
 
 /**
  * Everything the calling page shows. `me` = the caller's team member id (null for the owner / a manager, who see all,
- * phone numbers included). Teammates' orders never carry phone numbers or full addresses for a caller.
+ * phone numbers included). `since`/`until` are IST dates (YYYY-MM-DD) on when the order was placed.
  */
-export async function callBoard(store: Store, me: number | null, tab: string) {
+export async function callBoard(store: Store, me: number | null, tab: CallTab, since: string, until: string) {
   await assignCalls(store);
   const team = await callersFor(store);
-  const since = istStart();
-  const sinceIso = since.toISOString(); // raw SQL parameters must be strings, not Date objects
-  const windowIso = new Date(Date.now() - WINDOW_DAYS * 86400_000).toISOString();
+  const dayStart = istStart().toISOString();
+  const from = new Date(`${since}T00:00:00+05:30`);
+  const to = new Date(new Date(`${until}T00:00:00+05:30`).getTime() + 86400_000);
+  const base = and(
+    eq(orders.storeId, store.id),
+    me == null ? sql`${orders.assignedTo} is not null` : eq(orders.assignedTo, me),
+    inArray(orders.status, ["paid", "cod_placed", "cancelled"]),
+    gte(orders.createdAt, from), lt(orders.createdAt, to),
+  );
   const cols = {
     id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status,
     total: orders.total, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
     callStatus: orders.callStatus, followUpAt: orders.followUpAt, callAttempts: orders.callAttempts, staffNote: orders.staffNote, customerNote: orders.customerNote,
-    callAt: orders.callAt, callBy: orders.callBy, assignedTo: orders.assignedTo, timeline: orders.timeline,
+    callAt: orders.callAt, callBy: orders.callBy, assignedTo: orders.assignedTo, timeline: orders.timeline, awb: orders.awb, courier: orders.courier,
   };
-  const scope = me == null ? eq(orders.storeId, store.id) : and(eq(orders.storeId, store.id), eq(orders.assignedTo, me));
-  const now = new Date();
-  let list: Mine[];
-  if (tab === "follow_up") list = await db.select(cols).from(orders).where(and(scope, eq(orders.callStatus, "follow_up"), inArray(orders.status, ["paid", "cod_placed"]))).orderBy(asc(orders.followUpAt)).limit(200);
-  else if (tab === "done") list = await db.select(cols).from(orders).where(and(scope, inArray(orders.callStatus, ["confirmed", "cancelled"]), gte(orders.callAt, since))).orderBy(desc(orders.callAt)).limit(200);
-  else list = await db.select(cols).from(orders).where(and(scope, open(store.id), or(isNull(orders.callStatus), and(eq(orders.callStatus, "follow_up"), lt(orders.followUpAt, now))))).orderBy(asc(orders.createdAt)).limit(200);
-  if (me == null && tab === "queue") list = list.filter((o) => o.assignedTo != null || !team.length);
+  const [list, counts] = await Promise.all([
+    db.select({ ...cols, tab: bucket }).from(orders).where(tab === "all" ? base : and(base, sql`${bucket} = ${tab}`))
+      .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last` : desc(orders.createdAt)).limit(300),
+    db.select({ tab: bucket, n: sql<number>`count(*)::int` }).from(orders).where(base).groupBy(bucket),
+  ]);
+  const n = Object.fromEntries(counts.map((c) => [c.tab, Number(c.n)])) as Partial<Record<CallTab, number>>;
 
-  // Team summary (today): per caller, how many are waiting, confirmed, in follow-up, cancelled
+  // Team summary: per caller, open work now and what they did today
   const stats = await db.select({
     m: orders.assignedTo,
-    waiting: sql<number>`count(*) filter (where ${orders.callStatus} is null and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.createdAt} >= ${windowIso}::timestamptz)::int`,
-    follow: sql<number>`count(*) filter (where ${orders.callStatus} = 'follow_up' and ${orders.status} in ('paid','cod_placed'))::int`,
-    confirmed: sql<number>`count(*) filter (where ${orders.callStatus} = 'confirmed' and ${orders.callAt} >= ${sinceIso}::timestamptz)::int`,
-    cancelled: sql<number>`count(*) filter (where ${orders.callStatus} = 'cancelled' and ${orders.callAt} >= ${sinceIso}::timestamptz)::int`,
-  }).from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.assignedTo, team.length ? team.map((t) => t.id) : [-1]))).groupBy(orders.assignedTo);
+    waiting: sql<number>`count(*) filter (where ${bucket} = 'to_call' and ${orders.status} in ('paid','cod_placed'))::int`,
+    follow: sql<number>`count(*) filter (where ${bucket} = 'follow_up' and ${orders.status} in ('paid','cod_placed'))::int`,
+    confirmed: sql<number>`count(*) filter (where ${orders.callStatus} = 'confirmed' and ${orders.callAt} >= ${dayStart}::timestamptz)::int`,
+    cancelled: sql<number>`count(*) filter (where ${orders.callStatus} = 'cancelled' and ${orders.callAt} >= ${dayStart}::timestamptz)::int`,
+  }).from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.assignedTo, team.length ? team.map((t) => t.id) : [-1]),
+    gte(orders.createdAt, new Date(Date.now() - 60 * 86400_000)))).groupBy(orders.assignedTo);
   const byM = new Map(stats.map((r) => [r.m, r]));
 
   const nameOf = new Map(team.map((t) => [t.id, t.name]));
-  const full = (o: Mine) => ({
+  const full = (o: Mine & { tab: CallTab }) => ({
     id: o.id, name: o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`, at: o.createdAt.toISOString(), method: o.paymentMethod, status: o.status,
     total: o.total, toCollect: o.paymentMethod === "cod" ? o.total : o.paymentMethod === "partial" ? o.total - (o.amountPaid ?? o.advance ?? 0) : 0,
     items: o.items.map((l) => ({ title: l.title, variant: l.variantTitle, qty: l.quantity })),
-    customer: o.customer, wa: o.confirmStatus, call: o.callStatus, followUpAt: o.followUpAt?.toISOString() ?? null, attempts: o.callAttempts,
+    customer: o.customer, wa: o.confirmStatus, call: o.callStatus, tab: o.tab, followUpAt: o.followUpAt?.toISOString() ?? null, attempts: o.callAttempts,
     staffNote: o.staffNote ?? "", customerNote: o.customerNote ?? "", callAt: o.callAt?.toISOString() ?? null, callBy: o.callBy,
+    shipped: o.awb ? { awb: o.awb, courier: o.courier } : null,
     assignee: o.assignedTo != null ? nameOf.get(o.assignedTo) ?? "Former member" : null,
     log: (o.timeline ?? []).slice(-4).reverse() as OrderEvent[],
   });
   return {
     me, team: team.map((t) => ({ ...t, ...(byM.get(t.id) ?? { waiting: 0, follow: 0, confirmed: 0, cancelled: 0 }), you: t.id === me })),
+    counts: { to_call: n.to_call ?? 0, follow_up: n.follow_up ?? 0, confirmed: n.confirmed ?? 0, cancelled: n.cancelled ?? 0, all: Object.values(n).reduce((a, b) => a + (b ?? 0), 0) },
     orders: list.map(full),
   };
 }
