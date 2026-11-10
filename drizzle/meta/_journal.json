@@ -470,6 +470,13 @@
       "when": 1794720000000,
       "tag": "0066_store_menus",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794806400000,
+      "tag": "0067_setup_done",
+      "breakpoints": true
     }
   ]
 }

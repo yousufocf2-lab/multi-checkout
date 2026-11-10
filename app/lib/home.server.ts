@@ -50,7 +50,14 @@ export async function homeTasks(scope: Store[]): Promise<HomeTasks> {
   };
 }
 
-export type SetupStep = { id: string; title: string; text: string; done: boolean; cta: string; to: string };
+export type SetupStep = { id: string; title: string; text: string; done: boolean; manual?: boolean; cta: string; to: string };
+
+/** A logo set in the website design: theme settings or the header section. */
+function themeLogo(d: { settings?: Record<string, unknown>; groups?: Record<string, { sections?: Record<string, { type?: string; settings?: Record<string, unknown> }> }> } | null | undefined) {
+  if (!d) return false;
+  if (typeof d.settings?.logo === "string" && d.settings.logo) return true;
+  return Object.values(d.groups?.header?.sections ?? {}).some((s) => typeof s?.settings?.logo === "string" && Boolean(s.settings.logo));
+}
 
 /** Setup guide for one store on Growpefy's own website builder. Hidden once every step is done. */
 export async function setupGuide(store: Store, base: string): Promise<SetupStep[] | null> {
@@ -63,10 +70,13 @@ export async function setupGuide(store: Store, base: string): Promise<SetupStep[
   const steps: SetupStep[] = [
     { id: "product", title: "Add your first product", text: "Write a description, add photos and set a price.", done: Number(stats.active) > 0, cta: "Add product", to: `${base}/catalog/new` },
     { id: "theme", title: "Customize your online store", text: "Pick a theme, add your colours and banners, then publish.", done: Boolean(theme?.publishedAt), cta: "Customize theme", to: `${base}/themes` },
-    { id: "logo", title: "Add your logo", text: "It shows on your website, checkout and invoices.", done: Boolean(store.logoUrl), cta: "Add logo", to: `${base}/settings` },
+    { id: "logo", title: "Add your logo", text: "It shows on your website header, checkout and invoices.", done: Boolean(store.logoUrl || themeLogo(theme?.live) || themeLogo(theme?.draft)), cta: "Add logo", to: `${base}/editor` },
     { id: "payments", title: "Set up online payments", text: "Connect a payment gateway so customers can pay by UPI and cards.", done: (store.gateways ?? []).length > 0, cta: "Set up payments", to: `${base}/settings` },
     { id: "domain", title: "Connect your domain", text: "Use your own address, like www.yourbrand.com.", done: Boolean(store.storefrontDomain), cta: "Connect domain", to: `${base}/website` },
     { id: "order", title: "Get your first order", text: "Share your store link. Your first order shows up here.", done: firstOrder.length > 0, cta: "View store", to: store.storefrontDomain ? `https://${store.storefrontDomain}` : `/s/${store.slug}` },
   ];
+  // Steps the owner marked complete themselves
+  const ticked = new Set(store.setupDone ?? []);
+  for (const s of steps) if (!s.done && ticked.has(s.id)) { s.done = true; s.manual = true; }
   return steps.every((s) => s.done) ? null : steps;
 }

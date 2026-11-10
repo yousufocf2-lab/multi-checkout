@@ -76,7 +76,8 @@ export default function StoreLayout() {
           </div>
         </div>
       )}
-      <Outlet />
+      {/* keyed by store: switching stores must not carry one store's form values into the other */}
+      <Outlet key={store.id} />
     </>
   );
 }

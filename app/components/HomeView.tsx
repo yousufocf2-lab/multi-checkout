@@ -1,5 +1,5 @@
 // Store home: sales metrics, next actions, setup guidance and store insights.
-import { Link } from "@remix-run/react";
+import { Link, useFetcher } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Overview as OverviewData } from "~/lib/stats.server";
 import type { HomeTasks, SetupStep } from "~/lib/home.server";
@@ -210,7 +210,16 @@ function TodoChips({ tasks, links }: { tasks: HomeTasks; links: { toShip: string
   );
 }
 
-function SetupGuide({ steps, name }: { steps: SetupStep[]; name: string }) {
+function SetupGuide({ steps: initial, name, base }: { steps: SetupStep[]; name: string; base: string }) {
+  // Ticking the circle marks a step done by hand (or undoes a hand tick); shown at once, saved in the background
+  const tick = useFetcher();
+  const [over, setOver] = useState<Record<string, boolean>>({});
+  const steps = initial.map((s) => (s.id in over ? { ...s, done: over[s.id], manual: over[s.id] } : s));
+  const toggle = (s: SetupStep) => {
+    if (s.done && !s.manual) return; // done for real (logo found, product added…)
+    setOver((o) => ({ ...o, [s.id]: !s.done }));
+    tick.submit({ step: s.id, done: s.done ? "0" : "1" }, { method: "post", action: `${base}/setup` });
+  };
   const KEY = "gp-setup-hidden";
   const [hidden, setHidden] = useState(false);
   const [open, setOpen] = useState<string>(() => steps.find((s) => !s.done)?.id ?? steps[0].id);
@@ -239,12 +248,16 @@ function SetupGuide({ steps, name }: { steps: SetupStep[]; name: string }) {
             const external = s.to.startsWith("http") || s.to.startsWith("/s/");
             return (
               <li key={s.id} className={`rounded-lg ${on ? "bg-[#f7f7f7]" : ""}`}>
-                <button type="button" onClick={() => setOpen(s.id)} className="flex w-full items-center gap-2.5 px-2 py-2 text-left">
-                  {s.done
-                    ? <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[#14785d] text-white"><Icon name="check" className="h-3 w-3" strokeWidth={3} /></span>
-                    : <span className="h-[18px] w-[18px] shrink-0 rounded-full border-[1.5px] border-dashed border-[#8a8a8a]" />}
-                  <span className={`text-[13px] ${on ? "font-semibold" : "font-medium"} ${s.done && !on ? "text-ink-soft" : ""}`}>{s.title}</span>
-                </button>
+                <div className="flex w-full items-center gap-2.5 px-2 py-2">
+                  <button type="button" onClick={() => toggle(s)} disabled={s.done && !s.manual}
+                    title={s.done ? (s.manual ? "Mark as not done" : "Done") : "Mark as done"} aria-label={s.done ? `${s.title}: done` : `Mark ${s.title} as done`}
+                    className="group -m-1 shrink-0 rounded-full p-1 disabled:cursor-default">
+                    {s.done
+                      ? <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#14785d] text-white"><Icon name="check" className="h-3 w-3" strokeWidth={3} /></span>
+                      : <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full border-[1.5px] border-dashed border-[#8a8a8a] text-transparent transition group-hover:border-solid group-hover:border-[#14785d] group-hover:text-[#14785d]"><Icon name="check" className="h-3 w-3" strokeWidth={3} /></span>}
+                  </button>
+                  <button type="button" onClick={() => setOpen(s.id)} className={`min-w-0 flex-1 text-left text-[13px] ${on ? "font-semibold" : "font-medium"} ${s.done && !on ? "text-ink-soft" : ""}`}>{s.title}</button>
+                </div>
                 {on && (
                   <div className="pb-3 pl-[38px] pr-3">
                     <p className="text-[12.5px] text-ink-soft">{s.text}</p>
@@ -327,7 +340,7 @@ export function HomeView({ data, tasks, setup, leaders, single, showStoreColumn 
 
       <TodoChips tasks={tasks} links={{ toShip: base && single?.storefront ? `${base}/to-ship` : null, inventory: base && single?.storefront ? `${base}/inventory` : null }} />
 
-      {setup && single && <SetupGuide steps={setup} name={single.name} />}
+      {setup && single && <SetupGuide steps={setup} name={single.name} base={single.base} />}
 
       <MetricsCard data={data} />
 

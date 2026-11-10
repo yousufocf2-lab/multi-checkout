@@ -369,6 +369,8 @@ export const stores = pgTable("stores", {
   // Checkout fields (email / landmark: hidden, optional or required) and tipping
   checkoutRules: jsonb("checkout_rules").$type<CheckoutRules>(),
   tipping: jsonb("tipping").$type<TippingSettings>(),
+  // Setup guide steps the owner ticked off by hand (home page)
+  setupDone: jsonb("setup_done").$type<string[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

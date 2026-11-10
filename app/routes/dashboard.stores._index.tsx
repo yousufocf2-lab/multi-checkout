@@ -54,7 +54,7 @@ export default function StoresList() {
     <>
       <PageHeader title={picking ? "Choose a store" : "All stores"}
         description={picking ? `Pick the store whose ${SECTIONS[next]} you want to manage. You can switch any time from the store menu.` : "Every store on your Growpefy account."}
-        actions={!picking && isAdmin && <Link to="/dashboard/stores/new" className="btn-primary"><Icon name="plus" className="h-4 w-4" />Connect a store</Link>} />
+        actions={!picking && (isAdmin ? <Link to="/dashboard/stores/new" className="btn-primary"><Icon name="plus" className="h-4 w-4" />Connect a store</Link> : <Link to="/dashboard/stores/create" className="btn-primary"><Icon name="plus" className="h-4 w-4" />Add a store</Link>)} />
       {stores.length === 0 ? (
         <EmptyState title="No stores yet" action={isAdmin ? <Link to="/dashboard/stores/new" className="btn-primary">Connect a store</Link> : <Link to="/dashboard/stores/create" className="btn-primary">Create your store</Link>}>
           {isAdmin ? "Add the first store to start taking orders." : "Your website, checkout, COD and payments in one place."}

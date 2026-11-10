@@ -554,7 +554,7 @@ function AccountMenu({ stores, current, here, isAdmin, viewer }: { stores: Store
                 ))}
               </div>
               {!isAdmin && (
-                <Link to="/dashboard/stores/new" className="flex items-center gap-2 border-t border-[#ebebeb] px-3 py-2 text-[13px] font-medium hover:bg-[#f7f7f7]"><Icon name="plus" className="h-4 w-4" />Add a store</Link>
+                <Link to="/dashboard/stores/create" className="flex items-center gap-2 border-t border-[#ebebeb] px-3 py-2 text-[13px] font-medium hover:bg-[#f7f7f7]"><Icon name="plus" className="h-4 w-4" />Add a store</Link>
               )}
             </>
           )}
