@@ -35,6 +35,7 @@ import { env } from "~/lib/env.server";
 import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.server";
 import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
 import { smartView } from "~/lib/smart.server";
+import { shippingRulesFor, storeRuleFor } from "~/lib/checkout-rules.server";
 import { maxTipPaise, resolveRules, resolveTipping } from "~/lib/smart-checkout";
 import { billingBlocked } from "~/lib/subscription-billing.server";
 
@@ -55,41 +56,6 @@ async function loadSession(sessionId: string) {
   }
   // Without Smart Checkout the store gets the standard checkout (no OTP, method discounts/fees or Partial COD)
   return { session: row.session, store: smartView(row.store) };
-}
-
-async function storeRuleFor(store: typeof stores.$inferSelect): Promise<StoreRule> {
-  const rules = await db
-    .select()
-    .from(discountRules)
-    .where(and(eq(discountRules.storeId, store.id), eq(discountRules.active, true)))
-    .orderBy(desc(discountRules.createdAt));
-  const buyQty = Math.max(2, store.mixBuyQty);
-  const deal = (on: boolean, qty: number, which: string, keep: boolean) => {
-    if (!store.mixEnabled || !on) return null;
-    const freeQty = Math.min(buyQty - 1, Math.max(1, qty));
-    return { buyQty, freeQty, which: which === "high" ? "high" as const : "low" as const, keep, title: store.mixTitle?.trim() || mixTitle({ buyQty, freeQty }) };
-  };
-  const prepaidDeal = deal(store.mixPrepaidOn, store.mixFreeQty, store.mixFreeWhich, store.mixKeepPrepaid);
-  const codDeal = deal(store.mixCodOn, store.mixCodFreeQty, store.mixCodFreeWhich, store.mixKeepCod);
-  const pm = resolvePaymentMethods(store.paymentMethods, store);
-  const adj = (m: PaymentMethodsSettings["prepaid"]) => ({ adjust: m.adjust, type: m.type, value: m.value, coupons: m.coupons });
-  return {
-    methods: { prepaid: adj(pm.prepaid), cod: adj(pm.cod), partial: adj(pm.partial) },
-    prepaidDiscountPct: store.prepaidDiscountPct,
-    codDiscountPct: store.codDiscountPct,
-    mix: prepaidDeal || codDeal ? { prepaid: prepaidDeal, cod: codDeal } : null,
-    rules: rules.map((r) => ({ productIds: r.products.map((p) => p.id), type: r.type === "flat" ? "flat" as const : "percent" as const, prepaidPct: r.prepaidPct, codPct: r.codPct, partialPct: r.partialPct })),
-    uniform: !store.smartCheckout,
-  };
-}
-
-async function shippingRulesFor(storeId: number, smart = true): Promise<ShipRule[]> {
-  const rows = await db.select().from(shippingRates).where(and(eq(shippingRates.storeId, storeId), eq(shippingRates.active, true)));
-  // Delivery charges for one payment method only are a Smart Checkout feature
-  return rows.filter((r) => smart || r.paymentMethod === "any").map((r) => ({
-    id: r.id, name: r.name, pricePaise: r.pricePaise, minOrderRupees: r.minOrderRupees, maxOrderRupees: r.maxOrderRupees,
-    states: r.states, pincodePrefixes: r.pincodePrefixes, paymentMethod: r.paymentMethod,
-  }));
 }
 
 /** Small background requests (draft save, COD check, coupon) don't need to reload the cart. */
