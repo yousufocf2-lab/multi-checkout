@@ -49,7 +49,8 @@ export async function widgetRetry(cfg: WidgetConfig, reqId: string): Promise<voi
   if (cfg.widgetId === "test") return;
   await load(cfg);
   const w = window as W;
-  return new Promise((resolve, reject) => w.retryOtp!(null, () => resolve(), (e) => reject(new Error(message(e, "Couldn't resend the OTP."))), reqId));
+  // MSG91 needs the channel on resend ("11" = SMS); if a resend still fails, the caller sends a fresh OTP
+  return new Promise((resolve, reject) => w.retryOtp!("11", () => resolve(), (e) => reject(new Error(message(e, "Couldn't resend the OTP."))), reqId));
 }
 
 /** Verifies the code with MSG91. Resolves with the access token our server checks. */

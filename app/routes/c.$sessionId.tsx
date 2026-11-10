@@ -1638,12 +1638,13 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   const len = codeLength(widget);
   const track = (e: string, d?: Record<string, unknown>) => { try { (window as Window & { __cx?: (e: string, d?: Record<string, unknown>) => void }).__cx?.(e, d); } catch { /* diagnostics only */ } };
   const opened = useRef(Date.now());
+  const token = useRef<string | null>(null); // MSG91 token from a code that was already accepted
   useEffect(() => { track("otp_open", { widget: Boolean(widget) }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const sendOtp = () => {
     if (!widget) { send.submit({ intent: "otp_send", phone }, { method: "post" }); return; }
     setW((x) => ({ ...x, busy: "send", error: null }));
-    (w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!) : widgetSend(widget, phone))
-      .then((reqId) => { setW({ reqId, busy: null, error: null }); setWait(30); track("otp_sent", { widget: true }); sent.submit({ intent: "otp_widget_sent", phone }, { method: "post" }); })
+    (w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!, () => widgetSend(widget, phone)) : widgetSend(widget, phone))
+      .then((reqId) => { token.current = null; setW({ reqId, busy: null, error: null }); setWait(30); track("otp_sent", { widget: true }); sent.submit({ intent: "otp_widget_sent", phone }, { method: "post" }); })
       .catch((e: Error) => { track("otp_error", { stage: "send", m: e.message.slice(0, 120) }); setW((x) => ({ ...x, busy: null, error: e.message })); });
   };
   useEffect(() => { sendOtp(); input.current?.focus(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -1651,18 +1652,26 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((x) => x - 1), 1000); return () => clearTimeout(t); }, [wait]);
   useEffect(() => {
     if (verify.data?.ok) { track("otp_verified", { secs: Math.round((Date.now() - opened.current) / 1000) }); onVerified(); }
-    else if (verify.data && !verify.data.ok) track("otp_error", { stage: "verify", m: String(verify.data.error ?? "").slice(0, 120) });
+    else if (verify.data && !verify.data.ok) { token.current = null; track("otp_error", { stage: "verify", m: String(verify.data.error ?? "").slice(0, 120) }); }
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [verify.data]);
   useEffect(() => { if (send.data) track(send.data.ok ? "otp_sent" : "otp_error", send.data.ok ? { widget: false } : { stage: "send", m: String(send.data.error ?? "").slice(0, 120) }); }, [send.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = (v = code) => {
     if (v.length !== len) return;
+    if (verify.state !== "idle" || w.busy) return; // no double taps (auto-submit + button)
     if (!widget) { verify.submit({ intent: "otp_verify", phone, code: v }, { method: "post" }); return; }
     if (!w.reqId) return;
+    // MSG91 already accepted this number's code: send that token again instead of verifying twice ("otp already verified")
+    if (token.current) { verify.submit({ intent: "otp_widget", phone, token: token.current }, { method: "post" }); return; }
     setW((x) => ({ ...x, busy: "verify", error: null }));
     widgetVerify(widget, v, w.reqId, phone)
-      .then((token) => { setW((x) => ({ ...x, busy: null })); verify.submit({ intent: "otp_widget", phone, token }, { method: "post" }); })
-      .catch((e: Error) => { track("otp_error", { stage: "verify", m: e.message.slice(0, 120) }); setW((x) => ({ ...x, busy: null, error: e.message })); });
+      .then((t) => { token.current = t; setW((x) => ({ ...x, busy: null })); verify.submit({ intent: "otp_widget", phone, token: t }, { method: "post" }); })
+      .catch((e: Error) => {
+        track("otp_error", { stage: "verify", m: e.message.slice(0, 120) });
+        // Verified already in an earlier try (or by the phone's auto-fill): a fresh code gets the customer through
+        if (/already verif/i.test(e.message)) { setW((x) => ({ ...x, busy: null, error: "Please tap Resend OTP and enter the new code." })); setWait(0); return; }
+        setW((x) => ({ ...x, busy: null, error: e.message }));
+      });
   };
   const error = w.error ?? (verify.data && !verify.data.ok ? verify.data.error : send.data && !send.data.ok && !send.data.resendIn ? send.data.error : null);
   const sending = send.state !== "idle" || w.busy === "send";
