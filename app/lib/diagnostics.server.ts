@@ -150,6 +150,15 @@ export async function logFunnelAudit() {
         tracked: d.browser.tracked, stepsReached: steps,
         otpFlow: ["otp_open", "otp_sent", "otp_verified", "otp_close", "otp_error"].map((t) => `${t}:${new Set(ev.filter((e) => e.type === t).map((_, i) => i)).size}`).join(" "), submits: byMethod, toPayOrThanks: d.browser.toPay, payPage: d.browser.payPage, payBack: d.browser.payBack,
         errorsShown: d.browser.errors, jsErrors: d.browser.jsErrors.slice(0, 5),
+        otpErrors: (() => { const m = new Map<string, number>(); for (const e of ev) if (e.type === "otp_error") { const x = e.data as { stage?: string; m?: string } | null; const k = `${x?.stage ?? "?"}: ${x?.m ?? ""}`; m.set(k, (m.get(k) ?? 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6); })(),
+        orders24h: await (async () => {
+          const rows = await db.select({ status: orders.status, method: orders.paymentMethod, capi: orders.capiSentAt }).from(orders)
+            .where(and(eq(orders.storeId, s.id), gte(orders.createdAt, new Date(Date.now() - 86400_000))));
+          const out: Record<string, number> = {};
+          for (const r of rows) { const k = `${r.method}/${r.status}${r.status === "paid" || r.status === "cod_placed" ? (r.capi ? "/meta-sent" : "/meta-NOT-sent") : ""}`; out[k] = (out[k] ?? 0) + 1; }
+          return out;
+        })(),
+        meta: { pixel: !!s.metaPixelId, capiToken: !!(s.metaCapiToken || s.metaAccessToken), codAsPurchase: s.metaFireCodPurchase },
         cod: { on: s.codEnabled }, otp: { timing: s.otpTiming, prepaid: s.otpPrepaid, cod: s.otpCod },
         payMethods: (() => { const pm = resolvePaymentMethods(s.paymentMethods, s); return {
           prepaid: { on: pm.prepaid.on, adjust: pm.prepaid.adjust, type: pm.prepaid.type, value: pm.prepaid.value, rules: pm.prepaid.rules.length },
