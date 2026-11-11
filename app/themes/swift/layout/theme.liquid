@@ -50,6 +50,14 @@
   {{ content_for_header_group }}
   <main id="main">{{ content_for_layout }}</main>
   {{ content_for_footer_group }}
+  {%- if preview_draft -%}
+  <script>
+  (function(){var preset=new URLSearchParams(location.search).get('gp_preset'),root=document.body.getAttribute('data-root');if(!preset||!root)return;
+    function keepPreviewLinks(node){(node.matches&&node.matches('a[href]')?[node]:[]).concat(node.querySelectorAll?Array.prototype.slice.call(node.querySelectorAll('a[href]')):[]).forEach(function(a){try{var u=new URL(a.href,location.href);if(u.origin!==location.origin||(u.pathname!==root&&u.pathname.indexOf(root+'/')!==0))return;if(!u.searchParams.has('gp_preset')){u.searchParams.set('gp_preset',preset);a.href=u.pathname+u.search+u.hash}}catch(e){}})}
+    keepPreviewLinks(document);new MutationObserver(function(rows){rows.forEach(function(row){if(row.type==='childList')row.addedNodes.forEach(function(n){if(n.nodeType===1)keepPreviewLinks(n)});else if(row.target.matches&&row.target.matches('a[href]'))keepPreviewLinks(row.target)})}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['href']});
+  })();
+  </script>
+  {%- endif -%}
   {%- if settings.whatsapp_number != blank -%}
   <a class="wa-float" href="https://wa.me/{{ settings.whatsapp_number | remove: ' ' | remove: '+' | remove: '-' }}" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">
     <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.4.6-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 .9c.3.1.5.2.5.3.1.2.1.7-.1 1.3z"/></svg>
