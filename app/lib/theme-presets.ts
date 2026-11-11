@@ -45,11 +45,16 @@ const ALL_PRESETS: Preset[] = [
     settings: { color_bg: "#fffaf6", color_text: "#352724", color_muted: "#796c66", color_soft: "#f5ece7", color_brand: "#a7655f", color_button_text: "#ffffff", color_announce_bg: "#352724", color_announce_text: "#fffaf6", font_heading: "Playfair Display", font_body: "Manrope", heading_uppercase: false, heading_scale: 105, button_radius: 8, card_radius: 14, card_ratio: "portrait", preset: "mira" },
     index: sec([["hero", "hero", { eyebrow: "THE EVERYDAY EDIT", heading: "A little more lovely, every day.", text: "Thoughtful bags for wherever the day takes you.", button_label: "Explore the collection" }], ["demo", "demo-product-grid", { heading: "The bag edit" }], ["new", "product-grid", { heading: "Made for your everyday", limit: 8 }], ["story", "image-with-text", { heading: "Room for your whole day", text: "<p>Easy-to-carry favourites, considered details and space for the things that matter.</p>", button_label: "Find your favourite" }], ["trust", "trust-badges"], ["faq", "faq"]]),
   },
+  {
+    id: "luma", name: "Luma", tagline: "A fresh, science-led storefront for skincare and beauty", best: "Skincare, beauty and self-care", swatch: ["#f4fbff", "#182547", "#5368e8"],
+    settings: { color_bg: "#f4fbff", color_text: "#182547", color_muted: "#65738f", color_soft: "#eaf5fb", color_brand: "#5368e8", color_button_text: "#ffffff", color_announce_bg: "#d8f1ff", color_announce_text: "#182547", font_heading: "Plus Jakarta Sans", font_body: "Manrope", heading_uppercase: false, heading_scale: 100, button_radius: 999, card_radius: 24, card_ratio: "portrait", preset: "luma" },
+    index: sec([["hero", "hero", { eyebrow: "SKINCARE, MADE SIMPLE", heading: "A little science. A lot of glow.", text: "Thoughtful daily essentials for a routine that feels as good as it looks.", button_label: "Shop the routine" }], ["categories", "collection-list", { heading: "Find your ritual" }], ["essentials", "product-grid", { heading: "Your daily essentials", limit: 8 }], ["story", "image-with-text", { heading: "Good skin days, built daily", text: "<p>Gentle formulas, considered ingredients and easy steps for a routine you can keep.</p>", button_label: "Explore skincare" }], ["reviews", "testimonials"], ["trust", "trust-badges"], ["faq", "faq"]]),
+  },
 ];
 
 // The colour-only starter looks stay resolvable for previews and existing saved designs,
 // but only complete, distinct designs are offered in the theme library.
-export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira");
+export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma");
 export const presetById = (id: string | null | undefined) => ALL_PRESETS.find((p) => p.id === id) ?? null;
 
 /** The store's design with a preset's look and home page; keeps logo, favicon, WhatsApp, social links and custom CSS. */

@@ -171,6 +171,7 @@ export default function OnlineStore() {
 
 function ThemePreviewModal({ storeSlug, preset, onClose }: { storeSlug: string; preset: string; onClose: () => void }) {
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const presetName = preset === "luma" ? "Luma" : "Mira";
   const stage = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   useEffect(() => {
@@ -186,7 +187,7 @@ function ThemePreviewModal({ storeSlug, preset, onClose }: { storeSlug: string; 
     <div className="fixed inset-0 z-[100] bg-black/65 p-2 md:p-5" role="dialog" aria-modal="true" aria-label="Theme preview">
       <div className="mx-auto flex h-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5 md:px-4">
-          <div className="mr-auto min-w-[120px]"><p className="text-[13px] font-semibold">Mira theme preview</p><p className="text-[11px] text-ink-soft">Open a bag to view its product page. Scroll down for the footer links.</p></div>
+          <div className="mr-auto min-w-[120px]"><p className="text-[13px] font-semibold">{presetName} theme preview</p><p className="text-[11px] text-ink-soft">Open a product to view its page. Scroll down for the footer links.</p></div>
           <div className="flex items-center rounded-lg bg-paper p-0.5">
             {(["desktop", "mobile"] as const).map((size) => <button key={size} type="button" onClick={() => setDevice(size)} className={`rounded-md px-2.5 py-1.5 text-[12px] capitalize ${device === size ? "bg-white font-semibold shadow-sm" : "text-ink-soft"}`}>{size}</button>)}
           </div>

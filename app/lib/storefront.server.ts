@@ -263,14 +263,45 @@ const MIRA_BAGS = [
   { handle: "mira-city-satchel", title: "The City Satchel", category: "shoulder-bags", price: 209000, compare: 279000, bg: "#f2ebdc", bag: "#c19b62", trim: "#eed5a8", shape: "satchel" },
 ] as const;
 
+const LUMA_BEAUTY = [
+  { handle: "luma-cloud-cleanser", title: "Cloud Cleanser", category: "cleansers", price: 89000, compare: 109000, bg: "#e1f3f8", bottle: "#fbffff", accent: "#5368e8", shape: "tube", subtitle: "GENTLE DAILY CLEANSER" },
+  { handle: "luma-dew-serum", title: "Dew Drops Serum", category: "serums", price: 129000, compare: 159000, bg: "#ecebff", bottle: "#dce6f3", accent: "#5368e8", shape: "serum", subtitle: "HYDRATING FACE SERUM" },
+  { handle: "luma-ceramide-cream", title: "Cloud Nine Cream", category: "moisturisers", price: 119000, compare: 149000, bg: "#ffefe9", bottle: "#fffdfb", accent: "#df8878", shape: "jar", subtitle: "DAILY BARRIER CREAM" },
+  { handle: "luma-daily-spf", title: "Daylight SPF 50", category: "sun-care", price: 99000, compare: 129000, bg: "#e9f7eb", bottle: "#fffdf6", accent: "#4c9b76", shape: "tube", subtitle: "LIGHTWEIGHT SUN VEIL" },
+] as const;
+
 const miraBagImage = (bag: (typeof MIRA_BAGS)[number], alternate = false) => {
   const bg = alternate ? "#f8f2ed" : bag.bg;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="${bg}"/><stop offset="1" stop-color="#fffaf6"/></linearGradient><filter id="shadow" x="-40%" y="-30%" width="180%" height="190%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#352724" flood-opacity=".16"/></filter></defs><rect width="600" height="750" fill="url(#bg)"/><circle cx="470" cy="155" r="112" fill="#fff" opacity=".32"/><ellipse cx="300" cy="617" rx="150" ry="20" fill="#51403a" opacity=".10"/><g filter="url(#shadow)" stroke-linejoin="round" stroke-linecap="round">${bag.shape === "crossbody" ? `<path d="M206 352c0-128 46-194 94-194s94 66 94 194" fill="none" stroke="#493d4e" stroke-width="18"/><path d="M178 342h244l-24 235H202z" fill="${bag.bag}"/><path d="M178 342h244l-14 53H192z" fill="${bag.trim}"/><path d="M252 433h96v86h-96z" fill="#78677f"/><path d="M275 468h50" stroke="${bag.trim}" stroke-width="12"/>` : bag.shape === "satchel" ? `<path d="M210 348c0-124 37-182 90-182s90 58 90 182" fill="none" stroke="#554538" stroke-width="18"/><path d="M166 354h268l-22 229H188z" fill="${bag.bag}"/><path d="m166 354 43 83h182l43-83z" fill="${bag.trim}"/><path d="M244 437h112v98H244z" fill="#b38d55"/><path d="m300 455 21 31-21 31-21-31z" fill="${bag.trim}"/>` : `<path d="M204 345c0-122 39-185 96-185s96 63 96 185" fill="none" stroke="#51352f" stroke-width="18"/><path d="M150 350h300l-24 237H174z" fill="${bag.bag}"/><path d="M150 350h300l-18 52H168z" fill="${bag.trim}"/><path d="M244 435h112v95H244z" fill="${bag.bag}"/><path d="M276 469h48" stroke="${bag.trim}" stroke-width="15"/>`}</g><circle cx="300" cy="624" r="4" fill="#a7655f" opacity=".42"/></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 
+const lumaBeautyImage = (item: (typeof LUMA_BEAUTY)[number], alternate = false) => {
+  const bg = alternate ? "#f8fcff" : item.bg;
+  const art = item.shape === "serum"
+    ? `<rect x="267" y="218" width="66" height="80" rx="12" fill="#f6f8ff" stroke="#b8c5dd" stroke-width="5"/><path d="M278 211h44v18h-44z" rx="5" fill="${item.accent}"/><path d="M289 144h22v68h-22z" fill="#263454"/><path d="M289 145h22v58h-22z" fill="#293752"/><rect x="220" y="280" width="160" height="295" rx="30" fill="${item.bottle}" stroke="#c5d4e6" stroke-width="5"/><rect x="236" y="372" width="128" height="136" rx="8" fill="#ffffff" opacity=".82"/><circle cx="300" cy="401" r="16" fill="${item.accent}"/><path d="M286 401h28m-14-14v28" stroke="#fff" stroke-width="3"/><text x="300" y="450" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#263454">LUMA</text><text x="300" y="476" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" letter-spacing="1.4" fill="#65738f">DEW SERUM</text>`
+    : item.shape === "jar"
+      ? `<ellipse cx="300" cy="555" rx="132" ry="24" fill="#314768" opacity=".10"/><rect x="190" y="303" width="220" height="225" rx="45" fill="${item.bottle}" stroke="#e1d2ce" stroke-width="6"/><path d="M190 366h220v112a45 45 0 0 1-45 45H235a45 45 0 0 1-45-45z" fill="${item.accent}" opacity=".16"/><rect x="203" y="264" width="194" height="58" rx="17" fill="#f5f1ee" stroke="#daccc5" stroke-width="5"/><path d="M212 279h176" stroke="#fff" stroke-width="5"/><text x="300" y="414" text-anchor="middle" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#263454">LUMA</text><text x="300" y="442" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" letter-spacing="1.2" fill="#65738f">CERAMIDE CREAM</text>`
+      : `<path d="M255 195q45-35 90 0l15 48q22 18 25 53l-24 232q-3 30-34 30h-58q-31 0-34-30l-24-232q3-35 25-53z" fill="${item.bottle}" stroke="#cfdae7" stroke-width="5"/><path d="M266 203q34-24 68 0l8 37h-84z" fill="${item.accent}"/><path d="M235 328h130l-19 176q-2 20-22 20h-48q-20 0-22-20z" fill="${item.accent}" opacity=".13"/><rect x="249" y="371" width="102" height="105" rx="8" fill="#ffffff" opacity=".88"/><text x="300" y="410" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="700" fill="#263454">LUMA</text><text x="300" y="435" text-anchor="middle" font-family="Arial,sans-serif" font-size="8" letter-spacing="1" fill="#65738f">${item.subtitle}</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="${bg}"/><stop offset="1" stop-color="#fff"/></linearGradient><filter id="shadow" x="-40%" y="-30%" width="180%" height="190%"><feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#263454" flood-opacity=".13"/></filter></defs><rect width="600" height="750" fill="url(#bg)"/><circle cx="110" cy="150" r="100" fill="#fff" opacity=".42"/><circle cx="508" cy="565" r="70" fill="${item.accent}" opacity=".06"/><g filter="url(#shadow)">${art}</g><text x="300" y="640" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" letter-spacing="3" fill="#65738f">FORMULATED FOR EVERYDAY</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
 /** Non-purchasable catalog examples used only in a theme preview iframe. */
 export function demoProducts(ctx: ShopContext, category?: string) {
+  if (ctx.demoPreset === "luma") return LUMA_BEAUTY.filter((p) => !category || category === "skincare" || p.category === category).map((p, i) => {
+    const now = new Date();
+    const item = {
+      id: -(i + 101), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Skincare", vendor: "Luma Studio", tags: ["sample", "skincare"], source: "manual", sourceId: null,
+      descriptionHtml: `<p>${p.subtitle[0] + p.subtitle.slice(1).toLowerCase()} made for an easy everyday routine. A lightweight sample formula with a comfortable finish.</p><p>Sample product shown for theme preview only.</p>`,
+      images: [{ url: lumaBeautyImage(p), alt: p.title }, { url: lumaBeautyImage(p, true), alt: `${p.title} detail` }],
+      options: [{ name: "Size", values: ["50 ml", "Travel size"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+    } as unknown as CatalogItem;
+    const variants = ["50 ml", "Travel size"].map((size, j) => ({
+      id: -((i + 101) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
+    })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
   return MIRA_BAGS.filter((b) => !category || b.category === category).map((b, i) => {
     const now = new Date();
     const item = {
@@ -325,6 +356,13 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "luma") return [
+    { id: -11, title: "All skincare", handle: "skincare", description: "Build a simple daily ritual.", url: categoryPath(ctx.root, "skincare") },
+    { id: -12, title: "Cleansers", handle: "cleansers", description: "A fresh start for your skin.", url: categoryPath(ctx.root, "cleansers") },
+    { id: -13, title: "Serums", handle: "serums", description: "Lightweight layers, considered ingredients.", url: categoryPath(ctx.root, "serums") },
+    { id: -14, title: "Moisturisers", handle: "moisturisers", description: "Comfort and hydration, every day.", url: categoryPath(ctx.root, "moisturisers") },
+    { id: -15, title: "Sun care", handle: "sun-care", description: "A little care for brighter days.", url: categoryPath(ctx.root, "sun-care") },
+  ];
   if (ctx.demoPreset === "mira") return [
     { id: -1, title: "Shoulder bags", handle: "shoulder-bags", description: "Roomy favourites for every day.", url: categoryPath(ctx.root, "shoulder-bags") },
     { id: -2, title: "Totes", handle: "totes", description: "Easy carry, all-day style.", url: categoryPath(ctx.root, "totes") },
@@ -337,7 +375,7 @@ export async function loadCategories(ctx: ShopContext) {
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
-  const pages = ctx.demoPreset === "mira"
+  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma"
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
     : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
@@ -361,7 +399,7 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = ctx.demoPreset === "mira"
+    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma"
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
       : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
