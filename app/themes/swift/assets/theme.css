@@ -157,6 +157,24 @@ h2{font-size:clamp(22px,3vw,30px)}
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:500;transition:.2s;z-index:50}
 .toast.is-on{opacity:1;transform:translate(-50%,0)}
 .page-body{margin-top:20px;font-size:16px;line-height:1.7}.page-body ul{padding-left:20px}.page-body li{margin:6px 0}
+
+/* Mira preset: a warm editorial look for the handbag theme preview. */
+body[data-preset="mira"] .hero--banner:not(.hero--fit){min-height:390px;height:min(55vw,620px);background:radial-gradient(ellipse at 82% 20%,rgba(255,255,255,.72),transparent 38%),linear-gradient(120deg,#f1ded6,#ead1c9);color:#352724}
+body[data-preset="mira"] .hero--banner:not(.hero--fit) .hero__shade{background:linear-gradient(90deg,rgba(255,250,246,.93),rgba(255,250,246,.52) 64%,rgba(255,250,246,.08))}
+body[data-preset="mira"] .hero--banner:not(.hero--fit) .hero__copy h1{max-width:10ch;font-size:clamp(42px,7vw,82px);line-height:1.02}
+body[data-preset="mira"] .hero--banner:not(.hero--fit) .hero__copy .eyebrow{color:#8b514b}
+body[data-preset="mira"] .hero--banner:not(.hero--fit) .hero__text{max-width:26em;color:#665550}
+body[data-preset="mira"] .demo-products{padding-top:42px;padding-bottom:54px}
+body[data-preset="mira"] .demo-products__head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:22px}
+body[data-preset="mira"] .demo-products__head p{margin:0;color:var(--soft);font-size:13px}
+body[data-preset="mira"] .demo-products__grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+body[data-preset="mira"] .demo-bag__art{display:grid;place-items:center;aspect-ratio:4/5;overflow:hidden;border-radius:var(--radius);background:var(--tint)}
+body[data-preset="mira"] .demo-bag__art svg{width:74%;height:auto;filter:drop-shadow(0 16px 12px rgba(53,39,36,.13));transition:transform .25s ease}
+body[data-preset="mira"] .demo-bag:hover .demo-bag__art svg{transform:translateY(-4px) rotate(-2deg)}
+body[data-preset="mira"] .demo-bag__name{margin:10px 0 3px;font-size:14px;font-weight:600}
+body[data-preset="mira"] .demo-bag__price{margin:0;color:var(--soft);font-size:13px}
+body[data-preset="mira"] .demo-bag__price s{margin-left:5px;color:#a99c96}
+@media(max-width:760px){body[data-preset="mira"] .demo-products__grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}body[data-preset="mira"] .demo-products{padding-top:30px;padding-bottom:38px}body[data-preset="mira"] .demo-products__head{align-items:start;flex-direction:column;gap:5px}}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body),system-ui,sans-serif}
 h1,h2,h3,.pdp__title{font-family:var(--font-heading),system-ui,sans-serif;text-transform:var(--heading-case)}
 h1{font-size:calc(clamp(28px,4.5vw,46px)*var(--heading-scale))}

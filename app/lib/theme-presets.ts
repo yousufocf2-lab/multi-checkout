@@ -40,6 +40,11 @@ export const PRESETS: Preset[] = [
     settings: { color_bg: "#ffffff", color_text: "#111111", color_muted: "#6b6b6b", color_soft: "#f4f4f2", color_brand: "#111111", color_button_text: "#ffffff", color_announce_bg: "#111111", color_announce_text: "#ffffff", font_heading: "Lora", font_body: "Inter", heading_uppercase: false, heading_scale: 100, button_radius: 0, card_radius: 0, card_ratio: "portrait" },
     index: sec([["hero", "hero", { eyebrow: "The new collection" }], ["new", "product-grid", { heading: "Just in", limit: 8 }], ["story", "image-with-text", { heading: "Made slowly, made well" }], ["note", "rich-text", { heading: "Our promise", text: "<p>Free delivery on prepaid orders, easy returns and cash on delivery across India.</p>" }]]),
   },
+  {
+    id: "mira", name: "Mira", tagline: "A polished, feminine storefront for bags and accessories", best: "Handbags, purses and accessories", swatch: ["#fffaf6", "#352724", "#a7655f"],
+    settings: { color_bg: "#fffaf6", color_text: "#352724", color_muted: "#796c66", color_soft: "#f5ece7", color_brand: "#a7655f", color_button_text: "#ffffff", color_announce_bg: "#352724", color_announce_text: "#fffaf6", font_heading: "Playfair Display", font_body: "Manrope", heading_uppercase: false, heading_scale: 105, button_radius: 8, card_radius: 14, card_ratio: "portrait", preset: "mira" },
+    index: sec([["hero", "hero", { eyebrow: "THE EVERYDAY EDIT", heading: "A little more lovely, every day.", text: "Thoughtful bags for wherever the day takes you.", button_label: "Explore the collection" }], ["demo", "demo-product-grid", { heading: "The bag edit" }], ["new", "product-grid", { heading: "Made for your everyday", limit: 8 }], ["story", "image-with-text", { heading: "Room for your whole day", text: "<p>Easy-to-carry favourites, considered details and space for the things that matter.</p>", button_label: "Find your favourite" }], ["trust", "trust-badges"], ["faq", "faq"]]),
+  },
 ];
 
 export const presetById = (id: string | null | undefined) => PRESETS.find((p) => p.id === id) ?? null;

@@ -197,7 +197,7 @@ export async function renderPage(theme: string, template: string, scope: Record<
 // ---------- data (Liquid "drops") ----------
 
 /** owner: the store's own team is looking (preview/draft), so unpublished pages may be shown. */
-export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look; owner?: boolean };
+export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look; owner?: boolean; demoPreset?: string };
 
 /** The store's saved design: live for shoppers, the draft for the editor. */
 export async function themeLook(storeId: number, mode: "live" | "draft" | "editor" = "live"): Promise<Look> {
@@ -307,6 +307,7 @@ export async function baseScope(ctx: ShopContext) {
     routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart`, search: `${ctx.root}/search`, account: accountsOn(ctx.store) ? `${ctx.root}/account` : null },
     collections, pages: pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` })), preview: ctx.preview,
     ...nav, // menus (by handle), header_menu, footer_menu
+    demo_theme: ctx.owner ? ctx.demoPreset ?? "" : "",
   };
 }
 
@@ -347,7 +348,7 @@ export async function previewContext(request: Request, slug: string | undefined)
       const { presetById, applyPreset } = await import("./theme-presets");
       const p = presetById(preset);
       const base = (await themeLook(store.id, "draft")).data ?? defaultThemeData("swift");
-      if (p) return { store, root: `/s/${store.slug}`, preview: true, owner: true, look: { data: applyPreset(base, p), editor: false } };
+      if (p) return { store, root: `/s/${store.slug}`, preview: true, owner: true, demoPreset: p.id, look: { data: applyPreset(base, p), editor: false } };
     }
     if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, owner: true, look: await themeLook(store.id, mode) };
   }

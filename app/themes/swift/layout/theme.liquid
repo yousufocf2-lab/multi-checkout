@@ -46,7 +46,7 @@
   {% if settings.custom_css != blank %}<style>{{ settings.custom_css }}</style>{% endif %}
   {% if editor %}<style>[data-gp-section]{display:contents}[data-gp-section]>*{cursor:pointer}[data-gp-section]>*:hover{outline:1px dashed #2563eb;outline-offset:-1px}[data-gp-section].gp-hl>*{outline:2px solid #2563eb!important;outline-offset:-2px}</style>{% endif %}
 </head>
-<body data-shop="{{ shop.slug }}" data-root="{{ routes.base }}" data-after-add="{{ settings.cart_after_add | default: 'drawer' }}" data-cart-type="{{ settings.cart_type | default: 'drawer' }}">
+<body data-shop="{{ shop.slug }}" data-root="{{ routes.base }}" data-preset="{{ settings.preset | escape }}" data-after-add="{{ settings.cart_after_add | default: 'drawer' }}" data-cart-type="{{ settings.cart_type | default: 'drawer' }}">
   {{ content_for_header_group }}
   <main id="main">{{ content_for_layout }}</main>
   {{ content_for_footer_group }}
