@@ -277,6 +277,21 @@ const THREAD_CLOTHES = [
   { handle: "thread-relaxed-cargo", title: "Relaxed Cargo Pant", category: "bottoms", price: 199900, compare: 259900, bg: "#e5e8de", cloth: "#657153", accent: "#2d3328", shape: "pants", subtitle: "RELAXED FIT" },
 ] as const;
 
+const SHOE_PRODUCTS = [
+  { handle: "stride-city-low", title: "City Low Sneaker", category: "everyday", price: 249900, compare: 329900, image: "https://images.unsplash.com/photo-1700178310305-0e05d7930f9f?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1780824946608-c13717489f97?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "stride-pace-runner", title: "Pace Runner 02", category: "running", price: 319900, compare: 399900, image: "https://images.unsplash.com/photo-1637437757614-6491c8e915b5?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1581285864607-ef85509e7324?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "stride-court-classic", title: "Court Classic", category: "sneakers", price: 279900, compare: 359900, image: "https://images.unsplash.com/photo-1724921194807-c0d17dc7cfe4?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1780824946973-ab4e10ec90f6?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "stride-trail-move", title: "Trail Move XT", category: "running", price: 389900, compare: 479900, image: "https://images.unsplash.com/photo-1698108223703-0af88bee1104?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1637437757614-6491c8e915b5?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "stride-everyday-knit", title: "Everyday Knit", category: "walking", price: 219900, compare: 289900, image: "https://images.unsplash.com/photo-1780824946608-c13717489f97?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1553835584-c3eab150319e?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "stride-retro-court", title: "Retro Court 88", category: "sneakers", price: 299900, compare: 379900, image: "https://images.unsplash.com/photo-1553835584-c3eab150319e?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1581285864607-ef85509e7324?auto=format&fit=crop&w=1000&q=82" },
+] as const;
+
+const REAL_PHOTOS = {
+  bags: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1000&q=82"],
+  beauty: ["https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1601049541289-9b1b7bbbfe19?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1000&q=82"],
+  clothing: ["https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1551488831-00ddcb6c6bd3?auto=format&fit=crop&w=1000&q=82"],
+};
+
 const miraBagImage = (bag: (typeof MIRA_BAGS)[number], alternate = false) => {
   const bg = alternate ? "#f8f2ed" : bag.bg;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="${bg}"/><stop offset="1" stop-color="#fffaf6"/></linearGradient><filter id="shadow" x="-40%" y="-30%" width="180%" height="190%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#352724" flood-opacity=".16"/></filter></defs><rect width="600" height="750" fill="url(#bg)"/><circle cx="470" cy="155" r="112" fill="#fff" opacity=".32"/><ellipse cx="300" cy="617" rx="150" ry="20" fill="#51403a" opacity=".10"/><g filter="url(#shadow)" stroke-linejoin="round" stroke-linecap="round">${bag.shape === "crossbody" ? `<path d="M206 352c0-128 46-194 94-194s94 66 94 194" fill="none" stroke="#493d4e" stroke-width="18"/><path d="M178 342h244l-24 235H202z" fill="${bag.bag}"/><path d="M178 342h244l-14 53H192z" fill="${bag.trim}"/><path d="M252 433h96v86h-96z" fill="#78677f"/><path d="M275 468h50" stroke="${bag.trim}" stroke-width="12"/>` : bag.shape === "satchel" ? `<path d="M210 348c0-124 37-182 90-182s90 58 90 182" fill="none" stroke="#554538" stroke-width="18"/><path d="M166 354h268l-22 229H188z" fill="${bag.bag}"/><path d="m166 354 43 83h182l43-83z" fill="${bag.trim}"/><path d="M244 437h112v98H244z" fill="#b38d55"/><path d="m300 455 21 31-21 31-21-31z" fill="${bag.trim}"/>` : `<path d="M204 345c0-122 39-185 96-185s96 63 96 185" fill="none" stroke="#51352f" stroke-width="18"/><path d="M150 350h300l-24 237H174z" fill="${bag.bag}"/><path d="M150 350h300l-18 52H168z" fill="${bag.trim}"/><path d="M244 435h112v95H244z" fill="${bag.bag}"/><path d="M276 469h48" stroke="${bag.trim}" stroke-width="15"/>`}</g><circle cx="300" cy="624" r="4" fill="#a7655f" opacity=".42"/></svg>`;
@@ -309,12 +324,25 @@ const threadClothesImage = (item: (typeof THREAD_CLOTHES)[number], alternate = f
 
 /** Non-purchasable catalog examples used only in a theme preview iframe. */
 export function demoProducts(ctx: ShopContext, category?: string) {
+  if (ctx.demoPreset === "stride") return SHOE_PRODUCTS.filter((p) => !category || category === "footwear" || p.category === category).map((p, i) => {
+    const now = new Date();
+    const item = {
+      id: -(i + 301), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Footwear", vendor: "Stride Studio", tags: ["sample", "footwear"], source: "manual", sourceId: null,
+      descriptionHtml: "<p>Made for your everyday rotation: cushioned underfoot feel, a breathable upper and a versatile profile that moves easily from commute to weekend.</p><h3>Details</h3><ul><li>Lightweight cushioned sole</li><li>Comfort lining for all-day wear</li><li>Designed for city miles</li></ul><p>Sample product shown for theme preview only.</p>",
+      images: [{ url: p.image, alt: p.title }, { url: p.altImage, alt: `${p.title} alternate view` }],
+      options: [{ name: "Size", values: ["UK 6", "UK 7", "UK 8", "UK 9", "UK 10"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+    } as unknown as CatalogItem;
+    const variants = ["UK 6", "UK 7", "UK 8", "UK 9", "UK 10"].map((size, j) => ({
+      id: -((i + 301) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
+    })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
   if (ctx.demoPreset === "thread") return THREAD_CLOTHES.filter((p) => !category || category === "apparel" || p.category === category).map((p, i) => {
     const now = new Date();
     const item = {
       id: -(i + 201), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Clothing", vendor: "Thread Studio", tags: ["sample", "apparel"], source: "manual", sourceId: null,
       descriptionHtml: `<p>${p.subtitle.toLowerCase()} with a relaxed, easy-to-layer shape. Cut for everyday movement and finished with clean details that work across your weekly rotation.</p><h3>Details</h3><ul><li>Soft-touch midweight fabric</li><li>Relaxed everyday fit</li><li>Made for repeat wear</li></ul><p>Sample product shown for theme preview only.</p>`,
-      images: [{ url: threadClothesImage(p), alt: p.title }, { url: threadClothesImage(p, true), alt: `${p.title} detail` }],
+      images: [{ url: REAL_PHOTOS.clothing[i % REAL_PHOTOS.clothing.length], alt: p.title }, { url: REAL_PHOTOS.clothing[(i + 1) % REAL_PHOTOS.clothing.length], alt: `${p.title} detail` }],
       options: [{ name: "Size", values: ["XS", "S", "M", "L", "XL"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
     } as unknown as CatalogItem;
     const variants = ["XS", "S", "M", "L", "XL"].map((size, j) => ({
@@ -327,7 +355,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const item = {
       id: -(i + 101), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Skincare", vendor: "Luma Studio", tags: ["sample", "skincare"], source: "manual", sourceId: null,
       descriptionHtml: `<p>${p.subtitle[0] + p.subtitle.slice(1).toLowerCase()} made for an easy everyday routine. A lightweight sample formula with a comfortable finish.</p><p>Sample product shown for theme preview only.</p>`,
-      images: [{ url: lumaBeautyImage(p), alt: p.title }, { url: lumaBeautyImage(p, true), alt: `${p.title} detail` }],
+      images: [{ url: REAL_PHOTOS.beauty[i % REAL_PHOTOS.beauty.length], alt: p.title }, { url: REAL_PHOTOS.beauty[(i + 1) % REAL_PHOTOS.beauty.length], alt: `${p.title} detail` }],
       options: [{ name: "Size", values: ["50 ml", "Travel size"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
     } as unknown as CatalogItem;
     const variants = ["50 ml", "Travel size"].map((size, j) => ({
@@ -340,7 +368,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const item = {
       id: -(i + 1), storeId: ctx.store.id, title: b.title, handle: b.handle, status: "active", productType: "Handbag", vendor: "Mira Studio", tags: ["sample", "handbag"], source: "manual", sourceId: null,
       descriptionHtml: "<p>A thoughtfully designed everyday bag with a considered shape, a comfortable carry and room for your daily essentials.</p><p>Sample product shown for theme preview only.</p>",
-      images: [{ url: miraBagImage(b), alt: b.title }, { url: miraBagImage(b, true), alt: `${b.title} detail` }],
+      images: [{ url: REAL_PHOTOS.bags[i % REAL_PHOTOS.bags.length], alt: b.title }, { url: REAL_PHOTOS.bags[(i + 1) % REAL_PHOTOS.bags.length], alt: `${b.title} detail` }],
       options: [{ name: "Colour", values: ["Classic", "Soft neutral"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
     } as unknown as CatalogItem;
     const variants = ["Classic", "Soft neutral"].map((colour, j) => ({
@@ -389,6 +417,13 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "stride") return [
+    { id: -31, title: "Shop all footwear", handle: "footwear", description: "Find your next everyday pair.", url: categoryPath(ctx.root, "footwear") },
+    { id: -32, title: "Sneakers", handle: "sneakers", description: "Clean lines. All-day comfort.", url: categoryPath(ctx.root, "sneakers") },
+    { id: -33, title: "Running", handle: "running", description: "Made for the miles ahead.", url: categoryPath(ctx.root, "running") },
+    { id: -34, title: "Everyday", handle: "everyday", description: "Easy pairs, every day.", url: categoryPath(ctx.root, "everyday") },
+    { id: -35, title: "Walking", handle: "walking", description: "A softer step from morning on.", url: categoryPath(ctx.root, "walking") },
+  ];
   if (ctx.demoPreset === "thread") return [
     { id: -21, title: "Shop all apparel", handle: "apparel", description: "The everyday uniform.", url: categoryPath(ctx.root, "apparel") },
     { id: -22, title: "Tees", handle: "tees", description: "Reliable fits, repeat wear.", url: categoryPath(ctx.root, "tees") },
@@ -415,7 +450,7 @@ export async function loadCategories(ctx: ShopContext) {
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
-  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread"
+  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride"
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
     : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
@@ -439,7 +474,7 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread"
+    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride"
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
       : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
@@ -469,7 +504,7 @@ export async function previewContext(request: Request, slug: string | undefined)
       const copy = await getThemeCopy(store.id, libraryId);
       if (copy) {
         const savedPreset = String(copy.data.settings.preset ?? "");
-        const demoPreset = ["mira", "luma", "thread"].includes(savedPreset) ? savedPreset : undefined;
+        const demoPreset = ["mira", "luma", "thread", "stride"].includes(savedPreset) ? savedPreset : undefined;
         return { store, root: `/s/${store.slug}`, preview: true, owner: true, ownerPreview: true, demoPreset, look: { data: copy.data, editor: false } };
       }
     }

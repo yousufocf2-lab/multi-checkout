@@ -43,19 +43,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
         await saveDraft(store.id, applyPreset(st.data, p));
         return redirect(`${storePath(store.id)}/editor?preset=${p.id}`);
       }
-      case "duplicate": {
-        const preset = PRESETS.find((p) => p.id === String(fd.get("preset")));
-        const st = await editorState(store.id);
-        const data = preset ? applyPreset(st.data, preset) : st.data;
-        const sourceName = preset?.name ?? presetById(String(data.settings.preset ?? ""))?.name ?? "Custom design";
-        await saveThemeCopy(store.id, `${sourceName} copy`, data);
+      case "duplicate-published": {
+        const published = (await themeRow(store.id))?.live;
+        if (!published) throw new Error("Publish a theme first, then you can duplicate it.");
+        const sourceName = presetById(String(published.settings.preset ?? ""))?.name ?? "Published theme";
+        await saveThemeCopy(store.id, `${sourceName} copy`, published);
         return json({ ok: `${sourceName} was copied into your theme library.`, error: null });
-      }
-      case "duplicate-copy": {
-        const copy = await getThemeCopy(store.id, Number(fd.get("copyId")));
-        if (!copy) throw new Error("That saved theme could not be found.");
-        await saveThemeCopy(store.id, `${copy.name} copy`, copy.data);
-        return json({ ok: `${copy.name} was copied.`, error: null });
       }
       case "use-copy": {
         const copy = await getThemeCopy(store.id, Number(fd.get("copyId")));
@@ -153,6 +146,7 @@ export default function OnlineStore() {
           <Link to={editor} className="flex h-8 items-center rounded-lg bg-white px-3 text-[12.5px] font-semibold text-[#303030] hover:bg-[#f1f1f1]">Edit theme</Link>
           <Menu dark items={[
             { label: "View", href: liveUrl },
+            ...(publishedAt ? [{ label: "Duplicate published theme", form: "duplicate-published" }, { label: "Download theme", href: `${storePath(store.id)}/themes/export?published=1` }] : []),
             ...(hasDraft ? [{ label: "Preview changes", href: `/s/${store.slug}?gp_draft=1` }, { label: "Discard unpublished changes", form: "discard", danger: true }] : []),
           ]} />
         </div>
@@ -162,18 +156,17 @@ export default function OnlineStore() {
         <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
           <div><h2 className="text-[14px] font-semibold">Theme library</h2><p className="text-[12.5px] text-ink-soft">Ready-made designs. Pick one, it fills in with your products, then change anything and publish.</p></div>
           <div className="flex flex-wrap items-center gap-2">
-            <a href={`${storePath(store.id)}/themes/export`} className="btn-secondary">Export current</a>
             <Form method="post" encType="multipart/form-data">
               <input type="hidden" name="intent" value="import" />
-              <label className="btn-secondary cursor-pointer">Import theme<input name="themeFile" type="file" accept=".json,application/json" className="sr-only" onChange={(e) => e.currentTarget.form?.requestSubmit()} /></label>
+              <label className="btn-secondary cursor-pointer rounded-full px-4">Import<input name="themeFile" type="file" accept=".json,application/json" className="sr-only" onChange={(e) => e.currentTarget.form?.requestSubmit()} /></label>
             </Form>
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {presets.map((p) => (
-            <article key={p.id} className="panel overflow-hidden">
-              <div className="group relative h-[190px] overflow-hidden border-b border-rule bg-paper-sunk">
-                <ScaledFrame src={`/s/${store.slug}?gp_preset=${p.id}`} height={190} title={`${p.name} preview`} lazy />
+            <article key={p.id} className="panel overflow-hidden rounded-2xl border border-rule bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+              <div className="group relative h-[250px] overflow-hidden border-b border-rule bg-paper-sunk sm:h-[280px]">
+                <ScaledFrame src={`/s/${store.slug}?gp_preset=${p.id}`} height={280} title={`${p.name} preview`} lazy />
                 {p.id === livePreset && <span className="absolute left-2 top-2 rounded-md bg-[#cdfee1] px-1.5 py-0.5 text-[11.5px] font-semibold text-[#0c5132]">Current theme</span>}
                 <button type="button" onClick={() => setPreview({ name: p.name, src: `/s/${store.slug}?gp_preset=${p.id}` })} className="absolute inset-0 flex items-center justify-center bg-black/20 text-[14px] font-semibold text-white opacity-0 backdrop-blur-[2px] transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100">Preview</button>
               </div>
@@ -184,11 +177,10 @@ export default function OnlineStore() {
                   <p className="mt-1 text-[11.5px] text-ink-faint">Best for: {p.best}</p>
                 </div>
               </div>
-              <div className="flex gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
-                <Form method="post" className="flex-1"><input type="hidden" name="intent" value="duplicate" /><input type="hidden" name="preset" value={p.id} /><button className="btn-secondary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Duplicate</button></Form>
-                <Form method="post" className="flex-1" onSubmit={(e) => { if (!confirm(`Use ${p.name}? Your colours, fonts and home page layout change in the draft. Products, logo and pages stay. Nothing goes live until you publish.`)) e.preventDefault(); }}>
+              <div className="flex items-center justify-end gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
+                <Form method="post" onSubmit={(e) => { if (!confirm(`Add ${p.name} to your draft? Your live storefront stays the same until you publish.`)) e.preventDefault(); }}>
                   <input type="hidden" name="intent" value="preset" /><input type="hidden" name="preset" value={p.id} />
-                  <button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle"}>{p.id === livePreset ? "Reset to this" : "Use theme"}</button>
+                  <button className="btn-secondary h-7 rounded-full px-4" disabled={nav.state !== "idle"}>Add</button>
                 </Form>
               </div>
             </article>
@@ -205,11 +197,9 @@ export default function OnlineStore() {
               <button type="button" onClick={() => setPreview({ name: copy.name, src: `/s/${store.slug}?gp_library=${copy.id}` })} className="absolute inset-0 flex items-center justify-center bg-black/20 text-[14px] font-semibold text-white opacity-0 backdrop-blur-[2px] transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100">Preview</button>
             </div>
             <div className="flex items-start gap-3 p-3.5"><div className="min-w-0 flex-1"><p className="text-[13.5px] font-semibold">{copy.name}</p><p className="mt-0.5 text-[11.5px] text-ink-faint">Saved {when(copy.updatedAt)}</p></div>
-              <a href={`${storePath(store.id)}/themes/export?copy=${copy.id}`} className="btn-secondary h-7">Export</a>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
               <Form method="post" className="flex-1" onSubmit={(e) => { if (hasDraft && !confirm(`Use ${copy.name}? This replaces your current unpublished draft; the live site stays unchanged until you publish.`)) e.preventDefault(); }}><input type="hidden" name="intent" value="use-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Use theme</button></Form>
-              <Form method="post" className="flex-1"><input type="hidden" name="intent" value="duplicate-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-secondary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Duplicate</button></Form>
               <Form method="post" onSubmit={(e) => { if (!confirm(`Remove ${copy.name} from your theme library?`)) e.preventDefault(); }}><input type="hidden" name="intent" value="delete-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-secondary h-7 text-[#8e1f0b]">Remove</button></Form>
             </div>
           </article>)}
