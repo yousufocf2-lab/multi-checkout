@@ -197,7 +197,7 @@ export async function renderPage(theme: string, template: string, scope: Record<
 // ---------- data (Liquid "drops") ----------
 
 /** owner: the store's own team is looking (preview/draft), so unpublished pages may be shown. */
-export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look; owner?: boolean; demoPreset?: string };
+export type ShopContext = { store: Store; root: string; preview: boolean; look?: Look; owner?: boolean; ownerPreview?: boolean; demoPreset?: string };
 
 /** The store's saved design: live for shoppers, the draft for the editor. */
 export async function themeLook(storeId: number, mode: "live" | "draft" | "editor" = "live"): Promise<Look> {
@@ -270,6 +270,13 @@ const LUMA_BEAUTY = [
   { handle: "luma-daily-spf", title: "Daylight SPF 50", category: "sun-care", price: 99000, compare: 129000, bg: "#e9f7eb", bottle: "#fffdf6", accent: "#4c9b76", shape: "tube", subtitle: "LIGHTWEIGHT SUN VEIL" },
 ] as const;
 
+const THREAD_CLOTHES = [
+  { handle: "thread-heavyweight-tee", title: "Heavyweight Box Tee", category: "tees", price: 89900, compare: 119900, bg: "#e9e9df", cloth: "#262925", accent: "#c9e958", shape: "tee", subtitle: "HEAVYWEIGHT COTTON" },
+  { handle: "thread-oxford-shirt", title: "Everyday Oxford Shirt", category: "shirts", price: 179900, compare: 229900, bg: "#e5eaf0", cloth: "#8ea0b4", accent: "#29394a", shape: "shirt", subtitle: "RELAXED OXFORD" },
+  { handle: "thread-utility-overshirt", title: "Utility Overshirt", category: "outerwear", price: 249900, compare: 319900, bg: "#e8e2d7", cloth: "#b37b4d", accent: "#4c3e30", shape: "jacket", subtitle: "EVERYDAY LAYER" },
+  { handle: "thread-relaxed-cargo", title: "Relaxed Cargo Pant", category: "bottoms", price: 199900, compare: 259900, bg: "#e5e8de", cloth: "#657153", accent: "#2d3328", shape: "pants", subtitle: "RELAXED FIT" },
+] as const;
+
 const miraBagImage = (bag: (typeof MIRA_BAGS)[number], alternate = false) => {
   const bg = alternate ? "#f8f2ed" : bag.bg;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="${bg}"/><stop offset="1" stop-color="#fffaf6"/></linearGradient><filter id="shadow" x="-40%" y="-30%" width="180%" height="190%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#352724" flood-opacity=".16"/></filter></defs><rect width="600" height="750" fill="url(#bg)"/><circle cx="470" cy="155" r="112" fill="#fff" opacity=".32"/><ellipse cx="300" cy="617" rx="150" ry="20" fill="#51403a" opacity=".10"/><g filter="url(#shadow)" stroke-linejoin="round" stroke-linecap="round">${bag.shape === "crossbody" ? `<path d="M206 352c0-128 46-194 94-194s94 66 94 194" fill="none" stroke="#493d4e" stroke-width="18"/><path d="M178 342h244l-24 235H202z" fill="${bag.bag}"/><path d="M178 342h244l-14 53H192z" fill="${bag.trim}"/><path d="M252 433h96v86h-96z" fill="#78677f"/><path d="M275 468h50" stroke="${bag.trim}" stroke-width="12"/>` : bag.shape === "satchel" ? `<path d="M210 348c0-124 37-182 90-182s90 58 90 182" fill="none" stroke="#554538" stroke-width="18"/><path d="M166 354h268l-22 229H188z" fill="${bag.bag}"/><path d="m166 354 43 83h182l43-83z" fill="${bag.trim}"/><path d="M244 437h112v98H244z" fill="#b38d55"/><path d="m300 455 21 31-21 31-21-31z" fill="${bag.trim}"/>` : `<path d="M204 345c0-122 39-185 96-185s96 63 96 185" fill="none" stroke="#51352f" stroke-width="18"/><path d="M150 350h300l-24 237H174z" fill="${bag.bag}"/><path d="M150 350h300l-18 52H168z" fill="${bag.trim}"/><path d="M244 435h112v95H244z" fill="${bag.bag}"/><path d="M276 469h48" stroke="${bag.trim}" stroke-width="15"/>`}</g><circle cx="300" cy="624" r="4" fill="#a7655f" opacity=".42"/></svg>`;
@@ -287,8 +294,34 @@ const lumaBeautyImage = (item: (typeof LUMA_BEAUTY)[number], alternate = false) 
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 
+const threadClothesImage = (item: (typeof THREAD_CLOTHES)[number], alternate = false) => {
+  const bg = alternate ? "#f3f2ec" : item.bg;
+  const art = item.shape === "pants"
+    ? `<path d="M224 172h152l-10 190-23 222h-62l-10-170-10 170h-62l-23-222z" fill="${item.cloth}"/><path d="M224 172h152l-5 56H229z" fill="${item.accent}" opacity=".5"/><path d="M300 174v232" stroke="#f5f4ee" stroke-opacity=".28" stroke-width="5"/><path d="M233 345h49v74h-49zm85 0h49v74h-49z" fill="${item.accent}" opacity=".26"/><path d="M260 193v22m80-22v22" stroke="#f5f4ee" stroke-width="6" stroke-linecap="round"/>`
+    : item.shape === "jacket"
+      ? `<path d="m239 171 61-30 61 30 59 65-43 43-24-24v311H247V255l-24 24-43-43z" fill="${item.cloth}"/><path d="m239 171 61-30-25 110-48-39zm122 0-61-30 25 110 48-39z" fill="${item.accent}"/><path d="M300 251v315" stroke="#f5f4ee" stroke-opacity=".5" stroke-width="4"/><path d="M259 347h34v68h-34zm48 0h34v68h-34z" fill="${item.accent}" opacity=".5"/><circle cx="307" cy="291" r="4" fill="#c9e958"/><circle cx="307" cy="329" r="4" fill="#c9e958"/><circle cx="307" cy="367" r="4" fill="#c9e958"/>`
+      : item.shape === "shirt"
+        ? `<path d="m242 169 58-28 58 28 58 68-42 42-27-24v292H253V255l-27 24-42-42z" fill="${item.cloth}"/><path d="m242 169 58-28-19 86-39 30zm116 0-58-28 19 86 39 30z" fill="#f5f4ee"/><path d="M300 227v320" stroke="#f5f4ee" stroke-opacity=".8" stroke-width="4"/><path d="M309 267h8m-8 36h8m-8 36h8m-8 36h8" stroke="${item.accent}" stroke-width="5" stroke-linecap="round"/><path d="M344 348h36v62h-36z" fill="${item.accent}" opacity=".4"/>`
+        : `<path d="m240 170 60-29 60 29 57 67-43 43-26-25v292H252V255l-26 25-43-43z" fill="${item.cloth}"/><path d="m240 170 60-29-18 89-42 25zm120 0-60-29 18 89 42 25z" fill="${item.accent}" opacity=".7"/><path d="M300 231v316" stroke="#f5f4ee" stroke-opacity=".4" stroke-width="4"/><path d="M264 360h72v84h-72z" fill="${item.accent}" opacity=".22"/><path d="M264 360h72" stroke="#f5f4ee" stroke-opacity=".5" stroke-width="3"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="${bg}"/><stop offset="1" stop-color="#f5f4ee"/></linearGradient><filter id="shadow" x="-40%" y="-30%" width="180%" height="190%"><feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#171816" flood-opacity=".18"/></filter></defs><rect width="600" height="750" fill="url(#bg)"/><path d="M28 92h544M28 658h544" stroke="#171816" stroke-opacity=".1"/><text x="38" y="74" font-family="Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="3" fill="#171816">THREAD / STUDIO</text><g filter="url(#shadow)">${art}</g><text x="300" y="704" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="3" fill="#62645b">${item.subtitle}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
 /** Non-purchasable catalog examples used only in a theme preview iframe. */
 export function demoProducts(ctx: ShopContext, category?: string) {
+  if (ctx.demoPreset === "thread") return THREAD_CLOTHES.filter((p) => !category || category === "apparel" || p.category === category).map((p, i) => {
+    const now = new Date();
+    const item = {
+      id: -(i + 201), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Clothing", vendor: "Thread Studio", tags: ["sample", "apparel"], source: "manual", sourceId: null,
+      descriptionHtml: `<p>${p.subtitle.toLowerCase()} with a relaxed, easy-to-layer shape. Cut for everyday movement and finished with clean details that work across your weekly rotation.</p><h3>Details</h3><ul><li>Soft-touch midweight fabric</li><li>Relaxed everyday fit</li><li>Made for repeat wear</li></ul><p>Sample product shown for theme preview only.</p>`,
+      images: [{ url: threadClothesImage(p), alt: p.title }, { url: threadClothesImage(p, true), alt: `${p.title} detail` }],
+      options: [{ name: "Size", values: ["XS", "S", "M", "L", "XL"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+    } as unknown as CatalogItem;
+    const variants = ["XS", "S", "M", "L", "XL"].map((size, j) => ({
+      id: -((i + 201) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
+    })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
   if (ctx.demoPreset === "luma") return LUMA_BEAUTY.filter((p) => !category || category === "skincare" || p.category === category).map((p, i) => {
     const now = new Date();
     const item = {
@@ -356,6 +389,13 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "thread") return [
+    { id: -21, title: "Shop all apparel", handle: "apparel", description: "The everyday uniform.", url: categoryPath(ctx.root, "apparel") },
+    { id: -22, title: "Tees", handle: "tees", description: "Reliable fits, repeat wear.", url: categoryPath(ctx.root, "tees") },
+    { id: -23, title: "Shirts", handle: "shirts", description: "Easy layers for every day.", url: categoryPath(ctx.root, "shirts") },
+    { id: -24, title: "Outerwear", handle: "outerwear", description: "A little more structure.", url: categoryPath(ctx.root, "outerwear") },
+    { id: -25, title: "Bottoms", handle: "bottoms", description: "Relaxed shape, all-day comfort.", url: categoryPath(ctx.root, "bottoms") },
+  ];
   if (ctx.demoPreset === "luma") return [
     { id: -11, title: "All skincare", handle: "skincare", description: "Build a simple daily ritual.", url: categoryPath(ctx.root, "skincare") },
     { id: -12, title: "Cleansers", handle: "cleansers", description: "A fresh start for your skin.", url: categoryPath(ctx.root, "cleansers") },
@@ -375,7 +415,7 @@ export async function loadCategories(ctx: ShopContext) {
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
-  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma"
+  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread"
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
     : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
@@ -384,7 +424,7 @@ export async function baseScope(ctx: ShopContext) {
     collections, pages, preview: ctx.preview,
     ...nav, // menus (by handle), header_menu, footer_menu
     demo_theme: ctx.owner ? ctx.demoPreset ?? "" : "",
-    preview_draft: Boolean(ctx.demoPreset),
+    preview_draft: Boolean(ctx.demoPreset || ctx.ownerPreview),
   };
 }
 
@@ -399,7 +439,7 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma"
+    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread"
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
       : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
@@ -416,13 +456,23 @@ export async function previewContext(request: Request, slug: string | undefined)
   if (!store || !store.active) throw new Response("Not found", { status: 404 });
   const sp = new URL(request.url).searchParams;
   const preset = sp.get("gp_preset");
-  const mode = sp.get("gp_editor") === "1" ? "editor" : sp.get("gp_draft") === "1" || preset ? "draft" : "live";
+  const libraryId = Number(sp.get("gp_library"));
+  const mode = sp.get("gp_editor") === "1" ? "editor" : sp.get("gp_draft") === "1" || preset || (Number.isSafeInteger(libraryId) && libraryId > 0) ? "draft" : "live";
   // Owners (and their team) see their own store's preview and its unpublished draft; shoppers only a switched-on store.
   if (mode !== "live" || !store.storefrontEnabled) {
     const { getViewer, requireStore } = await import("./auth.server");
     const viewer = await getViewer(request);
     const canEdit = viewer ? await requireStore(viewer, store.id).then(() => true, () => false) : false;
     if (!canEdit && !store.storefrontEnabled) throw new Response("Not found", { status: 404 });
+    if (canEdit && Number.isSafeInteger(libraryId) && libraryId > 0) {
+      const { getThemeCopy } = await import("./themes.server");
+      const copy = await getThemeCopy(store.id, libraryId);
+      if (copy) {
+        const savedPreset = String(copy.data.settings.preset ?? "");
+        const demoPreset = ["mira", "luma", "thread"].includes(savedPreset) ? savedPreset : undefined;
+        return { store, root: `/s/${store.slug}`, preview: true, owner: true, ownerPreview: true, demoPreset, look: { data: copy.data, editor: false } };
+      }
+    }
     if (canEdit && preset) {
       const { presetById, applyPreset } = await import("./theme-presets");
       const p = presetById(preset);

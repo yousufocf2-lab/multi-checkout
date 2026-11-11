@@ -33,13 +33,13 @@ export async function domainContext(request: Request): Promise<ShopContext | nul
 export async function homePage(ctx: ShopContext) {
   const [scope, first] = await Promise.all([baseScope(ctx), loadProducts(ctx, { limit: 1 })]);
   return html(await renderPage(THEME, "index", {
-    ...scope, template: "index", page_title: ctx.store.name, hero_image: ctx.demoPreset === "mira" || ctx.demoPreset === "luma" ? null : first[0]?.featured_image ?? null, og_image: ctx.demoPreset === "mira" || ctx.demoPreset === "luma" ? null : first[0]?.featured_image ?? null, canonical_url: canonical(ctx, "/"),
+    ...scope, template: "index", page_title: ctx.store.name, hero_image: ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" ? null : first[0]?.featured_image ?? null, og_image: ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" ? null : first[0]?.featured_image ?? null, canonical_url: canonical(ctx, "/"),
   }, sectionData(ctx), ctx.look));
 }
 
 export async function productPage(ctx: ShopContext, handle: string, reviewSubmitted = false) {
   const product = (await loadProduct(ctx, handle))
-    ?? (ctx.demoPreset === "mira" || ctx.demoPreset === "luma" ? demoProducts(ctx).find((p) => p.handle === handle) ?? null : null)
+    ?? (ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" ? demoProducts(ctx).find((p) => p.handle === handle) ?? null : null)
     ?? (handle === SAMPLE && ctx.look?.editor ? sampleProduct(ctx) : null);
   if (!product) throw await notFound(ctx, "This product isn't available any more. Have a look at everything else in the shop.");
   const scope = await baseScope(ctx);
@@ -55,7 +55,7 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
   const scope = await baseScope(ctx);
   const cat = handle === "all" ? null : scope.collections.find((c) => c.handle === handle);
   if (handle !== "all" && !cat) throw await notFound(ctx, "This category isn't available. Have a look at everything in the shop.");
-  const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" ? demoProducts(ctx, cat?.handle) : await loadProducts(ctx, { category: cat?.handle });
+  const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" ? demoProducts(ctx, cat?.handle) : await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
   return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, handle === "all" ? "/products/all" : `/category/${handle}`) }, sectionData(ctx), ctx.look));
 }
@@ -72,9 +72,14 @@ export async function infoPage(ctx: ShopContext, handle: string) {
     "contact-us": { title: "Talk to our care team", handle: "contact-us", bodyHtml: `<p>Questions about a routine or an order? Our team is happy to help.</p>${ctx.store.supportPhone ? `<p><strong>Call us:</strong> <a href="tel:${ctx.store.supportPhone}">${ctx.store.supportPhone}</a></p>` : "<p><strong>Call us:</strong> Your store phone number will appear here.</p>"}<p><strong>Hours:</strong> Monday to Saturday, 10:00 am–6:00 pm</p><p>Sample preview content. Add your real support details before publishing.</p>` },
     "shipping-returns": { title: "Delivery & returns", handle: "shipping-returns", bodyHtml: "<h2>Delivery</h2><p>Orders are packed with care and dispatched promptly. Delivery times depend on your location.</p><h2>Returns</h2><p>Contact our team with your order number and we’ll guide you through the store’s return policy.</p><p>This is sample preview copy; replace it with your actual terms.</p>" },
   };
+  const threadPages: Record<string, P> = {
+    "about-us": { title: "Made for the everyday", handle: "about-us", bodyHtml: "<p>Thread is about getting dressed without overthinking it. We build dependable pieces with relaxed fits, useful details and room to make them your own.</p><h2>Wear it on repeat</h2><p>Our sample collection is designed to work together, move easily and earn its place in your everyday rotation. Replace this preview story with your brand's own.</p>" },
+    "contact-us": { title: "Need a hand?", handle: "contact-us", bodyHtml: `<p>Questions about sizing, fit or an order? Our team can help you find the right piece.</p>${ctx.store.supportPhone ? `<p><strong>Call us:</strong> <a href="tel:${ctx.store.supportPhone}">${ctx.store.supportPhone}</a></p>` : "<p><strong>Call us:</strong> Your store phone number will appear here.</p>"}<p><strong>Hours:</strong> Monday to Saturday, 10:00 am–6:00 pm</p><p>Sample preview content. Add your real support details before publishing.</p>` },
+    "shipping-returns": { title: "Shipping & returns", handle: "shipping-returns", bodyHtml: "<h2>Delivery</h2><p>We pack each order with care. Delivery timing depends on your location.</p><h2>Fit not right?</h2><p>Contact our team with your order number and we’ll help you understand the store’s return and exchange policy.</p><p>This is sample preview copy; replace it with your actual terms.</p>" },
+  };
   const page: P | null = (await publishedPage(ctx.store.id, handle))
     ?? (ctx.owner ? await pageByHandle(ctx.store.id, handle) : null)
-    ?? (ctx.demoPreset === "mira" ? miraPages[handle] ?? null : ctx.demoPreset === "luma" ? lumaPages[handle] ?? null : null)
+    ?? (ctx.demoPreset === "mira" ? miraPages[handle] ?? null : ctx.demoPreset === "luma" ? lumaPages[handle] ?? null : ctx.demoPreset === "thread" ? threadPages[handle] ?? null : null)
     ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
   if (!page) throw await notFound(ctx);
   const scope = await baseScope(ctx);

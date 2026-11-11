@@ -9,19 +9,20 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { storePath } from "~/lib/store-code";
 import { applyPreset, PRESETS, presetById } from "~/lib/theme-presets";
-import { discardDraft, editorState, publishDraft, restoreVersion, saveDraft, themeRow, vitalsSummary } from "~/lib/themes.server";
+import { deleteThemeCopy, discardDraft, editorState, getThemeCopy, listThemeCopies, publishDraft, restoreVersion, saveDraft, saveThemeCopy, themeRow, vitalsSummary } from "~/lib/themes.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
-  const [st, row, vitals] = await Promise.all([editorState(store.id), themeRow(store.id), vitalsSummary(store.id).catch(() => null)]);
+  const [st, row, vitals, copies] = await Promise.all([editorState(store.id), themeRow(store.id), vitalsSummary(store.id).catch(() => null), listThemeCopies(store.id)]);
   const live = (row?.live?.settings?.preset as string | undefined) ?? "swift";
   const livePresetName = presetById(live)?.name ?? "Custom design";
   return json({
     store: { id: store.id, slug: store.slug, name: store.name, domain: store.storefrontDomainStatus === "live" ? store.storefrontDomain : null },
     hasDraft: st.hasDraft, publishedAt: st.publishedAt, updatedAt: st.updatedAt, history: st.history, vitals, livePreset: live, livePresetName,
     presets: PRESETS.map((p) => ({ id: p.id, name: p.name, tagline: p.tagline, best: p.best, swatch: p.swatch })),
+    copies: copies.map((c) => ({ id: c.id, name: c.name, updatedAt: c.updatedAt.toISOString(), preset: String(c.data.settings.preset ?? "") })),
   });
 }
 
@@ -42,6 +43,43 @@ export async function action({ request, params }: ActionFunctionArgs) {
         await saveDraft(store.id, applyPreset(st.data, p));
         return redirect(`${storePath(store.id)}/editor?preset=${p.id}`);
       }
+      case "duplicate": {
+        const preset = PRESETS.find((p) => p.id === String(fd.get("preset")));
+        const st = await editorState(store.id);
+        const data = preset ? applyPreset(st.data, preset) : st.data;
+        const sourceName = preset?.name ?? presetById(String(data.settings.preset ?? ""))?.name ?? "Custom design";
+        await saveThemeCopy(store.id, `${sourceName} copy`, data);
+        return json({ ok: `${sourceName} was copied into your theme library.`, error: null });
+      }
+      case "duplicate-copy": {
+        const copy = await getThemeCopy(store.id, Number(fd.get("copyId")));
+        if (!copy) throw new Error("That saved theme could not be found.");
+        await saveThemeCopy(store.id, `${copy.name} copy`, copy.data);
+        return json({ ok: `${copy.name} was copied.`, error: null });
+      }
+      case "use-copy": {
+        const copy = await getThemeCopy(store.id, Number(fd.get("copyId")));
+        if (!copy) throw new Error("That saved theme could not be found.");
+        await saveDraft(store.id, copy.data);
+        return redirect(`${storePath(store.id)}/editor`);
+      }
+      case "delete-copy": {
+        await deleteThemeCopy(store.id, Number(fd.get("copyId")));
+        return json({ ok: "Saved theme removed from your library.", error: null });
+      }
+      case "import": {
+        const file = fd.get("themeFile");
+        if (!(file instanceof File) || !file.size) throw new Error("Choose a Growpefy theme JSON file to import.");
+        if (file.size > 400_000) throw new Error("This theme file is too large to import.");
+        const parsedValue: unknown = JSON.parse(await file.text());
+        if (!parsedValue || typeof parsedValue !== "object" || Array.isArray(parsedValue)) throw new Error("This file is not a Growpefy theme export.");
+        const parsed = parsedValue as Record<string, unknown>;
+        const data = (parsed.format === "growpefy-theme" ? parsed.data : parsed) as Record<string, unknown>;
+        if (!data || typeof data !== "object" || !data.settings || !data.templates || !data.groups) throw new Error("This file is not a Growpefy theme export.");
+        const baseName = typeof parsed.name === "string" ? parsed.name : file.name.replace(/\.(growpefy-theme\.)?json$/i, "");
+        await saveThemeCopy(store.id, baseName || "Imported theme", data);
+        return json({ ok: "Theme imported into your library. Preview it, then choose Use theme when you’re ready.", error: null });
+      }
     }
   } catch (e) {
     return json({ ok: null, error: e instanceof Error ? e.message : "Something went wrong" }, { status: 400 });
@@ -55,10 +93,10 @@ const grade = (v: number | null, good: number, poor: number): Grade | null => (v
 const GRADE: Record<Grade, [string, string]> = { good: ["Good", "bg-[#cdfee1] text-[#0c5132]"], ok: ["Needs work", "bg-[#fff1e3] text-[#5e4200]"], poor: ["Poor", "bg-[#fee9e8] text-[#8e1f0b]"] };
 
 export default function OnlineStore() {
-  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, livePreset, livePresetName } = useLoaderData<typeof loader>();
+  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, copies, livePreset, livePresetName } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
-  const [previewPreset, setPreviewPreset] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ name: string; src: string } | null>(null);
   const liveUrl = store.domain ? `https://${store.domain}` : `/s/${store.slug}`;
   const shown = store.domain ?? `growpefy.com/s/${store.slug}`;
   const editor = `${storePath(store.id)}/editor`;
@@ -121,15 +159,23 @@ export default function OnlineStore() {
       </section>
 
       <section>
-        <div className="mb-2 flex items-end justify-between">
+        <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
           <div><h2 className="text-[14px] font-semibold">Theme library</h2><p className="text-[12.5px] text-ink-soft">Ready-made designs. Pick one, it fills in with your products, then change anything and publish.</p></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <a href={`${storePath(store.id)}/themes/export`} className="btn-secondary">Export current</a>
+            <Form method="post" encType="multipart/form-data">
+              <input type="hidden" name="intent" value="import" />
+              <label className="btn-secondary cursor-pointer">Import theme<input name="themeFile" type="file" accept=".json,application/json" className="sr-only" onChange={(e) => e.currentTarget.form?.requestSubmit()} /></label>
+            </Form>
+          </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {presets.map((p) => (
             <article key={p.id} className="panel overflow-hidden">
-              <div className="relative h-[190px] overflow-hidden border-b border-rule bg-paper-sunk">
+              <div className="group relative h-[190px] overflow-hidden border-b border-rule bg-paper-sunk">
                 <ScaledFrame src={`/s/${store.slug}?gp_preset=${p.id}`} height={190} title={`${p.name} preview`} lazy />
                 {p.id === livePreset && <span className="absolute left-2 top-2 rounded-md bg-[#cdfee1] px-1.5 py-0.5 text-[11.5px] font-semibold text-[#0c5132]">Current theme</span>}
+                <button type="button" onClick={() => setPreview({ name: p.name, src: `/s/${store.slug}?gp_preset=${p.id}` })} className="absolute inset-0 flex items-center justify-center bg-black/20 text-[14px] font-semibold text-white opacity-0 backdrop-blur-[2px] transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100">Preview</button>
               </div>
               <div className="flex items-start gap-3 p-3.5">
                 <div className="min-w-0 flex-1">
@@ -139,7 +185,7 @@ export default function OnlineStore() {
                 </div>
               </div>
               <div className="flex gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
-                <button type="button" onClick={() => setPreviewPreset(p.id)} className="btn-secondary h-7 flex-1 justify-center">Preview</button>
+                <Form method="post" className="flex-1"><input type="hidden" name="intent" value="duplicate" /><input type="hidden" name="preset" value={p.id} /><button className="btn-secondary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Duplicate</button></Form>
                 <Form method="post" className="flex-1" onSubmit={(e) => { if (!confirm(`Use ${p.name}? Your colours, fonts and home page layout change in the draft. Products, logo and pages stay. Nothing goes live until you publish.`)) e.preventDefault(); }}>
                   <input type="hidden" name="intent" value="preset" /><input type="hidden" name="preset" value={p.id} />
                   <button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle"}>{p.id === livePreset ? "Reset to this" : "Use theme"}</button>
@@ -149,6 +195,26 @@ export default function OnlineStore() {
           ))}
         </div>
       </section>
+
+      {copies.length > 0 && <section>
+        <div className="mb-2"><h2 className="text-[14px] font-semibold">Your theme copies</h2><p className="text-[12.5px] text-ink-soft">Copies and imported themes stay here until you choose to use one.</p></div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {copies.map((copy) => <article key={copy.id} className="panel overflow-hidden">
+            <div className="group relative h-[190px] overflow-hidden border-b border-rule bg-paper-sunk">
+              <ScaledFrame src={`/s/${store.slug}?gp_library=${copy.id}`} height={190} title={`${copy.name} preview`} lazy />
+              <button type="button" onClick={() => setPreview({ name: copy.name, src: `/s/${store.slug}?gp_library=${copy.id}` })} className="absolute inset-0 flex items-center justify-center bg-black/20 text-[14px] font-semibold text-white opacity-0 backdrop-blur-[2px] transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100">Preview</button>
+            </div>
+            <div className="flex items-start gap-3 p-3.5"><div className="min-w-0 flex-1"><p className="text-[13.5px] font-semibold">{copy.name}</p><p className="mt-0.5 text-[11.5px] text-ink-faint">Saved {when(copy.updatedAt)}</p></div>
+              <a href={`${storePath(store.id)}/themes/export?copy=${copy.id}`} className="btn-secondary h-7">Export</a>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
+              <Form method="post" className="flex-1" onSubmit={(e) => { if (hasDraft && !confirm(`Use ${copy.name}? This replaces your current unpublished draft; the live site stays unchanged until you publish.`)) e.preventDefault(); }}><input type="hidden" name="intent" value="use-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Use theme</button></Form>
+              <Form method="post" className="flex-1"><input type="hidden" name="intent" value="duplicate-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-secondary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Duplicate</button></Form>
+              <Form method="post" onSubmit={(e) => { if (!confirm(`Remove ${copy.name} from your theme library?`)) e.preventDefault(); }}><input type="hidden" name="intent" value="delete-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-secondary h-7 text-[#8e1f0b]">Remove</button></Form>
+            </div>
+          </article>)}
+        </div>
+      </section>}
 
       <section className="panel p-4">
         <h2 className="text-[13.5px] font-semibold">Earlier versions</h2>
@@ -164,14 +230,13 @@ export default function OnlineStore() {
           </ul>
         )}
       </section>
-      {previewPreset && <ThemePreviewModal storeSlug={store.slug} preset={previewPreset} onClose={() => setPreviewPreset(null)} />}
+      {preview && <ThemePreviewModal name={preview.name} src={preview.src} onClose={() => setPreview(null)} />}
     </div>
   );
 }
 
-function ThemePreviewModal({ storeSlug, preset, onClose }: { storeSlug: string; preset: string; onClose: () => void }) {
+function ThemePreviewModal({ name, src, onClose }: { name: string; src: string; onClose: () => void }) {
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
-  const presetName = preset === "luma" ? "Luma" : "Mira";
   const stage = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   useEffect(() => {
@@ -187,7 +252,7 @@ function ThemePreviewModal({ storeSlug, preset, onClose }: { storeSlug: string; 
     <div className="fixed inset-0 z-[100] bg-black/65 p-2 md:p-5" role="dialog" aria-modal="true" aria-label="Theme preview">
       <div className="mx-auto flex h-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5 md:px-4">
-          <div className="mr-auto min-w-[120px]"><p className="text-[13px] font-semibold">{presetName} theme preview</p><p className="text-[11px] text-ink-soft">Open a product to view its page. Scroll down for the footer links.</p></div>
+          <div className="mr-auto min-w-[120px]"><p className="text-[13px] font-semibold">{name} theme preview</p><p className="text-[11px] text-ink-soft">Open a product to view its page. Scroll down for the footer links.</p></div>
           <div className="flex items-center rounded-lg bg-paper p-0.5">
             {(["desktop", "mobile"] as const).map((size) => <button key={size} type="button" onClick={() => setDevice(size)} className={`rounded-md px-2.5 py-1.5 text-[12px] capitalize ${device === size ? "bg-white font-semibold shadow-sm" : "text-ink-soft"}`}>{size}</button>)}
           </div>
@@ -196,11 +261,11 @@ function ThemePreviewModal({ storeSlug, preset, onClose }: { storeSlug: string; 
         <div ref={stage} className="flex flex-1 justify-center overflow-auto bg-[#ece9e6] p-3 md:p-5">
           {device === "desktop" ? (
             <div className="h-full min-h-[720px] w-full max-w-[1280px] overflow-hidden rounded-xl bg-white shadow-lg">
-              <iframe key={`${preset}-${device}`} src={`/s/${storeSlug}?gp_preset=${preset}`} title="Storefront desktop preview" className="h-full min-h-[720px] w-full border-0" />
+              <iframe key={`${src}-${device}`} src={src} title="Storefront desktop preview" className="h-full min-h-[720px] w-full border-0" />
             </div>
           ) : (
             <div className="relative shrink-0 overflow-hidden rounded-[30px] border-[6px] border-[#262626] bg-white shadow-xl" style={{ width: 390 * scale, height: 844 * scale }}>
-              <iframe key={`${preset}-${device}`} src={`/s/${storeSlug}?gp_preset=${preset}`} title="Storefront mobile preview" className="absolute left-0 top-0 border-0 bg-white" style={{ width: 390, height: 844, transform: `scale(${scale})`, transformOrigin: "top left" }} />
+              <iframe key={`${src}-${device}`} src={src} title="Storefront mobile preview" className="absolute left-0 top-0 border-0 bg-white" style={{ width: 390, height: 844, transform: `scale(${scale})`, transformOrigin: "top left" }} />
             </div>
           )}
         </div>

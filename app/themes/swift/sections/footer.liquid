@@ -1,4 +1,4 @@
-<footer class="footer{% if settings.preset == 'luma' %} footer--luma{% endif %}">
+<footer class="footer{% if settings.preset == 'luma' %} footer--luma{% elsif settings.preset == 'thread' %} footer--thread{% endif %}">
   <div class="wrap footer__grid">
     <div>
       <p class="footer__brand">{{ shop.name }}</p>

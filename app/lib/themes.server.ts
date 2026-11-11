@@ -1,11 +1,12 @@
 // Growpefy Store theme editor: a store's own copy of its theme (draft while editing, live after Publish, last 5 versions).
-import { eq, sql } from "drizzle-orm";
-import { db, storeThemes, type ThemeData, type ThemeSection, type ThemeTemplate, type ThemeVersion } from "~/db.server";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { db, storeThemeLibrary, storeThemes, type ThemeData, type ThemeSection, type ThemeTemplate, type ThemeVersion } from "~/db.server";
 import { defaultThemeData, themeManifest, TEMPLATES } from "./storefront.server";
 
 export const THEME = "swift";
 const MAX_BYTES = 400_000;
 const KEEP_VERSIONS = 5;
+const MAX_LIBRARY_COPIES = 30;
 
 export async function themeRow(storeId: number) {
   const [row] = await db.select().from(storeThemes).where(eq(storeThemes.storeId, storeId)).limit(1);
@@ -96,6 +97,30 @@ export async function restoreVersion(storeId: number, index: number) {
   const v = row?.history?.[index];
   if (!v) throw new Error("That version no longer exists.");
   await saveDraft(storeId, v.data);
+}
+
+export async function listThemeCopies(storeId: number) {
+  return db.select().from(storeThemeLibrary).where(eq(storeThemeLibrary.storeId, storeId)).orderBy(desc(storeThemeLibrary.updatedAt));
+}
+
+export async function getThemeCopy(storeId: number, id: number) {
+  const [copy] = await db.select().from(storeThemeLibrary).where(and(eq(storeThemeLibrary.storeId, storeId), eq(storeThemeLibrary.id, id))).limit(1);
+  return copy ?? null;
+}
+
+export async function saveThemeCopy(storeId: number, nameInput: string, input: unknown) {
+  const name = nameInput.trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!name) throw new Error("Give this theme a name first.");
+  const data = normalize(input);
+  if (JSON.stringify(data).length > MAX_BYTES) throw new Error("This theme file is too large to save.");
+  const copies = await db.select({ id: storeThemeLibrary.id }).from(storeThemeLibrary).where(eq(storeThemeLibrary.storeId, storeId)).limit(MAX_LIBRARY_COPIES);
+  if (copies.length >= MAX_LIBRARY_COPIES) throw new Error(`You can save up to ${MAX_LIBRARY_COPIES} copied themes per store.`);
+  const [saved] = await db.insert(storeThemeLibrary).values({ storeId, name, data }).returning({ id: storeThemeLibrary.id });
+  return saved;
+}
+
+export async function deleteThemeCopy(storeId: number, id: number) {
+  await db.delete(storeThemeLibrary).where(and(eq(storeThemeLibrary.storeId, storeId), eq(storeThemeLibrary.id, id)));
 }
 
 /** Real-shopper speed for the last 30 days (75th percentile, like Google's Core Web Vitals) and page views by device. */

@@ -1464,6 +1464,17 @@ export const storeThemes = pgTable("store_themes", {
 });
 export type StoreTheme = typeof storeThemes.$inferSelect;
 
+/** Saved copies/imports in a store's theme library, separate from its live design and editor draft. */
+export const storeThemeLibrary = pgTable("store_theme_library", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  data: jsonb("data").$type<ThemeData>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("store_theme_library_store_updated_idx").on(t.storeId, t.updatedAt)]);
+export type StoreThemeLibraryItem = typeof storeThemeLibrary.$inferSelect;
+
 /** A line on a draft order: a product variant from the store, or a custom item typed by the owner. */
 export type DraftLine = { variantId: string; productId?: string; title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number; comparePaise: number | null; custom?: boolean };
 export type DraftDiscount = { type: "percent" | "flat"; value: number; reason?: string };

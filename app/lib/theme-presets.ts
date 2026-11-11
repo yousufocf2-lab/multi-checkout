@@ -50,11 +50,16 @@ const ALL_PRESETS: Preset[] = [
     settings: { color_bg: "#f4fbff", color_text: "#182547", color_muted: "#65738f", color_soft: "#eaf5fb", color_brand: "#5368e8", color_button_text: "#ffffff", color_announce_bg: "#d8f1ff", color_announce_text: "#182547", font_heading: "Plus Jakarta Sans", font_body: "Manrope", heading_uppercase: false, heading_scale: 100, button_radius: 999, card_radius: 24, card_ratio: "portrait", preset: "luma" },
     index: sec([["hero", "hero", { eyebrow: "SKINCARE, MADE SIMPLE", heading: "A little science. A lot of glow.", text: "Thoughtful daily essentials for a routine that feels as good as it looks.", button_label: "Shop the routine" }], ["categories", "collection-list", { heading: "Find your ritual" }], ["essentials", "product-grid", { heading: "Your daily essentials", limit: 8 }], ["story", "image-with-text", { heading: "Good skin days, built daily", text: "<p>Gentle formulas, considered ingredients and easy steps for a routine you can keep.</p>", button_label: "Explore skincare" }], ["reviews", "testimonials"], ["trust", "trust-badges"], ["faq", "faq"]]),
   },
+  {
+    id: "thread", name: "Thread", tagline: "A bold, editorial storefront for everyday apparel", best: "Clothing, streetwear and essentials", swatch: ["#f5f4ee", "#171816", "#c9e958"],
+    settings: { color_bg: "#f5f4ee", color_text: "#171816", color_muted: "#66675f", color_soft: "#e9e9df", color_brand: "#c9e958", color_button_text: "#171816", color_announce_bg: "#171816", color_announce_text: "#d8f27a", font_heading: "Space Grotesk", font_body: "DM Sans", heading_uppercase: true, heading_scale: 105, button_radius: 3, card_radius: 2, card_ratio: "portrait", preset: "thread" },
+    index: sec([["hero", "hero", { eyebrow: "THE NEW UNIFORM", heading: "Wear it your way.", text: "Easy layers, considered fits and pieces made to move with you.", button_label: "Shop new arrivals" }], ["categories", "collection-list", { heading: "Find your fit" }], ["new", "product-grid", { heading: "Fresh from the studio", limit: 8 }], ["story", "image-with-text", { heading: "Good clothes. No overthinking.", text: "<p>Reliable fabrics, relaxed shapes and details that work hard in your everyday rotation.</p>", button_label: "Explore the edit" }], ["reviews", "testimonials"], ["trust", "trust-badges"], ["faq", "faq"]]),
+  },
 ];
 
 // The colour-only starter looks stay resolvable for previews and existing saved designs,
 // but only complete, distinct designs are offered in the theme library.
-export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma");
+export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread");
 export const presetById = (id: string | null | undefined) => ALL_PRESETS.find((p) => p.id === id) ?? null;
 
 /** The store's design with a preset's look and home page; keeps logo, favicon, WhatsApp, social links and custom CSS. */
