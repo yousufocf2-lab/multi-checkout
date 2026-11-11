@@ -65,11 +65,12 @@
         <button type="button" data-qty="1" aria-label="More">+</button>
       </div>
       {%- else -%}<input type="hidden" name="qty" value="1">{%- endif -%}
+      <p class="pdp__soldout" data-soldout hidden>This option is sold out.</p>
+      {%- if product.demo -%}<p class="muted" style="margin:0">Sample item — this preview can’t place an order.</p><button type="button" class="btn btn--primary btn--block" disabled>Preview only</button>{%- else -%}
       <div class="pdp__buttons{% if section.settings.buttons_side %} pdp__buttons--row{% endif %}">
         {%- if section.settings.show_buy_now -%}<button type="submit" name="buy" value="now" class="btn btn--primary btn--block" data-buy>{{ section.settings.buy_label | default: 'Buy now' }}</button>{%- endif -%}
         {%- if section.settings.show_add_cart -%}<button type="submit" name="buy" value="cart" class="btn {% if section.settings.show_buy_now %}btn--ghost{% else %}btn--primary{% endif %} btn--block" data-add {% unless section.settings.show_buy_now %}data-buy{% endunless %}>{{ section.settings.cart_label | default: 'Add to cart' }}</button>{%- endif -%}
-      </div>
-      <p class="pdp__soldout" data-soldout hidden>This option is sold out.</p>
+      </div>{%- endif -%}
     </form>
     {%- when 'highlights' -%}
       {%- assign src = b.text | default: settings.pdp_points -%}
@@ -106,7 +107,7 @@
       {% endfor %}
     </div>
   {% endif %}
-  <details class="reviews__write"><summary>Write a review</summary>
+  {%- unless product.demo -%}<details class="reviews__write"><summary>Write a review</summary>
     <form method="post" class="reviews__form">
       <label>Name<input name="name" maxlength="80" required autocomplete="name"></label>
       <label>Email (optional)<input name="email" type="email" maxlength="254" autocomplete="email"></label>
@@ -115,10 +116,10 @@
       <div class="reviews__trap" aria-hidden="true"><label>Leave this blank<input name="website" tabindex="-1" autocomplete="off"></label></div>
       <button class="btn btn--primary" type="submit">Submit review</button>
     </form>
-  </details>
+  </details>{%- endunless -%}
 </section>
 <script type="application/json" id="product-json">{{ product.json }}</script>
-{%- if settings.pdp_sticky_buy != false -%}<div class="sticky-buy" data-sticky>
+{%- if settings.pdp_sticky_buy != false and product.demo != true -%}<div class="sticky-buy" data-sticky>
   <div><p class="sticky-buy__title">{{ product.title }}</p><p class="sticky-buy__price" data-sticky-price>{{ product.price | money }}</p></div>
   <button type="button" class="btn btn--primary" data-sticky-buy>{{ section.settings.buy_label | default: 'Buy now' }}</button>
 </div>{%- endif -%}

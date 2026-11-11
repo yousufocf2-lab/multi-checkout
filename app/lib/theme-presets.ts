@@ -9,7 +9,7 @@ const sec = (list: [string, string, Record<string, unknown>?][]): ThemeTemplate 
   order: list.map(([id]) => id),
 });
 
-export const PRESETS: Preset[] = [
+const ALL_PRESETS: Preset[] = [
   {
     id: "swift", name: "Swift", tagline: "Clean and fast, built for COD shoppers on phones", best: "Any store", swatch: ["#ffffff", "#14171a", "#0b5d4b"],
     settings: { color_bg: "#ffffff", color_text: "#14171a", color_muted: "#5a6169", color_soft: "#f5f6f7", color_brand: "", color_button_text: "#ffffff", color_announce_bg: "#14171a", color_announce_text: "#ffffff", font_heading: "DM Sans", font_body: "DM Sans", heading_uppercase: false, heading_scale: 100, button_radius: 10, card_radius: 12, card_ratio: "square" },
@@ -47,7 +47,10 @@ export const PRESETS: Preset[] = [
   },
 ];
 
-export const presetById = (id: string | null | undefined) => PRESETS.find((p) => p.id === id) ?? null;
+// The colour-only starter looks stay resolvable for previews and existing saved designs,
+// but only complete, distinct designs are offered in the theme library.
+export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira");
+export const presetById = (id: string | null | undefined) => ALL_PRESETS.find((p) => p.id === id) ?? null;
 
 /** The store's design with a preset's look and home page; keeps logo, favicon, WhatsApp, social links and custom CSS. */
 export function applyPreset(current: ThemeData, p: Preset): ThemeData {

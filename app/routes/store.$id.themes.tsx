@@ -17,9 +17,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
   const [st, row, vitals] = await Promise.all([editorState(store.id), themeRow(store.id), vitalsSummary(store.id).catch(() => null)]);
   const live = (row?.live?.settings?.preset as string | undefined) ?? "swift";
+  const livePresetName = presetById(live)?.name ?? "Custom design";
   return json({
     store: { id: store.id, slug: store.slug, name: store.name, domain: store.storefrontDomainStatus === "live" ? store.storefrontDomain : null },
-    hasDraft: st.hasDraft, publishedAt: st.publishedAt, updatedAt: st.updatedAt, history: st.history, vitals, livePreset: live,
+    hasDraft: st.hasDraft, publishedAt: st.publishedAt, updatedAt: st.updatedAt, history: st.history, vitals, livePreset: live, livePresetName,
     presets: PRESETS.map((p) => ({ id: p.id, name: p.name, tagline: p.tagline, best: p.best, swatch: p.swatch })),
   });
 }
@@ -54,13 +55,14 @@ const grade = (v: number | null, good: number, poor: number): Grade | null => (v
 const GRADE: Record<Grade, [string, string]> = { good: ["Good", "bg-[#cdfee1] text-[#0c5132]"], ok: ["Needs work", "bg-[#fff1e3] text-[#5e4200]"], poor: ["Poor", "bg-[#fee9e8] text-[#8e1f0b]"] };
 
 export default function OnlineStore() {
-  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, livePreset } = useLoaderData<typeof loader>();
+  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, livePreset, livePresetName } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
+  const [previewPreset, setPreviewPreset] = useState<string | null>(null);
   const liveUrl = store.domain ? `https://${store.domain}` : `/s/${store.slug}`;
   const shown = store.domain ?? `growpefy.com/s/${store.slug}`;
   const editor = `${storePath(store.id)}/editor`;
-  const current = presets.find((p) => p.id === livePreset) ?? presets[0];
+  const currentName = presets.find((p) => p.id === livePreset)?.name ?? livePresetName;
   const v = vitals?.now;
   const pv = vitals?.before;
   const views = (v?.mobile ?? 0) + (v?.desktop ?? 0);
@@ -103,7 +105,7 @@ export default function OnlineStore() {
         <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end gap-3 p-5 text-white">
           <div className="min-w-0 flex-1">
             <p className="truncate text-[20px] font-semibold tracking-tight">{shown}</p>
-            <p className="mt-0.5 text-[12.5px] text-white/75">{current.name} · {publishedAt ? `Last published ${when(publishedAt)}` : "Theme defaults"}{hasDraft ? ` · Unpublished changes saved ${when(updatedAt)}` : ""}</p>
+            <p className="mt-0.5 text-[12.5px] text-white/75">{currentName} · {publishedAt ? `Last published ${when(publishedAt)}` : "Theme defaults"}{hasDraft ? ` · Unpublished changes saved ${when(updatedAt)}` : ""}</p>
           </div>
           {hasDraft && (
             <Form method="post"><input type="hidden" name="intent" value="publish" />
@@ -137,7 +139,7 @@ export default function OnlineStore() {
                 </div>
               </div>
               <div className="flex gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
-                <a href={`/s/${store.slug}?gp_preset=${p.id}`} target="_blank" rel="noreferrer" className="btn-secondary h-7 flex-1 justify-center">Preview</a>
+                <button type="button" onClick={() => setPreviewPreset(p.id)} className="btn-secondary h-7 flex-1 justify-center">Preview all pages</button>
                 <Form method="post" className="flex-1" onSubmit={(e) => { if (!confirm(`Use ${p.name}? Your colours, fonts and home page layout change in the draft. Products, logo and pages stay. Nothing goes live until you publish.`)) e.preventDefault(); }}>
                   <input type="hidden" name="intent" value="preset" /><input type="hidden" name="preset" value={p.id} />
                   <button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle"}>{p.id === livePreset ? "Reset to this" : "Use theme"}</button>
@@ -162,6 +164,60 @@ export default function OnlineStore() {
           </ul>
         )}
       </section>
+      {previewPreset && <ThemePreviewModal storeSlug={store.slug} preset={previewPreset} onClose={() => setPreviewPreset(null)} />}
+    </div>
+  );
+}
+
+type PreviewPage = "home" | "product" | "category" | "about" | "contact" | "shipping";
+function ThemePreviewModal({ storeSlug, preset, onClose }: { storeSlug: string; preset: string; onClose: () => void }) {
+  const [page, setPage] = useState<PreviewPage>("home");
+  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const stage = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = stage.current;
+    if (!el) return;
+    const resize = () => setScale(Math.min(1, el.clientWidth / 390));
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const routes: Record<PreviewPage, string> = {
+    home: `/s/${storeSlug}`,
+    product: `/s/${storeSlug}/product/mira-sunday-tote`,
+    category: `/s/${storeSlug}/category/totes`,
+    about: `/s/${storeSlug}/pages/about-us`,
+    contact: `/s/${storeSlug}/pages/contact-us`,
+    shipping: `/s/${storeSlug}/pages/shipping-returns`,
+  };
+  const pages: [PreviewPage, string][] = [["home", "Home"], ["product", "Product"], ["category", "Category"], ["about", "About us"], ["contact", "Contact us"], ["shipping", "Shipping & returns"]];
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/65 p-2 md:p-5" role="dialog" aria-modal="true" aria-label="Theme preview">
+      <div className="mx-auto flex h-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <header className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5 md:px-4">
+          <div className="mr-auto min-w-[120px]"><p className="text-[13px] font-semibold">Mira theme preview</p><p className="text-[11px] text-ink-soft">Hover over product cards, then scroll to inspect the footer.</p></div>
+          <nav className="flex max-w-full gap-1 overflow-x-auto" aria-label="Preview page">
+            {pages.map(([id, label]) => <button key={id} type="button" onClick={() => setPage(id)} className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[12px] ${page === id ? "bg-[#352724] text-white" : "text-ink-soft hover:bg-paper"}`}>{label}</button>)}
+          </nav>
+          <div className="flex items-center rounded-lg bg-paper p-0.5">
+            {(["desktop", "mobile"] as const).map((size) => <button key={size} type="button" onClick={() => setDevice(size)} className={`rounded-md px-2.5 py-1.5 text-[12px] capitalize ${device === size ? "bg-white font-semibold shadow-sm" : "text-ink-soft"}`}>{size}</button>)}
+          </div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-ink-soft hover:bg-paper" aria-label="Close preview">×</button>
+        </header>
+        <div ref={stage} className="flex flex-1 justify-center overflow-auto bg-[#ece9e6] p-3 md:p-5">
+          {device === "desktop" ? (
+            <div className="h-full min-h-[720px] w-full max-w-[1280px] overflow-hidden rounded-xl bg-white shadow-lg">
+              <iframe key={`${preset}-${page}-${device}`} src={`${routes[page]}?gp_preset=${preset}`} title={`${page} desktop preview`} className="h-full min-h-[720px] w-full border-0" />
+            </div>
+          ) : (
+            <div className="relative shrink-0 overflow-hidden rounded-[30px] border-[6px] border-[#262626] bg-white shadow-xl" style={{ width: 390 * scale, height: 844 * scale }}>
+              <iframe key={`${preset}-${page}-${device}`} src={`${routes[page]}?gp_preset=${preset}`} title={`${page} mobile preview`} className="absolute left-0 top-0 border-0 bg-white" style={{ width: 390, height: 844, transform: `scale(${scale})`, transformOrigin: "top left" }} />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -5,12 +5,12 @@
     <video src="{{ product.featured_video }}" {% if product.featured_image %}poster="{{ product.featured_image | img_url: 600 }}"{% endif %} muted loop playsinline preload="metadata" data-inview-play aria-label="{{ product.title | escape }}"></video>
     {%- elsif product.featured_image -%}<img src="{{ product.featured_image | img_url: 600 }}" alt="{{ product.title | escape }}" loading="lazy" data-card-img>{%- endif -%}
     {%- if product.discount_pct > 0 and settings.card_show_discount != false -%}<span class="badge">{{ product.discount_pct }}% off</span>{%- endif -%}
-    {%- unless product.available -%}<span class="badge badge--muted">Sold out</span>{%- endunless -%}
+    {%- unless product.available or product.demo -%}<span class="badge badge--muted">Sold out</span>{%- endunless -%}
   </div>
   <p class="card__title">{{ product.title }}</p>
   {% render 'snippets/price', price: product.price, compare: product.compare_at_price %}
 </a>
-{%- if product.available -%}
+{%- if product.available -%}{%- unless product.demo -%}
 {%- if settings.card_quick_icon != false -%}
 <div class="card__overlay"><button type="button" class="card__quick card__quick--{{ settings.card_icon_position | default: 'bottom-right' }}" data-quick-add aria-label="Add {{ product.title | escape }} to cart">
   {%- case settings.card_icon_style -%}
@@ -21,5 +21,5 @@
 </button></div>
 {%- endif -%}
 {%- if settings.card_show_quick_add -%}<button type="button" class="btn btn--ghost card__add" data-quick-add>Add to cart</button>{%- endif -%}
-{%- endif -%}
+{%- endunless -%}{%- endif -%}
 </div>

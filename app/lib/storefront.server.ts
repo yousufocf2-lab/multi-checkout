@@ -256,6 +256,36 @@ export function sampleProduct(ctx: ShopContext) {
   return productDrop(ctx, item, variants);
 }
 
+const MIRA_BAGS = [
+  { handle: "mira-sunday-tote", title: "The Sunday Tote", category: "totes", price: 189000, compare: 249000, bg: "#f2e6df", bag: "#ad7063", trim: "#d9b99a", shape: "tote" },
+  { handle: "mira-market-carryall", title: "The Market Carryall", category: "shoulder-bags", price: 229000, compare: 299000, bg: "#e9eee9", bag: "#526e5e", trim: "#cdb18b", shape: "carryall" },
+  { handle: "mira-mini-crossbody", title: "The Mini Crossbody", category: "crossbody", price: 149000, compare: 199000, bg: "#eee9f0", bag: "#85748d", trim: "#d4bd9c", shape: "crossbody" },
+  { handle: "mira-city-satchel", title: "The City Satchel", category: "shoulder-bags", price: 209000, compare: 279000, bg: "#f2ebdc", bag: "#c19b62", trim: "#eed5a8", shape: "satchel" },
+] as const;
+
+const miraBagImage = (bag: (typeof MIRA_BAGS)[number], alternate = false) => {
+  const bg = alternate ? "#f8f2ed" : bag.bg;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><defs><linearGradient id="bg" x2="0" y2="1"><stop stop-color="${bg}"/><stop offset="1" stop-color="#fffaf6"/></linearGradient><filter id="shadow" x="-40%" y="-30%" width="180%" height="190%"><feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#352724" flood-opacity=".16"/></filter></defs><rect width="600" height="750" fill="url(#bg)"/><circle cx="470" cy="155" r="112" fill="#fff" opacity=".32"/><ellipse cx="300" cy="617" rx="150" ry="20" fill="#51403a" opacity=".10"/><g filter="url(#shadow)" stroke-linejoin="round" stroke-linecap="round">${bag.shape === "crossbody" ? `<path d="M206 352c0-128 46-194 94-194s94 66 94 194" fill="none" stroke="#493d4e" stroke-width="18"/><path d="M178 342h244l-24 235H202z" fill="${bag.bag}"/><path d="M178 342h244l-14 53H192z" fill="${bag.trim}"/><path d="M252 433h96v86h-96z" fill="#78677f"/><path d="M275 468h50" stroke="${bag.trim}" stroke-width="12"/>` : bag.shape === "satchel" ? `<path d="M210 348c0-124 37-182 90-182s90 58 90 182" fill="none" stroke="#554538" stroke-width="18"/><path d="M166 354h268l-22 229H188z" fill="${bag.bag}"/><path d="m166 354 43 83h182l43-83z" fill="${bag.trim}"/><path d="M244 437h112v98H244z" fill="#b38d55"/><path d="m300 455 21 31-21 31-21-31z" fill="${bag.trim}"/>` : `<path d="M204 345c0-122 39-185 96-185s96 63 96 185" fill="none" stroke="#51352f" stroke-width="18"/><path d="M150 350h300l-24 237H174z" fill="${bag.bag}"/><path d="M150 350h300l-18 52H168z" fill="${bag.trim}"/><path d="M244 435h112v95H244z" fill="${bag.bag}"/><path d="M276 469h48" stroke="${bag.trim}" stroke-width="15"/>`}</g><circle cx="300" cy="624" r="4" fill="#a7655f" opacity=".42"/></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+
+/** Non-purchasable catalog examples used only in a theme preview iframe. */
+export function demoProducts(ctx: ShopContext, category?: string) {
+  return MIRA_BAGS.filter((b) => !category || b.category === category).map((b, i) => {
+    const now = new Date();
+    const item = {
+      id: -(i + 1), storeId: ctx.store.id, title: b.title, handle: b.handle, status: "active", productType: "Handbag", vendor: "Mira Studio", tags: ["sample", "handbag"], source: "manual", sourceId: null,
+      descriptionHtml: "<p>A thoughtfully designed everyday bag with a considered shape, a comfortable carry and room for your daily essentials.</p><p>Sample product shown for theme preview only.</p>",
+      images: [{ url: miraBagImage(b), alt: b.title }, { url: miraBagImage(b, true), alt: `${b.title} detail` }],
+      options: [{ name: "Colour", values: ["Classic", "Soft neutral"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+    } as unknown as CatalogItem;
+    const variants = ["Classic", "Soft neutral"].map((colour, j) => ({
+      id: -((i + 1) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: b.price, compareAtPaise: b.compare, stock: null, sku: null, imageUrl: null, position: j,
+    })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
+}
+
 async function variantsFor(itemIds: number[]) {
   if (!itemIds.length) return new Map<number, CatalogVariant[]>();
   const rows = await db.select().from(catalogVariants).where(inArray(catalogVariants.itemId, itemIds));
@@ -295,6 +325,11 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "mira") return [
+    { id: -1, title: "Shoulder bags", handle: "shoulder-bags", description: "Roomy favourites for every day.", url: categoryPath(ctx.root, "shoulder-bags") },
+    { id: -2, title: "Totes", handle: "totes", description: "Easy carry, all-day style.", url: categoryPath(ctx.root, "totes") },
+    { id: -3, title: "Crossbody bags", handle: "crossbody", description: "Hands-free pieces for on the go.", url: categoryPath(ctx.root, "crossbody") },
+  ];
   const rows = await db.select().from(catalogCategories).where(eq(catalogCategories.storeId, ctx.store.id)).orderBy(asc(catalogCategories.position), asc(catalogCategories.title));
   return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, url: categoryPath(ctx.root, c.handle) }));
 }
@@ -302,12 +337,16 @@ export async function loadCategories(ctx: ShopContext) {
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
+  const pages = ctx.demoPreset === "mira"
+    ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
+    : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
     shop: { name: ctx.store.name, slug: ctx.store.slug, favicon: storeIcon(ctx.store, (ctx.look?.data?.settings ?? null) as Record<string, unknown> | null), meta_pixel: /^\d{5,20}$/.test(ctx.store.metaPixelId ?? "") ? ctx.store.metaPixelId : null, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
     routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart`, search: `${ctx.root}/search`, account: accountsOn(ctx.store) ? `${ctx.root}/account` : null },
-    collections, pages: pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` })), preview: ctx.preview,
+    collections, pages, preview: ctx.preview,
     ...nav, // menus (by handle), header_menu, footer_menu
     demo_theme: ctx.owner ? ctx.demoPreset ?? "" : "",
+    preview_draft: Boolean(ctx.demoPreset),
   };
 }
 
@@ -322,7 +361,9 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
+    const products = ctx.demoPreset === "mira"
+      ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
+      : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
   };
 }
