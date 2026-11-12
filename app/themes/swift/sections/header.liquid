@@ -58,13 +58,16 @@
     {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" style="display:block!important;width:auto!important;height:auto!important;max-height:calc(var(--hd-h) - 14px)!important;max-width:min(var(--hd-logo),46vw)!important;object-fit:contain!important;position:static!important;transform:none!important;margin:0!important">{%- else -%}<span class="hd-logo__text">{{ shop.name }}</span>{%- endif -%}
   </a>
 {%- endcapture -%}
-<header class="header hd hd--{{ s.layout | default: 'left' }}{% if s.sticky %} hd--sticky{% endif %}{% unless s.border %} hd--flat{% endunless %}"
+{%- if settings.preset == 'scentelier' -%}
+<div class="scentelier-topbar"><span>FRAGRANCE, FOUND YOUR WAY</span><span>Complimentary delivery on prepaid orders</span></div>
+{%- endif -%}
+<header class="header hd{% if settings.preset == 'scentelier' %} hd--center{% else %} hd--{{ s.layout | default: 'left' }}{% endif %}{% if s.sticky %} hd--sticky{% endif %}{% unless s.border %} hd--flat{% endunless %}"
   style="--hd-h:{{ s.height | default: 64 }}px;--hd-logo:{{ s.logo_size | default: 140 }}px;--hd-logo-m:{{ s.logo_mobile | default: 110 }}px;--hd-menu-size:{{ s.menu_size | default: 15 }}px;--hd-menu-weight:{{ s.menu_weight | default: 500 }};--hd-menu-gap:{{ s.menu_spacing | default: 22 }}px;--hd-icon:{{ s.icon_size | default: 22 }}px;{% if s.bg != blank %}--hd-bg:{{ s.bg }};{% endif %}{% if s.text != blank %}--hd-text:{{ s.text }};{% endif %}{% if s.menu_color != blank %}--hd-menu:{{ s.menu_color }};{% endif %}{% if s.icon_color != blank %}--hd-icon-c:{{ s.icon_color }};{% endif %}{% if s.menu_upper %}--hd-upper:uppercase;{% endif %}">
   <div class="wrap hd__row">
     {%- if s.mobile_menu -%}
     <button type="button" class="hd-icon hd-burger" data-hd-drawer aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     {%- endif -%}
-    {%- if s.layout == 'center' -%}
+    {%- if s.layout == 'center' or settings.preset == 'scentelier' -%}
       <nav class="hd-nav hd-nav--side" aria-label="Main">{{ menu_links }}</nav>
       {{ logo_html }}
       {{ icons }}
