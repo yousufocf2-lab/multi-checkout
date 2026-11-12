@@ -286,6 +286,15 @@ const SHOE_PRODUCTS = [
   { handle: "stride-retro-court", title: "Retro Court 88", category: "sneakers", price: 299900, compare: 379900, image: "https://images.unsplash.com/photo-1553835584-c3eab150319e?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1581285864607-ef85509e7324?auto=format&fit=crop&w=1000&q=82" },
 ] as const;
 
+const PLAYDAY_PRODUCTS = [
+  { handle: "playday-rainbow-stackers", title: "Rainbow Stacker Set", category: "learning-toys", price: 89900, compare: 119900, image: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1575364289437-fb1479d52732?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "playday-little-builder", title: "Little Builder Blocks", category: "building-toys", price: 129900, compare: 169900, image: "https://images.unsplash.com/photo-1672770057229-72f8150aece3?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1575364289437-fb1479d52732?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "playday-cuddle-buddy", title: "Cuddle Buddy", category: "soft-toys", price: 69900, compare: 89900, image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "playday-tiny-roadster", title: "Tiny Roadster Set", category: "pretend-play", price: 99900, compare: 129900, image: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "playday-story-puzzle", title: "Woodland Story Puzzle", category: "learning-toys", price: 79900, compare: 99900, image: "https://images.unsplash.com/photo-1575364289437-fb1479d52732?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=1000&q=82" },
+  { handle: "playday-playroom-friends", title: "Playroom Friends", category: "soft-toys", price: 109900, compare: 139900, image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=1000&q=82" },
+] as const;
+
 const REAL_PHOTOS = {
   bags: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1000&q=82"],
   beauty: ["https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1601049541289-9b1b7bbbfe19?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1000&q=82"],
@@ -324,6 +333,19 @@ const threadClothesImage = (item: (typeof THREAD_CLOTHES)[number], alternate = f
 
 /** Non-purchasable catalog examples used only in a theme preview iframe. */
 export function demoProducts(ctx: ShopContext, category?: string) {
+  if (ctx.demoPreset === "playday") return PLAYDAY_PRODUCTS.filter((p) => !category || category === "toys" || p.category === category).map((p, i) => {
+    const now = new Date();
+    const item = {
+      id: -(i + 401), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Kids Toys", vendor: "Playday Toy Co.", tags: ["sample", "kids", "toys"], source: "manual", sourceId: null,
+      descriptionHtml: `<p>Big ideas start with little hands. ${p.title} is a cheerful playtime pick designed to invite curious minds to build, imagine and discover at their own pace.</p><h3>Made for happy play</h3><ul><li>Easy to pick up, share and enjoy together</li><li>Encourages creative, open-ended play</li><li>A lovely choice for birthdays and everyday surprises</li></ul><h3>A little more to know</h3><p>Recommended age: 3 years and up. Adult supervision is recommended. Please check the product packaging for care and safety information.</p><p>Sample product shown for theme preview only.</p>`,
+      images: [{ url: p.image, alt: p.title }, { url: p.altImage, alt: `${p.title} in play` }],
+      options: [{ name: "Age group", values: ["3–5 years", "6–8 years"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+    } as unknown as CatalogItem;
+    const variants = ["3–5 years", "6–8 years"].map((age, j) => ({
+      id: -((i + 401) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: age, optionValues: [age], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
+    })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
   if (ctx.demoPreset === "stride") return SHOE_PRODUCTS.filter((p) => !category || category === "footwear" || p.category === category).map((p, i) => {
     const now = new Date();
     const item = {
@@ -417,6 +439,12 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "playday") return [
+    { id: -41, title: "Build & create", handle: "building-toys", description: "Stack up a brand-new idea.", image: "https://images.unsplash.com/photo-1672770057229-72f8150aece3?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "building-toys") },
+    { id: -42, title: "Learn through play", handle: "learning-toys", description: "Little discoveries, every day.", image: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "learning-toys") },
+    { id: -43, title: "Soft friends", handle: "soft-toys", description: "Ready for a new best friend?", image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "soft-toys") },
+    { id: -44, title: "Make-believe", handle: "pretend-play", description: "Where every game has a story.", image: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "pretend-play") },
+  ];
   if (ctx.demoPreset === "stride") return [
     { id: -31, title: "Shop all footwear", handle: "footwear", description: "Find your next everyday pair.", url: categoryPath(ctx.root, "footwear") },
     { id: -32, title: "Sneakers", handle: "sneakers", description: "Clean lines. All-day comfort.", url: categoryPath(ctx.root, "sneakers") },
@@ -450,7 +478,7 @@ export async function loadCategories(ctx: ShopContext) {
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
-  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride"
+  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday"
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
     : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
@@ -474,7 +502,7 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride"
+    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday"
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
       : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
@@ -504,7 +532,7 @@ export async function previewContext(request: Request, slug: string | undefined)
       const copy = await getThemeCopy(store.id, libraryId);
       if (copy) {
         const savedPreset = String(copy.data.settings.preset ?? "");
-        const demoPreset = ["mira", "luma", "thread", "stride"].includes(savedPreset) ? savedPreset : undefined;
+        const demoPreset = ["mira", "luma", "thread", "stride", "playday"].includes(savedPreset) ? savedPreset : undefined;
         return { store, root: `/s/${store.slug}`, preview: true, owner: true, ownerPreview: true, demoPreset, look: { data: copy.data, editor: false } };
       }
     }

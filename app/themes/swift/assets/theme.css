@@ -415,6 +415,87 @@ body[data-preset="mira"] .demo-bag:nth-child(4) .demo-bag__art{background:url("h
 @media(max-width:860px){body[data-preset="stride"] .pdp--stride{grid-template-columns:1fr;gap:16px;padding-top:16px;padding-bottom:44px}body[data-preset="stride"] .pdp--stride .pdp__gallery,body[data-preset="stride"] .pdp--stride .pdp__info{position:static}body[data-preset="stride"] .pdp--stride .pdp__slides{display:flex;overflow-x:auto;scroll-snap-type:x mandatory}body[data-preset="stride"] .pdp--stride .pdp__slide{flex:0 0 88%;aspect-ratio:4/5}body[data-preset="stride"] .pdp--stride .pdp__slide:first-child{aspect-ratio:4/5}body[data-preset="stride"] .pdp--stride .pdp__info{padding:24px}}
 @media(max-width:640px){body[data-preset="stride"] .hd{--hd-h:62px!important}body[data-preset="stride"] .hero__copy h1{font-size:clamp(43px,14vw,70px)}body[data-preset="stride"] .hero__controls{right:16px;bottom:14px}body[data-preset="stride"] .footer--stride .footer__grid{gap:22px}}
 @media(prefers-reduced-motion:reduce){body[data-preset="stride"] .hero__controls button,body[data-preset="stride"] .card__media img,body[data-preset="stride"] .footer--stride .footer__grid a{transition:none}}
+
+/* Playday: a warm storybook toy shop with motion kept gentle and purposeful. */
+body[data-preset="playday"]{--brand:#ff765e;--tint:#f3ecd9;--ink:#27324b;--bg:#fff8e8;--soft:#747487;--line:#eee4cd}
+body[data-preset="playday"] .an{font-weight:750;letter-spacing:.035em}
+body[data-preset="playday"] .hd{border-bottom:0;background:rgba(255,248,232,.96);box-shadow:0 5px 24px rgba(39,50,75,.06)}
+body[data-preset="playday"] .hd-logo__text{font-size:21px;font-weight:900;letter-spacing:-.055em;color:#27324b}
+body[data-preset="playday"] .hd-nav{gap:clamp(16px,2.6vw,34px);font-size:14px;font-weight:700}
+body[data-preset="playday"] .hd-link{position:relative;padding:9px 0;transition:color .2s,transform .2s}
+body[data-preset="playday"] .hd-link:hover{color:#ed654f;transform:translateY(-2px)}
+body[data-preset="playday"] .hd-dd__menu{min-width:230px;padding:10px;border:1px solid #eee4cd;border-radius:18px;background:#fffdf7;box-shadow:0 20px 42px rgba(39,50,75,.13);transform:translateY(9px) scale(.98);transition:opacity .2s,visibility .2s,transform .22s cubic-bezier(.2,.7,.2,1)}
+body[data-preset="playday"] .hd-dd:hover .hd-dd__menu,body[data-preset="playday"] .hd-dd:focus-within .hd-dd__menu{transform:translateY(0) scale(1)}
+body[data-preset="playday"] .hd-dd__menu a{padding:11px 13px;border-radius:11px;transition:background .18s,color .18s,transform .18s}
+body[data-preset="playday"] .hd-dd__menu a:hover{background:#fff0d2;color:#27324b;transform:translateX(4px)}
+body[data-preset="playday"] .hero--fit{min-height:clamp(450px,52vw,680px);background:#e8d6af;color:white}
+body[data-preset="playday"] .hero__picture img{height:clamp(450px,52vw,680px);object-fit:cover;animation:playday-hero-drift 16s ease-in-out infinite alternate}
+body[data-preset="playday"] .hero__shade{background:linear-gradient(90deg,rgba(28,39,57,.68),rgba(28,39,57,.24) 56%,rgba(28,39,57,.02))}
+body[data-preset="playday"] .hero__copy{max-width:1240px}
+body[data-preset="playday"] .hero__copy h1{max-width:11ch;font-size:clamp(42px,6.7vw,82px);font-weight:900;line-height:.98;letter-spacing:-.065em}
+body[data-preset="playday"] .hero__copy .eyebrow{display:inline-flex;padding:8px 13px;border:1px solid rgba(255,255,255,.48);border-radius:999px;background:rgba(255,255,255,.14);font-size:11px;font-weight:800;letter-spacing:.12em}
+body[data-preset="playday"] .hero__text{max-width:32em;color:#fff9ec;font-size:clamp(15px,1.5vw,18px)}
+body[data-preset="playday"] .hero .btn{border:0;border-radius:999px;background:#ffd36e;color:#27324b;font-weight:850;box-shadow:0 8px 0 rgba(39,50,75,.12);transition:transform .2s,box-shadow .2s,background .2s}
+body[data-preset="playday"] .hero .btn:hover{transform:translateY(-3px);background:#ffe09a;box-shadow:0 11px 0 rgba(39,50,75,.1)}
+body[data-preset="playday"] .hero__controls button{width:42px;height:42px;border:1px solid rgba(255,255,255,.7);border-radius:50%;background:rgba(39,50,75,.28);color:white;transition:transform .2s,background .2s}
+body[data-preset="playday"] .hero__controls button:hover{transform:scale(1.08);background:#ff765e}
+body[data-preset="playday"] .block{padding-top:clamp(42px,6vw,78px);padding-bottom:clamp(42px,6vw,78px)}
+body[data-preset="playday"] .block__head h2,body[data-preset="playday"] .block> .wrap>h2{font-size:clamp(27px,3.8vw,43px);font-weight:900;letter-spacing:-.055em}
+body[data-preset="playday"] .cats{grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(12px,2vw,22px)}
+body[data-preset="playday"] .cat{position:relative;overflow:hidden;border-radius:24px;background:#fffdf7;box-shadow:0 8px 25px rgba(39,50,75,.07);transition:transform .28s cubic-bezier(.2,.7,.2,1),box-shadow .28s}
+body[data-preset="playday"] .cat:hover{transform:translateY(-8px) rotate(-.7deg);box-shadow:0 18px 36px rgba(39,50,75,.15)}
+body[data-preset="playday"] .cat__media{aspect-ratio:1/1.08;background:#f4e8d2}
+body[data-preset="playday"] .cat__media img{width:100%;height:100%;object-fit:cover;transition:transform .7s cubic-bezier(.2,.7,.2,1),filter .5s}
+body[data-preset="playday"] .cat:hover .cat__media img{transform:scale(1.08);filter:saturate(1.08)}
+body[data-preset="playday"] .cat__title{position:relative;display:flex;align-items:center;justify-content:space-between;margin:0;padding:15px 17px 17px;font-size:15px;font-weight:850}
+body[data-preset="playday"] .cat__title::after{content:"→";display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#fff0d2;color:#27324b;transition:transform .2s,background .2s}
+body[data-preset="playday"] .cat:hover .cat__title::after{transform:translateX(3px);background:#ffd36e}
+body[data-preset="playday"] .card-wrap{gap:16px}
+body[data-preset="playday"] .card__media{overflow:hidden;border-radius:22px;background:#f4e8d2}
+body[data-preset="playday"] .card__media img{transition:transform .65s cubic-bezier(.2,.7,.2,1),filter .4s}
+body[data-preset="playday"] .card-wrap:hover .card__media img{transform:scale(1.07) rotate(1deg);filter:saturate(1.08)}
+body[data-preset="playday"] .card__title{font-size:15px;font-weight:800}
+body[data-preset="playday"] .card__quick{border-radius:999px;background:#27324b;color:#fff;transition:transform .2s,background .2s}
+body[data-preset="playday"] .card__quick:hover{transform:translateY(-2px);background:#ff765e}
+body[data-preset="playday"] .price__sale{color:#e86450;font-weight:850}
+body[data-preset="playday"] .pdp--playday{grid-template-columns:minmax(0,1.12fr) minmax(350px,.82fr);gap:clamp(24px,4.5vw,68px);padding-top:38px;padding-bottom:76px}
+body[data-preset="playday"] .pdp--playday .pdp__gallery{position:sticky;top:20px;align-self:start}
+body[data-preset="playday"] .pdp--playday .pdp__slides{display:grid;grid-template-columns:1fr 1fr;gap:14px;overflow:visible;border-radius:0;background:transparent}
+body[data-preset="playday"] .pdp--playday .pdp__slide{aspect-ratio:4/5;overflow:hidden;border-radius:24px;background:#f4e8d2;box-shadow:0 10px 28px rgba(39,50,75,.07)}
+body[data-preset="playday"] .pdp--playday .pdp__slide:first-child{grid-column:1/-1;aspect-ratio:1.22/1}
+body[data-preset="playday"] .pdp--playday .pdp__slide img{transition:transform .8s cubic-bezier(.2,.7,.2,1)}
+body[data-preset="playday"] .pdp--playday .pdp__slide:hover img{transform:scale(1.05)}
+body[data-preset="playday"] .pdp--playday .pdp__info{position:sticky;top:20px;align-self:start;padding:clamp(24px,3.5vw,40px);border:1px solid #eee4cd;border-radius:28px;background:#fffdf7;box-shadow:0 16px 42px rgba(39,50,75,.08);gap:20px;animation:playday-rise .6s both}
+body[data-preset="playday"] .pdp--playday .pdp__title{font-size:clamp(32px,4vw,50px);font-weight:900;line-height:1;letter-spacing:-.06em}
+body[data-preset="playday"] .pdp--playday .pdp__price .price{font-size:27px}
+body[data-preset="playday"] .pdp--playday .price__sale{color:#e86450}
+body[data-preset="playday"] .pdp--playday .opt legend,body[data-preset="playday"] .pdp--playday .opt__label{font-size:12px;font-weight:850;letter-spacing:.04em}
+body[data-preset="playday"] .pdp--playday .pill span{min-width:92px;justify-content:center;border-color:#eadfca;border-radius:999px;background:#fff;color:#27324b}
+body[data-preset="playday"] .pdp--playday .pill input:checked+span{border-color:#27324b;background:#27324b;color:#fff}
+body[data-preset="playday"] .pdp--playday .pdp__points{padding:17px 19px;border:1px solid #f0e5cf;border-radius:18px;background:#fff8e8;color:#27324b}
+body[data-preset="playday"] .pdp--playday .pdp__points li::before{color:#ff765e}
+body[data-preset="playday"] .pdp--playday .pdp__delivery{padding:13px 15px;border-radius:14px;background:#f4efdf;color:#4d5670}
+body[data-preset="playday"] .pdp--playday .btn--primary{border:0;border-radius:999px;background:#ff765e;color:#fff;font-weight:850;box-shadow:0 5px 0 #d75a46;transition:transform .2s,box-shadow .2s,background .2s}
+body[data-preset="playday"] .pdp--playday .btn--primary:hover:not(:disabled){transform:translateY(-3px);background:#f36550;box-shadow:0 8px 0 #d75a46}
+body[data-preset="playday"] .pdp--playday .pdp__desc{margin-top:8px;padding:17px 0;border-top:1px solid #eee4cd;border-bottom:1px solid #eee4cd}
+body[data-preset="playday"] .pdp--playday .pdp__desc summary{font-weight:850}
+body[data-preset="playday"] .pdp--playday .pdp__desc .rte{padding-top:14px;color:#555c6e;line-height:1.8}
+body[data-preset="playday"] .footer--playday{margin-top:0;padding:66px 0 24px;border-radius:34px 34px 0 0;background:#27324b;color:#fff8e8}
+body[data-preset="playday"] .footer--playday .footer__grid{grid-template-columns:1.5fr 1fr 1fr;gap:clamp(24px,5vw,70px)}
+body[data-preset="playday"] .footer--playday .footer__brand-lockup{display:inline-flex;align-items:center;gap:11px;margin-bottom:10px;color:#fff8e8;text-decoration:none}
+body[data-preset="playday"] .footer--playday .footer__brand-lockup img{display:block;max-width:180px;max-height:56px;object-fit:contain}
+body[data-preset="playday"] .footer--playday .footer__brand{margin:0;font-size:28px;font-weight:900;letter-spacing:-.055em}
+body[data-preset="playday"] .footer--playday .footer__brand-mark{display:grid;place-items:center;width:38px;height:38px;border-radius:14px;background:#ffd36e;color:#27324b;font-size:20px;font-weight:950;transform:rotate(-7deg)}
+body[data-preset="playday"] .footer--playday .footer__head{color:#ffd36e;font-size:12px;font-weight:850;letter-spacing:.08em}
+body[data-preset="playday"] .footer--playday .footer__grid a,body[data-preset="playday"] .footer--playday .muted,body[data-preset="playday"] .footer--playday .footer__copy{color:#e1e3e9}
+body[data-preset="playday"] .footer--playday .footer__grid a{transition:color .2s,transform .2s}
+body[data-preset="playday"] .footer--playday .footer__grid a:hover{color:#ffd36e;transform:translateX(4px)}
+body[data-preset="playday"] .footer--playday .footer__email a{display:inline-flex;padding:10px 14px;border:1px solid rgba(255,255,255,.28);border-radius:999px;text-decoration:none}
+@keyframes playday-hero-drift{from{transform:scale(1)}to{transform:scale(1.055)}}
+@keyframes playday-rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@media(max-width:860px){body[data-preset="playday"] .cats{grid-template-columns:repeat(2,minmax(0,1fr))}body[data-preset="playday"] .pdp--playday{grid-template-columns:1fr;gap:14px;padding-top:16px;padding-bottom:44px}body[data-preset="playday"] .pdp--playday .pdp__gallery,body[data-preset="playday"] .pdp--playday .pdp__info{position:static}body[data-preset="playday"] .pdp--playday .pdp__slides{display:flex;overflow-x:auto;scroll-snap-type:x mandatory}body[data-preset="playday"] .pdp--playday .pdp__slide{flex:0 0 88%;aspect-ratio:4/5;scroll-snap-align:center}body[data-preset="playday"] .pdp--playday .pdp__slide:first-child{aspect-ratio:4/5}body[data-preset="playday"] .pdp--playday .pdp__info{padding:24px}}
+@media(max-width:640px){body[data-preset="playday"] .hd{--hd-h:64px!important}body[data-preset="playday"] .hero__copy h1{font-size:clamp(38px,12vw,60px)}body[data-preset="playday"] .hero__controls{right:14px;bottom:12px}body[data-preset="playday"] .footer--playday .footer__grid{grid-template-columns:1fr 1fr;gap:24px}body[data-preset="playday"] .footer--playday .footer__grid>div:first-child{grid-column:1/-1}}
+@media(prefers-reduced-motion:reduce){body[data-preset="playday"] .hero__picture img,body[data-preset="playday"] .pdp--playday .pdp__info{animation:none}body[data-preset="playday"] .cat,body[data-preset="playday"] .cat__media img,body[data-preset="playday"] .card__media img,body[data-preset="playday"] .footer--playday .footer__grid a,body[data-preset="playday"] .hd-link{transition:none}}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body),system-ui,sans-serif}
 h1,h2,h3,.pdp__title{font-family:var(--font-heading),system-ui,sans-serif;text-transform:var(--heading-case)}
 h1{font-size:calc(clamp(28px,4.5vw,46px)*var(--heading-scale))}

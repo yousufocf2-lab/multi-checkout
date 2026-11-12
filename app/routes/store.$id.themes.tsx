@@ -178,9 +178,9 @@ export default function OnlineStore() {
                 </div>
               </div>
               <div className="flex items-center justify-end gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
-                <Form method="post" onSubmit={(e) => { if (!confirm(`Add ${p.name} to your draft? Your live storefront stays the same until you publish.`)) e.preventDefault(); }}>
+                <Form method="post" onSubmit={(e) => { if (!confirm(`Use the ${p.name} look in your draft? Your live storefront stays the same until you publish.`)) e.preventDefault(); }}>
                   <input type="hidden" name="intent" value="preset" /><input type="hidden" name="preset" value={p.id} />
-                  <button className="btn-secondary h-7 rounded-full px-4" disabled={nav.state !== "idle"}>Add</button>
+                  <button className="btn-secondary h-7 rounded-full px-4" disabled={nav.state !== "idle"}>Use this look</button>
                 </Form>
               </div>
             </article>

@@ -1,4 +1,4 @@
-<section class="pdp wrap pdp--{{ section.settings.gallery }} pdp--ratio-{{ section.settings.image_ratio }}{% if section.settings.media_right %} pdp--media-right{% endif %}{% if settings.preset == 'mira' %} pdp--mira{% elsif settings.preset == 'luma' %} pdp--luma{% elsif settings.preset == 'thread' %} pdp--thread{% elsif settings.preset == 'stride' %} pdp--stride{% endif %}">
+<section class="pdp wrap pdp--{{ section.settings.gallery }} pdp--ratio-{{ section.settings.image_ratio }}{% if section.settings.media_right %} pdp--media-right{% endif %}{% if settings.preset == 'mira' %} pdp--mira{% elsif settings.preset == 'luma' %} pdp--luma{% elsif settings.preset == 'thread' %} pdp--thread{% elsif settings.preset == 'stride' %} pdp--stride{% elsif settings.preset == 'playday' %} pdp--playday{% endif %}">
   <div class="pdp__gallery">
     <div class="pdp__slides" data-slides>
       {%- for m in product.images -%}
