@@ -295,6 +295,15 @@ const PLAYDAY_PRODUCTS = [
   { handle: "playday-playroom-friends", title: "Playroom Friends", category: "soft-toys", price: 109900, compare: 139900, image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=1000&q=82" },
 ] as const;
 
+const SCENTELIER_PRODUCTS = [
+  { handle: "scentelier-amber-veil", title: "Amber Veil · Eau de Parfum", category: "warm-woods", price: 189900, compare: 229900, image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=1100&q=85", notes: "Saffron · amber · sandalwood" },
+  { handle: "scentelier-rose-afterglow", title: "Rose Afterglow · Eau de Parfum", category: "floral", price: 159900, compare: 199900, image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=1100&q=85", notes: "Damask rose · peony · musk" },
+  { handle: "scentelier-citrus-no-04", title: "Citrus No. 04 · Eau de Parfum", category: "fresh", price: 139900, compare: 179900, image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1100&q=85", notes: "Bergamot · neroli · cedar" },
+  { handle: "scentelier-oud-at-dusk", title: "Oud at Dusk · Parfum Intense", category: "warm-woods", price: 219900, compare: 259900, image: "https://images.unsplash.com/photo-1590736969955-71cc94901144?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=1100&q=85", notes: "Oud · smoked vanilla · vetiver" },
+  { handle: "scentelier-soft-hours", title: "Soft Hours · Skin Scent", category: "soft-scents", price: 129900, compare: 159900, image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1100&q=85", notes: "White musk · iris · cashmere" },
+  { handle: "scentelier-golden-hour", title: "Golden Hour · Discovery Set", category: "discovery-sets", price: 89900, compare: 109900, image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1590736969955-71cc94901144?auto=format&fit=crop&w=1100&q=85", notes: "Five little journeys · 5 × 2 ml" },
+] as const;
+
 const REAL_PHOTOS = {
   bags: ["https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1000&q=82"],
   beauty: ["https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1601049541289-9b1b7bbbfe19?auto=format&fit=crop&w=1000&q=82", "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?auto=format&fit=crop&w=1000&q=82"],
@@ -333,6 +342,17 @@ const threadClothesImage = (item: (typeof THREAD_CLOTHES)[number], alternate = f
 
 /** Non-purchasable catalog examples used only in a theme preview iframe. */
 export function demoProducts(ctx: ShopContext, category?: string) {
+  if (ctx.demoPreset === "scentelier") return SCENTELIER_PRODUCTS.filter((p) => !category || category === "fragrance" || p.category === category).map((p, i) => {
+    const now = new Date();
+    const item = {
+      id: -(i + 501), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Fine fragrance", vendor: "Scentelier Parfums", tags: ["sample", "fragrance", p.category], source: "manual", sourceId: null,
+      descriptionHtml: `<p>${p.notes} open into a balanced fragrance that settles close to the skin and stays with you through the day. A considered scent for everyday rituals and evenings worth remembering.</p><h3>The fragrance</h3><ul><li>Concentration: Eau de Parfum</li><li>Thoughtfully layered top, heart and base notes</li><li>Presented in a keepsake glass bottle</li></ul><h3>Wear it your way</h3><p>Spritz lightly on pulse points. Let the fragrance settle naturally. Sample product shown for theme preview only.</p>`,
+      images: [{ url: p.image, alt: p.title }, { url: p.altImage, alt: `${p.title} fragrance bottle detail` }],
+      options: [{ name: "Size", values: ["50 ml", "10 ml travel"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+    } as unknown as CatalogItem;
+    const variants = ["50 ml", "10 ml travel"].map((size, j) => ({ id: -((i + 501) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: j === 0 ? p.price : Math.round(p.price * .38), compareAtPaise: j === 0 ? p.compare : Math.round(p.compare * .38), stock: null, sku: null, imageUrl: null, position: j })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
   if (ctx.demoPreset === "playday") return PLAYDAY_PRODUCTS.filter((p) => !category || category === "toys" || p.category === category).map((p, i) => {
     const now = new Date();
     const item = {
@@ -439,6 +459,12 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "scentelier") return [
+    { id: -51, title: "Floral", handle: "floral", description: "Petals, softly layered.", image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "floral") },
+    { id: -52, title: "Warm woods", handle: "warm-woods", description: "Amber, woods and depth.", image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "warm-woods") },
+    { id: -53, title: "Soft scents", handle: "soft-scents", description: "A quiet signature, close to you.", image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "soft-scents") },
+    { id: -54, title: "Discovery sets", handle: "discovery-sets", description: "Meet your next favourite.", image: "https://images.unsplash.com/photo-1590736969955-71cc94901144?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "discovery-sets") },
+  ];
   if (ctx.demoPreset === "playday") return [
     { id: -41, title: "Build & create", handle: "building-toys", description: "Stack up a brand-new idea.", image: "https://images.unsplash.com/photo-1672770057229-72f8150aece3?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "building-toys") },
     { id: -42, title: "Learn through play", handle: "learning-toys", description: "Little discoveries, every day.", image: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "learning-toys") },
@@ -478,7 +504,7 @@ export async function loadCategories(ctx: ShopContext) {
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
-  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday"
+  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday" || ctx.demoPreset === "scentelier"
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
     : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
@@ -502,7 +528,7 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday"
+    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday" || ctx.demoPreset === "scentelier"
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
       : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
@@ -532,7 +558,7 @@ export async function previewContext(request: Request, slug: string | undefined)
       const copy = await getThemeCopy(store.id, libraryId);
       if (copy) {
         const savedPreset = String(copy.data.settings.preset ?? "");
-        const demoPreset = ["mira", "luma", "thread", "stride", "playday"].includes(savedPreset) ? savedPreset : undefined;
+        const demoPreset = ["mira", "luma", "thread", "stride", "playday", "scentelier"].includes(savedPreset) ? savedPreset : undefined;
         return { store, root: `/s/${store.slug}`, preview: true, owner: true, ownerPreview: true, demoPreset, look: { data: copy.data, editor: false } };
       }
     }

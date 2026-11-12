@@ -13,7 +13,10 @@
       {%- else -%}<a href="{{ l.url }}" class="hd-link">{{ l.title }}</a>{%- endif -%}
     {%- endfor -%}
   {%- else -%}
-    {%- if settings.preset == 'thread' -%}
+    {%- if settings.preset == 'scentelier' -%}
+    <div class="hd-dd"><a href="{{ routes.all }}" class="hd-link" aria-haspopup="true">Fragrance <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a><div class="hd-dd__menu">{%- for c in collections limit: 6 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div></div>
+    <a href="{{ routes.root }}#new" class="hd-link">The collection</a><a href="{{ routes.root }}/pages/about-us" class="hd-link">Our house</a>
+    {%- elsif settings.preset == 'thread' -%}
     <div class="hd-dd"><a href="{{ routes.all }}" class="hd-link" aria-haspopup="true">Shop <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a><div class="hd-dd__menu">{%- for c in collections limit: 6 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div></div>
     <a href="{{ routes.all }}" class="hd-link">New arrivals</a>
     {%- elsif settings.preset == 'stride' -%}

@@ -1,10 +1,10 @@
-<footer class="footer{% if settings.preset == 'luma' %} footer--luma{% elsif settings.preset == 'thread' %} footer--thread{% elsif settings.preset == 'stride' %} footer--stride{% elsif settings.preset == 'playday' %} footer--playday{% endif %}">
+<footer class="footer{% if settings.preset == 'luma' %} footer--luma{% elsif settings.preset == 'thread' %} footer--thread{% elsif settings.preset == 'stride' %} footer--stride{% elsif settings.preset == 'playday' %} footer--playday{% elsif settings.preset == 'scentelier' %} footer--scentelier{% endif %}">
   <div class="wrap footer__grid">
     <div>
-      <a class="footer__brand-lockup" href="{{ routes.root }}" aria-label="{{ shop.name }} home">{%- if shop.logo -%}<img src="{{ shop.logo }}" alt="{{ shop.name }}" loading="lazy">{%- else -%}{%- if settings.preset == 'playday' -%}<span class="footer__brand-mark" aria-hidden="true">P</span>{%- endif -%}<span class="footer__brand">{{ shop.name }}</span>{%- endif -%}</a>
+      <a class="footer__brand-lockup" href="{{ routes.root }}" aria-label="{{ shop.name }} home">{%- if shop.logo -%}<img src="{{ shop.logo }}" alt="{{ shop.name }}" loading="lazy">{%- else -%}{%- if settings.preset == 'playday' -%}<span class="footer__brand-mark" aria-hidden="true">P</span>{%- elsif settings.preset == 'scentelier' -%}<span class="footer__brand-mark" aria-hidden="true">S</span>{%- endif -%}<span class="footer__brand">{{ shop.name }}</span>{%- endif -%}</a>
       {%- if section.settings.about != blank -%}<p class="muted">{{ section.settings.about }}</p>{%- endif -%}
       {%- if shop.phone -%}<p class="muted">Help: <a href="tel:{{ shop.phone }}">{{ shop.phone }}</a></p>{%- endif -%}
-      {%- if section.settings.contact_email != blank -%}<p class="muted footer__email"><a href="mailto:{{ section.settings.contact_email }}">Email our playroom team</a></p>{%- endif -%}
+      {%- if section.settings.contact_email != blank -%}<p class="muted footer__email"><a href="mailto:{{ section.settings.contact_email }}">{%- if settings.preset == 'playday' -%}Email our playroom team{%- elsif settings.preset == 'scentelier' -%}Write to the fragrance house{%- else -%}Email our team{%- endif -%}</a></p>{%- endif -%}
       <p class="footer__social">
         {%- if settings.social_instagram != blank -%}<a href="{{ settings.social_instagram }}" target="_blank" rel="noopener">Instagram</a>{%- endif -%}
         {%- if settings.social_facebook != blank -%}<a href="{{ settings.social_facebook }}" target="_blank" rel="noopener">Facebook</a>{%- endif -%}

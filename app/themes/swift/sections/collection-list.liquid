@@ -4,7 +4,7 @@
     <div class="cats" style="margin-top:20px">
       {%- for c in collections limit: section.settings.limit -%}
       <a class="cat" href="{{ c.url }}">
-        <div class="cat__media">{%- if c.image -%}<img src="{% if settings.preset == 'playday' %}{{ c.image }}{% else %}{{ c.image | img_url: 500 }}{% endif %}" alt="{{ c.title | escape }}" loading="lazy">{%- else -%}{{ c.title | slice: 0 }}{%- endif -%}</div>
+        <div class="cat__media">{%- if c.image -%}<img src="{% if settings.preset == 'playday' or settings.preset == 'scentelier' %}{{ c.image }}{% else %}{{ c.image | img_url: 500 }}{% endif %}" alt="{{ c.title | escape }}" loading="lazy">{%- else -%}{{ c.title | slice: 0 }}{%- endif -%}</div>
         <p class="cat__title">{{ c.title }}</p>
       </a>
       {%- else -%}

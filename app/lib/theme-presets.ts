@@ -2,7 +2,7 @@
 // store's draft (keeping its logo, WhatsApp, social links and custom text), then the owner edits and publishes.
 import type { ThemeData, ThemeTemplate } from "~/db/schema";
 
-export type Preset = { id: string; name: string; tagline: string; best: string; swatch: string[]; settings: Record<string, unknown>; index: ThemeTemplate };
+export type Preset = { id: string; name: string; tagline: string; best: string; swatch: string[]; settings: Record<string, unknown>; index: ThemeTemplate; pricePaise?: number };
 
 const sec = (list: [string, string, Record<string, unknown>?][]): ThemeTemplate => ({
   sections: Object.fromEntries(list.map(([id, type, settings]) => [id, { type, settings: settings ?? {} }])),
@@ -65,11 +65,16 @@ const ALL_PRESETS: Preset[] = [
     settings: { color_bg: "#fff8e8", color_text: "#27324b", color_muted: "#747487", color_soft: "#f3ecd9", color_brand: "#ff765e", color_button_text: "#27324b", color_announce_bg: "#27324b", color_announce_text: "#fff8e8", font_heading: "Nunito", font_body: "DM Sans", heading_uppercase: false, heading_scale: 110, button_radius: 18, card_radius: 20, card_ratio: "portrait", preset: "playday" },
     index: sec([["hero", "hero", { eyebrow: "LITTLE HANDS, BIG IDEAS", heading: "Let the good kind of play begin.", text: "Curious toys for building, imagining and making every ordinary afternoon an adventure.", button_label: "Find their next favourite", slides: [{ image: "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1800&q=82", alt: "A child exploring a wooden learning toy" }, { image: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=1800&q=82", alt: "A child playing with toy cars" }, { image: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=1800&q=82", alt: "Colourful wooden play shapes" }] }], ["categories", "collection-list", { heading: "Choose today's adventure", limit: 4 }], ["new", "product-grid", { heading: "Playroom favourites", limit: 8 }], ["story", "image-with-text", { heading: "More than a toy. A whole new story.", text: "<p>From first builds to make-believe worlds, find thoughtful playthings that invite kids to create, explore and come back for one more round.</p>", button_label: "Explore all toys" }], ["featured", "product-grid", { heading: "Little learners, big ideas", collection: "learning-toys", limit: 4 }], ["trust", "trust-badges"], ["reviews", "testimonials"], ["email", "rich-text", { heading: "Questions about a gift?", text: "<p>Our customer-care email can be added in the footer settings. We’re happy to help you find a lovely fit.</p>" }]]),
   },
+  {
+    id: "scentelier", name: "Scentelier", tagline: "An editorial fragrance house with warm, tactile luxury", best: "Perfume, fragrance and premium beauty", swatch: ["#f3eee6", "#211d19", "#a7794f"], pricePaise: 159900,
+    settings: { color_bg: "#f3eee6", color_text: "#211d19", color_muted: "#777066", color_soft: "#e9e1d5", color_brand: "#a7794f", color_button_text: "#fffdf8", color_announce_bg: "#211d19", color_announce_text: "#f3eee6", font_heading: "Playfair Display", font_body: "Manrope", heading_uppercase: false, heading_scale: 108, button_radius: 2, card_radius: 3, card_ratio: "portrait", preset: "scentelier" },
+    index: sec([["hero", "hero", { eyebrow: "A STUDY IN SCENT", heading: "Leave a little of you behind.", text: "Considered fragrances for the moments that become memories.", button_label: "Explore the collection", slides: [{ image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=2000&q=85", alt: "Sculptural perfume bottles in warm light" }, { image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=2000&q=85", alt: "A refined fragrance bottle" }, { image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=2000&q=85", alt: "Perfume arranged as an editorial still life" }] }], ["categories", "collection-list", { heading: "Find your fragrance", limit: 4 }], ["new", "product-grid", { heading: "The scent wardrobe", limit: 8 }], ["story", "image-with-text", { heading: "Made to linger", text: "<p>Meet expressive notes, thoughtful blends and beautiful bottles made to make getting ready feel like a ritual.</p>", button_label: "Discover the house" }], ["reviews", "testimonials"], ["trust", "trust-badges"], ["email", "newsletter"]]),
+  },
 ];
 
 // The colour-only starter looks stay resolvable for previews and existing saved designs,
 // but only complete, distinct designs are offered in the theme library.
-export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread" || p.id === "stride" || p.id === "playday");
+export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread" || p.id === "stride" || p.id === "playday" || p.id === "scentelier");
 export const presetById = (id: string | null | undefined) => ALL_PRESETS.find((p) => p.id === id) ?? null;
 
 /** The store's design with a preset's look and home page; keeps logo, favicon, WhatsApp, social links and custom CSS. */

@@ -15,6 +15,7 @@ const WA: Record<string, string> = {
   wa_confirm: "Order confirmations", wa_tracking: "Delivery updates", wa_promo: "Promotional messages",
   wa_reply: "Inbox replies", wa_followup: "Inbox follow-ups", wa_recovery: "Abandoned checkout reminders",
 };
+const USAGE_LABEL: Record<string, string> = { theme_purchase: "Premium perfume theme · Scentelier" };
 
 export async function summarize(storeId: number, planId: string, usage: UsageRow[], previousDuePaise = 0): Promise<BillSummary> {
   const plan = planById(planId);
@@ -45,7 +46,7 @@ export async function summarize(storeId: number, planId: string, usage: UsageRow
   s.netSalesPaise = (await value(saleIds)) - (await value(refundIds));
   for (const [type, x] of wa) { s.whatsapp.parts.push({ label: WA[type] ?? type.replace(/^wa_/, "").replaceAll("_", " "), ...x }); s.whatsapp.count += x.count; s.whatsapp.paise += x.paise; }
   s.whatsapp.parts.sort((a, b) => b.paise - a.paise);
-  for (const [type, paise] of other) if (paise) s.other.push({ label: type.replaceAll("_", " "), paise });
+  for (const [type, paise] of other) if (paise) s.other.push({ label: USAGE_LABEL[type] ?? type.replaceAll("_", " "), paise });
   return s;
 }
 
