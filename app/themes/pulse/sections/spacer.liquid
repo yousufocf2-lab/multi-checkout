@@ -1,0 +1,13 @@
+<div class="gp-spacer" style="height:{{ section.settings.height | default: 40 }}px{% if section.settings.background != blank %};background:{{ section.settings.background | escape }}{% endif %}">
+  {%- if section.settings.divider -%}<div class="wrap gp-spacer__line"><hr></div>{%- endif -%}
+</div>
+{% schema %}
+{
+  "name": "Spacer & divider",
+  "settings": [
+    { "id": "height", "type": "range", "label": "Height", "min": 8, "max": 200, "step": 4, "unit": "px", "default": 40 },
+    { "id": "divider", "type": "checkbox", "label": "Show a line", "default": false },
+    { "id": "background", "type": "color", "label": "Background", "default": "" }
+  ]
+}
+{% endschema %}

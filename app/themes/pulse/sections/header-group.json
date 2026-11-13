@@ -1,0 +1,1 @@
+{ "sections": { "deal": { "type": "deal-bar", "settings": {} }, "header": { "type": "header", "settings": {} } }, "order": ["deal", "header"] }

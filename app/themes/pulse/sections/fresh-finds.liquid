@@ -1,0 +1,33 @@
+{%- assign s = section.settings -%}
+<section class="fresh sec">
+  <div class="pw">
+    {%- if s.heading != blank -%}<div class="sec__head"><h2 class="sec__h">{{ s.heading }}</h2></div>{%- endif -%}
+    <div class="fresh__row" data-drag-scroll style="--cols:{{ s.columns | default: 4 }}">
+      {%- for it in s.items -%}
+      {%- assign p = section.products_by_handle[it.product] -%}
+      {%- assign href = it.link | safe_url -%}{%- if href == blank and p -%}{%- assign href = p.url -%}{%- endif -%}
+      <a class="fresh__it" href="{{ href | default: '#' }}">
+        {%- if it.video != blank -%}<video src="{{ it.video }}" {% if it.image != blank %}poster="{{ it.image | img_url: 600 }}"{% endif %} muted loop playsinline preload="none" data-inview-play></video>
+        {%- elsif it.image != blank -%}<img src="{{ it.image | img_url: 600 }}" alt="{{ it.title | escape }}" loading="lazy">
+        {%- elsif p and p.featured_image -%}<img src="{{ p.featured_image | img_url: 600 }}" alt="{{ p.title | escape }}" loading="lazy">
+        {%- else -%}<span class="reel__ph"></span>{%- endif -%}
+        {%- assign t = it.title | default: p.title -%}
+        {%- if t != blank -%}<span class="fresh__t">{{ t }}</span>{%- endif -%}
+      </a>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Fresh finds", "category": "Media", "description": "Square videos and photos that link to products", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Fresh finds" },
+  { "id": "columns", "type": "range", "label": "Tiles per row (computer)", "min": 3, "max": 6, "step": 1, "default": 4 },
+  { "id": "items", "type": "list", "label": "Tiles", "item_label": "tile", "max_items": 12, "fields": [
+    { "id": "video", "type": "video", "label": "Video (square MP4)" },
+    { "id": "image", "type": "image", "label": "Photo (or cover for the video)" },
+    { "id": "product", "type": "product", "label": "Product" },
+    { "id": "title", "type": "text", "label": "Name on the tile (empty = product name)" },
+    { "id": "link", "type": "url", "label": "Link (empty = the product)" }
+  ], "default": [] }
+] }
+{% endschema %}

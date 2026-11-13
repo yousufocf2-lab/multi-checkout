@@ -3,29 +3,32 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Icon } from "~/components/Icons";
 import { LearnMore, Notice } from "~/components/ui";
-import { billingUsage, db } from "~/db.server";
+import { billingUsage, db, storeSubscribers } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { storePath } from "~/lib/store-code";
 import { accountFor, recordBillingUsage } from "~/lib/subscription-billing.server";
 import { applyPreset, PRESETS, presetById } from "~/lib/theme-presets";
+import { BASE_THEME, defaultThemeData } from "~/lib/storefront.server";
 import { deleteThemeCopy, discardDraft, editorState, getThemeCopy, listThemeCopies, publishDraft, restoreVersion, saveDraft, saveThemeCopy, themeRow, vitalsSummary } from "~/lib/themes.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
-  const [st, row, vitals, copies, account, purchase] = await Promise.all([
+  const [st, row, vitals, copies, account, purchase, signups] = await Promise.all([
     editorState(store.id), themeRow(store.id), vitalsSummary(store.id).catch(() => null), listThemeCopies(store.id), accountFor(store.id),
     db.select({ id: billingUsage.id }).from(billingUsage).where(and(eq(billingUsage.storeId, store.id), eq(billingUsage.type, "theme_purchase"), eq(billingUsage.refType, "theme"), eq(billingUsage.refId, `scentelier-store-${store.id}-v1`))).limit(1),
+    db.select({ n: sql<number>`count(*)::int` }).from(storeSubscribers).where(eq(storeSubscribers.storeId, store.id)).catch(() => [{ n: 0 }]),
   ]);
   const live = (row?.live?.settings?.preset as string | undefined) ?? "swift";
   const livePresetName = presetById(live)?.name ?? "Custom design";
   return json({
     store: { id: store.id, slug: store.slug, name: store.name, domain: store.storefrontDomainStatus === "live" ? store.storefrontDomain : null },
+    signups: Number(signups[0]?.n ?? 0),
     hasDraft: st.hasDraft, publishedAt: st.publishedAt, updatedAt: st.updatedAt, history: st.history, vitals, livePreset: live, livePresetName,
     presets: PRESETS.map((p) => ({ id: p.id, name: p.name, tagline: p.tagline, best: p.best, swatch: p.swatch, pricePaise: p.pricePaise ?? null })),
     scentelierPurchased: purchase.length > 0, canBuyScentelier: account?.status === "active",
@@ -57,7 +60,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
           }
         }
         const st = await editorState(store.id);
-        await saveDraft(store.id, applyPreset(st.data, p));
+        await saveDraft(store.id, applyPreset(st.data, p, defaultThemeData(p.theme ?? BASE_THEME)));
         return redirect(`${storePath(store.id)}/editor?preset=${p.id}`);
       }
       case "duplicate-published": {
@@ -113,7 +116,7 @@ const grade = (v: number | null, good: number, poor: number): Grade | null => (v
 const GRADE: Record<Grade, [string, string]> = { good: ["Good", "bg-[#cdfee1] text-[#0c5132]"], ok: ["Needs work", "bg-[#fff1e3] text-[#5e4200]"], poor: ["Poor", "bg-[#fee9e8] text-[#8e1f0b]"] };
 
 export default function OnlineStore() {
-  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, copies, livePreset, livePresetName, scentelierPurchased, canBuyScentelier } = useLoaderData<typeof loader>();
+  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, copies, livePreset, livePresetName, scentelierPurchased, canBuyScentelier, signups } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
   const [preview, setPreview] = useState<{ name: string; src: string } | null>(null);
@@ -246,6 +249,11 @@ export default function OnlineStore() {
           </article>)}
         </div>
       </section>}
+
+      <section className="panel flex items-center gap-3 p-4">
+        <div className="flex-1"><h2 className="text-[13.5px] font-semibold">Email signups</h2><p className="mt-0.5 text-[12.5px] text-ink-soft">{signups ? `${signups.toLocaleString("en-IN")} people joined from your website’s newsletter box.` : "Emails from your website’s newsletter box show here."}</p></div>
+        {signups > 0 && <a href={`${storePath(store.id)}/subscribers.csv`} className="btn-secondary h-8">Download CSV</a>}
+      </section>
 
       <section className="panel p-4">
         <h2 className="text-[13.5px] font-semibold">Earlier versions</h2>

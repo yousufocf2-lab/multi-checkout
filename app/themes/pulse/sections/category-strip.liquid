@@ -1,0 +1,39 @@
+{%- assign s = section.settings -%}
+<section class="cats cats--{{ s.style | default: 'tiles' }} cats--{{ s.fit | default: 'cover' }} sec">
+  <div class="pw">
+    {%- if s.heading != blank -%}<h2 class="sec__h{% if s.center %} sec__h--c{% endif %}">{{ s.heading }}</h2>{%- endif -%}
+    <div class="cats__row" data-drag-scroll>
+      {%- if s.items.size > 0 -%}
+        {%- for t in s.items -%}
+        <a class="cats__it" href="{{ t.link | safe_url | default: routes.all }}">
+          <span class="cats__img" style="--tile:{{ t.color | default: '#f2f2f2' }}">{%- if t.image != blank -%}<img src="{{ t.image | img_url: 320 }}" alt="" loading="lazy">{%- endif -%}</span>
+          <span class="cats__t">{{ t.title }}</span>
+          {%- if t.tag != blank -%}<span class="cats__tag">{{ t.tag }}</span>{%- endif -%}
+        </a>
+        {%- endfor -%}
+      {%- else -%}
+        {%- for c in collections limit: 12 -%}
+        <a class="cats__it" href="{{ c.url }}">
+          <span class="cats__img">{%- if c.image -%}<img src="{{ c.image | img_url: 320 }}" alt="" loading="lazy">{%- else -%}<b>{{ c.title | slice: 0 }}</b>{%- endif -%}</span>
+          <span class="cats__t">{{ c.title }}</span>
+        </a>
+        {%- endfor -%}
+      {%- endif -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Category row", "category": "Products", "description": "Category photos in a scrolling row: soft tiles or round circles", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading (optional)", "default": "" },
+  { "id": "center", "type": "checkbox", "label": "Heading in the middle", "default": true },
+  { "id": "fit", "type": "select", "label": "Photos", "options": ["cover", "contain"], "option_labels": ["Fill the tile (photos)", "Fit inside the tile (cut-out PNGs)"], "default": "cover" },
+  { "id": "style", "type": "select", "label": "Look", "options": ["tiles", "circles"], "option_labels": ["Soft tiles (under the header)", "Round circles"], "default": "tiles" },
+  { "id": "items", "type": "list", "label": "Categories (empty = your store's categories)", "item_label": "category", "max_items": 16, "fields": [
+    { "id": "title", "type": "text", "label": "Name" },
+    { "id": "image", "type": "image", "label": "Photo (transparent PNG looks best)" },
+    { "id": "link", "type": "url", "label": "Link" },
+    { "id": "tag", "type": "text", "label": "Small tag (optional)" },
+    { "id": "color", "type": "color", "label": "Tile background", "default": "#f2f2f2" }
+  ], "default": [] }
+] }
+{% endschema %}

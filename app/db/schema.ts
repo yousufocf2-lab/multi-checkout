@@ -1448,7 +1448,8 @@ export type StorePage = typeof storePages.$inferSelect;
 export type ThemeSection = { type: string; settings?: Record<string, unknown>; disabled?: boolean };
 export type ThemeTemplate = { sections: Record<string, ThemeSection>; order: string[] };
 /** A store's own copy of its theme: global settings, page templates and the header/footer groups. */
-export type ThemeData = { settings: Record<string, unknown>; templates: Record<string, ThemeTemplate>; groups: Record<"header" | "footer", ThemeTemplate> };
+/** theme: which theme folder (app/themes/<name>) renders this design; missing = "swift" (older saved designs). */
+export type ThemeData = { theme?: string; settings: Record<string, unknown>; templates: Record<string, ThemeTemplate>; groups: Record<"header" | "footer", ThemeTemplate> };
 export type ThemeVersion = { at: string; by: string | null; data: ThemeData };
 
 /** Growpefy Store website design: the live (published) version, the draft being edited, and the last few versions. */
@@ -1648,3 +1649,16 @@ export const storeMenus = pgTable(
   (t) => [uniqueIndex("store_menus_handle_idx").on(t.storeId, t.handle)],
 );
 export type StoreMenu = typeof storeMenus.$inferSelect;
+
+/** Emails from the website's newsletter signup (Growpefy Store themes). */
+export const storeSubscribers = pgTable(
+  "store_subscribers",
+  {
+    id: serial("id").primaryKey(),
+    storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    source: text("source"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("store_subscribers_email_idx").on(t.storeId, t.email)],
+);

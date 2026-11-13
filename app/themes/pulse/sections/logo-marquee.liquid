@@ -1,0 +1,25 @@
+{%- assign s = section.settings -%}
+<section class="marq sec">
+  {%- if s.heading != blank -%}<h2 class="sec__h sec__h--c sec__h--sm">{{ s.heading }}</h2>{%- endif -%}
+  <div class="marq__view" style="--speed:{{ s.speed | default: 30 }}s">
+    <div class="marq__track">
+      {%- for round in (1..2) -%}
+      <div class="marq__set"{% if round == 2 %} aria-hidden="true"{% endif %}>
+        {%- for it in s.items -%}
+        <span class="marq__it">{%- if it.image != blank -%}<img src="{{ it.image | img_url: 300 }}" alt="{{ it.name | escape }}" loading="lazy">{%- else -%}<b>{{ it.name }}</b>{%- endif -%}</span>
+        {%- endfor -%}
+      </div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Logo strip (moving)", "category": "Trust", "description": "Marketplace, press or partner logos scrolling in a loop", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Also available on" },
+  { "id": "speed", "type": "range", "label": "One loop takes", "min": 10, "max": 80, "step": 5, "unit": " s", "default": 30 },
+  { "id": "items", "type": "list", "label": "Logos", "item_label": "logo", "max_items": 16, "fields": [
+    { "id": "image", "type": "image", "label": "Logo" },
+    { "id": "name", "type": "text", "label": "Name (shown when there is no logo)" }
+  ], "default": [ { "name": "Marketplace one" }, { "name": "Marketplace two" }, { "name": "Quick commerce" }, { "name": "Retail stores" }, { "name": "Your brand app" } ] }
+] }
+{% endschema %}

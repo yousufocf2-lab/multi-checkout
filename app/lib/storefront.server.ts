@@ -10,9 +10,10 @@ import { renderCustomLiquid } from "./custom-liquid.server";
 import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
 import { accountSettings } from "./customer-accounts";
 import { storeIcon } from "./store-icon";
+import { PULSE_CATEGORIES, PULSE_FAQS, PULSE_PRODUCTS, pulseImg } from "./pulse-demo";
 
 const accountsOn = (s: Store) => accountSettings(s.accountSettings).enabled;
-import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, storeThemes, type CatalogItem, type CatalogVariant, type Store, type ThemeData, type ThemeTemplate } from "~/db.server";
+import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, productReviews, stores, storeThemes, type CatalogItem, type CatalogVariant, type Store, type ThemeData, type ThemeTemplate } from "~/db.server";
 
 // ---------- theme files ----------
 
@@ -24,9 +25,18 @@ for (const [path, text] of Object.entries(RAW)) {
   if (m) (THEMES[m[1]] ??= {})[m[2]] = text;
 }
 
+/** Theme folders that ship with Growpefy. */
+export const THEME_NAMES = Object.keys(THEMES);
+export const BASE_THEME = "swift";
+/** Which theme renders a saved design: its own "theme" field when that theme exists, else Swift. */
+export function themeOf(data: { theme?: unknown } | null | undefined): string {
+  const t = typeof data?.theme === "string" ? data.theme : "";
+  return t && THEMES[t] ? t : BASE_THEME;
+}
+
 const SCHEMA_RE = /\{%-?\s*schema\s*-?%\}([\s\S]*?)\{%-?\s*endschema\s*-?%\}/;
 type SchemaSetting = { id: string; default?: unknown };
-function schemaOf(src: string): { name?: string; settings?: SchemaSetting[] } {
+function schemaOf(src: string): { name?: string; category?: string; description?: string; settings?: SchemaSetting[] } {
   const m = src.match(SCHEMA_RE);
   if (!m) return {};
   try { return JSON.parse(m[1]); } catch { return {}; }
@@ -66,7 +76,12 @@ function engineFor(theme: string): Liquid {
   liquid.registerFilter("img_url", (url: unknown, width?: unknown) => imgUrl(String(url ?? ""), Number(width) || 0));
   liquid.registerFilter("asset_content", (name: unknown) => files[`assets/${String(name)}`] ?? "");
   // Links from section settings: only web, mail, phone and in-store paths (never javascript: and the like)
-  liquid.registerFilter("safe_url", (url: unknown) => safeUrl(String(url ?? "")));
+  // Store paths ("/products/all") get the preview prefix (/s/<store>) when the site is shown on growpefy.com
+  liquid.registerFilter("safe_url", function (this: { context?: Context }, url: unknown) {
+    const u = safeUrl(String(url ?? ""));
+    const base = String((this.context?.getAll() as { routes?: { base?: string } } | undefined)?.routes?.base ?? "");
+    return base && u.startsWith("/") && !u.startsWith("/api/") && u !== base && !u.startsWith(base + "/") ? base + u : u;
+  });
 
   // {% section 'header' %}: renders one section file with its default settings (used in the layout)
   liquid.registerTag("section", class extends Tag {
@@ -139,7 +154,7 @@ export const TEMPLATES = ["index", "product", "collection", "cart", "page"] as c
 
 type SettingDef = { id: string; type: string; label?: string; default?: unknown; [k: string]: unknown };
 export type SettingGroup = { name: string; settings: SettingDef[] };
-export type SectionKind = { type: string; name: string; settings: SettingDef[]; where: "template" | "header" | "footer" | "fixed" };
+export type SectionKind = { type: string; name: string; settings: SettingDef[]; where: "template" | "header" | "footer" | "fixed"; category?: string; description?: string };
 
 /** Everything the theme editor needs to know about a theme: global settings, the sections it can add, and its defaults. */
 export function themeManifest(theme: string) {
@@ -149,8 +164,8 @@ export function themeManifest(theme: string) {
   const sections: SectionKind[] = Object.keys(files).filter((f) => /^sections\/[^/]+\.liquid$/.test(f)).map((f) => {
     const type = f.slice(9, -7);
     const sc = schemaOf(files[f]);
-    const where = type.startsWith("main-") ? "fixed" : type === "header" || type === "announcement" ? "header" : type === "footer" ? "footer" : "template";
-    return { type, name: sc.name ?? type, settings: (sc.settings ?? []) as SettingDef[], where };
+    const where = type.startsWith("main-") ? "fixed" : type === "header" || type === "announcement" || type === "deal-bar" ? "header" : type === "footer" ? "footer" : "template";
+    return { type, name: sc.name ?? type, settings: (sc.settings ?? []) as SettingDef[], where, ...(sc.category ? { category: sc.category } : {}), ...(sc.description ? { description: sc.description } : {}) };
   });
   return { settingsSchema, sections, defaults: defaultThemeData(theme) };
 }
@@ -161,7 +176,7 @@ export function defaultThemeData(theme: string): ThemeData {
   for (const g of parseJson<SettingGroup[]>(files["config/settings_schema.json"], [])) for (const s of g.settings) if (s.default !== undefined) settings[s.id] = s.default;
   const templates = Object.fromEntries(TEMPLATES.map((t) => [t, parseJson<ThemeTemplate>(files[`templates/${t}.json`], EMPTY)]));
   return {
-    settings, templates,
+    theme, settings, templates,
     groups: { header: parseJson<ThemeTemplate>(files["sections/header-group.json"], EMPTY), footer: parseJson<ThemeTemplate>(files["sections/footer-group.json"], EMPTY) },
   };
 }
@@ -181,7 +196,8 @@ async function renderList(theme: string, list: ThemeTemplate, group: string, sco
 /** Renders one page: header group + the template's sections + footer group inside layout/theme.liquid. */
 export async function renderPage(theme: string, template: string, scope: Record<string, unknown>, data: SectionData, look: Look = {}) {
   const base = defaultThemeData(theme);
-  const saved = look.data ?? null;
+  // A design saved for another theme can't be drawn with this theme's files: use this theme's defaults instead
+  const saved = look.data && themeOf(look.data) === theme ? look.data : null;
   const tpl = saved?.templates?.[template] ?? base.templates[template] ?? EMPTY;
   const groups = { header: saved?.groups?.header ?? base.groups.header, footer: saved?.groups?.footer ?? base.groups.footer };
   const editor = Boolean(look.editor);
@@ -211,7 +227,38 @@ export async function storeBySlug(slug: string) {
   return s ?? null;
 }
 
-function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVariant[]) {
+/** Storefront details a store adds per product (Catalog → product → Website details): card badge, short line, feature chips,
+ *  key features, specifications and questions. Older products can use tags instead: "badge:New launch", "chip:32 dB ANC". */
+export type SiteExtra = { badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[]; rating?: number; ratingCount?: number };
+function siteExtra(item: CatalogItem) {
+  const raw = ((item.extra ?? {}) as { site?: SiteExtra }).site ?? {};
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const tag = (p: string) => tags.filter((t) => t.toLowerCase().startsWith(p)).map((t) => t.slice(p.length).trim()).filter(Boolean);
+  const strs = (v: unknown, max: number) => (Array.isArray(v) ? v.map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, max) : []);
+  const chips = strs(raw.chips, 6);
+  return {
+    badge: String(raw.badge ?? "").trim() || tag("badge:")[0] || "",
+    subtitle: String(raw.subtitle ?? "").trim(),
+    feature: String(raw.feature ?? "").trim(),
+    chips: chips.length ? chips : tag("chip:").slice(0, 6),
+    usp: strs(raw.usp, 12),
+    specs: (Array.isArray(raw.specs) ? raw.specs : []).filter((x) => x && String(x.label ?? "").trim()).slice(0, 30).map((x) => ({ label: String(x.label).trim(), value: String(x.value ?? "").trim() })),
+    faqs: (Array.isArray(raw.faqs) ? raw.faqs : []).filter((x) => x && String(x.q ?? "").trim()).slice(0, 20).map((x) => ({ q: String(x.q).trim(), a: String(x.a ?? "").trim() })),
+    demoRating: Number(raw.rating) || 0, demoCount: Number(raw.ratingCount) || 0,
+  };
+}
+
+/** Approved review average and count per product, for star ratings on product cards. */
+async function ratingsFor(itemIds: number[]) {
+  const map = new Map<number, { average: number; count: number }>();
+  if (!itemIds.length) return map;
+  const rows = await db.select({ id: productReviews.productId, count: sql<number>`count(*)::int`, average: sql<number>`avg(${productReviews.rating})::float` })
+    .from(productReviews).where(and(inArray(productReviews.productId, itemIds), eq(productReviews.status, "approved"))).groupBy(productReviews.productId);
+  for (const r of rows) map.set(r.id, { average: Math.round(Number(r.average) * 10) / 10, count: Number(r.count) });
+  return map;
+}
+
+function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVariant[], rating?: { average: number; count: number }) {
   const vs = variants.slice().sort((a, b) => a.position - b.position);
   const images = item.images.map((i) => ({ src: i.url, alt: i.alt ?? item.title, type: i.type ?? "image", poster: i.poster ?? null }));
   const cover = coverOf(item.images);
@@ -232,11 +279,24 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
     options: item.options, variants: variantDrops, price, compare_at_price: compare, available: variantDrops.some((v) => v.available),
     discount_pct: compare > price ? Math.round((1 - price / compare) * 100) : 0,
     seo_title: item.seoTitle, seo_description: item.seoDescription,
+    ...(() => {
+      const x = siteExtra(item);
+      return {
+        badge: x.badge, subtitle: x.subtitle, feature: x.feature, chips: x.chips, usp: x.usp, specs: x.specs, faqs: x.faqs,
+        rating: rating?.count ? rating.average : x.demoRating, rating_count: rating?.count ? rating.count : x.demoCount,
+        vendor: item.vendor ?? "", product_type: item.productType ?? "", origin: String((item.extra as { origin?: string } | null)?.origin ?? ""),
+        second_image: item.images.filter((i) => (i.type ?? "image") === "image")[1]?.url ?? null,
+      };
+    })(),
   };
   // For the product page script (safe inside <script>)
   const json = JSON.stringify({ id: drop.id, title: drop.title, url, image: cover ? imgUrl(cover, 300) : null, options: drop.options, variants: variantDrops }).replace(/</g, "\\u003c");
   return { ...drop, json };
 }
+
+/** Ready-made themes whose preview shows sample products, categories and pages. */
+export const DEMO_PRESETS = ["mira", "luma", "thread", "stride", "playday", "scentelier", "pulse"];
+export const isDemo = (ctx: ShopContext) => Boolean(ctx.demoPreset && DEMO_PRESETS.includes(ctx.demoPreset));
 
 /** Editor preview when the store has no product yet. */
 export const SAMPLE = "__sample";
@@ -342,6 +402,20 @@ const threadClothesImage = (item: (typeof THREAD_CLOTHES)[number], alternate = f
 
 /** Non-purchasable catalog examples used only in a theme preview iframe. */
 export function demoProducts(ctx: ShopContext, category?: string) {
+  if (ctx.demoPreset === "pulse") return PULSE_PRODUCTS.filter((p) => !category || category === "all" || p.category === category).map((p, i) => {
+    const now = new Date();
+    const id = -(i + 601);
+    const photos = [...p.colours.map((c) => c[1]), ...p.extra];
+    const item = {
+      id, storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: p.type, vendor: "Your brand", tags: ["sample"], source: "manual", sourceId: null,
+      descriptionHtml: `<h2>${p.subtitle}</h2><p>Sample product for the theme preview. Your own product description, with photos and banners, shows here.</p><img src="${pulseImg("photo-1605890822326-ab63270c7189", 1400, 800)}" alt=""><img src="${pulseImg(p.colours[0][1], 1400, 800)}" alt="">`,
+      images: photos.map((ph, j) => ({ url: pulseImg(ph, 1100, 1100), alt: j === 0 ? p.title : `${p.title} view ${j + 1}` })),
+      options: [{ name: "Colour", values: p.colours.map((c) => c[0]) }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+      extra: { origin: "India", site: { badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), faqs: PULSE_FAQS, rating: p.rating, ratingCount: p.count } },
+    } as unknown as CatalogItem;
+    const variants = p.colours.map(([colour, ph], j) => ({ id: id * 10 - j - 1, itemId: id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: pulseImg(ph, 1100, 1100), position: j })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true };
+  });
   if (ctx.demoPreset === "scentelier") return SCENTELIER_PRODUCTS.filter((p) => !category || category === "fragrance" || p.category === category).map((p, i) => {
     const now = new Date();
     const item = {
@@ -441,8 +515,8 @@ export async function loadProducts(ctx: ShopContext, opts: { category?: string; 
   }
   if (opts.exclude) items = items.filter((i) => i.id !== opts.exclude);
   items = items.slice(0, opts.limit ?? 200);
-  const vmap = await variantsFor(items.map((i) => i.id));
-  return items.map((i) => productDrop(ctx, i, vmap.get(i.id) ?? []));
+  const [vmap, rmap] = await Promise.all([variantsFor(items.map((i) => i.id)), ratingsFor(items.map((i) => i.id))]);
+  return items.map((i) => productDrop(ctx, i, vmap.get(i.id) ?? [], rmap.get(i.id)));
 }
 
 export async function loadProduct(ctx: ShopContext, handle: string) {
@@ -454,11 +528,12 @@ export async function loadProduct(ctx: ShopContext, handle: string) {
       .orderBy(sql`length(${catalogItems.handle}) desc`).limit(1);
   }
   if (!item) return null;
-  const vmap = await variantsFor([item.id]);
-  return productDrop(ctx, item, vmap.get(item.id) ?? []);
+  const [vmap, rmap] = await Promise.all([variantsFor([item.id]), ratingsFor([item.id])]);
+  return productDrop(ctx, item, vmap.get(item.id) ?? [], rmap.get(item.id));
 }
 
 export async function loadCategories(ctx: ShopContext) {
+  if (ctx.demoPreset === "pulse") return PULSE_CATEGORIES.map((c, i) => ({ id: -(61 + i), title: c.title, handle: c.handle, description: c.text, image: pulseImg(c.image, 400, 400), url: categoryPath(ctx.root, c.handle) }));
   if (ctx.demoPreset === "scentelier") return [
     { id: -51, title: "Floral", handle: "floral", description: "Petals, softly layered.", image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "floral") },
     { id: -52, title: "Warm woods", handle: "warm-woods", description: "Amber, woods and depth.", image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "warm-woods") },
@@ -498,13 +573,13 @@ export async function loadCategories(ctx: ShopContext) {
     { id: -3, title: "Crossbody bags", handle: "crossbody", description: "Hands-free pieces for on the go.", url: categoryPath(ctx.root, "crossbody") },
   ];
   const rows = await db.select().from(catalogCategories).where(eq(catalogCategories.storeId, ctx.store.id)).orderBy(asc(catalogCategories.position), asc(catalogCategories.title));
-  return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, url: categoryPath(ctx.root, c.handle) }));
+  return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, image: c.imageUrl ?? null, url: categoryPath(ctx.root, c.handle) }));
 }
 
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
-  const pages = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday" || ctx.demoPreset === "scentelier"
+  const pages = isDemo(ctx)
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
     : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
   return {
@@ -526,9 +601,25 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
       if (!category) return { products: [] };
       return { products: await loadProducts(ctx, { category: category === "all" ? undefined : category, limit: Math.min(24, Number(settings.limit) || 8) }) };
     }
-    if (type !== "product-grid") return {};
+    // Products picked by handle inside list items (reels, shoppable videos, fresh finds): { handle: product }
+    const handles: string[] = [];
+    for (const it of Array.isArray(settings.items) ? (settings.items as Record<string, unknown>[]) : []) {
+      if (typeof it?.product === "string") handles.push(it.product);
+      if (Array.isArray(it?.products)) handles.push(...(it.products as unknown[]).map(String));
+    }
+    const picked = Array.isArray(settings.products) ? (settings.products as unknown[]).map(String).filter(Boolean) : [];
+    const byHandle = handles.length ? Object.fromEntries((await loadProductsByHandles(ctx, handles)).map((p) => [p.handle, p])) : {};
+    if (type === "product-carousel" || type === "product-tabs") {
+      const limit = Math.min(24, Number(settings.limit) || 12);
+      const category = String(settings.collection ?? "") || undefined;
+      const products = picked.length ? (await loadProductsByHandles(ctx, picked)).filter((p) => p.id !== opts.exclude)
+        : isDemo(ctx) ? demoProducts(ctx, category).filter((p) => p.id !== opts.exclude).slice(0, limit)
+        : await loadProducts(ctx, { category, limit, exclude: opts.exclude });
+      return { products, products_by_handle: byHandle, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
+    }
+    if (type !== "product-grid") return handles.length ? { products_by_handle: byHandle } : {};
     const category = String(settings.collection ?? "") || undefined;
-    const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday" || ctx.demoPreset === "scentelier"
+    const products = isDemo(ctx)
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
       : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
@@ -558,15 +649,15 @@ export async function previewContext(request: Request, slug: string | undefined)
       const copy = await getThemeCopy(store.id, libraryId);
       if (copy) {
         const savedPreset = String(copy.data.settings.preset ?? "");
-        const demoPreset = ["mira", "luma", "thread", "stride", "playday", "scentelier"].includes(savedPreset) ? savedPreset : undefined;
+        const demoPreset = DEMO_PRESETS.includes(savedPreset) ? savedPreset : undefined;
         return { store, root: `/s/${store.slug}`, preview: true, owner: true, ownerPreview: true, demoPreset, look: { data: copy.data, editor: false } };
       }
     }
     if (canEdit && preset) {
       const { presetById, applyPreset } = await import("./theme-presets");
       const p = presetById(preset);
-      const base = (await themeLook(store.id, "draft")).data ?? defaultThemeData("swift");
-      if (p) return { store, root: `/s/${store.slug}`, preview: true, owner: true, demoPreset: p.id, look: { data: applyPreset(base, p), editor: false } };
+      const base = (await themeLook(store.id, "draft")).data ?? defaultThemeData(BASE_THEME);
+      if (p) return { store, root: `/s/${store.slug}`, preview: true, owner: true, demoPreset: p.id, look: { data: applyPreset(base, p, defaultThemeData(p.theme ?? BASE_THEME)), editor: false } };
     }
     if (canEdit && mode !== "live") return { store, root: `/s/${store.slug}`, preview: true, owner: true, look: await themeLook(store.id, mode) };
   }
@@ -578,6 +669,17 @@ export async function loadProductsByIds(ctx: ShopContext, ids: number[]) {
   if (!ids.length) return [];
   const items = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), inArray(catalogItems.id, ids)));
   const byId = new Map(items.map((i) => [i.id, i]));
-  const vmap = await variantsFor(items.map((i) => i.id));
-  return ids.flatMap((id) => { const i = byId.get(id); return i ? [productDrop(ctx, i, vmap.get(id) ?? [])] : []; });
+  const [vmap, rmap] = await Promise.all([variantsFor(items.map((i) => i.id)), ratingsFor(items.map((i) => i.id))]);
+  return ids.flatMap((id) => { const i = byId.get(id); return i ? [productDrop(ctx, i, vmap.get(id) ?? [], rmap.get(id))] : []; });
+}
+
+/** Products picked by handle in a section (carousels, reels, shoppable videos), in the order picked. */
+export async function loadProductsByHandles(ctx: ShopContext, handles: string[]) {
+  const list = [...new Set(handles.filter(Boolean))].slice(0, 60);
+  if (!list.length) return [];
+  if (isDemo(ctx)) { const all = demoProducts(ctx); return list.flatMap((h) => all.filter((p) => p.handle === h)); }
+  const items = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), eq(catalogItems.status, "active"), inArray(catalogItems.handle, list)));
+  const byHandle = new Map(items.map((i) => [i.handle, i]));
+  const [vmap, rmap] = await Promise.all([variantsFor(items.map((i) => i.id)), ratingsFor(items.map((i) => i.id))]);
+  return list.flatMap((h) => { const i = byHandle.get(h); return i ? [productDrop(ctx, i, vmap.get(i.id) ?? [], rmap.get(i.id))] : []; });
 }

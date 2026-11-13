@@ -1,0 +1,197 @@
+{%- assign s = section.settings -%}
+{%- unless s.hidden -%}
+{%- assign menu = header_menu -%}
+{%- if s.menu != blank and menus[s.menu] -%}{%- assign menu = menus[s.menu] -%}{%- endif -%}
+{%- assign logo = settings.logo | default: shop.logo -%}
+{%- comment -%} Category tiles for the mega menu and the phone menu: the ones added here, else the store's categories {%- endcomment -%}
+{%- capture tiles -%}
+  {%- if s.mega_items.size > 0 -%}
+    {%- for t in s.mega_items -%}
+    <a class="mega__tile" href="{{ t.link | safe_url | default: routes.all }}">
+      <span class="mega__img" style="--tile:{{ t.color | default: '#f4f4f4' }}">{%- if t.image != blank -%}<img src="{{ t.image | img_url: 300 }}" alt="" loading="lazy">{%- endif -%}</span>
+      <span class="mega__t">{{ t.title }}</span>
+      {%- if t.tag != blank -%}<span class="mega__tag">{{ t.tag }}</span>{%- endif -%}
+    </a>
+    {%- endfor -%}
+  {%- else -%}
+    {%- for c in collections limit: 10 -%}
+    <a class="mega__tile" href="{{ c.url }}">
+      <span class="mega__img">{%- if c.image -%}<img src="{{ c.image | img_url: 300 }}" alt="" loading="lazy">{%- else -%}<b>{{ c.title | slice: 0 }}</b>{%- endif -%}</span>
+      <span class="mega__t">{{ c.title }}</span>
+    </a>
+    {%- endfor -%}
+  {%- endif -%}
+{%- endcapture -%}
+<header class="hd{% if s.sticky %} hd--sticky{% endif %} tiles--{{ s.tile_fit | default: 'cover' }}" data-hd style="{% if s.bg != blank %}--hd-bg:{{ s.bg }};{% endif %}{% if s.text != blank %}--hd-ink:{{ s.text }};{% endif %}--hd-h:{{ s.height | default: 68 }}px">
+  <div class="hd__row pw">
+    <button type="button" class="hd__ic hd__burger" data-hd-open aria-label="Open menu" aria-expanded="false">{% render 'snippets/icon', name: 'menu' %}</button>
+    <a href="{{ routes.root }}" class="hd__logo" aria-label="{{ shop.name }} home">
+      {%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" class="hd__logo-img">{%- else -%}<span class="hd__logo-text">{{ shop.name }}</span>{%- endif -%}
+      {%- if settings.logo_badge != blank -%}<img src="{{ settings.logo_badge }}" alt="" class="hd__badge">{%- endif -%}
+    </a>
+    <nav class="hd__nav" aria-label="Main">
+      {%- if s.mega_label != blank -%}
+      <div class="hd__item hd__item--mega">
+        <a href="{{ routes.all }}" class="hd__link" aria-haspopup="true">{{ s.mega_label }}</a>
+        <div class="mega"><div class="mega__in pw">{{ tiles }}</div></div>
+      </div>
+      {%- endif -%}
+      {%- if menu -%}
+        {%- for l in menu.links -%}
+          {%- if l.links.size > 0 -%}
+          <div class="hd__item hd__item--dd"><a href="{{ l.url }}" class="hd__link" aria-haspopup="true">{{ l.title }}</a>
+            <div class="hd__dd">{%- for c in l.links -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div></div>
+          {%- else -%}<div class="hd__item"><a href="{{ l.url }}" class="hd__link">{{ l.title }}</a></div>{%- endif -%}
+        {%- endfor -%}
+      {%- else -%}
+        <div class="hd__item"><a href="{{ routes.all }}" class="hd__link">Shop all</a></div>
+        {%- for p in pages limit: 3 -%}<div class="hd__item"><a href="{{ p.url }}" class="hd__link">{{ p.title }}</a></div>{%- endfor -%}
+      {%- endif -%}
+    </nav>
+    <div class="hd__tools">
+      {%- if s.show_search -%}
+      <button type="button" class="hd__search" data-search-open aria-label="Search">
+        {% render 'snippets/icon', name: 'search' %}
+        <span class="hd__ph" data-typing="{{ s.search_words | escape }}">{{ s.search_prefix | default: 'Search for' }} <i data-typing-word></i></span>
+      </button>
+      <button type="button" class="hd__ic hd__search-m" data-search-open aria-label="Search">{% render 'snippets/icon', name: 'search' %}</button>
+      {%- endif -%}
+      {%- if routes.account -%}<a href="{{ routes.account }}" class="hd__ic hd__acc" aria-label="My account">{% render 'snippets/icon', name: 'user' %}</a>{%- endif -%}
+      <a href="{{ routes.cart }}" class="hd__ic header__cart" aria-label="Cart">{% render 'snippets/icon', name: 'bag' %}<span class="hd__count" data-cart-count hidden>0</span></a>
+    </div>
+  </div>
+  {%- if s.show_strip -%}
+  <div class="hd__strip"><div class="pw hd__strip-in" data-drag-scroll>{{ tiles }}</div></div>
+  {%- endif -%}
+</header>
+
+<div class="srch tiles--{{ s.tile_fit | default: 'cover' }}" data-search hidden>
+  <div class="srch__shade" data-search-close></div>
+  <div class="srch__panel" role="dialog" aria-modal="true" aria-label="Search">
+    <form action="{{ routes.search }}" method="get" class="srch__bar pw" role="search">
+      {% render 'snippets/icon', name: 'search' %}
+      <input type="search" name="q" placeholder="{{ s.search_placeholder | default: 'Search earbuds, watches, speakers…' }}" aria-label="Search products" autocomplete="off" data-search-q>
+      <button type="button" class="srch__x" data-search-close aria-label="Close search">{% render 'snippets/icon', name: 'close' %}</button>
+    </form>
+    <div class="srch__body pw">
+      <div data-search-idle>
+        {%- assign words = s.search_words | split: ',' -%}
+        {%- if words.size > 0 -%}
+        <p class="srch__label">Popular searches</p>
+        <div class="srch__pop">{%- for w in words -%}{%- assign t = w | strip -%}{%- if t != '' -%}<a href="{{ routes.search }}?q={{ t | url_encode }}">{% render 'snippets/icon', name: 'search' %}{{ t }}</a>{%- endif -%}{%- endfor -%}</div>
+        {%- endif -%}
+        <p class="srch__label">Shop by category</p>
+        <div class="srch__tiles">{{ tiles }}</div>
+      </div>
+      <div data-search-results></div>
+    </div>
+  </div>
+</div>
+
+<div class="mnav tiles--{{ s.tile_fit | default: 'cover' }}" data-hd-drawer hidden>
+  <div class="mnav__shade" data-hd-close></div>
+  <nav class="mnav__panel" aria-label="Menu">
+    <div class="mnav__head">
+      <a href="{{ routes.root }}" class="hd__logo">{%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" class="hd__logo-img">{%- else -%}<span class="hd__logo-text">{{ shop.name }}</span>{%- endif -%}</a>
+      <button type="button" class="hd__ic" data-hd-close aria-label="Close menu">{% render 'snippets/icon', name: 'close' %}</button>
+    </div>
+    <div class="mnav__body">
+      {%- if s.mega_label != blank -%}
+      <details class="mnav__group" open><summary>{{ s.mega_label }}{% render 'snippets/icon', name: 'down' %}</summary><div class="mnav__tiles">{{ tiles }}</div></details>
+      {%- endif -%}
+      {%- if menu -%}
+        {%- for l in menu.links -%}
+          {%- if l.links.size > 0 -%}
+          <details class="mnav__group"><summary>{{ l.title }}{% render 'snippets/icon', name: 'down' %}</summary><div class="mnav__links"><a href="{{ l.url }}">All {{ l.title }}</a>{%- for c in l.links -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div></details>
+          {%- else -%}<a class="mnav__link" href="{{ l.url }}">{{ l.title }}</a>{%- endif -%}
+        {%- endfor -%}
+      {%- else -%}
+        <a class="mnav__link" href="{{ routes.all }}">Shop all</a>
+      {%- endif -%}
+      {%- if s.drawer_extra.size > 0 -%}
+      <p class="mnav__label">{{ s.drawer_extra_title }}</p>
+      <div class="mnav__chips">{%- for x in s.drawer_extra -%}<a href="{{ x.link | safe_url }}">{%- if x.image != blank -%}<img src="{{ x.image | img_url: 120 }}" alt="" loading="lazy">{%- endif -%}{{ x.title }}{%- if x.tag != blank -%}<em>{{ x.tag }}</em>{%- endif -%}</a>{%- endfor -%}</div>
+      {%- endif -%}
+      {%- for p in pages -%}<a class="mnav__link mnav__link--sm" href="{{ p.url }}">{{ p.title }}</a>{%- endfor -%}
+    </div>
+    {%- if routes.account -%}<a class="mnav__acc" href="{{ routes.account }}">{% render 'snippets/icon', name: 'user' %} Log in / Sign up</a>{%- endif -%}
+  </nav>
+</div>
+<script>
+(function(){
+  var hd=document.querySelector('[data-hd]'),sp=document.querySelector('[data-search]'),q=sp&&sp.querySelector('[data-search-q]'),out=sp&&sp.querySelector('[data-search-results]'),idle=sp&&sp.querySelector('[data-search-idle]');
+  var base={{ routes.search | json }},t,last='',ctl;
+  var money=function(p){return '₹'+Math.round(p/100).toLocaleString('en-IN')};
+  var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+  function open(){if(!sp)return;sp.hidden=false;document.documentElement.classList.add('no-scroll');requestAnimationFrame(function(){sp.classList.add('is-on')});setTimeout(function(){q&&q.focus()},60)}
+  function close(){if(!sp||sp.hidden)return;sp.classList.remove('is-on');document.documentElement.classList.remove('no-scroll');setTimeout(function(){sp.hidden=true},200)}
+  function render(d,term){
+    if(idle)idle.hidden=!!term;
+    if(!term){out.innerHTML='';return}
+    var h='';
+    if(!d.exact&&d.products.length)h+='<p class="srch__note">No exact match for “'+esc(term)+'”. Closest products:</p>';
+    if(d.categories&&d.categories.length)h+='<div class="srch__pop">'+d.categories.map(function(c){return '<a href="'+esc(c.url)+'">'+esc(c.title)+'</a>'}).join('')+'</div>';
+    h+='<div class="srch__res">'+d.products.map(function(p){return '<a class="srch__item" href="'+esc(p.url)+'">'+(p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy">':'<span></span>')+'<span class="srch__t">'+esc(p.title)+'<small>'+(p.price?money(p.price):'')+(p.compare>p.price?' <s>'+money(p.compare)+'</s>':'')+'</small></span></a>'}).join('')+'</div>';
+    h+='<a class="srch__all" href="'+esc(d.all)+'">See all results for “'+esc(term)+'” →</a>';
+    out.innerHTML=h;
+  }
+  function look(){
+    var term=(q.value||'').trim(); if(term===last)return; last=term;
+    if(!term){render(null,'');return}
+    if(ctl)ctl.abort(); ctl=window.AbortController?new AbortController():null;
+    fetch(base+'/suggest?q='+encodeURIComponent(term),{signal:ctl&&ctl.signal}).then(function(r){return r.json()}).then(function(d){if(term===last)render(d,term)}).catch(function(){});
+  }
+  document.querySelectorAll('[data-search-open]').forEach(function(b){b.addEventListener('click',open)});
+  sp&&sp.querySelectorAll('[data-search-close]').forEach(function(b){b.addEventListener('click',close)});
+  if(q)q.addEventListener('input',function(){clearTimeout(t);t=setTimeout(look,180)});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'){close();dclose()}if(e.key==='/'&&sp&&sp.hidden&&!/input|textarea|select/i.test((e.target||{}).tagName||'')){e.preventDefault();open()}});
+  var dr=document.querySelector('[data-hd-drawer]'),burger=hd&&hd.querySelector('[data-hd-open]');
+  function dopen(){if(!dr)return;dr.hidden=false;burger&&burger.setAttribute('aria-expanded','true');document.documentElement.classList.add('no-scroll');requestAnimationFrame(function(){dr.classList.add('is-on')})}
+  function dclose(){if(!dr||dr.hidden)return;dr.classList.remove('is-on');burger&&burger.setAttribute('aria-expanded','false');document.documentElement.classList.remove('no-scroll');setTimeout(function(){dr.hidden=true},250)}
+  if(burger)burger.addEventListener('click',dopen);
+  dr&&dr.querySelectorAll('[data-hd-close]').forEach(function(b){b.addEventListener('click',dclose)});
+  document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('[data-menu-open]');if(b){e.preventDefault();dopen()}});
+  /* Search hint that types popular words one after another */
+  var ph=hd&&hd.querySelector('[data-typing]'),w=ph&&ph.querySelector('[data-typing-word]');
+  if(ph&&w){var list=(ph.getAttribute('data-typing')||'').split(',').map(function(x){return x.trim()}).filter(Boolean);
+    if(list.length){var i=0,c=0,del=false;(function tick(){var word=list[i%list.length];if(!del){c++;w.textContent=word.slice(0,c);if(c>=word.length){del=true;return setTimeout(tick,1400)}}else{c--;w.textContent=word.slice(0,c);if(c<=0){del=false;i++}}setTimeout(tick,del?40:85)})()}}
+  /* Header shadow once the page scrolls */
+  if(hd){var on=false;addEventListener('scroll',function(){var n=scrollY>8;if(n!==on){on=n;hd.classList.toggle('is-scrolled',n)}},{passive:true})}
+})();
+</script>
+{%- endunless -%}
+{% schema %}
+{ "name": "Header", "settings": [
+  { "id": "hidden", "type": "checkbox", "label": "Hide the header", "default": false },
+  { "id": "sticky", "type": "checkbox", "label": "Stay on top while scrolling", "default": true },
+  { "id": "height", "type": "range", "label": "Header height", "min": 52, "max": 100, "step": 2, "unit": "px", "default": 68 },
+  { "id": "menu", "type": "menu", "label": "Menu (empty = the one set to Header in Menus)", "default": "" },
+  { "type": "header", "id": "h_mega", "label": "Categories mega menu" },
+  { "id": "mega_label", "type": "text", "label": "Menu name that opens the category panel (empty = no panel)", "default": "Categories" },
+  { "id": "mega_items", "type": "list", "label": "Category tiles (empty = your store's categories)", "item_label": "tile", "fields": [
+    { "id": "title", "type": "text", "label": "Name" },
+    { "id": "image", "type": "image", "label": "Product photo (transparent PNG looks best)" },
+    { "id": "link", "type": "url", "label": "Link" },
+    { "id": "tag", "type": "text", "label": "Small tag under the name (for example “New”)" },
+    { "id": "color", "type": "color", "label": "Tile background", "default": "#f4f4f4" }
+  ], "default": [] },
+  { "id": "tile_fit", "type": "select", "label": "Tile photos", "options": ["cover", "contain"], "option_labels": ["Fill the tile (photos)", "Fit inside the tile (cut-out PNGs)"], "default": "cover" },
+  { "id": "show_strip", "type": "checkbox", "label": "Also show the category tiles as a row under the header", "default": false },
+  { "type": "header", "id": "h_search", "label": "Search" },
+  { "id": "show_search", "type": "checkbox", "label": "Show search", "default": true },
+  { "id": "search_prefix", "type": "text", "label": "Search box text", "default": "Search for" },
+  { "id": "search_words", "type": "text", "label": "Words that type themselves in the search box and show as popular searches (comma separated)", "default": "Earbuds, Smartwatch, Headphones, Speakers, Neckbands, Power banks" },
+  { "id": "search_placeholder", "type": "text", "label": "Hint inside the search panel", "default": "Search earbuds, watches, speakers…" },
+  { "type": "header", "id": "h_phone", "label": "Phone menu" },
+  { "id": "drawer_extra_title", "type": "text", "label": "Extra list heading", "default": "Shop by lifestyle" },
+  { "id": "drawer_extra", "type": "list", "label": "Extra links in the phone menu", "item_label": "link", "fields": [
+    { "id": "title", "type": "text", "label": "Name" },
+    { "id": "link", "type": "url", "label": "Link" },
+    { "id": "image", "type": "image", "label": "Small icon or photo" },
+    { "id": "tag", "type": "text", "label": "Tag (optional)" }
+  ], "default": [] },
+  { "type": "header", "id": "h_look", "label": "Look" },
+  { "id": "bg", "type": "color", "label": "Background", "default": "" },
+  { "id": "text", "type": "color", "label": "Text and icons", "default": "" }
+] }
+{% endschema %}

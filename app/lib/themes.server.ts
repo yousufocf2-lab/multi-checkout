@@ -1,9 +1,8 @@
 // Growpefy Store theme editor: a store's own copy of its theme (draft while editing, live after Publish, last 5 versions).
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, storeThemeLibrary, storeThemes, type ThemeData, type ThemeSection, type ThemeTemplate, type ThemeVersion } from "~/db.server";
-import { defaultThemeData, themeManifest, TEMPLATES } from "./storefront.server";
+import { BASE_THEME, defaultThemeData, themeManifest, themeOf, TEMPLATES } from "./storefront.server";
 
-export const THEME = "swift";
 const MAX_BYTES = 400_000;
 const KEEP_VERSIONS = 5;
 const MAX_LIBRARY_COPIES = 30;
@@ -16,7 +15,7 @@ export async function themeRow(storeId: number) {
 /** What the editor opens: the draft if there is one, else the live design, else the theme's defaults. */
 export async function editorState(storeId: number) {
   const row = await themeRow(storeId);
-  const data = row?.draft ?? row?.live ?? defaultThemeData(THEME);
+  const data = row?.draft ?? row?.live ?? defaultThemeData(BASE_THEME);
   return {
     data: normalize(data),
     hasDraft: Boolean(row?.draft),
@@ -30,7 +29,8 @@ const ID_RE = /^[a-z0-9_-]{1,40}$/i;
 
 /** Keeps only what the theme understands: known section types, valid ids, plain JSON settings; the page's main section always stays. */
 export function normalize(input: unknown): ThemeData {
-  const m = themeManifest(THEME);
+  const theme = themeOf(input as { theme?: unknown } | null);
+  const m = themeManifest(theme);
   const kinds = new Map(m.sections.map((s) => [s.type, s]));
   const base = m.defaults;
   const src = (input && typeof input === "object" ? input : {}) as Partial<ThemeData>;
@@ -60,6 +60,7 @@ export function normalize(input: unknown): ThemeData {
   const templates: Record<string, ThemeTemplate> = {};
   for (const t of TEMPLATES) templates[t] = list(src.templates?.[t], base.templates[t], (w) => w === "template" || w === "fixed");
   return {
+    theme,
     settings: { ...base.settings, ...plain(src.settings) },
     templates,
     groups: {
@@ -72,7 +73,7 @@ export function normalize(input: unknown): ThemeData {
 export async function saveDraft(storeId: number, input: unknown) {
   const data = normalize(input);
   if (JSON.stringify(data).length > MAX_BYTES) throw new Error("The design is too large to save. Remove some sections or shorten long text.");
-  await db.insert(storeThemes).values({ storeId, theme: THEME, draft: data, updatedAt: new Date() })
+  await db.insert(storeThemes).values({ storeId, theme: themeOf(data), draft: data, updatedAt: new Date() })
     .onConflictDoUpdate({ target: storeThemes.storeId, set: { draft: data, updatedAt: new Date() } });
   return data;
 }
@@ -80,11 +81,11 @@ export async function saveDraft(storeId: number, input: unknown) {
 /** Draft -> live. The previous live design goes into history (newest first, last 5 kept). */
 export async function publishDraft(storeId: number, by: string | null) {
   const row = await themeRow(storeId);
-  const data = row?.draft ?? row?.live ?? defaultThemeData(THEME);
+  const data = row?.draft ?? row?.live ?? defaultThemeData(BASE_THEME);
   const history: ThemeVersion[] = row?.live ? [{ at: (row.publishedAt ?? row.updatedAt).toISOString(), by, data: row.live }, ...(row.history ?? [])].slice(0, KEEP_VERSIONS) : row?.history ?? [];
   const now = new Date();
-  await db.insert(storeThemes).values({ storeId, theme: THEME, live: data, draft: null, history, publishedAt: now, updatedAt: now })
-    .onConflictDoUpdate({ target: storeThemes.storeId, set: { live: data, draft: null, history, publishedAt: now, updatedAt: now } });
+  await db.insert(storeThemes).values({ storeId, theme: themeOf(data), live: data, draft: null, history, publishedAt: now, updatedAt: now })
+    .onConflictDoUpdate({ target: storeThemes.storeId, set: { theme: themeOf(data), live: data, draft: null, history, publishedAt: now, updatedAt: now } });
 }
 
 export async function discardDraft(storeId: number) {

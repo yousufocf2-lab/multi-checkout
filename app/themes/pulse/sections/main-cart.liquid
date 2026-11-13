@@ -1,0 +1,17 @@
+<section class="cartp pw">
+  <h1 class="col__title">Your cart</h1>
+  <div class="cartp__grid">
+    <div><div data-cart-items class="cartp__items"></div>
+      <p data-cart-empty class="empty" hidden>Your cart is empty. <a href="{{ routes.all }}" class="link">Start shopping</a></p></div>
+    <aside data-cart-summary class="cartp__sum" hidden>
+      <div class="drawer__row"><span>Subtotal</span><b data-cart-subtotal></b></div>
+      {%- if settings.cart_note != blank -%}<p class="drawer__note">{{ settings.cart_note }}</p>{%- endif -%}
+      <button type="button" class="btn btn--block" data-checkout>Checkout</button>
+      <p class="drawer__note" data-checkout-note hidden></p>
+      <p class="cartp__safe">{% render 'snippets/icon', name: 'lock' %}Safe and secure payments · Cash on delivery</p>
+    </aside>
+  </div>
+</section>
+{% schema %}
+{ "name": "Cart page", "settings": [] }
+{% endschema %}

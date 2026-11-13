@@ -1,0 +1,61 @@
+{%- assign s = section.settings -%}
+<section class="shv sec" data-shv>
+  <div class="pw">
+    {%- if s.heading != blank -%}<h2 class="sec__h sec__h--c">{{ s.heading }}</h2>{%- endif -%}
+    <div class="shv__wrap" data-slider>
+      <div class="shv__track" data-track>
+        {%- for it in s.items -%}
+        {%- assign first = nil -%}
+        {%- assign list = '' | split: '' -%}
+        {%- for h in it.products -%}{%- assign p = section.products_by_handle[h] -%}{%- if p -%}{%- assign list = list | push: p -%}{%- endif -%}{%- endfor -%}
+        {%- assign first = list | first -%}
+        <div class="shv__it" data-slide>
+          <button type="button" class="shv__tile" data-shv-open="{{ forloop.index0 }}" aria-label="Play video{% if first %}: {{ first.title | escape }}{% endif %}">
+            {%- if it.video != blank -%}<video src="{{ it.video }}" {% if it.image != blank %}poster="{{ it.image | img_url: 600 }}"{% endif %} muted loop playsinline preload="none" data-inview-play></video>
+            {%- elsif it.image != blank -%}<img src="{{ it.image | img_url: 600 }}" alt="" loading="lazy">{%- else -%}<span class="reel__ph"></span>{%- endif -%}
+            <span class="shv__play">{% render 'snippets/icon', name: 'play' %}</span>
+          </button>
+          {%- if first -%}
+          <div class="shv__prod">
+            {%- if first.featured_image -%}<img src="{{ first.featured_image | img_url: 120 }}" alt="" loading="lazy">{%- endif -%}
+            <span><b>{{ first.title }}</b><em>{{ first.price | money }}{% if first.compare_at_price > first.price %} <s>{{ first.compare_at_price | money }}</s>{% endif %}</em></span>
+          </div>
+          {%- endif -%}
+          <template data-shv-data>
+            {%- if it.video != blank -%}<video src="{{ it.video }}" {% if it.image != blank %}poster="{{ it.image | img_url: 900 }}"{% endif %} playsinline controls autoplay loop></video>{%- elsif it.image != blank -%}<img src="{{ it.image | img_url: 900 }}" alt="">{%- endif -%}
+            <div class="shv__list"><p class="shv__lh">{{ s.panel_title | default: 'Products seen in the video' }}</p>
+            {%- for p in list -%}
+              <div class="shv__row">{%- if p.featured_image -%}<img src="{{ p.featured_image | img_url: 160 }}" alt="" loading="lazy">{%- endif -%}
+                <span><b>{{ p.title }}</b><em>{{ p.price | money }}{% if p.compare_at_price > p.price %} <s>{{ p.compare_at_price | money }}</s>{% endif %}</em></span>
+                <a class="btn btn--sm" href="{{ p.url }}">{{ s.button | default: 'Shop now' }}</a></div>
+            {%- endfor -%}
+            </div>
+          </template>
+        </div>
+        {%- endfor -%}
+      </div>
+      <button type="button" class="sl-arrow sl-arrow--prev" data-prev aria-label="Previous">{% render 'snippets/icon', name: 'left' %}</button>
+      <button type="button" class="sl-arrow sl-arrow--next" data-next aria-label="Next">{% render 'snippets/icon', name: 'right' %}</button>
+      <div class="hero__dots hero__dots--dark" data-dots></div>
+    </div>
+  </div>
+  <div class="shv__modal" data-shv-modal hidden>
+    <div class="shv__shade" data-shv-close></div>
+    <div class="shv__box" role="dialog" aria-modal="true" aria-label="Video">
+      <button type="button" class="shv__x" data-shv-close aria-label="Close">{% render 'snippets/icon', name: 'close' %}</button>
+      <div class="shv__body" data-shv-body></div>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Shoppable videos", "category": "Media", "description": "Video tiles; tapping one plays it with sound and lists the products in it", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Shop the trends everyone’s talking about" },
+  { "id": "panel_title", "type": "text", "label": "Heading above the products", "default": "Products seen in the video" },
+  { "id": "button", "type": "text", "label": "Product button", "default": "Shop now" },
+  { "id": "items", "type": "list", "label": "Videos", "item_label": "video", "max_items": 12, "fields": [
+    { "id": "video", "type": "video", "label": "Video (vertical MP4)" },
+    { "id": "image", "type": "image", "label": "Cover image" },
+    { "id": "products", "type": "products", "label": "Products in this video", "limit": 6 }
+  ], "default": [] }
+] }
+{% endschema %}

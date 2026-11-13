@@ -1,0 +1,155 @@
+{%- assign s = section.settings -%}
+{%- assign rating = review_average | default: product.rating -%}
+{%- assign rcount = review_count | default: product.rating_count -%}
+{%- if rcount == 0 -%}{%- assign rating = product.rating -%}{%- assign rcount = product.rating_count -%}{%- endif -%}
+<section class="pdp pw" data-pdp>
+  <div class="pdp__media">
+    <div class="pdp__thumbs" data-thumbs>
+      {%- for m in product.images -%}
+      {%- assign t = m.src -%}{%- if m.type == 'video' -%}{%- assign t = m.poster -%}{%- endif -%}
+      <button type="button" class="pdp__th{% if forloop.first %} is-on{% endif %}" data-to="{{ forloop.index0 }}" aria-label="{% if m.type == 'video' %}Video{% else %}Photo{% endif %} {{ forloop.index }}">
+        {%- if t -%}<img src="{{ t | img_url: 160 }}" alt="" loading="lazy">{%- endif -%}{%- if m.type == 'video' -%}<span class="pdp__thplay">{% render 'snippets/icon', name: 'play' %}</span>{%- endif -%}
+      </button>
+      {%- endfor -%}
+    </div>
+    <div class="pdp__stage">
+      <div class="pdp__slides" data-pdp-slides>
+        {%- for m in product.images -%}
+        <div class="pdp__slide">
+          {%- if m.type == 'video' -%}<video src="{{ m.src }}" {% if m.poster %}poster="{{ m.poster | img_url: 1100 }}"{% endif %} muted playsinline loop preload="metadata" data-inview-play></video>
+          {%- else -%}<img {% if forloop.first %}id="pdp-main" fetchpriority="high"{% else %}loading="lazy"{% endif %} src="{{ m.src | img_url: 1100 }}" alt="{{ m.alt | escape }}" width="1100" height="1100">{%- endif -%}
+        </div>
+        {%- else -%}<div class="pdp__slide"><span class="pc__ph"></span></div>
+        {%- endfor -%}
+      </div>
+      {%- if s.image_badge != blank -%}<img class="pdp__stamp" src="{{ s.image_badge | img_url: 300 }}" alt="">{%- endif -%}
+      {%- if product.images.size > 1 -%}<div class="pdp__dots" data-pdp-dots>{%- for m in product.images -%}<i{% if forloop.first %} class="is-on"{% endif %}></i>{%- endfor -%}</div>{%- endif -%}
+    </div>
+  </div>
+
+  <div class="pdp__info">
+    <div class="pdp__titlerow">
+      <h1 class="pdp__title">{{ product.title }}</h1>
+      {%- if rating > 0 -%}<a href="#reviews" class="pdp__stars" aria-label="{{ rating }} out of 5, {{ rcount }} reviews">{% render 'snippets/stars', value: rating %}<span>({{ rcount }})</span></a>{%- endif -%}
+    </div>
+    {%- if product.subtitle != blank -%}<p class="pdp__sub">{{ product.subtitle }}</p>{%- endif -%}
+
+    <div class="pdp__pricebox" data-price>
+      <p class="pdp__price"><b>{{ product.price | money }}</b>{%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s><em>{{ product.discount_pct }}% off</em>{%- endif -%}</p>
+    </div>
+    {%- if settings.pdp_tax_note != blank -%}<p class="pdp__tax">({{ settings.pdp_tax_note }})</p>{%- endif -%}
+
+    {%- if s.offer_text != blank -%}
+    <div class="pdp__offer">
+      {%- if s.offer_tag != blank -%}<span class="pdp__offer-tag">{{ s.offer_tag }}</span>{%- endif -%}
+      <div><p class="pdp__offer-t">{{ s.offer_text }}</p>{%- if s.offer_small != blank -%}<p class="pdp__offer-s">{{ s.offer_small }}</p>{%- endif -%}</div>
+      {%- if s.offer_button != blank -%}<span class="pdp__offer-b">{{ s.offer_button }}</span>{%- endif -%}
+    </div>
+    {%- endif -%}
+
+    {%- if settings.pdp_social_proof != blank -%}
+    {%- assign n = product.id | abs | times: 37 | modulo: 900 | plus: 120 -%}
+    {%- assign nn = n | append: '' -%}{%- if n >= 1000 -%}{%- assign nn = n | divided_by: 100 | divided_by: 10.0 | append: 'k' -%}{%- endif -%}
+    <p class="pdp__buzz">{% render 'snippets/icon', name: 'fire' %}{{ settings.pdp_social_proof | replace: '[n]', nn }}</p>
+    {%- endif -%}
+
+    <form class="pdp__form" data-product-form>
+      {%- for option in product.options -%}
+      {%- assign oi = forloop.index0 -%}
+      {%- assign oname = option.name | downcase -%}
+      {%- assign is_colour = false -%}{%- if oname contains 'colo' or oname contains 'shade' -%}{%- assign is_colour = true -%}{%- endif -%}
+      <fieldset class="opt">
+        <legend>{{ option.name }}: <b data-opt-label="{{ oi }}">{{ option.values | first }}</b></legend>
+        <div class="opt__values{% if is_colour %} opt__values--sw{% endif %}">
+          {%- for value in option.values -%}
+          {%- assign img = nil -%}
+          {%- if is_colour -%}{%- for v in product.variants -%}{%- if v.option_values[oi] == value and v.image -%}{%- assign img = v.image -%}{%- break -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+          {%- if is_colour and img == nil -%}{%- assign k = forloop.index0 -%}{%- assign img = product.images[k].src -%}{%- endif -%}
+          <label class="{% if is_colour %}sw{% else %}pill{% endif %}" title="{{ value | escape }}">
+            <input type="radio" name="option{{ oi }}" value="{{ value | escape }}" {% if forloop.first %}checked{% endif %}>
+            {%- if is_colour and img -%}<span class="sw__img"><img src="{{ img | img_url: 140 }}" alt="{{ value | escape }}" loading="lazy"></span>{%- else -%}<span>{{ value }}</span>{%- endif -%}
+          </label>
+          {%- endfor -%}
+        </div>
+      </fieldset>
+      {%- endfor -%}
+      <input type="hidden" name="qty" value="1">
+
+      {%- if settings.pdp_pincode -%}
+      <div class="pin" data-pin data-days="{{ settings.pdp_delivery_days | default: 5 }}">
+        <div class="pin__row">{% render 'snippets/icon', name: 'pin' %}<input type="text" inputmode="numeric" maxlength="6" placeholder="Enter pincode" aria-label="Pincode" data-pin-input><button type="button" data-pin-go>Check</button></div>
+        <p class="pin__out" data-pin-out hidden></p>
+      </div>
+      {%- endif -%}
+
+      {%- if s.coupons.size > 0 -%}
+      <div class="cpn">
+        <p class="cpn__h">{{ s.coupons_heading | default: 'Special offers' }}</p>
+        <div class="cpn__row" data-drag-scroll>
+          {%- for c in s.coupons -%}
+          <button type="button" class="cpn__it" data-copy="{{ c.code | escape }}">
+            <span class="cpn__tag">{{ c.label | default: 'Coupon' }}</span>
+            <span class="cpn__ic">{% render 'snippets/icon', name: 'tag' %}</span>
+            <span class="cpn__t"><b>{{ c.code }}</b><small>{{ c.text }}</small></span>
+            <span class="cpn__copy">Copy</span>
+          </button>
+          {%- endfor -%}
+        </div>
+      </div>
+      {%- endif -%}
+
+      {%- if s.perks.size > 0 -%}
+      <div class="perks">
+        {%- for p in s.perks -%}<span>{% render 'snippets/icon', name: p.icon, stroke: '1.5' %}<b>{{ p.text }}</b></span>{%- endfor -%}
+      </div>
+      {%- endif -%}
+
+      <p class="pdp__soldout" data-soldout hidden>This option is sold out.</p>
+      {%- if product.demo -%}
+      <p class="pdp__demo">Sample product — this preview can’t place an order.</p>
+      <div class="pdp__btns"><button type="button" class="btn btn--line" disabled>{{ s.cart_label | default: 'Add to cart' }}</button><button type="button" class="btn" disabled>{{ s.buy_label | default: 'Buy now' }}</button></div>
+      {%- else -%}
+      <div class="pdp__btns">
+        {%- if s.show_add_cart -%}<button type="submit" name="buy" value="cart" class="btn btn--line" data-add>{{ s.cart_label | default: 'Add to cart' }}</button>{%- endif -%}
+        <button type="submit" name="buy" value="now" class="btn" data-buy>{{ s.buy_label | default: 'Buy now' }}</button>
+      </div>
+      {%- endif -%}
+      {%- if s.trust_line != blank -%}<p class="pdp__trust">{% render 'snippets/icon', name: 'shield' %}{{ s.trust_line }}</p>{%- endif -%}
+    </form>
+  </div>
+</section>
+<script type="application/json" id="product-json">{{ product.json }}</script>
+{%- if settings.pdp_sticky_buy != false and product.demo != true -%}
+<div class="sbuy" data-sticky>
+  {%- if product.featured_image -%}<img src="{{ product.featured_image | img_url: 120 }}" alt="">{%- endif -%}
+  <div class="sbuy__t"><p>{{ product.title }}</p><b data-sticky-price>{{ product.price | money }}</b></div>
+  <button type="button" class="btn" data-sticky-buy>{{ s.buy_label | default: 'Buy now' }}</button>
+</div>
+{%- endif -%}
+{% schema %}
+{ "name": "Product details", "settings": [
+  { "id": "image_badge", "type": "image", "label": "Small mark on the main photo (optional, for example a rating badge)" },
+  { "type": "header", "id": "h_offer", "label": "Offer box under the price" },
+  { "id": "offer_tag", "type": "text", "label": "Tag", "default": "NEW" },
+  { "id": "offer_text", "type": "text", "label": "Offer line (empty = hide the box)", "default": "Extra 5% off when you pay online" },
+  { "id": "offer_small", "type": "text", "label": "Small line", "default": "UPI, cards and net banking" },
+  { "id": "offer_button", "type": "text", "label": "Pill on the right (optional)", "default": "Prepaid offer" },
+  { "type": "header", "id": "h_coupons", "label": "Coupons" },
+  { "id": "coupons_heading", "type": "text", "label": "Heading", "default": "Special offers" },
+  { "id": "coupons", "type": "list", "label": "Coupon cards (tap to copy the code)", "item_label": "coupon", "max_items": 8, "fields": [
+    { "id": "code", "type": "text", "label": "Code" },
+    { "id": "text", "type": "text", "label": "What it gives" },
+    { "id": "label", "type": "text", "label": "Tag", "default": "Coupon" }
+  ], "default": [ { "code": "WELCOME10", "text": "10% off on your first order", "label": "Coupon" }, { "code": "BUY2SAVE", "text": "Extra ₹200 off on 2 items", "label": "Combo" } ] },
+  { "type": "header", "id": "h_perks", "label": "Black strip with icons" },
+  { "id": "perks", "type": "list", "label": "Icons", "item_label": "icon", "max_items": 4, "fields": [
+    { "id": "icon", "type": "select", "label": "Icon", "options": ["box", "truck", "badge", "receipt", "shield", "refresh", "cash", "lock", "headphones", "crown"], "default": "box" },
+    { "id": "text", "type": "text", "label": "Text" }
+  ], "default": [ { "icon": "truck", "text": "Free shipping" }, { "icon": "badge", "text": "1 year warranty" }, { "icon": "receipt", "text": "GST billing" }, { "icon": "cash", "text": "Cash on delivery" } ] },
+  { "type": "header", "id": "h_buttons", "label": "Buttons" },
+  { "id": "show_add_cart", "type": "checkbox", "label": "Show “Add to cart”", "default": true },
+  { "id": "cart_label", "type": "text", "label": "“Add to cart” text", "default": "Add to cart" },
+  { "id": "buy_label", "type": "text", "label": "“Buy now” text", "default": "Buy now" },
+  { "id": "trust_line", "type": "text", "label": "Line under the buttons", "default": "Secure checkout · Easy 7-day replacement" }
+] }
+{% endschema %}

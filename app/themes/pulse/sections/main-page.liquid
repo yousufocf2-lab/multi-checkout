@@ -1,0 +1,11 @@
+<section class="block">
+  <div class="wrap{% unless page.layout == 'wide' %} wrap--narrow{% endunless %}">
+    {%- if page.draft -%}<p class="page-draft">Only you can see this page. Tick “Published on the website” to show it to shoppers.</p>{%- endif -%}
+    {%- unless page.hide_title -%}<h1>{{ page.title }}</h1>{%- endunless -%}
+    <div class="rte page-body">{{ page.content }}</div>
+  </div>
+</section>
+<style>{{ page.blocks_css }}.page-draft{margin:0 0 16px;padding:10px 14px;border-radius:10px;background:#fff7e0;color:#7a5200;font-size:13px}</style>
+{% schema %}
+{ "name": "Page", "settings": [] }
+{% endschema %}

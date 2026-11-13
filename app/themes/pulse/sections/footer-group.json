@@ -1,0 +1,1 @@
+{ "sections": { "footer": { "type": "footer", "settings": {} }, "tabbar": { "type": "mobile-tabbar", "settings": {} } }, "order": ["footer", "tabbar"] }

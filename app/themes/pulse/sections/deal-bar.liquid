@@ -1,0 +1,45 @@
+{%- assign s = section.settings -%}
+{%- unless s.hidden -%}
+<div class="deal{% if s.hide_mobile %} deal--hide-m{% endif %}" style="--deal-a:{{ s.color_a | default: '#3a0610' }};--deal-b:{{ s.color_b | default: '#8a1426' }};--deal-ink:{{ s.text_color | default: '#ffffff' }};--deal-tag:{{ s.tag_color | default: '#8a1426' }};{% if s.image != blank %}background-image:url('{{ s.image | img_url: 1920 }}');{% endif %}">
+  {%- if s.link != blank -%}<a class="deal__link" href="{{ s.link | safe_url }}" aria-label="{{ s.title | escape }} {{ s.title_italic | escape }}"></a>{%- endif -%}
+  <div class="deal__in">
+    {%- if s.show_timer -%}
+    <div class="deal__timer" data-countdown="{{ s.ends_at | escape }}" aria-label="Offer ends in">
+      <span><b data-d>00</b><small>Days</small></span>
+      <span><b data-h>00</b><small>Hrs</small></span>
+      <span><b data-m>00</b><small>Min</small></span>
+      <span><b data-s>00</b><small>Sec</small></span>
+    </div>
+    {%- endif -%}
+    <p class="deal__title">{% render 'snippets/icon', name: 'sparkle' %}<span>{{ s.title }}{% if s.title_italic != blank %}<i>{{ s.title_italic }}</i>{% endif %}</span>{% render 'snippets/icon', name: 'sparkle' %}</p>
+    {%- if s.tag_label != blank -%}
+    <div class="deal__tag">
+      <span class="deal__tag-top">{{ s.tag_label }} {% render 'snippets/icon', name: 'up' %}</span>
+      {%- if s.tag_big != blank -%}<span class="deal__tag-drop"><small>{{ s.tag_small }}</small><b>{{ s.tag_big }}</b></span>{%- endif -%}
+    </div>
+    {%- endif -%}
+  </div>
+</div>
+{%- endunless -%}
+{% schema %}
+{ "name": "Deal bar with countdown", "category": "Content", "description": "Sale strip on top: countdown, offer name and a hanging price tag", "settings": [
+  { "id": "hidden", "type": "checkbox", "label": "Hide this bar", "default": false },
+  { "id": "hide_mobile", "type": "checkbox", "label": "Hide on phones", "default": false },
+  { "id": "title", "type": "text", "label": "Offer name", "default": "Big Bang" },
+  { "id": "title_italic", "type": "text", "label": "Offer name, second part (shown in italics)", "default": "Sale" },
+  { "id": "link", "type": "url", "label": "Link (whole bar)", "default": "/products/all" },
+  { "type": "header", "id": "h_timer", "label": "Countdown" },
+  { "id": "show_timer", "type": "checkbox", "label": "Show countdown", "default": true },
+  { "id": "ends_at", "type": "datetime", "label": "Offer ends at", "default": "" },
+  { "type": "header", "id": "h_tag", "label": "Hanging tag" },
+  { "id": "tag_label", "type": "text", "label": "Tag text (empty = no tag)", "default": "SALE" },
+  { "id": "tag_small", "type": "text", "label": "Small line in the tag", "default": "upto" },
+  { "id": "tag_big", "type": "text", "label": "Big line in the tag", "default": "70% OFF" },
+  { "type": "header", "id": "h_look", "label": "Look" },
+  { "id": "image", "type": "image", "label": "Background image (optional)" },
+  { "id": "color_a", "type": "color", "label": "Background, left", "default": "#2b030b" },
+  { "id": "color_b", "type": "color", "label": "Background, middle", "default": "#8a1426" },
+  { "id": "text_color", "type": "color", "label": "Text", "default": "#ffffff" },
+  { "id": "tag_color", "type": "color", "label": "Tag colour", "default": "#9b1830" }
+] }
+{% endschema %}

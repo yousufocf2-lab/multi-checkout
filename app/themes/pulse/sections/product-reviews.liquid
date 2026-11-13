@@ -1,0 +1,45 @@
+{%- assign s = section.settings -%}
+<section class="rev sec" id="reviews">
+  <div class="pw rev__in">
+    <div class="rev__top">
+      <div>
+        <h2 class="sec__h">{{ s.heading | default: 'Customer reviews' }}</h2>
+        {%- if review_count > 0 -%}<p class="rev__sum">{% render 'snippets/stars', value: review_average %}<b>{{ review_average }}</b><span>{{ review_count }} reviews</span></p>
+        {%- else -%}<p class="rev__sum rev__sum--none">No reviews yet. Be the first to share yours.</p>{%- endif -%}
+      </div>
+      {%- unless product.demo -%}<button type="button" class="btn btn--accent" data-review-open>{{ s.write_label | default: 'Write a review' }}</button>{%- endunless -%}
+    </div>
+    {%- if review_submitted -%}<p class="rev__ok">{% render 'snippets/icon', name: 'check' %}Thank you. Your review was sent for approval.</p>{%- endif -%}
+    {%- unless product.demo -%}
+    <form method="post" class="rev__form" data-review-form hidden>
+      <div class="rev__rate" role="radiogroup" aria-label="Rating">
+        {%- for i in (1..5) reversed -%}<input type="radio" name="rating" value="{{ i }}" id="rr{{ i }}" required><label for="rr{{ i }}" title="{{ i }} stars">★</label>{%- endfor -%}
+      </div>
+      <div class="rev__grid">
+        <label>Name<input name="name" maxlength="80" required autocomplete="name"></label>
+        <label>Email (optional)<input name="email" type="email" maxlength="254" autocomplete="email"></label>
+      </div>
+      <label>Your review<textarea name="body" minlength="10" maxlength="2000" required rows="4"></textarea></label>
+      <div class="reviews__trap" aria-hidden="true"><label>Leave this blank<input name="website" tabindex="-1" autocomplete="off"></label></div>
+      <button class="btn" type="submit">Submit review</button>
+    </form>
+    {%- endunless -%}
+    {%- if reviews.size > 0 -%}
+    <div class="rev__list">
+      {%- for r in reviews -%}
+      <article class="rev__it">
+        <p class="rev__stars">{% render 'snippets/stars', value: r.rating %}</p>
+        <p class="rev__who"><span class="rev__av">{{ r.authorName | slice: 0 | upcase }}</span><b>{{ r.authorName | escape }}</b><small>{{ r.createdAt | date: '%d %b %Y' }}</small><em>{% render 'snippets/icon', name: 'check' %}Verified buyer</em></p>
+        <p class="rev__body">{{ r.body | escape }}</p>
+      </article>
+      {%- endfor -%}
+    </div>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Product reviews", "category": "Trust", "description": "Product page: rating summary, review list and a write-a-review form", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Customer reviews" },
+  { "id": "write_label", "type": "text", "label": "Button", "default": "Write a review" }
+] }
+{% endschema %}

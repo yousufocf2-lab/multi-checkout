@@ -8,9 +8,9 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 import { catalogCategories, catalogItems, db, storePages, type ThemeData, type ThemeSection, type ThemeTemplate } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
-import { themeManifest } from "~/lib/storefront.server";
+import { themeManifest, themeOf } from "~/lib/storefront.server";
 import { listMenus } from "~/lib/menus.server";
-import { editorState, publishDraft, saveDraft, THEME } from "~/lib/themes.server";
+import { editorState, publishDraft, saveDraft } from "~/lib/themes.server";
 import { storePath } from "~/lib/store-code";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Storefront Studio · ${data.store.name}` : "Storefront Studio" }, { name: "robots", content: "noindex" }];
@@ -24,14 +24,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
-  const [st, product, categories, page, menus] = await Promise.all([
+  const [st, product, categories, page, menus, products] = await Promise.all([
     editorState(store.id),
     db.select({ handle: catalogItems.handle }).from(catalogItems).where(and(eq(catalogItems.storeId, store.id), eq(catalogItems.status, "active"))).orderBy(asc(catalogItems.id)).limit(1),
     db.select({ title: catalogCategories.title, handle: catalogCategories.handle }).from(catalogCategories).where(eq(catalogCategories.storeId, store.id)).orderBy(asc(catalogCategories.position), asc(catalogCategories.title)),
     db.select({ handle: storePages.handle }).from(storePages).where(and(eq(storePages.storeId, store.id), eq(storePages.published, true))).orderBy(asc(storePages.position)).limit(1),
     listMenus(store.id),
+    db.select({ handle: catalogItems.handle, title: catalogItems.title, images: catalogItems.images }).from(catalogItems).where(and(eq(catalogItems.storeId, store.id), eq(catalogItems.status, "active"))).orderBy(asc(catalogItems.title)).limit(600),
   ]);
-  const m = themeManifest(THEME);
+  const m = themeManifest(themeOf(st.data));
   return json({
     store: { id: store.id, slug: store.slug, name: store.name },
     manifest: { settingsSchema: m.settingsSchema, sections: m.sections, defaults: m.defaults },
@@ -39,6 +40,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     samples: { product: product[0]?.handle ?? null, collection: categories[0]?.handle ?? "all", page: page[0]?.handle ?? null },
     categories,
     menus: menus.map((m) => ({ title: m.title, handle: m.handle, where: m.inHeader ? "Header" : m.inFooter ? "Footer" : "" })),
+    // For "Pick products" settings (carousels, videos, reels)
+    products: products.map((p) => ({ handle: p.handle, title: p.title, image: p.images?.find((i) => i.type !== "video")?.url ?? null })),
   });
 }
 
@@ -66,8 +69,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 /** Plain fetch to this route's action gets JSON back (not the page) with Remix's _data parameter. */
 const DATA_ID = encodeURIComponent("routes/store_.$id.editor");
 
-type Setting = { id: string; type: string; label?: string; default?: unknown; min?: number; max?: number; step?: number; unit?: string; options?: string[]; option_labels?: string[]; fields?: Setting[]; info?: string };
-type Kind = { type: string; name: string; settings: Setting[]; where: "template" | "header" | "footer" | "fixed" };
+type Setting = { id: string; type: string; label?: string; default?: unknown; min?: number; max?: number; step?: number; unit?: string; options?: string[]; option_labels?: string[]; fields?: Setting[]; info?: string; placeholder?: string; limit?: number };
+type Kind = { type: string; name: string; settings: Setting[]; where: "template" | "header" | "footer" | "fixed"; category?: string; description?: string };
 type Group = "header" | "template" | "footer";
 type Sel = { group: Group; id: string } | null;
 
@@ -284,7 +287,7 @@ export default function ThemeEditor() {
   const settingsGroups = L.manifest.settingsSchema as { name: string; settings: Setting[] }[];
 
   return (
-    <MenusCtx.Provider value={L.menus}>
+    <MenusCtx.Provider value={L.menus}><ProductsCtx.Provider value={L.products}>
     <div className="ed">
       <style dangerouslySetInnerHTML={{ __html: ED_CSS }} />
       {/* top bar */}
@@ -416,7 +419,7 @@ export default function ThemeEditor() {
         </main>
       </div>
     </div>
-    </MenusCtx.Provider>
+    </ProductsCtx.Provider></MenusCtx.Provider>
   );
 }
 
@@ -471,6 +474,10 @@ const iconOf = (type: string) => ({
   header: "header", footer: "footer", announcement: "announce", hero: "image", "image-with-text": "image", "video-banner": "video",
   "product-grid": "grid", "collection-list": "grid", testimonials: "star", faq: "help", "trust-badges": "badge", "rich-text": "text",
   "custom-liquid": "code", multicolumn: "columns", "logo-list": "logos", spacer: "spacer",
+  "deal-bar": "announce", "hero-slider": "image", "image-banner": "image", "category-strip": "grid", "category-circles": "grid", "product-carousel": "grid",
+  "creator-reels": "video", "shop-videos": "video", "fresh-finds": "video", "story-slider": "image", "awards-slider": "logos", "logo-marquee": "logos",
+  "payment-logos": "badge", "stat-badges": "badge", "usp-tiles": "badge", "blog-cards": "columns", "mobile-tabbar": "footer", "product-details": "text",
+  "product-faq": "help", "product-reviews": "star", "video-bubble": "video",
 } as Record<string, string>)[type] ?? (type.startsWith("main-") ? "bag" : "layers");
 
 function SectionList({ group, title, list, kindOf, sel, onSelect, onToggle, onReorder, onAdd, adding, children }: {
@@ -517,6 +524,9 @@ function SectionList({ group, title, list, kindOf, sel, onSelect, onToggle, onRe
 
 /** The store's menus (Storefront → Menus), for "menu" settings. */
 const MenusCtx = createContext<{ title: string; handle: string; where: string }[]>([]);
+/** The store's active products, for "product" and "products" settings. */
+type PickProduct = { handle: string; title: string; image: string | null };
+const ProductsCtx = createContext<PickProduct[]>([]);
 
 function Field({ s, value, onChange, storeId, categories }: { s: Setting; value: unknown; onChange: (v: unknown) => void; storeId: number; categories: { title: string; handle: string }[] }) {
   const id = `f-${s.id}-${useId().replace(/:/g, "")}`;
@@ -583,9 +593,81 @@ function Field({ s, value, onChange, storeId, categories }: { s: Setting; value:
       return <ListField s={s} value={Array.isArray(value) ? (value as Record<string, unknown>[]) : []} onChange={onChange} storeId={storeId} categories={categories} />;
     case "url":
       return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} placeholder="Paste a link or /products/all" className="ed-input" /></div>;
+    case "number":
+      return <div className="ed-f">{label}<input id={id} type="number" value={str} min={s.min} max={s.max} step={s.step ?? 1} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} className="ed-input" /></div>;
+    case "datetime":
+      return (
+        <div className="ed-f">{label}
+          <input id={id} type="datetime-local" value={str.slice(0, 16)} onChange={(e) => onChange(e.target.value)} className="ed-input" />
+          <span className="ed-hint">{s.info ?? "Indian time. Empty = the timer restarts every day at midnight."}</span>
+        </div>
+      );
+    case "header":
+      return <p className="ed-sub">{s.label}</p>;
+    case "paragraph":
+      return <p className="ed-hint" style={{ margin: "0 0 4px" }}>{s.label}</p>;
+    case "product":
+    case "products":
+      return <ProductsField id={id} s={s} value={value} onChange={onChange} />;
     default:
-      return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} className="ed-input" /></div>;
+      return <div className="ed-f">{label}<input id={id} value={str} onChange={(e) => onChange(e.target.value)} placeholder={s.placeholder} className="ed-input" />{s.info && <span className="ed-hint">{s.info}</span>}</div>;
   }
+}
+
+/** Pick one product ("product") or several in order ("products"). Saved as product handles. */
+function ProductsField({ id, s, value, onChange }: { id: string; s: Setting; value: unknown; onChange: (v: unknown) => void }) {
+  const all = useContext(ProductsCtx);
+  const multi = s.type === "products";
+  const picked: string[] = multi ? (Array.isArray(value) ? (value as unknown[]).map(String) : []) : value ? [String(value)] : [];
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const max = s.limit ?? 24;
+  const byHandle = new Map(all.map((p) => [p.handle, p]));
+  const results = all.filter((p) => !picked.includes(p.handle) && (!q || p.title.toLowerCase().includes(q.toLowerCase()))).slice(0, 30);
+  const set = (list: string[]) => onChange(multi ? list : list[0] ?? "");
+  const move = (i: number, j: number) => { if (j < 0 || j >= picked.length) return; const n = picked.slice(); [n[i], n[j]] = [n[j], n[i]]; set(n); };
+  return (
+    <div className="ed-f" ref={box}>
+      <label htmlFor={id} className="ed-label">{s.label}</label>
+      {picked.length > 0 && (
+        <ul className="ed-pp">
+          {picked.map((h, i) => {
+            const p = byHandle.get(h);
+            return (
+              <li key={h}>
+                {p?.image ? <img src={p.image} alt="" /> : <span className="ed-pp__ph" />}
+                <span className="ed-pp__t">{p?.title ?? h}{!p && <em> · not found</em>}</span>
+                {multi && <button type="button" className="ed-ib ed-ib--sm" onClick={() => move(i, i - 1)} disabled={i === 0} aria-label="Move up"><I n="up" /></button>}
+                <button type="button" className="ed-ib ed-ib--sm" onClick={() => set(picked.filter((x) => x !== h))} aria-label="Remove"><I n="x" /></button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {(multi ? picked.length < max : picked.length === 0) && (
+        <div className="ed-pp__find">
+          <input id={id} value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} placeholder={all.length ? "Search your products" : "Add products in Catalog first"} className="ed-input" autoComplete="off" />
+          {open && results.length > 0 && (
+            <div className="ed-pp__menu" role="listbox">
+              {results.map((p) => (
+                <button key={p.handle} type="button" role="option" aria-selected={false} onClick={() => { set([...picked, p.handle]); setQ(""); if (!multi) setOpen(false); }}>
+                  {p.image ? <img src={p.image} alt="" /> : <span className="ed-pp__ph" />}<span>{p.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {s.info && <span className="ed-hint">{s.info}</span>}
+    </div>
+  );
 }
 
 /** What each section is for, so people can pick the right one. */
@@ -616,9 +698,10 @@ function SectionPicker({ kinds, onPick, onClose }: { kinds: Kind[]; onPick: (typ
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
   }, [onClose]);
-  const match = (k: Kind) => !q || `${k.name} ${SECTION_INFO[k.type]?.text ?? ""}`.toLowerCase().includes(q.toLowerCase());
+  const info = (k: Kind) => SECTION_INFO[k.type] ?? (k.description ? { cat: (CATS as readonly string[]).includes(k.category ?? "") ? (k.category as (typeof CATS)[number]) : "Content", text: k.description } : undefined);
+  const match = (k: Kind) => !q || `${k.name} ${info(k)?.text ?? ""}`.toLowerCase().includes(q.toLowerCase());
   const list = kinds.filter(match);
-  const groups = CATS.map((c) => ({ c, items: list.filter((k) => (SECTION_INFO[k.type]?.cat ?? "Content") === c) })).filter((g) => g.items.length);
+  const groups = CATS.map((c) => ({ c, items: list.filter((k) => (info(k)?.cat ?? "Content") === c) })).filter((g) => g.items.length);
   return (
     <div className="ed-pick" ref={box} role="dialog" aria-label="Add section">
       {kinds.length > 5 && (
@@ -631,7 +714,7 @@ function SectionPicker({ kinds, onPick, onClose }: { kinds: Kind[]; onPick: (typ
             {g.items.map((k) => (
               <button key={k.type} type="button" className="ed-pick__item" onClick={() => onPick(k.type)}>
                 <span className="ed-pick__ic"><I n={iconOf(k.type)} /></span>
-                <span><b>{k.name}</b>{SECTION_INFO[k.type] && <small>{SECTION_INFO[k.type].text}</small>}</span>
+                <span><b>{k.name}</b>{info(k) && <small>{info(k)!.text}</small>}</span>
               </button>
             ))}
           </div>
@@ -808,8 +891,8 @@ function ListField({ s, value, onChange, storeId, categories }: { s: Setting; va
           </li>
         ))}
       </ul>
-      {value.length < 20 && (
-        <button type="button" className="ed-add" onClick={() => { const blank = Object.fromEntries(fields.map((f) => [f.id, f.type === "range" ? f.max ?? 5 : f.type === "select" ? f.options?.[0] ?? "" : ""])); onChange([...value, blank]); setOpen(value.length); }}>
+      {value.length < ((s as { max_items?: number }).max_items ?? 20) && (
+        <button type="button" className="ed-add" onClick={() => { const blank = Object.fromEntries(fields.map((f) => [f.id, f.default ?? (f.type === "range" ? f.max ?? 5 : f.type === "select" ? f.options?.[0] ?? "" : f.type === "products" ? [] : "")])); onChange([...value, blank]); setOpen(value.length); }}>
           <I n="plus" />Add {String((s as { item_label?: string }).item_label ?? "item")}
         </button>
       )}
@@ -923,6 +1006,17 @@ const ED_CSS = `
 .ed-label{font-size:12.5px;color:#303030;font-weight:450}
 .ed-label--inline{display:block;line-height:1.2}
 .ed-hint{font-size:11.5px;color:#8a8a8a}
+.ed-sub{margin:14px 0 2px;padding-top:12px;border-top:1px solid #ebebeb;font-size:11px;font-weight:650;letter-spacing:.04em;text-transform:uppercase;color:#616161}
+.ed-pp{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:4px}
+.ed-pp li{display:flex;align-items:center;gap:8px;padding:4px 4px 4px 4px;border:1px solid #e3e3e3;border-radius:8px;background:#fff}
+.ed-pp img,.ed-pp__ph{width:28px;height:28px;border-radius:6px;object-fit:cover;flex:none;background:#f1f1f1}
+.ed-pp__t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+.ed-pp__t em{color:#8e1f0b;font-style:normal}
+.ed-pp__find{position:relative}
+.ed-pp__menu{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);max-height:260px;overflow:auto;background:#fff;border:1px solid #e3e3e3;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px}
+.ed-pp__menu button{display:flex!important;align-items:center;gap:8px;width:100%;padding:6px!important;border-radius:6px;text-align:left;font-size:12.5px}
+.ed-pp__menu button:hover{background:#f1f1f1}
+.ed-pp__menu img,.ed-pp__menu .ed-pp__ph{width:26px;height:26px;border-radius:5px;object-fit:cover;flex:none;background:#f1f1f1}
 .ed-hint--bad{color:#8e1f0b}
 .ed-input{height:30px;width:100%;padding:0 10px;border:1px solid #d4d4d4;border-radius:8px;background:#fdfdfd;font:inherit;color:#303030;outline:0;transition:border-color .12s,box-shadow .12s}
 .ed-input:hover{border-color:#b5b5b5}

@@ -1,0 +1,55 @@
+{%- assign s = section.settings -%}
+{%- assign slides = s.slides -%}
+<section class="hero{% if s.full_width %} hero--full{% else %} pw hero--boxed{% endif %}" data-slider data-autoplay="{{ s.autoplay | default: 5 }}" style="--hero-r:{% if s.full_width %}0{% else %}var(--radius){% endif %}">
+  <div class="hero__track" data-track>
+    {%- if slides.size > 0 -%}
+    {%- for sl in slides -%}
+    {%- assign mob = sl.image_mobile | default: sl.image -%}
+    <div class="hero__slide" data-slide>
+      {%- if sl.link != blank -%}<a href="{{ sl.link | safe_url }}" class="hero__a" aria-label="{{ sl.heading | default: sl.alt | default: 'Open offer' | escape }}">{%- endif -%}
+      <picture>
+        {%- if sl.image_mobile != blank -%}<source media="(max-width: 749px)" srcset="{{ sl.image_mobile | img_url: 800 }}">{%- endif -%}
+        {%- if sl.image != blank -%}
+        <img src="{{ sl.image | img_url: 1920 }}" alt="{{ sl.alt | default: sl.heading | escape }}" {% if forloop.first %}fetchpriority="high"{% else %}loading="lazy"{% endif %} width="1920" height="700">
+        {%- else -%}<span class="hero__ph" style="--a:{{ sl.color | default: '#1b1b1f' }}"></span>{%- endif -%}
+      </picture>
+      {%- if sl.heading != blank or sl.text != blank or sl.button != blank -%}
+      <div class="hero__copy hero__copy--{{ sl.align | default: 'left' }}" style="color:{{ sl.text_color | default: '#ffffff' }}">
+        {%- if sl.eyebrow != blank -%}<p class="hero__eye">{{ sl.eyebrow }}</p>{%- endif -%}
+        {%- if sl.heading != blank -%}<h2 class="hero__h">{{ sl.heading }}</h2>{%- endif -%}
+        {%- if sl.text != blank -%}<p class="hero__t">{{ sl.text }}</p>{%- endif -%}
+        {%- if sl.button != blank -%}<span class="btn btn--light">{{ sl.button }}</span>{%- endif -%}
+      </div>
+      {%- endif -%}
+      {%- if sl.link != blank -%}</a>{%- endif -%}
+    </div>
+    {%- endfor -%}
+    {%- else -%}
+    <div class="hero__slide" data-slide><span class="hero__ph" style="--a:#17171c"></span><div class="hero__copy hero__copy--left" style="color:#fff"><p class="hero__eye">Your brand</p><h2 class="hero__h">Add your banners</h2><p class="hero__t">Open this section and add slides with a computer and a phone image.</p></div></div>
+    {%- endif -%}
+  </div>
+  {%- if slides.size > 1 -%}
+  <button type="button" class="sl-arrow sl-arrow--prev" data-prev aria-label="Previous slide">{% render 'snippets/icon', name: 'left' %}</button>
+  <button type="button" class="sl-arrow sl-arrow--next" data-next aria-label="Next slide">{% render 'snippets/icon', name: 'right' %}</button>
+  <div class="hero__dots" data-dots></div>
+  {%- endif -%}
+</section>
+{% schema %}
+{ "name": "Banner slider", "category": "Media", "description": "Full-width banners with separate computer and phone images", "settings": [
+  { "id": "slides", "type": "list", "label": "Slides", "item_label": "slide", "max_items": 12, "fields": [
+    { "id": "image", "type": "image", "label": "Computer image (1920 × 700 works well)" },
+    { "id": "image_mobile", "type": "image", "label": "Phone image (800 × 1000 works well)" },
+    { "id": "link", "type": "url", "label": "Link" },
+    { "id": "alt", "type": "text", "label": "Image description (for search engines)" },
+    { "id": "eyebrow", "type": "text", "label": "Small line above the heading (optional)" },
+    { "id": "heading", "type": "text", "label": "Heading on the image (optional)" },
+    { "id": "text", "type": "text", "label": "Text on the image (optional)" },
+    { "id": "button", "type": "text", "label": "Button text (optional)" },
+    { "id": "align", "type": "select", "label": "Text position", "options": ["left", "center", "right"], "default": "left" },
+    { "id": "text_color", "type": "color", "label": "Text colour", "default": "#ffffff" },
+    { "id": "color", "type": "color", "label": "Background when there is no image", "default": "#17171c" }
+  ], "default": [] },
+  { "id": "autoplay", "type": "range", "label": "Change slide every (0 = never)", "min": 0, "max": 12, "step": 1, "unit": " s", "default": 5 },
+  { "id": "full_width", "type": "checkbox", "label": "Edge to edge", "default": true }
+] }
+{% endschema %}

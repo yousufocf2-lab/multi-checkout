@@ -61,6 +61,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       barcode: str(fd.get("barcode")) || null, continueSelling: fd.get("continueSelling") === "on", physical: fd.get("physical") === "on",
       hsn: str(fd.get("hsn")) || null, origin: str(fd.get("origin")) || null, weightUnit: unit,
       dims: { l: num(fd.get("dimL")), w: num(fd.get("dimW")), h: num(fd.get("dimH")) },
+      site: readSite(fd),
     };
     const newId = await saveItem(store, {
       title: str(fd.get("title")), handle: str(fd.get("handle")) || undefined, descriptionHtml: cleanHtml(str(fd.get("description"))), status,
@@ -76,6 +77,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   } catch (e) {
     return json({ ok: null, error: e instanceof Error ? e.message : "Couldn't save" }, { status: 400 });
   }
+}
+
+/** Website details (badge, chips, key features, specs, questions) used by storefront themes such as Pulse. */
+function readSite(fd: FormData) {
+  const lines = (k: string) => str(fd.get(k)).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const pair = (l: string, sep: RegExp) => { const m = l.split(sep); return [m[0].trim(), m.slice(1).join(" ").trim()] as const; };
+  return {
+    badge: str(fd.get("siteBadge")).slice(0, 30),
+    subtitle: str(fd.get("siteSubtitle")).slice(0, 220),
+    feature: str(fd.get("siteFeature")).slice(0, 30),
+    chips: str(fd.get("siteChips")).split(",").map((c) => c.trim()).filter(Boolean).slice(0, 6).map((c) => c.slice(0, 24)),
+    usp: lines("siteUsp").slice(0, 12).map((l) => l.slice(0, 120)),
+    specs: lines("siteSpecs").slice(0, 30).map((l) => pair(l, /:\s*/)).filter(([label]) => label).map(([label, value]) => ({ label: label.slice(0, 60), value: value.slice(0, 200) })),
+    faqs: lines("siteFaqs").slice(0, 20).map((l) => pair(l, /\s*\|\s*/)).filter(([q]) => q).map(([q, a]) => ({ q: q.slice(0, 200), a: a.slice(0, 1000) })),
+  };
 }
 
 /** Description from the editor: keep simple formatting tags only. */
@@ -119,7 +135,8 @@ function combine(options: { name: string; values: string[] }[], old: Row[]): Row
   });
 }
 
-type Extra = { costPaise?: number | null; chargeTax?: boolean; gstRate?: number | null; barcode?: string | null; continueSelling?: boolean; physical?: boolean; hsn?: string | null; origin?: string | null; weightUnit?: "kg" | "g"; dims?: { l: number | null; w: number | null; h: number | null } };
+type SiteDetails = { badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[] };
+type Extra = { site?: SiteDetails; costPaise?: number | null; chargeTax?: boolean; gstRate?: number | null; barcode?: string | null; continueSelling?: boolean; physical?: boolean; hsn?: string | null; origin?: string | null; weightUnit?: "kg" | "g"; dims?: { l: number | null; w: number | null; h: number | null } };
 const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 
 export default function EditItem() {
@@ -344,6 +361,22 @@ export default function EditItem() {
                 <p className="px-4 py-2 text-[12px] text-ink-faint">{rows.length} variants · total stock {rows.reduce((n, r) => n + (Number(r.stock) || 0), 0).toLocaleString("en-IN")}</p>
               </div>
             )}
+          </section>
+
+          <section className="panel p-4">
+            <h2 className="text-[13.5px] font-semibold">Website details</h2>
+            <p className="mt-0.5 text-[12px] text-ink-faint">Shown on product cards and the product page of themes like Pulse. All optional.</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <label className="block"><span className="label">Badge on the card</span><input name="siteBadge" defaultValue={ex.site?.badge ?? ""} placeholder="New launch" maxLength={30} className="input w-full" /></label>
+              <label className="block"><span className="label">Feature label</span><input name="siteFeature" defaultValue={ex.site?.feature ?? ""} placeholder="32 dB ANC" maxLength={30} className="input w-full" /></label>
+              <label className="block"><span className="label">Feature chips</span><input name="siteChips" defaultValue={(ex.site?.chips ?? []).join(", ")} placeholder="50H playtime, Fast charge" className="input w-full" /></label>
+            </div>
+            <label className="mt-3 block"><span className="label">Short line under the title</span><input name="siteSubtitle" defaultValue={ex.site?.subtitle ?? ""} placeholder="Hybrid ANC earbuds with 50 hours of playback and app control" maxLength={220} className="input w-full" /></label>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block"><span className="label">Key features <span className="font-normal text-ink-faint">· one per line</span></span><textarea name="siteUsp" defaultValue={(ex.site?.usp ?? []).join("\n")} rows={5} placeholder={"32 dB hybrid ANC\n50 hours total playback\nIPX5 water resistance"} className="input w-full" /></label>
+              <label className="block"><span className="label">Specifications <span className="font-normal text-ink-faint">· Label: value</span></span><textarea name="siteSpecs" defaultValue={(ex.site?.specs ?? []).map((x) => `${x.label}: ${x.value}`).join("\n")} rows={5} placeholder={"Driver: 13 mm\nBluetooth: 5.4\nCharging: Type-C"} className="input w-full" /></label>
+            </div>
+            <label className="mt-3 block"><span className="label">Questions <span className="font-normal text-ink-faint">· one per line: Question | Answer</span></span><textarea name="siteFaqs" defaultValue={(ex.site?.faqs ?? []).map((x) => `${x.q} | ${x.a}`).join("\n")} rows={4} placeholder={"Is it waterproof? | It is IPX5 sweat and splash resistant."} className="input w-full" /></label>
           </section>
 
           <section className="panel p-4">

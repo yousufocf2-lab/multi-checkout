@@ -2,7 +2,8 @@
 // store's draft (keeping its logo, WhatsApp, social links and custom text), then the owner edits and publishes.
 import type { ThemeData, ThemeTemplate } from "~/db/schema";
 
-export type Preset = { id: string; name: string; tagline: string; best: string; swatch: string[]; settings: Record<string, unknown>; index: ThemeTemplate; pricePaise?: number };
+/** theme: the theme folder this look is built on (its own sections and page layouts); missing = Swift. index: Swift home page; themes with their own folder use that folder's templates. */
+export type Preset = { id: string; name: string; tagline: string; best: string; swatch: string[]; settings: Record<string, unknown>; index?: ThemeTemplate; pricePaise?: number; theme?: string };
 
 const sec = (list: [string, string, Record<string, unknown>?][]): ThemeTemplate => ({
   sections: Object.fromEntries(list.map(([id, type, settings]) => [id, { type, settings: settings ?? {} }])),
@@ -70,18 +71,37 @@ const ALL_PRESETS: Preset[] = [
     settings: { color_bg: "#f3eee6", color_text: "#211d19", color_muted: "#777066", color_soft: "#e9e1d5", color_brand: "#a7794f", color_button_text: "#fffdf8", color_announce_bg: "#211d19", color_announce_text: "#f3eee6", font_heading: "Playfair Display", font_body: "Manrope", heading_uppercase: false, heading_scale: 108, button_radius: 2, card_radius: 3, card_ratio: "portrait", preset: "scentelier" },
     index: sec([["hero", "hero", { eyebrow: "A STUDY IN SCENT", heading: "Leave a little of you behind.", text: "Considered fragrances for the moments that become memories.", button_label: "Explore the collection", slides: [{ image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=2000&q=85", alt: "Sculptural perfume bottles in warm light" }, { image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=2000&q=85", alt: "A refined fragrance bottle" }, { image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=2000&q=85", alt: "Perfume arranged as an editorial still life" }] }], ["categories", "collection-list", { heading: "Find your fragrance", limit: 4 }], ["new", "product-grid", { heading: "The scent wardrobe", limit: 8 }], ["story", "image-with-text", { heading: "Made to linger", text: "<p>Meet expressive notes, thoughtful blends and beautiful bottles made to make getting ready feel like a ritual.</p>", button_label: "Discover the house" }], ["reviews", "testimonials"], ["trust", "trust-badges"], ["email", "newsletter"]]),
   },
+  {
+    id: "pulse", name: "Pulse", theme: "pulse", tagline: "A bold electronics store: deal bar, mega menu, shoppable videos and a feature-rich product page", best: "Earbuds, smartwatches, speakers and gadgets", swatch: ["#ffffff", "#111111", "#1fa7b8"],
+    settings: { preset: "pulse" },
+  },
 ];
 
 // The colour-only starter looks stay resolvable for previews and existing saved designs,
 // but only complete, distinct designs are offered in the theme library.
-export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread" || p.id === "stride" || p.id === "playday" || p.id === "scentelier");
+export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread" || p.id === "stride" || p.id === "playday" || p.id === "scentelier" || p.id === "pulse");
 export const presetById = (id: string | null | undefined) => ALL_PRESETS.find((p) => p.id === id) ?? null;
 
 /** The store's design with a preset's look and home page; keeps logo, favicon, WhatsApp, social links and custom CSS. */
-export function applyPreset(current: ThemeData, p: Preset): ThemeData {
+export function applyPreset(current: ThemeData, p: Preset, fresh?: ThemeData): ThemeData {
+  const target = p.theme ?? "swift";
+  if (target !== (current.theme ?? "swift")) {
+    // Another theme folder: start from its own default pages, header and footer; keep the store's logo, icons and links
+    if (!fresh) throw new Error("Theme defaults are needed to switch themes.");
+    const keep = Object.fromEntries(Object.entries(current.settings ?? {}).filter(([k, v]) => CARRY.includes(k) && v != null && v !== ""));
+    const base = JSON.parse(JSON.stringify(fresh)) as ThemeData;
+    return {
+      ...base, theme: target,
+      settings: { ...base.settings, ...keep, ...p.settings, preset: p.id },
+      templates: p.index ? { ...base.templates, index: JSON.parse(JSON.stringify(p.index)) } : base.templates,
+    };
+  }
   return {
     ...current,
     settings: { ...current.settings, ...p.settings, preset: p.id },
-    templates: { ...current.templates, index: JSON.parse(JSON.stringify(p.index)) },
+    templates: p.index ? { ...current.templates, index: JSON.parse(JSON.stringify(p.index)) } : current.templates,
   };
 }
+
+/** Store details that stay when switching to a theme built on another folder. */
+const CARRY = ["logo", "favicon", "whatsapp_number", "social_instagram", "social_facebook", "social_youtube", "social_linkedin", "custom_css"];

@@ -7,12 +7,11 @@ import { clientIp } from "./orders.server";
 import { pageByHandle, publishedPage } from "./store-pages.server";
 import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
 import { PAGE_BLOCKS_CSS } from "./page-blocks";
-import { baseScope, demoProducts, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, type ShopContext } from "./storefront.server";
+import { baseScope, demoProducts, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, themeOf, isDemo, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
 import { searchProducts, suggest } from "./search.server";
 
-const THEME = "swift";
 const canonical = (ctx: ShopContext, path: string) => !ctx.preview && ctx.store.storefrontDomain ? `https://${ctx.store.storefrontDomain}${path}` : "";
 
 /** The store whose own domain this request came in on (www.brand.com or brand.com). Null when none. */
@@ -38,19 +37,19 @@ export async function homePage(ctx: ShopContext) {
         : ctx.demoPreset === "stride" ? "https://images.unsplash.com/photo-1581285864607-ef85509e7324?auto=format&fit=crop&w=1800&q=82"
           : ctx.demoPreset === "playday" ? "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1800&q=82" : null;
   const hero = ctx.demoPreset === "scentelier" ? "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=2000&q=85" : sampleHero;
-  return html(await renderPage(THEME, "index", {
+  return html(await renderPage(themeOf(ctx.look?.data), "index", {
     ...scope, template: "index", page_title: ctx.store.name, hero_image: hero ?? first[0]?.featured_image ?? null, og_image: hero ?? first[0]?.featured_image ?? null, canonical_url: canonical(ctx, "/"),
   }, sectionData(ctx), ctx.look));
 }
 
 export async function productPage(ctx: ShopContext, handle: string, reviewSubmitted = false) {
   const product = (await loadProduct(ctx, handle))
-    ?? (ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday" || ctx.demoPreset === "scentelier" ? demoProducts(ctx).find((p) => p.handle === handle) ?? null : null)
+    ?? (isDemo(ctx) ? demoProducts(ctx).find((p) => p.handle === handle) ?? null : null)
     ?? (handle === SAMPLE && ctx.look?.editor ? sampleProduct(ctx) : null);
   if (!product) throw await notFound(ctx, "This product isn't available any more. Have a look at everything else in the shop.");
   const scope = await baseScope(ctx);
   const reviewData = product.id ? await reviewsForProduct(ctx.store.id, Number(product.id)) : { rows: [], count: 0, average: 0 };
-  return html(await renderPage(THEME, "product", {
+  return html(await renderPage(themeOf(ctx.look?.data), "product", {
     ...scope, template: "product", product,
     reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_submitted: reviewSubmitted,
     page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/product/${product.handle || handle}`),
@@ -61,9 +60,9 @@ export async function collectionPage(ctx: ShopContext, handle: string) {
   const scope = await baseScope(ctx);
   const cat = handle === "all" ? null : scope.collections.find((c) => c.handle === handle);
   if (handle !== "all" && !cat) throw await notFound(ctx, "This category isn't available. Have a look at everything in the shop.");
-  const products = ctx.demoPreset === "mira" || ctx.demoPreset === "luma" || ctx.demoPreset === "thread" || ctx.demoPreset === "stride" || ctx.demoPreset === "playday" || ctx.demoPreset === "scentelier" ? demoProducts(ctx, cat?.handle) : await loadProducts(ctx, { category: cat?.handle });
+  const products = isDemo(ctx) ? demoProducts(ctx, cat?.handle) : await loadProducts(ctx, { category: cat?.handle });
   const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
-  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, handle === "all" ? "/products/all" : `/category/${handle}`) }, sectionData(ctx), ctx.look));
+  return html(await renderPage(themeOf(ctx.look?.data), "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, handle === "all" ? "/products/all" : `/category/${handle}`) }, sectionData(ctx), ctx.look));
 }
 
 export async function infoPage(ctx: ShopContext, handle: string) {
@@ -98,9 +97,14 @@ export async function infoPage(ctx: ShopContext, handle: string) {
     "contact-us": { title: "A note to our fragrance team", handle: "contact-us", bodyHtml: `<p>Need help choosing a scent, gifting or checking an order? We would love to help.</p>${ctx.store.supportPhone ? `<p><strong>Call us:</strong> <a href="tel:${ctx.store.supportPhone}">${ctx.store.supportPhone}</a></p>` : "<p><strong>Call us:</strong> Your store phone number will appear here.</p>"}<p><strong>Email:</strong> Add your customer-care email in the footer settings.</p><p><strong>Hours:</strong> Monday to Saturday, 10:00 am–6:00 pm</p>` },
     "shipping-returns": { title: "Delivery & returns", handle: "shipping-returns", bodyHtml: "<h2>Carefully packed, delivered with care</h2><p>Orders are prepared with care. Delivery timing depends on your location.</p><h2>Need a hand?</h2><p>Contact our team with your order number and we will guide you through the store's delivery and return policy. Replace this sample page with your actual terms before publishing.</p>" },
   };
+  const pulsePages: Record<string, P> = {
+    "about-us": { title: "Built for the way you listen", handle: "about-us", bodyHtml: "<p>We make audio and wearables that look as good as they sound: earbuds, headphones, smartwatches and speakers designed for everyday life.</p><h2>Design-led, tested hard</h2><p>Every product is tuned for clear calls, long battery and comfort you forget about. This is sample copy for the theme preview; replace it with your own story.</p>" },
+    "contact-us": { title: "Support that answers", handle: "contact-us", bodyHtml: `<p>Questions about an order, warranty or a product? Our team is here to help.</p>${ctx.store.supportPhone ? `<p><strong>Call us:</strong> <a href="tel:${ctx.store.supportPhone}">${ctx.store.supportPhone}</a></p>` : "<p><strong>Call us:</strong> Your store phone number will appear here.</p>"}<p><strong>Hours:</strong> Monday to Saturday, 10:00 am–7:00 pm</p>` },
+    "shipping-returns": { title: "Shipping, returns & warranty", handle: "shipping-returns", bodyHtml: "<h2>Delivery</h2><p>Orders ship within 24 hours and usually arrive in 3–6 days.</p><h2>Warranty</h2><p>Every product has a 1-year warranty against manufacturing defects. Sample policy for the preview; add your own terms before publishing.</p>" },
+  };
   const page: P | null = (await publishedPage(ctx.store.id, handle))
     ?? (ctx.owner ? await pageByHandle(ctx.store.id, handle) : null)
-    ?? (ctx.demoPreset === "mira" ? miraPages[handle] ?? null : ctx.demoPreset === "luma" ? lumaPages[handle] ?? null : ctx.demoPreset === "thread" ? threadPages[handle] ?? null : ctx.demoPreset === "stride" ? stridePages[handle] ?? null : ctx.demoPreset === "playday" ? playdayPages[handle] ?? null : ctx.demoPreset === "scentelier" ? scentelierPages[handle] ?? null : null)
+    ?? (ctx.demoPreset === "mira" ? miraPages[handle] ?? null : ctx.demoPreset === "luma" ? lumaPages[handle] ?? null : ctx.demoPreset === "thread" ? threadPages[handle] ?? null : ctx.demoPreset === "stride" ? stridePages[handle] ?? null : ctx.demoPreset === "playday" ? playdayPages[handle] ?? null : ctx.demoPreset === "scentelier" ? scentelierPages[handle] ?? null : ctx.demoPreset === "pulse" ? pulsePages[handle] ?? null : null)
     ?? (handle === SAMPLE && ctx.look?.editor ? { title: "About us", handle: SAMPLE, bodyHtml: "<p>This is how your pages (shipping policy, returns, about us) look. Add them from the Pages menu.</p>" } : null);
   if (!page) throw await notFound(ctx);
   const scope = await baseScope(ctx);
@@ -109,7 +113,7 @@ export async function infoPage(ctx: ShopContext, handle: string) {
   const out = await renderCustomLiquid(page.bodyHtml, { ...scope, page: { title: page.title, handle: page.handle } }, { id: `page-${page.handle}`.slice(0, 40), editor: false, vars: frameVars(settings) });
   const content = out.error ? sanitize(page.bodyHtml) : out.html;
   const plain = content.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\{\{[^}]*\}\}/g, "").replace(/\s+/g, " ").trim();
-  return html(await renderPage(THEME, "page", {
+  return html(await renderPage(themeOf(ctx.look?.data), "page", {
     ...scope, template: "page",
     page: { title: page.title, content, handle: page.handle, layout: page.layout === "wide" ? "wide" : "narrow", hide_title: Boolean(page.hideTitle), draft: page.published === false, blocks_css: PAGE_BLOCKS_CSS },
     page_title: page.seoTitle || page.title, page_description: page.seoDescription || plain.slice(0, 160),
@@ -122,7 +126,7 @@ export async function notFound(ctx: ShopContext, note = "The page you're looking
   const scope = await baseScope(ctx);
   const all = `${ctx.root}/products/all`;
   const content = `<div style="text-align:center;padding:24px 0 8px"><p style="margin:0 0 20px">${note}</p><p style="margin:0"><a href="${all}" style="display:inline-block;padding:12px 28px;background:#111;color:#fff;text-decoration:none">Continue shopping</a></p></div>`;
-  return html(await renderPage(THEME, "page", {
+  return html(await renderPage(themeOf(ctx.look?.data), "page", {
     ...scope, template: "page",
     page: { title: "Page not found", content, handle: "not-found", layout: "narrow", hide_title: false, draft: false, blocks_css: "" },
     page_title: "Page not found", page_description: "", canonical_url: "",
@@ -131,7 +135,7 @@ export async function notFound(ctx: ShopContext, note = "The page you're looking
 
 export async function cartPage(ctx: ShopContext) {
   const scope = await baseScope(ctx);
-  return html(await renderPage(THEME, "cart", { ...scope, template: "cart", page_title: "Cart" }, sectionData(ctx), ctx.look));
+  return html(await renderPage(themeOf(ctx.look?.data), "cart", { ...scope, template: "cart", page_title: "Cart" }, sectionData(ctx), ctx.look));
 }
 
 /**
@@ -189,7 +193,7 @@ export async function searchPage(ctx: ShopContext, request: Request) {
     description: q && !r.exact ? "We couldn't find an exact match, so here are the closest products." : "",
     search: { q, exact: r.exact, categories: r.categories.map((c) => ({ title: c.title, url: `${ctx.root}/category/${c.handle}` })) },
   };
-  return html(await renderPage(THEME, "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: "" }, sectionData(ctx), ctx.look));
+  return html(await renderPage(themeOf(ctx.look?.data), "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: "" }, sectionData(ctx), ctx.look));
 }
 
 /** JSON for the header's live search. */

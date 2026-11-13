@@ -1,0 +1,257 @@
+{
+ "sections": {
+  "cats": {
+   "type": "category-strip",
+   "settings": {}
+  },
+  "hero": {
+   "type": "hero-slider",
+   "settings": {
+    "slides": [
+     {
+      "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1920&h=720&q=80",
+      "image_mobile": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&h=1000&q=80",
+      "link": "/products/all",
+      "eyebrow": "New launch",
+      "heading": "Sound that moves with you",
+      "text": "Hybrid ANC, 70-hour battery and bass you can feel.",
+      "button": "Shop now",
+      "align": "left",
+      "text_color": "#ffffff"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?auto=format&fit=crop&w=1920&h=720&q=80",
+      "image_mobile": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?auto=format&fit=crop&w=800&h=1000&q=80",
+      "link": "/category/smartwatches",
+      "eyebrow": "Smartwatches",
+      "heading": "Bold on your wrist",
+      "text": "AMOLED screens, Bluetooth calling and a week of battery.",
+      "button": "Explore watches",
+      "align": "left",
+      "text_color": "#ffffff"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1589003077984-894e133dabab?auto=format&fit=crop&w=1920&h=720&q=80",
+      "image_mobile": "https://images.unsplash.com/photo-1589003077984-894e133dabab?auto=format&fit=crop&w=800&h=1000&q=80",
+      "link": "/category/speakers",
+      "eyebrow": "Speakers",
+      "heading": "Take the party anywhere",
+      "text": "20W to 60W of room-filling sound.",
+      "button": "Shop speakers",
+      "align": "left",
+      "text_color": "#ffffff"
+     }
+    ]
+   }
+  },
+  "stats": {
+   "type": "stat-badges",
+   "settings": {}
+  },
+  "track": {
+   "type": "image-banner",
+   "settings": {
+    "heading": "<b>Ordered</b> already?<br>Track your order",
+    "button": "Track order",
+    "link": "/account"
+   }
+  },
+  "new": {
+   "type": "product-carousel",
+   "settings": {
+    "heading": "Newly in",
+    "label": "Newly in"
+   }
+  },
+  "reels": {
+   "type": "creator-reels",
+   "settings": {
+    "heading": "#SeenOnCreators",
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1605890822326-ab63270c7189?auto=format&fit=crop&w=700&h=1100&q=80",
+      "caption": "Never sounded this good",
+      "product": "pulse-halo-max"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1722513992912-360082625d33?auto=format&fit=crop&w=700&h=1100&q=80",
+      "caption": "Gym-proof",
+      "product": "pulse-aero-pods-x1"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1699221559470-eb448d746947?auto=format&fit=crop&w=700&h=1100&q=80",
+      "caption": "Street ready",
+      "product": "pulse-halo-air"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1771402899435-4d6dc1c78fdf?auto=format&fit=crop&w=700&h=1100&q=80",
+      "caption": "All-day comfort",
+      "product": "pulse-nova-buds-pro"
+     }
+    ]
+   }
+  },
+  "best": {
+   "type": "product-carousel",
+   "settings": {
+    "heading": "Bestsellers",
+    "label": "Bestseller"
+   }
+  },
+  "story": {
+   "type": "story-slider",
+   "settings": {
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1599669454699-248893623440?auto=format&fit=crop&w=900&h=900&q=80",
+      "light": "Designed to",
+      "bold": "Stand apart",
+      "text": "We don’t just engineer what’s inside. Every finish, curve and detail is designed to look and feel as good as it sounds."
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1660844817855-3ecc7ef21f12?auto=format&fit=crop&w=900&h=900&q=80",
+      "light": "Built for",
+      "bold": "Everyday life",
+      "text": "Long battery, clear calls and quick pairing, made for commutes, workouts and late-night playlists."
+     }
+    ]
+   }
+  },
+  "awards": {
+   "type": "awards-slider",
+   "settings": {}
+  },
+  "deals": {
+   "type": "product-carousel",
+   "settings": {
+    "heading": "Top deals",
+    "label": "Top deal"
+   }
+  },
+  "videos": {
+   "type": "shop-videos",
+   "settings": {
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1510133744874-096621a0e01e?auto=format&fit=crop&w=700&h=1100&q=80",
+      "products": [
+       "pulse-halo-max",
+       "pulse-aero-pods-x1"
+      ]
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1762288045707-dfd64fe6eb4b?auto=format&fit=crop&w=700&h=1100&q=80",
+      "products": [
+       "pulse-watch-ultra"
+      ]
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1651435866499-d9538767a36e?auto=format&fit=crop&w=700&h=1100&q=80",
+      "products": [
+       "pulse-nova-buds-pro",
+       "pulse-aero-pods-lite"
+      ]
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1756706916864-0e4ed0fa85cf?auto=format&fit=crop&w=700&h=1100&q=80",
+      "products": [
+       "pulse-raid-gaming-headset"
+      ]
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1738962975257-93f56bab17d1?auto=format&fit=crop&w=700&h=1100&q=80",
+      "products": [
+       "pulse-boom-go"
+      ]
+     }
+    ]
+   }
+  },
+  "usp": {
+   "type": "usp-tiles",
+   "settings": {}
+  },
+  "market": {
+   "type": "logo-marquee",
+   "settings": {}
+  },
+  "pay": {
+   "type": "payment-logos",
+   "settings": {}
+  },
+  "blog": {
+   "type": "blog-cards",
+   "settings": {
+    "items": [
+     {
+      "title": "How to register your product warranty",
+      "image": "https://images.unsplash.com/photo-1461141346587-763ab02bced9?auto=format&fit=crop&w=900&h=420&q=80",
+      "date": "12 Nov 2026",
+      "excerpt": "Three quick steps to register your purchase and keep your warranty active."
+     },
+     {
+      "title": "Choosing the right earbuds for your day",
+      "image": "https://images.unsplash.com/photo-1606220945770-b5b6c2c55bf1?auto=format&fit=crop&w=900&h=420&q=80",
+      "date": "02 Nov 2026",
+      "excerpt": "ANC, battery, fit and calls: what actually matters when you pick a pair."
+     },
+     {
+      "title": "Care tips that keep your gadgets new",
+      "image": "https://images.unsplash.com/photo-1547052178-7f2c5a20c332?auto=format&fit=crop&w=900&h=420&q=80",
+      "date": "24 Oct 2026",
+      "excerpt": "Simple habits for charging, cleaning and storing your devices."
+     }
+    ]
+   }
+  },
+  "fresh": {
+   "type": "fresh-finds",
+   "settings": {
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1677346414290-d337cbc682a6?auto=format&fit=crop&w=700&h=700&q=80",
+      "product": "pulse-aero-pods-x1"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1605170876472-db58e15c430e?auto=format&fit=crop&w=700&h=700&q=80",
+      "product": "pulse-raid-gaming-headset"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1507878566509-a0dbe19677a5?auto=format&fit=crop&w=700&h=700&q=80",
+      "product": "pulse-boom-go"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1551816230-ef5deaed4a26?auto=format&fit=crop&w=700&h=700&q=80",
+      "product": "pulse-watch-fit"
+     }
+    ]
+   }
+  },
+  "explore": {
+   "type": "category-strip",
+   "settings": {
+    "heading": "Explore by category",
+    "style": "circles"
+   }
+  }
+ },
+ "order": [
+  "cats",
+  "hero",
+  "stats",
+  "track",
+  "new",
+  "reels",
+  "best",
+  "story",
+  "awards",
+  "deals",
+  "videos",
+  "usp",
+  "market",
+  "pay",
+  "blog",
+  "fresh",
+  "explore"
+ ]
+}

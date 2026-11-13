@@ -1,0 +1,37 @@
+{%- assign s = section.settings -%}
+<section class="reels sec">
+  <div class="pw">
+    {%- if s.heading != blank -%}<h2 class="sec__h sec__h--c sec__h--accent">{{ s.heading }}</h2>{%- endif -%}
+    <div class="reels__row" data-drag-scroll style="--cols:{{ s.columns | default: 4 }}">
+      {%- for it in s.items -%}
+      {%- assign p = section.products_by_handle[it.product] -%}
+      {%- assign href = it.link | safe_url -%}{%- if href == blank and p -%}{%- assign href = p.url -%}{%- endif -%}
+      <a class="reel" href="{{ href | default: '#' }}">
+        {%- if it.video != blank -%}<video src="{{ it.video }}" {% if it.image != blank %}poster="{{ it.image | img_url: 600 }}"{% endif %} muted loop playsinline preload="none" data-inview-play></video>
+        {%- elsif it.image != blank -%}<img src="{{ it.image | img_url: 600 }}" alt="{{ it.caption | escape }}" loading="lazy">
+        {%- else -%}<span class="reel__ph"></span>{%- endif -%}
+        {%- if it.caption != blank -%}<span class="reel__cap">{{ it.caption }}</span>{%- endif -%}
+        {%- if p -%}
+        <span class="reel__card">
+          {%- if p.featured_image -%}<img src="{{ p.featured_image | img_url: 120 }}" alt="" loading="lazy">{%- endif -%}
+          <span><b>{{ p.title }}</b><em>{{ p.price | money }}</em></span>
+        </span>
+        {%- endif -%}
+      </a>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Creator reels", "category": "Media", "description": "Tall creator or customer videos with the product shown on each", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "#SeenOnCreators" },
+  { "id": "columns", "type": "range", "label": "Reels per row (computer)", "min": 3, "max": 6, "step": 1, "default": 4 },
+  { "id": "items", "type": "list", "label": "Reels", "item_label": "reel", "max_items": 12, "fields": [
+    { "id": "video", "type": "video", "label": "Video (short, vertical, MP4)" },
+    { "id": "image", "type": "image", "label": "Cover image (or photo instead of a video)" },
+    { "id": "caption", "type": "text", "label": "Caption on top (optional)" },
+    { "id": "product", "type": "product", "label": "Product shown in the reel" },
+    { "id": "link", "type": "url", "label": "Link (empty = the product)" }
+  ], "default": [] }
+] }
+{% endschema %}

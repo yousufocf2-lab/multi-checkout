@@ -1,0 +1,23 @@
+{%- assign s = section.settings -%}
+<section class="stats pw" style="--cols:{{ s.items.size | default: 3 }}">
+  {%- for it in s.items -%}
+  <div class="stats__it">
+    {%- if it.image != blank -%}<img src="{{ it.image | img_url: 400 }}" alt="{{ it.caption | escape }}" loading="lazy">
+    {%- else -%}<b class="stats__big">{{ it.big }}</b>{%- endif -%}
+    {%- if it.caption != blank -%}<span class="stats__cap">{{ it.caption }}</span>{%- endif -%}
+  </div>
+  {%- endfor -%}
+</section>
+{% schema %}
+{ "name": "Trust numbers", "category": "Trust", "description": "Big numbers or award marks in a row (No.1 brand, 2 Cr+ customers…)", "settings": [
+  { "id": "items", "type": "list", "label": "Items", "item_label": "item", "max_items": 6, "fields": [
+    { "id": "big", "type": "text", "label": "Big text (used when there is no image)" },
+    { "id": "caption", "type": "text", "label": "Caption" },
+    { "id": "image", "type": "image", "label": "Image instead of big text (optional)" }
+  ], "default": [
+    { "big": "#1", "caption": "Rated wearable brand" },
+    { "big": "50L+", "caption": "Happy customers" },
+    { "big": "4.6★", "caption": "Average rating" }
+  ] }
+] }
+{% endschema %}

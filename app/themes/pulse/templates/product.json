@@ -1,0 +1,11 @@
+{
+  "sections": {
+    "main": { "type": "main-product", "settings": {} },
+    "details": { "type": "product-details", "settings": {} },
+    "faq": { "type": "product-faq", "settings": {} },
+    "reviews": { "type": "product-reviews", "settings": {} },
+    "related": { "type": "product-carousel", "settings": { "heading": "You may also like", "limit": 10 } },
+    "bubble": { "type": "video-bubble", "settings": {} }
+  },
+  "order": ["main", "details", "faq", "reviews", "related", "bubble"]
+}

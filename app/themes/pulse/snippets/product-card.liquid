@@ -1,0 +1,36 @@
+{%- comment -%} Product card. Pass: product, settings, label (badge text for the whole row, optional), compact (true in narrow rows) {%- endcomment -%}
+{%- assign badge = label | default: product.badge -%}
+{%- assign btn = settings.card_button -%}
+<div class="pc{% if settings.card_style == 'plain' %} pc--plain{% endif %}" data-card data-product="{{ product.json | escape }}">
+  <a class="pc__media" href="{{ product.url }}" aria-label="{{ product.title | escape }}">
+    {%- if product.featured_image -%}
+      <img class="pc__img" src="{{ product.featured_image | img_url: 600 }}" alt="{{ product.title | escape }}" loading="lazy" width="600" height="600">
+      {%- if settings.card_hover_image and product.second_image -%}<img class="pc__img pc__img--alt" src="{{ product.second_image | img_url: 600 }}" alt="" loading="lazy" width="600" height="600">{%- endif -%}
+    {%- elsif product.featured_video -%}
+      <video class="pc__img" src="{{ product.featured_video }}" muted loop playsinline preload="metadata" data-inview-play></video>
+    {%- else -%}<span class="pc__ph"></span>{%- endif -%}
+    {%- if settings.card_show_badge != false and badge != blank -%}<span class="pc__badge">{{ badge }}</span>{%- endif -%}
+    {%- if settings.card_show_rating != false and product.rating > 0 -%}<span class="pc__rate">{% render 'snippets/icon', name: 'star' %}{{ product.rating }}</span>{%- endif -%}
+    {%- unless product.available or product.demo -%}<span class="pc__sold">Sold out</span>{%- endunless -%}
+  </a>
+  <div class="pc__body">
+    <div class="pc__top">
+      <a class="pc__title" href="{{ product.url }}">{{ product.title }}</a>
+      {%- if product.feature != blank and compact != true -%}<span class="pc__feat">{{ product.feature }}</span>{%- endif -%}
+    </div>
+    {%- if settings.card_show_chips != false and product.chips.size > 0 -%}
+    <div class="pc__chips">{%- for c in product.chips limit: 3 -%}<span class="chip{% if forloop.first %} chip--hot{% endif %}">{{ c }}</span>{%- endfor -%}</div>
+    {%- elsif product.subtitle != blank -%}<p class="pc__sub">{{ product.subtitle }}</p>{%- endif -%}
+    <div class="pc__foot">
+      <p class="pc__price">
+        {%- if settings.card_price_prefix != blank -%}<small>{{ settings.card_price_prefix }}</small>{%- endif -%}
+        <b>{{ product.price | money }}</b>
+        {%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s>{%- if settings.card_show_discount != false -%}<em>{{ product.discount_pct }}% off</em>{%- endif -%}{%- endif -%}
+      </p>
+      {%- if btn != blank and product.available -%}
+      <button type="button" class="pc__add" data-quick-add{% if product.demo %} disabled title="Preview item"{% endif %} aria-label="Add {{ product.title | escape }} to cart">{{ btn }}</button>
+      {%- endif -%}
+    </div>
+    {%- if settings.card_emi != blank -%}<p class="pc__emi">{{ settings.card_emi }}</p>{%- endif -%}
+  </div>
+</div>

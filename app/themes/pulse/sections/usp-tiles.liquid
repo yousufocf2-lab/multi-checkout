@@ -1,0 +1,36 @@
+{%- assign s = section.settings -%}
+<section class="usp sec" style="--usp-bg:{{ s.bg | default: '#f2f2f2' }}">
+  <div class="pw usp__in">
+    <div class="usp__lead">
+      <p class="usp__h">{{ s.heading }}</p>
+      <p class="usp__s">{%- if s.struck != blank -%}<s>{{ s.struck }}</s> {% endif -%}<em>{{ s.accent }}</em></p>
+    </div>
+    <div class="usp__grid">
+      {%- for it in s.items -%}
+      <div class="usp__it">
+        <span class="usp__ic">{%- if it.image != blank -%}<img src="{{ it.image | img_url: 120 }}" alt="" loading="lazy">{%- else -%}{% render 'snippets/icon', name: it.icon, stroke: '1.5' %}{%- endif -%}</span>
+        <p><em>{{ it.accent }}</em><b>{{ it.text }}</b></p>
+      </div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Why buy from us", "category": "Trust", "description": "A promise line with a crossed-out word and four icon tiles (warranty, delivery…)", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "You’re paying for" },
+  { "id": "struck", "type": "text", "label": "Crossed-out words", "default": "a product" },
+  { "id": "accent", "type": "text", "label": "Highlighted words", "default": "an experience" },
+  { "id": "bg", "type": "color", "label": "Background", "default": "#f2f2f2" },
+  { "id": "items", "type": "list", "label": "Tiles", "item_label": "tile", "max_items": 6, "fields": [
+    { "id": "icon", "type": "select", "label": "Icon", "options": ["crown", "truck", "wheel", "badge", "shield", "refresh", "cash", "lock", "headphones", "gift", "bolt", "receipt", "box", "medal"], "default": "badge" },
+    { "id": "image", "type": "image", "label": "Your own icon (optional)" },
+    { "id": "accent", "type": "text", "label": "Highlighted word" },
+    { "id": "text", "type": "text", "label": "Text" }
+  ], "default": [
+    { "icon": "crown", "accent": "1 Year", "text": "Warranty" },
+    { "icon": "truck", "accent": "Quick", "text": "Delivery" },
+    { "icon": "wheel", "accent": "Made in", "text": "India" },
+    { "icon": "badge", "accent": "100%", "text": "Genuine products" }
+  ] }
+] }
+{% endschema %}

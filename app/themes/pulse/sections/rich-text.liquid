@@ -1,0 +1,18 @@
+{%- assign s = section.settings -%}
+<section class="rtx sec{% if s.center %} rtx--c{% endif %}">
+  <div class="pw rtx__in">
+    {%- if s.heading != blank -%}<h2 class="sec__h">{{ s.heading }}</h2>{%- endif -%}
+    {%- if s.text != blank -%}<div class="rte{% if s.collapse %} rte--clamp{% endif %}" {% if s.collapse %}data-clamp{% endif %}>{{ s.text }}</div>{%- if s.collapse -%}<button type="button" class="rtx__more" data-clamp-btn aria-label="Read more">{% render 'snippets/icon', name: 'down' %}</button>{%- endif -%}{%- endif -%}
+    {%- if s.button != blank -%}<a class="btn" href="{{ s.link | safe_url }}">{{ s.button }}</a>{%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Text block", "category": "Content", "description": "Heading and paragraph, with an optional “read more” fold (good for SEO text)", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Made for the way you listen" },
+  { "id": "text", "type": "richtext", "label": "Text", "default": "<p>Tell shoppers what makes your brand different: the sound, the design, the warranty and the people behind it.</p>" },
+  { "id": "collapse", "type": "checkbox", "label": "Show only two lines with a “read more” arrow", "default": false },
+  { "id": "center", "type": "checkbox", "label": "Centre the text", "default": false },
+  { "id": "button", "type": "text", "label": "Button (optional)", "default": "" },
+  { "id": "link", "type": "url", "label": "Button link" }
+] }
+{% endschema %}
