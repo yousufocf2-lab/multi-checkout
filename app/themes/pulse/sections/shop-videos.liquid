@@ -1,7 +1,7 @@
 {%- assign s = section.settings -%}
 <section class="shv sec" data-shv>
   <div class="pw">
-    {%- if s.heading != blank -%}<h2 class="sec__h sec__h--c">{{ s.heading }}</h2>{%- endif -%}
+    <div class="sec__head"><div>{%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}{%- if s.heading != blank -%}<h2 class="sec__h">{{ s.heading }}</h2>{%- endif -%}</div></div>
     <div class="shv__wrap" data-slider>
       <div class="shv__track" data-track>
         {%- for it in s.items -%}
@@ -49,7 +49,8 @@
 </section>
 {% schema %}
 { "name": "Shoppable videos", "category": "Media", "description": "Video tiles; tapping one plays it with sound and lists the products in it", "settings": [
-  { "id": "heading", "type": "text", "label": "Heading", "default": "Shop the trends everyone’s talking about" },
+  { "id": "eyebrow", "type": "text", "label": "Small line above", "default": "Watch, then shop" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "See it in action" },
   { "id": "panel_title", "type": "text", "label": "Heading above the products", "default": "Products seen in the video" },
   { "id": "button", "type": "text", "label": "Product button", "default": "Shop now" },
   { "id": "items", "type": "list", "label": "Videos", "item_label": "video", "max_items": 12, "fields": [

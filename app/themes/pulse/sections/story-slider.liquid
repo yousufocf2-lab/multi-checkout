@@ -7,9 +7,12 @@
         <div class="story__card">
           <div class="story__media">{%- if it.video != blank -%}<video src="{{ it.video }}" muted loop playsinline preload="none" data-inview-play {% if it.image != blank %}poster="{{ it.image | img_url: 900 }}"{% endif %}></video>{%- elsif it.image != blank -%}<img src="{{ it.image | img_url: 900 }}" alt="" loading="lazy">{%- else -%}<span class="reel__ph"></span>{%- endif -%}</div>
           <div class="story__copy">
+            <span class="story__no">{% if forloop.index < 10 %}0{% endif %}{{ forloop.index }} / {% if forloop.length < 10 %}0{% endif %}{{ forloop.length }}</span>
             {%- if it.light != blank -%}<p class="story__light">{{ it.light }}</p>{%- endif -%}
             {%- if it.bold != blank -%}<h3 class="story__bold">{{ it.bold }}</h3>{%- endif -%}
             {%- if it.text != blank -%}<p class="story__t">{{ it.text }}</p>{%- endif -%}
+            {%- assign pts = it.points | newline_to_br | split: '<br />' -%}
+            {%- if it.points != blank -%}<ul class="story__pts">{%- for p in pts -%}{%- assign t = p | strip -%}{%- if t != '' -%}<li>{% render 'snippets/icon', name: 'check' %}{{ t }}</li>{%- endif -%}{%- endfor -%}</ul>{%- endif -%}
             {%- if it.button != blank -%}<a class="btn" href="{{ it.link | safe_url }}">{{ it.button }}</a>{%- endif -%}
           </div>
         </div>
@@ -23,7 +26,7 @@
   </div>
 </section>
 {% schema %}
-{ "name": "Brand story slider", "category": "Media", "description": "Big rounded cards: photo on one side, a two-tone heading and text on the other", "settings": [
+{ "name": "Feature spotlight", "category": "Media", "description": "Numbered slides: a photo, a two-line heading, text and ticked points", "settings": [
   { "id": "autoplay", "type": "range", "label": "Change slide every (0 = never)", "min": 0, "max": 12, "step": 1, "unit": " s", "default": 6 },
   { "id": "items", "type": "list", "label": "Slides", "item_label": "slide", "max_items": 8, "fields": [
     { "id": "image", "type": "image", "label": "Photo" },
@@ -31,11 +34,12 @@
     { "id": "light", "type": "text", "label": "Heading, first line (light)" },
     { "id": "bold", "type": "text", "label": "Heading, second line (bold)" },
     { "id": "text", "type": "textarea", "label": "Text" },
+    { "id": "points", "type": "textarea", "label": "Points with ticks (one per line, optional)" },
     { "id": "button", "type": "text", "label": "Button (optional)" },
     { "id": "link", "type": "url", "label": "Button link" }
   ], "default": [
-    { "light": "Designed to", "bold": "Stand apart", "text": "We don’t just engineer what’s inside. Every finish, curve and detail is designed to look and feel as good as it sounds." },
-    { "light": "Tuned for", "bold": "Everyday life", "text": "Long battery, clear calls and quick pairing, made for commutes, workouts and late-night playlists." }
+    { "light": "Engineered for", "bold": "Long days", "text": "Battery that keeps up with you, from the morning commute to the late-night playlist.", "points": "Up to 70 hours of playback\n10-minute fast charge\nQuick pairing with any phone" },
+    { "light": "Tuned for", "bold": "Clear calls", "text": "Multiple mics and smart noise filters keep your voice clear in traffic, cafés and windy streets.", "points": "AI noise reduction\nWind-resistant design" }
   ] }
 ] }
 {% endschema %}

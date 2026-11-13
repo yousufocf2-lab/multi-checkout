@@ -1,36 +1,37 @@
 {%- assign s = section.settings -%}
-<section class="usp sec" style="--usp-bg:{{ s.bg | default: '#f2f2f2' }}">
-  <div class="pw usp__in">
-    <div class="usp__lead">
-      <p class="usp__h">{{ s.heading }}</p>
-      <p class="usp__s">{%- if s.struck != blank -%}<s>{{ s.struck }}</s> {% endif -%}<em>{{ s.accent }}</em></p>
+<section class="promise sec">
+  <div class="pw">
+    <div class="promise__head">
+      {%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}
+      <h2 class="sec__h promise__h">{{ s.heading }}</h2>
+      {%- if s.text != blank -%}<p class="promise__t">{{ s.text }}</p>{%- endif -%}
     </div>
-    <div class="usp__grid">
+    <div class="promise__grid" style="--n:{{ s.items.size | default: 4 }}">
       {%- for it in s.items -%}
-      <div class="usp__it">
-        <span class="usp__ic">{%- if it.image != blank -%}<img src="{{ it.image | img_url: 120 }}" alt="" loading="lazy">{%- else -%}{% render 'snippets/icon', name: it.icon, stroke: '1.5' %}{%- endif -%}</span>
-        <p><em>{{ it.accent }}</em><b>{{ it.text }}</b></p>
+      <div class="promise__it">
+        <span class="promise__ic">{%- if it.image != blank -%}<img src="{{ it.image | img_url: 120 }}" alt="" loading="lazy">{%- else -%}{% render 'snippets/icon', name: it.icon, stroke: '1.6' %}{%- endif -%}</span>
+        <b>{{ it.title }}</b>
+        {%- if it.text != blank -%}<p>{{ it.text }}</p>{%- endif -%}
       </div>
       {%- endfor -%}
     </div>
   </div>
 </section>
 {% schema %}
-{ "name": "Why buy from us", "category": "Trust", "description": "A promise line with a crossed-out word and four icon tiles (warranty, delivery…)", "settings": [
-  { "id": "heading", "type": "text", "label": "Heading", "default": "You’re paying for" },
-  { "id": "struck", "type": "text", "label": "Crossed-out words", "default": "a product" },
-  { "id": "accent", "type": "text", "label": "Highlighted words", "default": "an experience" },
-  { "id": "bg", "type": "color", "label": "Background", "default": "#f2f2f2" },
-  { "id": "items", "type": "list", "label": "Tiles", "item_label": "tile", "max_items": 6, "fields": [
-    { "id": "icon", "type": "select", "label": "Icon", "options": ["crown", "truck", "wheel", "badge", "shield", "refresh", "cash", "lock", "headphones", "gift", "bolt", "receipt", "box", "medal"], "default": "badge" },
+{ "name": "Our promise", "category": "Trust", "description": "A short promise with icon cards (warranty, delivery, support…)", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above", "default": "Why people stay with us" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Built to last. Backed by people." },
+  { "id": "text", "type": "textarea", "label": "Text (optional)", "default": "" },
+  { "id": "items", "type": "list", "label": "Cards", "item_label": "card", "max_items": 6, "fields": [
+    { "id": "icon", "type": "select", "label": "Icon", "options": ["shield", "truck", "headphones", "refresh", "badge", "cash", "lock", "crown", "gift", "bolt", "receipt", "box", "medal", "wheel"], "default": "shield" },
     { "id": "image", "type": "image", "label": "Your own icon (optional)" },
-    { "id": "accent", "type": "text", "label": "Highlighted word" },
-    { "id": "text", "type": "text", "label": "Text" }
+    { "id": "title", "type": "text", "label": "Title" },
+    { "id": "text", "type": "text", "label": "Line" }
   ], "default": [
-    { "icon": "crown", "accent": "1 Year", "text": "Warranty" },
-    { "icon": "truck", "accent": "Quick", "text": "Delivery" },
-    { "icon": "wheel", "accent": "Made in", "text": "India" },
-    { "icon": "badge", "accent": "100%", "text": "Genuine products" }
+    { "icon": "shield", "title": "1-year warranty", "text": "Replacement, not runarounds." },
+    { "icon": "truck", "title": "Ships in 24 hours", "text": "Tracked delivery across India." },
+    { "icon": "headphones", "title": "Real human support", "text": "WhatsApp us, 7 days a week." },
+    { "icon": "refresh", "title": "7-day replacement", "text": "Not right? We’ll make it right." }
   ] }
 ] }
 {% endschema %}

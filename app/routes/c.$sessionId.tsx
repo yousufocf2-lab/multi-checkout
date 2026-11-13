@@ -6,7 +6,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MetaPixel } from "~/components/MetaPixel";
 import { Spinner } from "~/components/ui";
-import { BrandLoader, PoweredBy } from "~/components/Brand";
+import { BrandLoader } from "~/components/Brand";
 import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates, stores, type OrderCustomer } from "~/db.server";
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
@@ -1587,7 +1587,6 @@ function Trust({ phone, text, className = "" }: { phone: string | null; text: st
       </div>
       {text && <p className="flex items-center justify-center gap-1.5"><LockIcon /> {text}</p>}
       {phone && <p>Need help? Call <a className="underline" href={`tel:${phone}`}>{phone}</a></p>}
-      <p className="pt-1"><PoweredBy /></p>
     </div>
   );
 }
@@ -1726,7 +1725,6 @@ function PaymentOverlay({ name, logo }: { name: string; logo: string | null }) {
       <BrandLoader className="h-16 w-16" label="Opening payment" />
       <p className="mt-4 font-medium">Opening secure payment</p>
       <p className="mt-1 text-sm text-ink-soft">Don't close this page or press back.</p>
-      <PoweredBy className="absolute bottom-6" />
     </div>
   );
 }

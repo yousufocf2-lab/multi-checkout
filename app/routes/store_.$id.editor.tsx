@@ -12,6 +12,7 @@ import { themeManifest, themeOf } from "~/lib/storefront.server";
 import { listMenus } from "~/lib/menus.server";
 import { editorState, publishDraft, saveDraft } from "~/lib/themes.server";
 import { storePath } from "~/lib/store-code";
+import { widgetSettings } from "~/lib/widgets";
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => [{ title: data ? `Storefront Studio · ${data.store.name}` : "Storefront Studio" }, { name: "robots", content: "noindex" }];
 
@@ -40,6 +41,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     samples: { product: product[0]?.handle ?? null, collection: categories[0]?.handle ?? "all", page: page[0]?.handle ?? null },
     categories,
     menus: menus.map((m) => ({ title: m.title, handle: m.handle, where: m.inHeader ? "Header" : m.inFooter ? "Footer" : "" })),
+    // Widgets switched on in Settings → Widgets: their settings and sections show in the editor
+    features: { reviews: widgetSettings(store.widgetSettings).reviews.enabled },
     // For "Pick products" settings (carousels, videos, reels)
     products: products.map((p) => ({ handle: p.handle, title: p.title, image: p.images?.find((i) => i.type !== "video")?.url ?? null })),
   });
@@ -69,8 +72,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
 /** Plain fetch to this route's action gets JSON back (not the page) with Remix's _data parameter. */
 const DATA_ID = encodeURIComponent("routes/store_.$id.editor");
 
-type Setting = { id: string; type: string; label?: string; default?: unknown; min?: number; max?: number; step?: number; unit?: string; options?: string[]; option_labels?: string[]; fields?: Setting[]; info?: string; placeholder?: string; limit?: number };
-type Kind = { type: string; name: string; settings: Setting[]; where: "template" | "header" | "footer" | "fixed"; category?: string; description?: string };
+type Setting = { id: string; type: string; label?: string; default?: unknown; min?: number; max?: number; step?: number; unit?: string; options?: string[]; option_labels?: string[]; fields?: Setting[]; info?: string; placeholder?: string; limit?: number; visible_if?: string };
+type Kind = { type: string; name: string; settings: Setting[]; where: "template" | "header" | "footer" | "fixed"; category?: string; description?: string; requires?: string };
 type Group = "header" | "template" | "footer";
 type Sel = { group: Group; id: string } | null;
 
@@ -108,8 +111,11 @@ const CSS_ONLY = new Set(["color_brand", "color_button_text", "color_bg", "color
 
 export default function ThemeEditor() {
   const L = useLoaderData<typeof loader>();
-  const kinds = L.manifest.sections as Kind[];
-  const kindOf = useCallback((t: string) => kinds.find((k) => k.type === t), [kinds]);
+  const feat = L.features as Record<string, boolean>;
+  const allKinds = L.manifest.sections as Kind[];
+  const kinds = allKinds.filter((k) => !k.requires || feat[k.requires]);
+  const shown = (s: Setting) => !s.visible_if || Boolean(feat[s.visible_if]);
+  const kindOf = useCallback((t: string) => allKinds.find((k) => k.type === t), [allKinds]);
 
   const [data, setData] = useState<ThemeData>(L.data as ThemeData);
   const [page, setPage] = useState<PageKey>("index");
@@ -366,7 +372,8 @@ export default function ThemeEditor() {
                       <p className="ed-muted">This part fills itself from your {page === "collection" ? "categories" : page === "cart" ? "shoppers' carts" : "pages"}. Change its look in Theme settings.</p>
                     ) : (
                       <>
-                        {(selKind?.settings ?? []).map((s) => (
+                        {selKind?.requires && !feat[selKind.requires] && <p className="ed-muted">Switch on {selKind.requires} in Settings → Widgets to show this section.</p>}
+                        {(selKind?.settings ?? []).filter((s) => shown(s as Setting)).map((s) => (
                           <Field key={`${sel.id}/${s.id}`} s={s as Setting} value={(selected.settings ?? {})[s.id] ?? s.default} onChange={(v) => setSectionSetting(s.id, v)} storeId={L.store.id} categories={L.categories} />
                         ))}
                         {(selKind?.settings ?? []).length === 0 && <p className="ed-muted">Nothing to set here.</p>}
@@ -395,7 +402,7 @@ export default function ThemeEditor() {
                         </button>
                         {openGroup === g.name && (
                           <div className="ed-form ed-acc__body">
-                            {g.settings.map((s) => <Field key={s.id} s={s} value={data.settings[s.id] ?? s.default} onChange={(v) => setThemeSetting(s.id, v)} storeId={L.store.id} categories={L.categories} />)}
+                            {g.settings.filter((s) => shown(s as Setting)).map((s) => <Field key={s.id} s={s} value={data.settings[s.id] ?? s.default} onChange={(v) => setThemeSetting(s.id, v)} storeId={L.store.id} categories={L.categories} />)}
                           </div>
                         )}
                       </div>

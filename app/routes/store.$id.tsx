@@ -34,6 +34,7 @@ const TITLES: Record<string, { title: string; description: string; icon: IconNam
   rto: { title: "RTO Suite", description: "COD rules, OTP, blocked customers and order confirmation.", icon: "shield", guide: "rto" },
   "customer-accounts": { title: "Customer accounts", description: "Shopper login on your website: what to ask for and how they verify.", icon: "users" },
   calls: { title: "Order confirmation", description: "Call customers to confirm new orders.", icon: "phone" },
+  widgets: { title: "Widgets", description: "Add-ons for your website: product reviews and more.", icon: "sparkle" },
   menus: { title: "Menus", description: "Links in your website's header and footer.", icon: "menu" },
   files: { title: "Files", description: "Photos, videos and documents for your website.", icon: "layers" },
   live: { title: "Live view", description: "Who's on your website and checkout right now.", icon: "eye" },

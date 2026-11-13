@@ -28,16 +28,24 @@
   </div>
 
   <div class="pdp__info">
-    <div class="pdp__titlerow">
-      <h1 class="pdp__title">{{ product.title }}</h1>
-      {%- if rating > 0 -%}<a href="#reviews" class="pdp__stars" aria-label="{{ rating }} out of 5, {{ rcount }} reviews">{% render 'snippets/stars', value: rating %}<span>({{ rcount }})</span></a>{%- endif -%}
-    </div>
+    {%- assign rpos = s.rating_position | default: 'title' -%}
+    {%- unless reviews_enabled -%}{%- assign rpos = 'hidden' -%}{%- endunless -%}
+    {%- capture stars_html -%}
+      {%- if rating > 0 -%}<a href="#reviews" class="pdp__stars" aria-label="{{ rating }} out of 5, {{ rcount }} reviews">{% render 'snippets/stars', value: rating %}<b>{{ rating }}</b><span>{{ rcount }} reviews</span></a>
+      {%- elsif s.rating_empty -%}<a href="#reviews" class="pdp__stars pdp__stars--none">{% render 'snippets/stars', value: 0 %}<span>No reviews yet</span></a>{%- endif -%}
+      {%- if s.rating_write and product.demo != true -%}<a href="#reviews" class="pdp__write" data-review-jump>{{ s.rating_write_label | default: 'Write a review' }}</a>{%- endif -%}
+    {%- endcapture -%}
+    {%- if product.vendor != blank and s.show_vendor -%}<p class="pdp__vendor">{{ product.vendor }}</p>{%- endif -%}
+    <h1 class="pdp__title">{{ product.title }}</h1>
+    {%- if rpos == 'title' -%}<div class="pdp__ratingrow">{{ stars_html }}</div>{%- endif -%}
     {%- if product.subtitle != blank -%}<p class="pdp__sub">{{ product.subtitle }}</p>{%- endif -%}
+    {%- if rpos == 'above_price' -%}<div class="pdp__ratingrow">{{ stars_html }}</div>{%- endif -%}
 
     <div class="pdp__pricebox" data-price>
       <p class="pdp__price"><b>{{ product.price | money }}</b>{%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s><em>{{ product.discount_pct }}% off</em>{%- endif -%}</p>
     </div>
-    {%- if settings.pdp_tax_note != blank -%}<p class="pdp__tax">({{ settings.pdp_tax_note }})</p>{%- endif -%}
+    {%- if settings.pdp_tax_note != blank -%}<p class="pdp__tax">{{ settings.pdp_tax_note }}</p>{%- endif -%}
+    {%- if rpos == 'below_price' -%}<div class="pdp__ratingrow">{{ stars_html }}</div>{%- endif -%}
 
     {%- if s.offer_text != blank -%}
     <div class="pdp__offer">
@@ -128,6 +136,12 @@
 {%- endif -%}
 {% schema %}
 { "name": "Product details", "settings": [
+  { "type": "header", "id": "h_rating", "label": "Star rating", "visible_if": "reviews" },
+  { "id": "rating_position", "type": "select", "label": "Where the stars show", "visible_if": "reviews", "options": ["title", "above_price", "below_price", "hidden"], "option_labels": ["Under the title", "Above the price", "Under the price", "Don’t show"], "default": "title" },
+  { "id": "rating_empty", "type": "checkbox", "label": "Show empty stars when a product has no reviews yet", "visible_if": "reviews", "default": false },
+  { "id": "rating_write", "type": "checkbox", "label": "“Write a review” link next to the stars", "visible_if": "reviews", "default": true },
+  { "id": "rating_write_label", "type": "text", "label": "Link text", "visible_if": "reviews", "default": "Write a review" },
+  { "id": "show_vendor", "type": "checkbox", "label": "Show the brand name above the title", "default": false },
   { "id": "image_badge", "type": "image", "label": "Small mark on the main photo (optional, for example a rating badge)" },
   { "type": "header", "id": "h_offer", "label": "Offer box under the price" },
   { "id": "offer_tag", "type": "text", "label": "Tag", "default": "NEW" },

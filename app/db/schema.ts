@@ -309,6 +309,8 @@ export const stores = pgTable("stores", {
   metaCatalogCount: integer("meta_catalog_count").notNull().default(0),
   // Customer accounts on the store's website: what to ask for and how to verify (see app/lib/customer-accounts.ts)
   accountSettings: jsonb("account_settings").$type<AccountSettings>(),
+  // Settings → Widgets (reviews…), see app/lib/widgets.ts
+  widgetSettings: jsonb("widget_settings").$type<Record<string, unknown>>().notNull().default({}),
   // Google Ads: connected with "Connect Google" (OAuth). Refresh token never leaves the server.
   googleAdsCustomerId: text("google_ads_customer_id"), // digits only, e.g. 1234567890
   googleLoginCustomerId: text("google_login_customer_id"), // manager (MCC) account the store reaches it through, if any
@@ -1413,6 +1415,11 @@ export const productReviews = pgTable(
     rating: integer("rating").notNull(),
     body: text("body").notNull(),
     status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+    /** Photos and short videos the customer added (or the owner, for reviews they enter themselves) */
+    media: jsonb("media").$type<{ url: string; type: "image" | "video" }[]>().notNull().default([]),
+    source: text("source").$type<"customer" | "owner">().notNull().default("customer"),
+    /** Shown as "Verified buyer" */
+    verified: boolean("verified").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("product_reviews_store_status_idx").on(t.storeId, t.status), index("product_reviews_product_status_idx").on(t.productId, t.status)],

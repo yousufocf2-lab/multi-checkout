@@ -32,14 +32,13 @@
     </div>
     {%- endif -%}
   </div>
-  <p class="wrap footer__copy">© {{ 'now' | date: '%Y' }} {{ shop.name }}{% if section.settings.show_powered %} · Powered by Growpefy{% endif %}</p>
+  <p class="wrap footer__copy">© {{ 'now' | date: '%Y' }} {{ shop.name }}</p>
 </footer>
 {% schema %}
 { "name": "Footer", "settings": [
   { "id": "about", "type": "textarea", "label": "Short line about your brand", "default": "" },
   { "id": "contact_email", "type": "text", "label": "Customer care email (optional)", "default": "" },
   { "id": "menu", "type": "menu", "label": "Menu (empty = the one set to Footer in Menus)", "default": "" },
-  { "id": "menu_heading", "type": "text", "label": "Menu heading (empty = menu name)", "default": "" },
-  { "id": "show_powered", "type": "checkbox", "label": "Show “Powered by Growpefy”", "default": true }
+  { "id": "menu_heading", "type": "text", "label": "Menu heading (empty = menu name)", "default": "" }
 ] }
 {% endschema %}

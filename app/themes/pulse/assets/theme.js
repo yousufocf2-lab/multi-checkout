@@ -248,6 +248,7 @@
       var i = index();
       if (center) slides.forEach(function (s, j) { s.classList.toggle("is-active", j === i); });
       dots.forEach(function (d, j) { d.classList.toggle("is-on", j === Math.min(dots.length - 1, Math.round(i / (dotsBox._per || 1)))); });
+      var num = sl.querySelector("[data-num]"); if (num) num.textContent = (i < 9 ? "0" : "") + (i + 1);
       var max = track.scrollWidth - track.clientWidth - 4;
       if (prev) prev.classList.toggle("is-off", track.scrollLeft <= 4 && !center);
       if (next) next.classList.toggle("is-off", track.scrollLeft >= max && !auto);
@@ -295,7 +296,8 @@
       var s = Math.max(0, Math.floor((end - Date.now()) / 1000));
       if (s === 0) end = nextMidnight();
       var d = Math.floor(s / 86400);
-      if (D) { D.textContent = two(d); if (d === 0) D.parentNode.setAttribute("data-zero", ""); else D.parentNode.removeAttribute("data-zero"); }
+      if (D && D.hasAttribute("data-auto")) { D.hidden = d === 0; D.textContent = d ? d + "d " : ""; }
+      else if (D) { D.textContent = two(d); if (d === 0) D.parentNode.setAttribute("data-zero", ""); else D.parentNode.removeAttribute("data-zero"); }
       if (H) H.textContent = two(Math.floor(s % 86400 / 3600));
       if (M) M.textContent = two(Math.floor(s % 3600 / 60));
       if (S) S.textContent = two(s % 60);
@@ -366,8 +368,54 @@
   }
 
   // ---------- reviews ----------
-  var rOpen = document.querySelector("[data-review-open]"), rForm = document.querySelector("[data-review-form]");
-  if (rOpen && rForm) rOpen.addEventListener("click", function () { rForm.hidden = !rForm.hidden; if (!rForm.hidden) rForm.querySelector("input[name=name]").focus(); });
+  var rForm = document.querySelector("[data-review-form]");
+  function showForm(scroll) {
+    if (!rForm) return;
+    rForm.hidden = false;
+    if (scroll) rForm.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+    setTimeout(function () { var r = rForm.querySelector("input[name=rating]"); if (r) r.focus({ preventScroll: true }); }, 350);
+  }
+  document.querySelectorAll("[data-review-open]").forEach(function (b) { b.addEventListener("click", function () { if (rForm && !rForm.hidden && b.closest(".rev")) { rForm.hidden = true; return; } showForm(true); }); });
+  document.querySelectorAll("[data-review-jump]").forEach(function (a) { a.addEventListener("click", function (e) { if (!rForm) return; e.preventDefault(); showForm(true); }); });
+  if (rForm) {
+    var files = rForm.querySelector("[data-review-files]"), thumbs = rForm.querySelector("[data-review-thumbs]"), hidden = rForm.querySelector("[data-review-media]"), hint = rForm.querySelector("[data-review-hint]"), submit = rForm.querySelector("[data-review-submit]");
+    var maxVideo = parseInt(rForm.getAttribute("data-max-video") || "30", 10), maxMedia = parseInt(rForm.getAttribute("data-max-media") || "4", 10);
+    var media = [], uploading = 0;
+    var paintMedia = function () {
+      hidden.value = JSON.stringify(media);
+      thumbs.innerHTML = media.map(function (m, i) { return '<span class="rev__th">' + (m.type === "video" ? '<video src="' + esc(m.url) + '" muted></video>' : '<img src="' + esc(m.url) + '" alt="">') + '<button type="button" data-rm-media="' + i + '" aria-label="Remove">×</button></span>'; }).join("") + (uploading ? '<span class="rev__th rev__th--busy">Uploading…</span>' : "");
+      if (submit) submit.disabled = uploading > 0;
+    };
+    var duration = function (f) { return new Promise(function (res) { var v = document.createElement("video"); v.preload = "metadata"; v.onloadedmetadata = function () { URL.revokeObjectURL(v.src); res(v.duration || 0); }; v.onerror = function () { res(0); }; v.src = URL.createObjectURL(f); }); };
+    var say = function (t) { if (hint) { hint.textContent = t; hint.classList.add("is-bad"); } };
+    if (files) files.addEventListener("change", function () {
+      Array.prototype.slice.call(files.files).forEach(function (f) {
+        if (media.length + uploading >= maxMedia) { say("You can add up to " + maxMedia + " files."); return; }
+        var isVideo = /^video\//.test(f.type);
+        (isVideo ? duration(f) : Promise.resolve(0)).then(function (sec) {
+          if (isVideo && sec > maxVideo + 0.5) { say("That video is " + Math.round(sec) + " seconds. Please keep it under " + maxVideo + " seconds."); return; }
+          uploading++; paintMedia();
+          fetch("/api/review-media", { method: "POST", headers: { "Content-Type": f.type, "X-Store": rForm.getAttribute("data-store") }, body: f })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { if (d.url) media.push({ url: d.url, type: d.type }); else say(d.error || "Upload failed."); })
+            .catch(function () { say("Upload failed. Please try again."); })
+            .then(function () { uploading--; paintMedia(); });
+        });
+      });
+      files.value = "";
+    });
+    if (thumbs) thumbs.addEventListener("click", function (e) { var b = e.target.closest("[data-rm-media]"); if (!b) return; media.splice(+b.getAttribute("data-rm-media"), 1); paintMedia(); });
+    rForm.addEventListener("submit", function (e) { if (uploading) { e.preventDefault(); toast("Please wait, your files are still uploading."); } });
+  }
+  // Review photos and videos open big
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-media]"); if (!b) return;
+    var url = b.getAttribute("data-media"), video = b.getAttribute("data-type") === "video";
+    var m = document.createElement("div"); m.className = "shv__modal lb";
+    m.innerHTML = '<div class="shv__shade"></div><div class="lb__box"><button type="button" class="shv__x" aria-label="Close">×</button>' + (video ? '<video src="' + esc(url) + '" controls autoplay playsinline></video>' : '<img src="' + esc(url) + '" alt="">') + "</div>";
+    document.body.appendChild(m);
+    m.addEventListener("click", function (ev) { if (ev.target.classList.contains("shv__shade") || ev.target.closest(".shv__x")) m.remove(); });
+  });
 
   // ---------- product page ----------
   var pj = document.getElementById("product-json");

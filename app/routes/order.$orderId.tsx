@@ -12,7 +12,7 @@ import { ensureStoreHost } from "~/lib/urls.server";
 import { PROXY_PATH, isProxied } from "~/lib/proxy-checkout.server";
 import { MetaPixel } from "~/components/MetaPixel";
 import { GoogleTag } from "~/components/GoogleTag";
-import { BrandLoader, PoweredBy } from "~/components/Brand";
+import { BrandLoader } from "~/components/Brand";
 import { purchaseValue, shouldTrackPurchase } from "~/lib/meta.server";
 
 export const meta: MetaFunction = () => [{ title: "Your order" }, { name: "robots", content: "noindex" }];
@@ -162,7 +162,6 @@ export default function OrderStatus() {
           )}
         </div>
         {d.store.supportPhone && <p className="mt-5 text-center text-xs text-ink-faint">Questions about your order? Call <a className="underline" href={`tel:${d.store.supportPhone}`}>{d.store.supportPhone}</a></p>}
-        <div className="mt-4 flex justify-center"><PoweredBy /></div>
       </div>
     </main>
   );

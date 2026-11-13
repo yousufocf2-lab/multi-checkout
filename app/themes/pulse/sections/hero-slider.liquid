@@ -1,6 +1,8 @@
 {%- assign s = section.settings -%}
 {%- assign slides = s.slides -%}
-<section class="hero{% if s.full_width %} hero--full{% else %} pw hero--boxed{% endif %}" data-slider data-autoplay="{{ s.autoplay | default: 5 }}" style="--hero-r:{% if s.full_width %}0{% else %}var(--radius){% endif %}">
+{%- assign has_side = false -%}{%- if s.side.size > 0 and s.full_width != true -%}{%- assign has_side = true -%}{%- endif -%}
+<section class="herox{% if s.full_width %} herox--full{% else %} pw{% endif %}{% if has_side %} herox--side{% endif %}">
+<div class="hero" data-slider data-autoplay="{{ s.autoplay | default: 5 }}" style="--hero-r:{% if s.full_width %}0{% else %}calc(var(--radius) + 6px){% endif %}">
   <div class="hero__track" data-track>
     {%- if slides.size > 0 -%}
     {%- for sl in slides -%}
@@ -31,11 +33,22 @@
   {%- if slides.size > 1 -%}
   <button type="button" class="sl-arrow sl-arrow--prev" data-prev aria-label="Previous slide">{% render 'snippets/icon', name: 'left' %}</button>
   <button type="button" class="sl-arrow sl-arrow--next" data-next aria-label="Next slide">{% render 'snippets/icon', name: 'right' %}</button>
-  <div class="hero__dots" data-dots></div>
+  <div class="hero__pager"><span class="hero__num" data-num>01</span><div class="hero__dots" data-dots></div><span class="hero__num hero__num--of">{% if slides.size < 10 %}0{% endif %}{{ slides.size }}</span></div>
   {%- endif -%}
+</div>
+{%- if has_side -%}
+<div class="herox__side">
+  {%- for c in s.side limit: 2 -%}
+  <a class="hside" href="{{ c.link | safe_url | default: routes.all }}" style="--hs:{{ c.color | default: '#f3f4f6' }};color:{{ c.text_color | default: '#0e0f12' }}">
+    {%- if c.image != blank -%}<img src="{{ c.image | img_url: 700 }}" alt="" loading="lazy">{%- endif -%}
+    <span class="hside__copy">{%- if c.eyebrow != blank -%}<small>{{ c.eyebrow }}</small>{%- endif -%}<b>{{ c.title }}</b><em>{{ c.button | default: 'Shop now' }} →</em></span>
+  </a>
+  {%- endfor -%}
+</div>
+{%- endif -%}
 </section>
 {% schema %}
-{ "name": "Banner slider", "category": "Media", "description": "Full-width banners with separate computer and phone images", "settings": [
+{ "name": "Hero with promo cards", "category": "Media", "description": "Banner slider with computer and phone images, plus up to two promo cards beside it", "settings": [
   { "id": "slides", "type": "list", "label": "Slides", "item_label": "slide", "max_items": 12, "fields": [
     { "id": "image", "type": "image", "label": "Computer image (1920 × 700 works well)" },
     { "id": "image_mobile", "type": "image", "label": "Phone image (800 × 1000 works well)" },
@@ -49,7 +62,16 @@
     { "id": "text_color", "type": "color", "label": "Text colour", "default": "#ffffff" },
     { "id": "color", "type": "color", "label": "Background when there is no image", "default": "#17171c" }
   ], "default": [] },
+  { "id": "side", "type": "list", "label": "Promo cards next to the slider (computer; under it on phones)", "item_label": "card", "max_items": 2, "fields": [
+    { "id": "eyebrow", "type": "text", "label": "Small line" },
+    { "id": "title", "type": "text", "label": "Title" },
+    { "id": "button", "type": "text", "label": "Link text", "default": "Shop now" },
+    { "id": "link", "type": "url", "label": "Link" },
+    { "id": "image", "type": "image", "label": "Image" },
+    { "id": "color", "type": "color", "label": "Card colour", "default": "#f3f4f6" },
+    { "id": "text_color", "type": "color", "label": "Text colour", "default": "#0e0f12" }
+  ], "default": [] },
   { "id": "autoplay", "type": "range", "label": "Change slide every (0 = never)", "min": 0, "max": 12, "step": 1, "unit": " s", "default": 5 },
-  { "id": "full_width", "type": "checkbox", "label": "Edge to edge", "default": true }
+  { "id": "full_width", "type": "checkbox", "label": "Edge to edge (hides the promo cards)", "default": false }
 ] }
 {% endschema %}

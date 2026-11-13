@@ -14,7 +14,7 @@
     </a>
     {%- endfor -%}
   {%- else -%}
-    {%- for c in collections limit: 10 -%}
+    {%- for c in collections limit: 8 -%}
     <a class="mega__tile" href="{{ c.url }}">
       <span class="mega__img">{%- if c.image -%}<img src="{{ c.image | img_url: 300 }}" alt="" loading="lazy">{%- else -%}<b>{{ c.title | slice: 0 }}</b>{%- endif -%}</span>
       <span class="mega__t">{{ c.title }}</span>
@@ -32,8 +32,21 @@
     <nav class="hd__nav" aria-label="Main">
       {%- if s.mega_label != blank -%}
       <div class="hd__item hd__item--mega">
-        <a href="{{ routes.all }}" class="hd__link" aria-haspopup="true">{{ s.mega_label }}</a>
-        <div class="mega"><div class="mega__in pw">{{ tiles }}</div></div>
+        <a href="{{ routes.all }}" class="hd__link" aria-haspopup="true">{{ s.mega_label }}{% render 'snippets/icon', name: 'down' %}</a>
+        <div class="mega"><div class="mega__in pw">
+          <div class="mega__list">
+            <p class="mega__h">{{ s.mega_list_title | default: 'Shop by category' }}</p>
+            {%- for c in collections limit: 10 -%}<a href="{{ c.url }}">{{ c.title }}{% render 'snippets/icon', name: 'right' %}</a>{%- endfor -%}
+            <a href="{{ routes.all }}" class="mega__all">{{ s.mega_all_label | default: 'View everything' }}</a>
+          </div>
+          <div class="mega__cards">{{ tiles }}</div>
+          {%- if s.mega_promo_image != blank or s.mega_promo_title != blank -%}
+          <a class="mega__promo" href="{{ s.mega_promo_link | safe_url | default: routes.all }}" style="--promo:{{ s.mega_promo_color | default: '#5146ff' }}">
+            {%- if s.mega_promo_image != blank -%}<img src="{{ s.mega_promo_image | img_url: 500 }}" alt="" loading="lazy">{%- endif -%}
+            <span><small>{{ s.mega_promo_eyebrow }}</small><b>{{ s.mega_promo_title }}</b><em>{{ s.mega_promo_button | default: 'Shop now' }} →</em></span>
+          </a>
+          {%- endif -%}
+        </div></div>
       </div>
       {%- endif -%}
       {%- if menu -%}
@@ -53,6 +66,7 @@
       <button type="button" class="hd__search" data-search-open aria-label="Search">
         {% render 'snippets/icon', name: 'search' %}
         <span class="hd__ph" data-typing="{{ s.search_words | escape }}">{{ s.search_prefix | default: 'Search for' }} <i data-typing-word></i></span>
+        <kbd class="hd__kbd">/</kbd>
       </button>
       <button type="button" class="hd__ic hd__search-m" data-search-open aria-label="Search">{% render 'snippets/icon', name: 'search' %}</button>
       {%- endif -%}
@@ -168,13 +182,21 @@
   { "id": "menu", "type": "menu", "label": "Menu (empty = the one set to Header in Menus)", "default": "" },
   { "type": "header", "id": "h_mega", "label": "Categories mega menu" },
   { "id": "mega_label", "type": "text", "label": "Menu name that opens the category panel (empty = no panel)", "default": "Categories" },
-  { "id": "mega_items", "type": "list", "label": "Category tiles (empty = your store's categories)", "item_label": "tile", "fields": [
+  { "id": "mega_list_title", "type": "text", "label": "Heading above the category list", "default": "Shop by category" },
+  { "id": "mega_all_label", "type": "text", "label": "Last link in the list", "default": "View everything" },
+  { "id": "mega_items", "type": "list", "label": "Picture cards in the panel (empty = your store's categories)", "item_label": "tile", "fields": [
     { "id": "title", "type": "text", "label": "Name" },
     { "id": "image", "type": "image", "label": "Product photo (transparent PNG looks best)" },
     { "id": "link", "type": "url", "label": "Link" },
     { "id": "tag", "type": "text", "label": "Small tag under the name (for example “New”)" },
     { "id": "color", "type": "color", "label": "Tile background", "default": "#f4f4f4" }
   ], "default": [] },
+  { "id": "mega_promo_title", "type": "text", "label": "Promo card title (empty = no promo card)", "default": "New drops every Friday" },
+  { "id": "mega_promo_eyebrow", "type": "text", "label": "Promo card small line", "default": "Just landed" },
+  { "id": "mega_promo_button", "type": "text", "label": "Promo card link text", "default": "Shop new" },
+  { "id": "mega_promo_link", "type": "url", "label": "Promo card link", "default": "/products/all" },
+  { "id": "mega_promo_image", "type": "image", "label": "Promo card image (optional)" },
+  { "id": "mega_promo_color", "type": "color", "label": "Promo card colour", "default": "#5146ff" },
   { "id": "tile_fit", "type": "select", "label": "Tile photos", "options": ["cover", "contain"], "option_labels": ["Fill the tile (photos)", "Fit inside the tile (cut-out PNGs)"], "default": "cover" },
   { "id": "show_strip", "type": "checkbox", "label": "Also show the category tiles as a row under the header", "default": false },
   { "type": "header", "id": "h_search", "label": "Search" },

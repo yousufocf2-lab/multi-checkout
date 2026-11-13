@@ -9,7 +9,7 @@
    "settings": {
     "slides": [
      {
-      "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1920&h=720&q=80",
+      "image": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1600&h=900&q=80",
       "image_mobile": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&h=1000&q=80",
       "link": "/products/all",
       "eyebrow": "New launch",
@@ -20,7 +20,7 @@
       "text_color": "#ffffff"
      },
      {
-      "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?auto=format&fit=crop&w=1920&h=720&q=80",
+      "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?auto=format&fit=crop&w=1600&h=900&q=80",
       "image_mobile": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?auto=format&fit=crop&w=800&h=1000&q=80",
       "link": "/category/smartwatches",
       "eyebrow": "Smartwatches",
@@ -31,7 +31,7 @@
       "text_color": "#ffffff"
      },
      {
-      "image": "https://images.unsplash.com/photo-1589003077984-894e133dabab?auto=format&fit=crop&w=1920&h=720&q=80",
+      "image": "https://images.unsplash.com/photo-1589003077984-894e133dabab?auto=format&fit=crop&w=1600&h=900&q=80",
       "image_mobile": "https://images.unsplash.com/photo-1589003077984-894e133dabab?auto=format&fit=crop&w=800&h=1000&q=80",
       "link": "/category/speakers",
       "eyebrow": "Speakers",
@@ -40,6 +40,26 @@
       "button": "Shop speakers",
       "align": "left",
       "text_color": "#ffffff"
+     }
+    ],
+    "side": [
+     {
+      "eyebrow": "Smartwatches",
+      "title": "Calls, health and a week of battery",
+      "button": "Shop watches",
+      "link": "/category/smartwatches",
+      "image": "https://images.unsplash.com/photo-1624096104992-9b4fa3a279dd?auto=format&fit=crop&w=700&h=500&q=80",
+      "color": "#e9e8ff",
+      "text_color": "#0e0f12"
+     },
+     {
+      "eyebrow": "Under ₹1,999",
+      "title": "Everyday earbuds, big sound",
+      "button": "Shop earbuds",
+      "link": "/category/earbuds",
+      "image": "https://images.unsplash.com/photo-1578319439584-104c94d37305?auto=format&fit=crop&w=700&h=500&q=80",
+      "color": "#f0ffd0",
+      "text_color": "#0e0f12"
      }
     ]
    }
@@ -51,51 +71,61 @@
   "track": {
    "type": "image-banner",
    "settings": {
-    "heading": "<b>Ordered</b> already?<br>Track your order",
-    "button": "Track order",
-    "link": "/account"
+    "heading": "<b>Already ordered?</b><br>Track it in one tap",
+    "button": "Track my order",
+    "link": "/account",
+    "full_width": false,
+    "color_a": "#0e0f12",
+    "color_b": "#5146ff"
    }
   },
   "new": {
    "type": "product-carousel",
    "settings": {
-    "heading": "Newly in",
-    "label": "Newly in"
+    "eyebrow": "Just landed",
+    "heading": "New arrivals",
+    "label": "New"
    }
   },
   "reels": {
    "type": "creator-reels",
    "settings": {
-    "heading": "#SeenOnCreators",
+    "heading": "Seen on creators",
     "items": [
      {
       "image": "https://images.unsplash.com/photo-1605890822326-ab63270c7189?auto=format&fit=crop&w=700&h=1100&q=80",
       "caption": "Never sounded this good",
-      "product": "pulse-halo-max"
+      "product": "pulse-halo-max",
+      "creator": "Aarav plays"
      },
      {
       "image": "https://images.unsplash.com/photo-1722513992912-360082625d33?auto=format&fit=crop&w=700&h=1100&q=80",
       "caption": "Gym-proof",
-      "product": "pulse-aero-pods-x1"
+      "product": "pulse-aero-pods-x1",
+      "creator": "Riya on the go"
      },
      {
       "image": "https://images.unsplash.com/photo-1699221559470-eb448d746947?auto=format&fit=crop&w=700&h=1100&q=80",
       "caption": "Street ready",
-      "product": "pulse-halo-air"
+      "product": "pulse-halo-air",
+      "creator": "Kabir lifts"
      },
      {
       "image": "https://images.unsplash.com/photo-1771402899435-4d6dc1c78fdf?auto=format&fit=crop&w=700&h=1100&q=80",
       "caption": "All-day comfort",
-      "product": "pulse-nova-buds-pro"
+      "product": "pulse-nova-buds-pro",
+      "creator": "Meera reads"
      }
-    ]
+    ],
+    "eyebrow": "Real people, real use"
    }
   },
   "best": {
    "type": "product-carousel",
    "settings": {
+    "eyebrow": "Loved by thousands",
     "heading": "Bestsellers",
-    "label": "Bestseller"
+    "label": ""
    }
   },
   "story": {
@@ -103,16 +133,18 @@
    "settings": {
     "items": [
      {
-      "image": "https://images.unsplash.com/photo-1599669454699-248893623440?auto=format&fit=crop&w=900&h=900&q=80",
-      "light": "Designed to",
-      "bold": "Stand apart",
-      "text": "We don’t just engineer what’s inside. Every finish, curve and detail is designed to look and feel as good as it sounds."
+      "image": "https://images.unsplash.com/photo-1599669454699-248893623440?auto=format&fit=crop&w=900&h=800&q=80",
+      "light": "Engineered for",
+      "bold": "Long days",
+      "text": "Battery that keeps up with you, from the morning commute to the late-night playlist.",
+      "points": "Up to 70 hours of playback\n10-minute fast charge\nQuick pairing with any phone"
      },
      {
-      "image": "https://images.unsplash.com/photo-1660844817855-3ecc7ef21f12?auto=format&fit=crop&w=900&h=900&q=80",
-      "light": "Built for",
-      "bold": "Everyday life",
-      "text": "Long battery, clear calls and quick pairing, made for commutes, workouts and late-night playlists."
+      "image": "https://images.unsplash.com/photo-1660844817855-3ecc7ef21f12?auto=format&fit=crop&w=900&h=800&q=80",
+      "light": "Tuned for",
+      "bold": "Clear calls",
+      "text": "Multiple mics and smart noise filters keep your voice clear in traffic, cafés and windy streets.",
+      "points": "AI noise reduction\nWind-resistant design"
      }
     ]
    }
@@ -124,8 +156,9 @@
   "deals": {
    "type": "product-carousel",
    "settings": {
-    "heading": "Top deals",
-    "label": "Top deal"
+    "eyebrow": "Prices you’ll like",
+    "heading": "Deals of the week",
+    "label": "Deal"
    }
   },
   "videos": {
@@ -226,32 +259,24 @@
      }
     ]
    }
-  },
-  "explore": {
-   "type": "category-strip",
-   "settings": {
-    "heading": "Explore by category",
-    "style": "circles"
-   }
   }
  },
  "order": [
-  "cats",
   "hero",
-  "stats",
-  "track",
+  "cats",
   "new",
+  "usp",
   "reels",
   "best",
   "story",
-  "awards",
   "deals",
   "videos",
-  "usp",
-  "market",
-  "pay",
+  "stats",
+  "awards",
+  "track",
   "blog",
   "fresh",
-  "explore"
+  "market",
+  "pay"
  ]
 }

@@ -177,6 +177,7 @@ export default function DashboardLayout() {
   const storeSettings: NavNode[] = [
     { label: "Business profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
     { label: "Customer accounts", to: storeHref("customer-accounts"), icon: "user", match: /\/customer-accounts$|next=customer-accounts/, show: may("settings") },
+    { label: "Widgets", to: storeHref("widgets"), icon: "sparkle", match: /\/widgets$|next=widgets\b/, show: storefront && may("settings") },
     { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing") },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },

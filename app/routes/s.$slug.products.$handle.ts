@@ -13,6 +13,6 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 // Review forms on pages opened before the move
 export async function action({ request, params }: ActionFunctionArgs) {
   const ctx = await previewContext(request, params.slug);
-  await submitReview(ctx.store.id, params.handle ?? "", await request.formData());
-  return redirect(`/s/${encodeURIComponent(params.slug ?? "")}/product/${encodeURIComponent(params.handle ?? "")}?review=received#reviews`);
+  const st = await submitReview(ctx.store.id, params.handle ?? "", await request.formData());
+  return redirect(`/s/${encodeURIComponent(params.slug ?? "")}/product/${encodeURIComponent(params.handle ?? "")}?review=${st === "approved" ? "published" : "received"}#reviews`);
 }

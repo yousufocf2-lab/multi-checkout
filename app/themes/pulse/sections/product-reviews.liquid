@@ -1,17 +1,29 @@
 {%- assign s = section.settings -%}
+{%- assign w = widgets.reviews -%}
+{%- if reviews_enabled -%}
 <section class="rev sec" id="reviews">
   <div class="pw rev__in">
     <div class="rev__top">
-      <div>
+      <div class="rev__score">
         <h2 class="sec__h">{{ s.heading | default: 'Customer reviews' }}</h2>
-        {%- if review_count > 0 -%}<p class="rev__sum">{% render 'snippets/stars', value: review_average %}<b>{{ review_average }}</b><span>{{ review_count }} reviews</span></p>
-        {%- else -%}<p class="rev__sum rev__sum--none">No reviews yet. Be the first to share yours.</p>{%- endif -%}
+        {%- if review_count > 0 -%}
+        <p class="rev__big"><b>{{ review_average }}</b><span>{% render 'snippets/stars', value: review_average %}<small>Based on {{ review_count }} review{% if review_count != 1 %}s{% endif %}</small></span></p>
+        {%- else -%}<p class="rev__none">No reviews yet. Be the first to share yours.</p>{%- endif -%}
       </div>
-      {%- unless product.demo -%}<button type="button" class="btn btn--accent" data-review-open>{{ s.write_label | default: 'Write a review' }}</button>{%- endunless -%}
+      {%- if w.show_breakdown and review_count > 0 -%}
+      <div class="rev__bars">
+        {%- for b in review_breakdown -%}<div class="rev__bar"><span>{{ b.stars }}★</span><i><em style="width:{{ b.pct }}%"></em></i><small>{{ b.count }}</small></div>{%- endfor -%}
+      </div>
+      {%- endif -%}
+      {%- unless product.demo -%}<button type="button" class="btn rev__cta" data-review-open>{{ s.write_label | default: 'Write a review' }}</button>{%- endunless -%}
     </div>
-    {%- if review_submitted -%}<p class="rev__ok">{% render 'snippets/icon', name: 'check' %}Thank you. Your review was sent for approval.</p>{%- endif -%}
+    {%- if review_published -%}<p class="rev__ok">{% render 'snippets/icon', name: 'check' %}Thank you! Your review is live.</p>
+    {%- elsif review_submitted -%}<p class="rev__ok">{% render 'snippets/icon', name: 'check' %}Thank you! Your review will appear once the store checks it.</p>{%- endif -%}
+
+    {%- capture form_html -%}
     {%- unless product.demo -%}
-    <form method="post" class="rev__form" data-review-form hidden>
+    <form method="post" class="rev__form" data-review-form data-store="{{ shop.slug }}" data-max-video="{{ w.max_video | default: 30 }}" data-max-media="{{ w.max_media | default: 4 }}"{% unless s.form_open %} hidden{% endunless %}>
+      <p class="rev__fh">{{ s.form_title | default: 'Share your experience' }}</p>
       <div class="rev__rate" role="radiogroup" aria-label="Rating">
         {%- for i in (1..5) reversed -%}<input type="radio" name="rating" value="{{ i }}" id="rr{{ i }}" required><label for="rr{{ i }}" title="{{ i }} stars">★</label>{%- endfor -%}
       </div>
@@ -19,27 +31,62 @@
         <label>Name<input name="name" maxlength="80" required autocomplete="name"></label>
         <label>Email (optional)<input name="email" type="email" maxlength="254" autocomplete="email"></label>
       </div>
-      <label>Your review<textarea name="body" minlength="10" maxlength="2000" required rows="4"></textarea></label>
+      <label>Your review<textarea name="body" minlength="10" maxlength="2000" required rows="4" placeholder="What did you like? How do you use it?"></textarea></label>
+      {%- if w.allow_photos or w.allow_videos -%}
+      <div class="rev__up">
+        <div class="rev__thumbs" data-review-thumbs></div>
+        <label class="rev__add">{% render 'snippets/icon', name: 'plus' %}<span>Add {% if w.allow_photos %}photos{% endif %}{% if w.allow_photos and w.allow_videos %} or {% endif %}{% if w.allow_videos %}a short video{% endif %}</span>
+          <input type="file" accept="{% if w.allow_photos %}image/jpeg,image/png,image/webp{% endif %}{% if w.allow_photos and w.allow_videos %},{% endif %}{% if w.allow_videos %}video/mp4,video/webm,video/quicktime{% endif %}" multiple data-review-files hidden></label>
+        <p class="rev__hint" data-review-hint>{% if w.allow_videos %}Videos up to {{ w.max_video }} seconds. {% endif %}Up to {{ w.max_media }} files.</p>
+        <input type="hidden" name="media" value="[]" data-review-media>
+      </div>
+      {%- endif -%}
       <div class="reviews__trap" aria-hidden="true"><label>Leave this blank<input name="website" tabindex="-1" autocomplete="off"></label></div>
-      <button class="btn" type="submit">Submit review</button>
+      <button class="btn" type="submit" data-review-submit>Submit review</button>
     </form>
     {%- endunless -%}
+    {%- endcapture -%}
+
+    {%- if s.write_position == 'top' -%}{{ form_html }}{%- endif -%}
+
+    {%- assign gallery = '' | split: '' -%}
+    {%- for r in reviews -%}{%- for m in r.media -%}{%- assign gallery = gallery | push: m -%}{%- endfor -%}{%- endfor -%}
+    {%- if s.show_gallery and gallery.size > 0 -%}
+    <div class="rev__gal" data-drag-scroll>{%- for m in gallery limit: 16 -%}<button type="button" class="rev__media" data-media="{{ m.url }}" data-type="{{ m.type }}">{%- if m.type == 'video' -%}<video src="{{ m.url }}" muted preload="metadata"></video><span>{% render 'snippets/icon', name: 'play' %}</span>{%- else -%}<img src="{{ m.url }}" alt="" loading="lazy">{%- endif -%}</button>{%- endfor -%}</div>
+    {%- endif -%}
+
     {%- if reviews.size > 0 -%}
     <div class="rev__list">
       {%- for r in reviews -%}
       <article class="rev__it">
-        <p class="rev__stars">{% render 'snippets/stars', value: r.rating %}</p>
-        <p class="rev__who"><span class="rev__av">{{ r.authorName | slice: 0 | upcase }}</span><b>{{ r.authorName | escape }}</b><small>{{ r.createdAt | date: '%d %b %Y' }}</small><em>{% render 'snippets/icon', name: 'check' %}Verified buyer</em></p>
-        <p class="rev__body">{{ r.body | escape }}</p>
+        <div class="rev__head">
+          <span class="rev__av">{{ r.authorName | slice: 0 | upcase }}</span>
+          <div><b>{{ r.authorName | escape }}</b>{%- if w.show_verified and r.verified -%}<em>{% render 'snippets/icon', name: 'check' %}Verified buyer</em>{%- endif -%}
+            <p class="rev__meta">{% render 'snippets/stars', value: r.rating %}{%- if w.show_date -%}<small>{{ r.createdAt | date: '%d %b %Y' }}</small>{%- endif -%}</p></div>
+        </div>
+        <p class="rev__body">{{ r.body | escape | newline_to_br }}</p>
+        {%- if r.media.size > 0 -%}
+        <div class="rev__mrow">{%- for m in r.media -%}<button type="button" class="rev__media" data-media="{{ m.url }}" data-type="{{ m.type }}">{%- if m.type == 'video' -%}<video src="{{ m.url }}" muted preload="metadata"></video><span>{% render 'snippets/icon', name: 'play' %}</span>{%- else -%}<img src="{{ m.url }}" alt="" loading="lazy">{%- endif -%}</button>{%- endfor -%}</div>
+        {%- endif -%}
       </article>
       {%- endfor -%}
     </div>
     {%- endif -%}
+
+    {%- if s.write_position != 'top' -%}{{ form_html }}{%- endif -%}
   </div>
 </section>
+{%- elsif editor -%}
+<section class="sec"><div class="pw"><p class="empty">Reviews are switched off. Turn them on in Settings → Widgets.</p></div></section>
+{%- endif -%}
 {% schema %}
-{ "name": "Product reviews", "category": "Trust", "description": "Product page: rating summary, review list and a write-a-review form", "settings": [
+{ "name": "Product reviews", "category": "Trust", "requires": "reviews", "description": "Rating summary, rating bars, customer photos and videos, and the write-a-review form", "settings": [
   { "id": "heading", "type": "text", "label": "Heading", "default": "Customer reviews" },
-  { "id": "write_label", "type": "text", "label": "Button", "default": "Write a review" }
+  { "id": "write_label", "type": "text", "label": "Button text", "default": "Write a review" },
+  { "id": "write_position", "type": "select", "label": "Where the review form opens", "options": ["top", "bottom"], "option_labels": ["Above the reviews", "Below the reviews"], "default": "top" },
+  { "id": "form_open", "type": "checkbox", "label": "Keep the form open (not just the button)", "default": false },
+  { "id": "form_title", "type": "text", "label": "Form heading", "default": "Share your experience" },
+  { "id": "show_gallery", "type": "checkbox", "label": "Show customer photos and videos in a strip on top", "default": true },
+  { "type": "paragraph", "id": "p_more", "label": "Colours, approval rules and photo/video limits are in Settings → Widgets → Reviews. Move this section anywhere on the product page." }
 ] }
 {% endschema %}

@@ -90,8 +90,24 @@ function readSite(fd: FormData) {
     chips: str(fd.get("siteChips")).split(",").map((c) => c.trim()).filter(Boolean).slice(0, 6).map((c) => c.slice(0, 24)),
     usp: lines("siteUsp").slice(0, 12).map((l) => l.slice(0, 120)),
     specs: lines("siteSpecs").slice(0, 30).map((l) => pair(l, /:\s*/)).filter(([label]) => label).map(([label, value]) => ({ label: label.slice(0, 60), value: value.slice(0, 200) })),
+    banners: readBanners(str(fd.get("siteBanners"))),
     faqs: lines("siteFaqs").slice(0, 20).map((l) => pair(l, /\s*\|\s*/)).filter(([q]) => q).map(([q, a]) => ({ q: q.slice(0, 200), a: a.slice(0, 1000) })),
   };
+}
+
+type Banner = { image: string; mobile?: string; alt?: string; link?: string };
+/** Wide photos shown under the description, in order. Only http(s) images. */
+function readBanners(raw: string): Banner[] {
+  let list: unknown = [];
+  try { list = JSON.parse(raw || "[]"); } catch { list = []; }
+  if (!Array.isArray(list)) return [];
+  const ok = (u: unknown) => (typeof u === "string" && /^https?:\/\//.test(u.trim()) ? u.trim() : "");
+  return list.slice(0, 20).flatMap((b): Banner[] => {
+    const image = ok(b?.image);
+    if (!image) return [];
+    const mobile = ok(b?.mobile), alt = typeof b?.alt === "string" ? b.alt.slice(0, 160) : "", link = typeof b?.link === "string" ? b.link.trim().slice(0, 300) : "";
+    return [{ image, ...(mobile ? { mobile } : {}), ...(alt ? { alt } : {}), ...(link ? { link } : {}) }];
+  });
 }
 
 /** Description from the editor: keep simple formatting tags only. */
@@ -135,7 +151,7 @@ function combine(options: { name: string; values: string[] }[], old: Row[]): Row
   });
 }
 
-type SiteDetails = { badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[] };
+type SiteDetails = { banners?: Banner[]; badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[] };
 type Extra = { site?: SiteDetails; costPaise?: number | null; chargeTax?: boolean; gstRate?: number | null; barcode?: string | null; continueSelling?: boolean; physical?: boolean; hsn?: string | null; origin?: string | null; weightUnit?: "kg" | "g"; dims?: { l: number | null; w: number | null; h: number | null } };
 const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 
@@ -363,6 +379,8 @@ export default function EditItem() {
             )}
           </section>
 
+          <BannerList initial={ex.site?.banners ?? []} onDirty={() => setDirty(true)} />
+
           <section className="panel p-4">
             <h2 className="text-[13.5px] font-semibold">Website details</h2>
             <p className="mt-0.5 text-[12px] text-ink-faint">Shown on product cards and the product page of themes like Pulse. All optional.</p>
@@ -552,6 +570,95 @@ function Picker({ all, value, onChange, placeholder }: { all: { id: number; labe
         </select>
       )}
     </div>
+  );
+}
+
+/** "Description banners": wide photos under the description. Upload, reorder with the arrows, add a phone photo or a link. */
+function BannerList({ initial, onDirty }: { initial: Banner[]; onDirty: () => void }) {
+  const { id: storeId } = useParams();
+  const [list, setList] = useState<Banner[]>(initial);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+  const addRef = useRef<HTMLInputElement>(null);
+  const mobRef = useRef<HTMLInputElement>(null);
+  const target = useRef<number>(-1);
+  const change = (next: Banner[]) => { setList(next); onDirty(); };
+  const upload = async (f: File) => {
+    if (!f.type.startsWith("image/")) throw new Error("Banners must be photos (JPG, PNG or WebP).");
+    const r = await sendFile(`${storePath(storeId!)}/media`, f, () => {});
+    return r.url;
+  };
+  const addFiles = async (files: FileList) => {
+    setErr(null);
+    const out: Banner[] = [];
+    for (const f of Array.from(files).slice(0, 20 - list.length)) {
+      setBusy(`Uploading ${f.name}…`);
+      try { out.push({ image: await upload(f) }); } catch (e) { setErr(e instanceof Error ? e.message : "Upload failed"); }
+    }
+    setBusy(null);
+    if (out.length) change([...list, ...out]);
+  };
+  const setMobile = async (f: File) => {
+    const i = target.current; setErr(null); setBusy("Uploading phone photo…");
+    try { const url = await upload(f); change(list.map((b, j) => (j === i ? { ...b, mobile: url } : b))); } catch (e) { setErr(e instanceof Error ? e.message : "Upload failed"); }
+    setBusy(null);
+  };
+  const move = (i: number, j: number) => { if (j < 0 || j >= list.length) return; const n = list.slice(); [n[i], n[j]] = [n[j], n[i]]; change(n); setOpen(open === i ? j : open); };
+  const edit = (i: number, k: "alt" | "link", v: string) => change(list.map((b, j) => (j === i ? { ...b, [k]: v } : b)));
+  return (
+    <section className="panel p-4">
+      <input type="hidden" name="siteBanners" value={JSON.stringify(list)} />
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <h2 className="text-[13.5px] font-semibold">Description banners</h2>
+          <p className="mt-0.5 text-[12px] text-ink-faint">Wide photos shown one below the other under the description, like a brand page. Use the arrows to change the order.</p>
+        </div>
+        {list.length < 20 && <button type="button" className="btn-secondary h-8" onClick={() => addRef.current?.click()} disabled={Boolean(busy)}><Icon name="plus" className="h-4 w-4" />Add banners</button>}
+      </div>
+      {list.length === 0 ? (
+        <button type="button" onClick={() => addRef.current?.click()} disabled={Boolean(busy)} className="mt-3 flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-[#c9c9c9] px-4 py-7 text-[12.5px] text-ink-soft hover:bg-black/[.02]">
+          <Icon name="download" className="h-5 w-5 rotate-180" /><b className="font-semibold text-ink">Upload banner photos</b><span>Wide images work best, for example 1600 × 800. You can pick several at once.</span>
+        </button>
+      ) : (
+        <ol className="mt-3 space-y-2">
+          {list.map((b, i) => (
+            <li key={`${b.image}-${i}`} className="rounded-xl border border-rule bg-white">
+              <div className="flex items-center gap-3 p-2">
+                <span className="w-5 text-center text-[12px] font-semibold text-ink-faint">{i + 1}</span>
+                <img src={b.image} alt="" className="h-14 w-28 shrink-0 rounded-lg object-cover bg-paper" loading="lazy" />
+                {b.mobile ? <img src={b.mobile} alt="" title="Phone photo" className="h-14 w-9 shrink-0 rounded-md object-cover bg-paper" loading="lazy" /> : null}
+                <div className="min-w-0 flex-1 text-[12px] text-ink-soft">
+                  <p className="truncate">{b.alt || "No description"}</p>
+                  <p className="truncate text-ink-faint">{b.mobile ? "Separate phone photo" : "Same photo on phones"}{b.link ? ` · links to ${b.link}` : ""}</p>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <button type="button" onClick={() => move(i, i - 1)} disabled={i === 0} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-black/5 disabled:opacity-30" aria-label="Move up"><Icon name="arrow" className="h-4 w-4 -rotate-90" /></button>
+                  <button type="button" onClick={() => move(i, i + 1)} disabled={i === list.length - 1} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-black/5 disabled:opacity-30" aria-label="Move down"><Icon name="arrow" className="h-4 w-4 rotate-90" /></button>
+                  <button type="button" onClick={() => setOpen(open === i ? null : i)} className="flex h-7 items-center rounded-md px-2 text-[12px] hover:bg-black/5" aria-expanded={open === i}>Edit</button>
+                  <button type="button" onClick={() => { change(list.filter((_, j) => j !== i)); setOpen(null); }} className="flex h-7 w-7 items-center justify-center rounded-md text-[#8e1f0b] hover:bg-black/5" aria-label="Remove banner"><Icon name="trash" className="h-4 w-4" /></button>
+                </div>
+              </div>
+              {open === i && (
+                <div className="grid gap-3 border-t border-rule p-3 sm:grid-cols-2">
+                  <label className="block"><span className="label">Description (for Google and screen readers)</span><input value={b.alt ?? ""} onChange={(e) => edit(i, "alt", e.target.value)} maxLength={160} className="input w-full" placeholder="50 hours of battery life" /></label>
+                  <label className="block"><span className="label">Link (optional)</span><input value={b.link ?? ""} onChange={(e) => edit(i, "link", e.target.value)} className="input w-full" placeholder="/category/earbuds" /></label>
+                  <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-[12px] text-ink-soft">
+                    <span>Phone photo (optional, tall images look best on phones):</span>
+                    <button type="button" className="btn-secondary h-7" disabled={Boolean(busy)} onClick={() => { target.current = i; mobRef.current?.click(); }}>{b.mobile ? "Change" : "Upload"}</button>
+                    {b.mobile && <button type="button" className="btn-secondary h-7" onClick={() => change(list.map((x, j) => (j === i ? { image: x.image, ...(x.alt ? { alt: x.alt } : {}), ...(x.link ? { link: x.link } : {}) } : x)))}>Remove</button>}
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {busy && <p className="mt-2 text-[12px] text-ink-soft">{busy}</p>}
+      {err && <p className="mt-2 text-[12px] text-[#8e1f0b]">{err}</p>}
+      <input ref={addRef} type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ""; }} />
+      <input ref={mobRef} type="file" accept="image/*" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) setMobile(f); e.target.value = ""; }} />
+    </section>
   );
 }
 

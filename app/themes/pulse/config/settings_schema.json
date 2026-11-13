@@ -1,69 +1,416 @@
 [
-  { "name": "Logo and favicon", "settings": [
-    { "id": "logo", "type": "image", "label": "Logo" },
-    { "id": "logo_width", "type": "range", "label": "Logo width (computer)", "min": 60, "max": 260, "step": 5, "unit": "px", "default": 120 },
-    { "id": "logo_width_mobile", "type": "range", "label": "Logo width (phone)", "min": 50, "max": 200, "step": 5, "unit": "px", "default": 96 },
-    { "id": "logo_badge", "type": "image", "label": "Small badge next to the logo (for example a “No.1 rated” mark)" },
-    { "id": "favicon", "type": "image", "label": "Favicon: the icon in the browser tab (square, 64×64 or bigger)" }
-  ] },
-  { "name": "Colors", "settings": [
-    { "id": "color_brand", "type": "color", "label": "Accent (headings, stars, highlights)", "default": "#1fa7b8" },
-    { "id": "color_button", "type": "color", "label": "Buttons", "default": "#111111" },
-    { "id": "color_button_text", "type": "color", "label": "Button text", "default": "#ffffff" },
-    { "id": "color_bg", "type": "color", "label": "Background", "default": "#ffffff" },
-    { "id": "color_text", "type": "color", "label": "Text", "default": "#111111" },
-    { "id": "color_muted", "type": "color", "label": "Light text", "default": "#6b6b6b" },
-    { "id": "color_soft", "type": "color", "label": "Soft background (cards, strips)", "default": "#f4f4f4" },
-    { "id": "color_line", "type": "color", "label": "Card borders", "default": "#e6e6e6" },
-    { "id": "color_sale", "type": "color", "label": "Discount and offer text", "default": "#16a34a" },
-    { "id": "color_footer_bg", "type": "color", "label": "Footer background", "default": "#000000" },
-    { "id": "color_footer_text", "type": "color", "label": "Footer text", "default": "#ffffff" }
-  ] },
-  { "name": "Typography", "settings": [
-    { "id": "font_heading", "type": "select", "label": "Heading font", "default": "Outfit", "options": ["Outfit", "Inter", "Poppins", "Montserrat", "Manrope", "DM Sans", "Space Grotesk", "Plus Jakarta Sans", "Sora", "Urbanist"] },
-    { "id": "font_body", "type": "select", "label": "Body font", "default": "Inter", "options": ["Inter", "Outfit", "Poppins", "Manrope", "DM Sans", "Plus Jakarta Sans", "Urbanist"] },
-    { "id": "heading_scale", "type": "range", "label": "Heading size", "min": 80, "max": 130, "step": 5, "unit": "%", "default": 100 },
-    { "id": "heading_uppercase", "type": "checkbox", "label": "Headings in capital letters", "default": false }
-  ] },
-  { "name": "Layout", "settings": [
-    { "id": "page_width", "type": "range", "label": "Page width", "min": 1100, "max": 1680, "step": 20, "unit": "px", "default": 1440 },
-    { "id": "section_gap", "type": "range", "label": "Space between sections", "min": 12, "max": 80, "step": 4, "unit": "px", "default": 36 },
-    { "id": "button_radius", "type": "range", "label": "Button corners", "min": 0, "max": 30, "step": 1, "unit": "px", "default": 6 },
-    { "id": "card_radius", "type": "range", "label": "Card corners", "min": 0, "max": 24, "step": 1, "unit": "px", "default": 10 }
-  ] },
-  { "name": "Product cards", "settings": [
-    { "id": "card_ratio", "type": "select", "label": "Photo shape", "default": "square", "options": ["square", "portrait", "landscape"] },
-    { "id": "card_style", "type": "select", "label": "Card look", "default": "boxed", "options": ["boxed", "plain"], "option_labels": ["Boxed with a border", "Plain, no border"] },
-    { "id": "card_show_rating", "type": "checkbox", "label": "Show star rating on the photo", "default": true },
-    { "id": "card_show_badge", "type": "checkbox", "label": "Show badge (New launch, Bestseller…)", "default": true },
-    { "id": "card_show_chips", "type": "checkbox", "label": "Show feature chips (32 dB ANC, Fast charge…)", "default": true },
-    { "id": "card_show_discount", "type": "checkbox", "label": "Show “% off”", "default": true },
-    { "id": "card_price_prefix", "type": "text", "label": "Text before the price (optional, for example “Offer @”)", "default": "" },
-    { "id": "card_button", "type": "text", "label": "Card button text (empty = no button)", "default": "Add" },
-    { "id": "card_hover_image", "type": "checkbox", "label": "Show the second photo on hover", "default": true },
-    { "id": "card_emi", "type": "text", "label": "Small pill under the price (optional, for example “or 3 easy EMIs”)", "default": "" }
-  ] },
-  { "name": "Product page", "settings": [
-    { "id": "pdp_tax_note", "type": "text", "label": "Line under the price", "default": "Inclusive of all taxes" },
-    { "id": "pdp_social_proof", "type": "text", "label": "Buzz line (use [n] for a number; empty = hide)", "default": "[n] people ordered this in the last 24 hours" },
-    { "id": "pdp_pincode", "type": "checkbox", "label": "Show pincode delivery check", "default": true },
-    { "id": "pdp_delivery_days", "type": "range", "label": "Delivery estimate (days)", "min": 1, "max": 12, "step": 1, "unit": " days", "default": 5 },
-    { "id": "pdp_sticky_buy", "type": "checkbox", "label": "Sticky buy bar on phones", "default": true }
-  ] },
-  { "name": "Cart", "settings": [
-    { "id": "cart_after_add", "type": "select", "label": "After “Add to cart”", "default": "drawer", "options": ["drawer", "stay", "cart"], "option_labels": ["Open the side cart", "Stay on the page", "Go to the cart page"] },
-    { "id": "cart_note", "type": "text", "label": "Line under the subtotal", "default": "Delivery and online-payment discount are shown at checkout." },
-    { "id": "cart_free_ship", "type": "number", "label": "Free delivery above ₹ (0 = hide the progress bar)", "default": 0 }
-  ] },
-  { "name": "Social media and WhatsApp", "settings": [
-    { "id": "whatsapp_number", "type": "text", "label": "WhatsApp number (shows a chat button)", "default": "" },
-    { "id": "social_facebook", "type": "url", "label": "Facebook link" },
-    { "id": "social_instagram", "type": "url", "label": "Instagram link" },
-    { "id": "social_youtube", "type": "url", "label": "YouTube link" },
-    { "id": "social_linkedin", "type": "url", "label": "LinkedIn link" },
-    { "id": "social_x", "type": "url", "label": "X (Twitter) link" }
-  ] },
-  { "name": "Custom CSS", "settings": [
-    { "id": "custom_css", "type": "textarea", "label": "CSS added to every page", "default": "" }
-  ] }
+ {
+  "name": "Logo and favicon",
+  "settings": [
+   {
+    "id": "logo",
+    "type": "image",
+    "label": "Logo"
+   },
+   {
+    "id": "logo_width",
+    "type": "range",
+    "label": "Logo width (computer)",
+    "min": 60,
+    "max": 260,
+    "step": 5,
+    "unit": "px",
+    "default": 120
+   },
+   {
+    "id": "logo_width_mobile",
+    "type": "range",
+    "label": "Logo width (phone)",
+    "min": 50,
+    "max": 200,
+    "step": 5,
+    "unit": "px",
+    "default": 96
+   },
+   {
+    "id": "logo_badge",
+    "type": "image",
+    "label": "Small badge next to the logo (for example a “No.1 rated” mark)"
+   },
+   {
+    "id": "favicon",
+    "type": "image",
+    "label": "Favicon: the icon in the browser tab (square, 64×64 or bigger)"
+   }
+  ]
+ },
+ {
+  "name": "Colors",
+  "settings": [
+   {
+    "id": "color_brand",
+    "type": "color",
+    "label": "Accent (headings, stars, highlights)",
+    "default": "#5146ff"
+   },
+   {
+    "id": "color_pop",
+    "type": "color",
+    "label": "Highlight (chips, deal labels)",
+    "default": "#d4ff3a"
+   },
+   {
+    "id": "color_button",
+    "type": "color",
+    "label": "Buttons",
+    "default": "#0e0f12"
+   },
+   {
+    "id": "color_button_text",
+    "type": "color",
+    "label": "Button text",
+    "default": "#ffffff"
+   },
+   {
+    "id": "color_bg",
+    "type": "color",
+    "label": "Background",
+    "default": "#ffffff"
+   },
+   {
+    "id": "color_text",
+    "type": "color",
+    "label": "Text",
+    "default": "#0e0f12"
+   },
+   {
+    "id": "color_muted",
+    "type": "color",
+    "label": "Light text",
+    "default": "#646873"
+   },
+   {
+    "id": "color_soft",
+    "type": "color",
+    "label": "Soft background (cards, strips)",
+    "default": "#f3f4f6"
+   },
+   {
+    "id": "color_line",
+    "type": "color",
+    "label": "Card borders",
+    "default": "#e5e7eb"
+   },
+   {
+    "id": "color_sale",
+    "type": "color",
+    "label": "Discount and offer text",
+    "default": "#16a34a"
+   },
+   {
+    "id": "color_footer_bg",
+    "type": "color",
+    "label": "Footer background",
+    "default": "#f3f4f6"
+   },
+   {
+    "id": "color_footer_text",
+    "type": "color",
+    "label": "Footer text",
+    "default": "#0e0f12"
+   }
+  ]
+ },
+ {
+  "name": "Typography",
+  "settings": [
+   {
+    "id": "font_heading",
+    "type": "select",
+    "label": "Heading font",
+    "default": "Sora",
+    "options": [
+     "Sora",
+     "Outfit",
+     "Inter",
+     "Poppins",
+     "Montserrat",
+     "Manrope",
+     "DM Sans",
+     "Space Grotesk",
+     "Plus Jakarta Sans",
+     "Urbanist"
+    ]
+   },
+   {
+    "id": "font_body",
+    "type": "select",
+    "label": "Body font",
+    "default": "Inter",
+    "options": [
+     "Inter",
+     "Sora",
+     "Outfit",
+     "Poppins",
+     "Manrope",
+     "DM Sans",
+     "Plus Jakarta Sans",
+     "Urbanist"
+    ]
+   },
+   {
+    "id": "heading_scale",
+    "type": "range",
+    "label": "Heading size",
+    "min": 80,
+    "max": 130,
+    "step": 5,
+    "unit": "%",
+    "default": 100
+   },
+   {
+    "id": "heading_uppercase",
+    "type": "checkbox",
+    "label": "Headings in capital letters",
+    "default": false
+   }
+  ]
+ },
+ {
+  "name": "Layout",
+  "settings": [
+   {
+    "id": "page_width",
+    "type": "range",
+    "label": "Page width",
+    "min": 1100,
+    "max": 1680,
+    "step": 20,
+    "unit": "px",
+    "default": 1440
+   },
+   {
+    "id": "section_gap",
+    "type": "range",
+    "label": "Space between sections",
+    "min": 12,
+    "max": 80,
+    "step": 4,
+    "unit": "px",
+    "default": 36
+   },
+   {
+    "id": "button_radius",
+    "type": "range",
+    "label": "Button corners",
+    "min": 0,
+    "max": 30,
+    "step": 1,
+    "unit": "px",
+    "default": 999
+   },
+   {
+    "id": "card_radius",
+    "type": "range",
+    "label": "Card corners",
+    "min": 0,
+    "max": 24,
+    "step": 1,
+    "unit": "px",
+    "default": 16
+   }
+  ]
+ },
+ {
+  "name": "Product cards",
+  "settings": [
+   {
+    "id": "card_ratio",
+    "type": "select",
+    "label": "Photo shape",
+    "default": "square",
+    "options": [
+     "square",
+     "portrait",
+     "landscape"
+    ]
+   },
+   {
+    "id": "card_style",
+    "type": "select",
+    "label": "Card look",
+    "default": "boxed",
+    "options": [
+     "boxed",
+     "plain"
+    ],
+    "option_labels": [
+     "Soft card",
+     "Plain, no background"
+    ]
+   },
+   {
+    "id": "card_show_rating",
+    "type": "checkbox",
+    "label": "Show star rating on the photo",
+    "default": true
+   },
+   {
+    "id": "card_show_badge",
+    "type": "checkbox",
+    "label": "Show badge (New launch, Bestseller…)",
+    "default": true
+   },
+   {
+    "id": "card_show_chips",
+    "type": "checkbox",
+    "label": "Show feature chips (32 dB ANC, Fast charge…)",
+    "default": true
+   },
+   {
+    "id": "card_show_discount",
+    "type": "checkbox",
+    "label": "Show “% off”",
+    "default": true
+   },
+   {
+    "id": "card_price_prefix",
+    "type": "text",
+    "label": "Text before the price (optional, for example “Offer @”)",
+    "default": ""
+   },
+   {
+    "id": "card_button",
+    "type": "text",
+    "label": "Card button text (empty = no button)",
+    "default": "Add"
+   },
+   {
+    "id": "card_hover_image",
+    "type": "checkbox",
+    "label": "Show the second photo on hover",
+    "default": true
+   },
+   {
+    "id": "card_emi",
+    "type": "text",
+    "label": "Small pill under the price (optional, for example “or 3 easy EMIs”)",
+    "default": ""
+   }
+  ]
+ },
+ {
+  "name": "Product page",
+  "settings": [
+   {
+    "id": "pdp_tax_note",
+    "type": "text",
+    "label": "Line under the price",
+    "default": "Inclusive of all taxes"
+   },
+   {
+    "id": "pdp_social_proof",
+    "type": "text",
+    "label": "Buzz line (use [n] for a number; empty = hide)",
+    "default": "[n] people ordered this in the last 24 hours"
+   },
+   {
+    "id": "pdp_pincode",
+    "type": "checkbox",
+    "label": "Show pincode delivery check",
+    "default": true
+   },
+   {
+    "id": "pdp_delivery_days",
+    "type": "range",
+    "label": "Delivery estimate (days)",
+    "min": 1,
+    "max": 12,
+    "step": 1,
+    "unit": " days",
+    "default": 5
+   },
+   {
+    "id": "pdp_sticky_buy",
+    "type": "checkbox",
+    "label": "Sticky buy bar on phones",
+    "default": true
+   }
+  ]
+ },
+ {
+  "name": "Cart",
+  "settings": [
+   {
+    "id": "cart_after_add",
+    "type": "select",
+    "label": "After “Add to cart”",
+    "default": "drawer",
+    "options": [
+     "drawer",
+     "stay",
+     "cart"
+    ],
+    "option_labels": [
+     "Open the side cart",
+     "Stay on the page",
+     "Go to the cart page"
+    ]
+   },
+   {
+    "id": "cart_note",
+    "type": "text",
+    "label": "Line under the subtotal",
+    "default": "Delivery and online-payment discount are shown at checkout."
+   },
+   {
+    "id": "cart_free_ship",
+    "type": "number",
+    "label": "Free delivery above ₹ (0 = hide the progress bar)",
+    "default": 0
+   }
+  ]
+ },
+ {
+  "name": "Social media and WhatsApp",
+  "settings": [
+   {
+    "id": "whatsapp_number",
+    "type": "text",
+    "label": "WhatsApp number (shows a chat button)",
+    "default": ""
+   },
+   {
+    "id": "social_facebook",
+    "type": "url",
+    "label": "Facebook link"
+   },
+   {
+    "id": "social_instagram",
+    "type": "url",
+    "label": "Instagram link"
+   },
+   {
+    "id": "social_youtube",
+    "type": "url",
+    "label": "YouTube link"
+   },
+   {
+    "id": "social_linkedin",
+    "type": "url",
+    "label": "LinkedIn link"
+   },
+   {
+    "id": "social_x",
+    "type": "url",
+    "label": "X (Twitter) link"
+   }
+  ]
+ },
+ {
+  "name": "Custom CSS",
+  "settings": [
+   {
+    "id": "custom_css",
+    "type": "textarea",
+    "label": "CSS added to every page",
+    "default": ""
+   }
+  ]
+ }
 ]

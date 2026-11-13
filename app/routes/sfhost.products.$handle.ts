@@ -15,6 +15,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export async function action({ request, params }: ActionFunctionArgs) {
   const ctx = await domainContext(request);
   if (!ctx) throw new Response("Not found", { status: 404 });
-  await submitReview(ctx.store.id, params.handle ?? "", await request.formData());
-  return redirect(`/product/${encodeURIComponent(params.handle ?? "")}?review=received#reviews`);
+  const st = await submitReview(ctx.store.id, params.handle ?? "", await request.formData());
+  return redirect(`/product/${encodeURIComponent(params.handle ?? "")}?review=${st === "approved" ? "published" : "received"}#reviews`);
 }

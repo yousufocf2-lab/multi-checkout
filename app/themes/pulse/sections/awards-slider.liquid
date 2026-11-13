@@ -1,27 +1,28 @@
 {%- assign s = section.settings -%}
-<section class="awards sec">
+<section class="press sec">
   <div class="pw">
-    {%- if s.heading != blank -%}<h2 class="sec__h sec__h--c">{{ s.heading }}</h2>{%- endif -%}
-    <div class="awards__wrap" data-slider data-center data-autoplay="{{ s.autoplay | default: 4 }}">
-      <div class="awards__track" data-track>
-        {%- for it in s.items -%}
-        <figure class="awards__it" data-slide>
-          {%- if it.image != blank -%}<img src="{{ it.image | img_url: 800 }}" alt="{{ it.title | escape }}" loading="lazy">{%- else -%}<span class="awards__ph">{% render 'snippets/icon', name: 'medal', stroke: '1.4' %}<b>{{ it.title }}</b><small>{{ it.year }}</small></span>{%- endif -%}
-        </figure>
-        {%- endfor -%}
-      </div>
-      <div class="awards__line" data-dots></div>
+    <div class="sec__head">
+      <div>{%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}{%- if s.heading != blank -%}<h2 class="sec__h">{{ s.heading }}</h2>{%- endif -%}</div>
+    </div>
+    <div class="press__row" data-drag-scroll>
+      {%- for it in s.items -%}
+      <figure class="press__it">
+        {%- if it.image != blank -%}<img src="{{ it.image | img_url: 600 }}" alt="{{ it.title | escape }}" loading="lazy">
+        {%- else -%}<span class="press__ic">{% render 'snippets/icon', name: 'medal', stroke: '1.5' %}</span>{%- endif -%}
+        <figcaption><b>{{ it.title }}</b>{%- if it.year != blank -%}<small>{{ it.year }}</small>{%- endif -%}</figcaption>
+      </figure>
+      {%- endfor -%}
     </div>
   </div>
 </section>
 {% schema %}
-{ "name": "Awards slider", "category": "Trust", "description": "Award and press photos in a centred slider", "settings": [
-  { "id": "heading", "type": "text", "label": "Heading", "default": "Awards and recognition" },
-  { "id": "autoplay", "type": "range", "label": "Change every (0 = never)", "min": 0, "max": 10, "step": 1, "unit": " s", "default": 4 },
+{ "name": "Awards & press", "category": "Trust", "description": "Award photos or press mentions as neat cards in a row", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above", "default": "Recognised for what we build" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Awards & press" },
   { "id": "items", "type": "list", "label": "Awards", "item_label": "award", "max_items": 12, "fields": [
-    { "id": "image", "type": "image", "label": "Photo" },
-    { "id": "title", "type": "text", "label": "Award name (shown when there is no photo)" },
-    { "id": "year", "type": "text", "label": "Year" }
+    { "id": "image", "type": "image", "label": "Photo or logo (optional)" },
+    { "id": "title", "type": "text", "label": "Award or publication" },
+    { "id": "year", "type": "text", "label": "Year or short note" }
   ], "default": [
     { "title": "Brand of the Year", "year": "2025" }, { "title": "Best Audio Startup", "year": "2024" }, { "title": "Design Excellence", "year": "2024" }, { "title": "Customer Choice", "year": "2023" }
   ] }

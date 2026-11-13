@@ -10,6 +10,7 @@ import { PAGE_BLOCKS_CSS } from "./page-blocks";
 import { baseScope, demoProducts, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, themeOf, isDemo, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
+import { widgetSettings } from "./widgets";
 import { searchProducts, suggest } from "./search.server";
 
 const canonical = (ctx: ShopContext, path: string) => !ctx.preview && ctx.store.storefrontDomain ? `https://${ctx.store.storefrontDomain}${path}` : "";
@@ -42,16 +43,18 @@ export async function homePage(ctx: ShopContext) {
   }, sectionData(ctx), ctx.look));
 }
 
-export async function productPage(ctx: ShopContext, handle: string, reviewSubmitted = false) {
+export async function productPage(ctx: ShopContext, handle: string, review: string | boolean = "") {
   const product = (await loadProduct(ctx, handle))
     ?? (isDemo(ctx) ? demoProducts(ctx).find((p) => p.handle === handle) ?? null : null)
     ?? (handle === SAMPLE && ctx.look?.editor ? sampleProduct(ctx) : null);
   if (!product) throw await notFound(ctx, "This product isn't available any more. Have a look at everything else in the shop.");
   const scope = await baseScope(ctx);
-  const reviewData = product.id ? await reviewsForProduct(ctx.store.id, Number(product.id)) : { rows: [], count: 0, average: 0 };
+  const rs = widgetSettings(ctx.store.widgetSettings).reviews;
+  const reviewData = product.id > 0 && rs.enabled ? await reviewsForProduct(ctx.store.id, Number(product.id), rs.sort) : { rows: [], count: 0, average: 0, breakdown: [] };
+  const flag = review === true ? "received" : String(review || "");
   return html(await renderPage(themeOf(ctx.look?.data), "product", {
     ...scope, template: "product", product,
-    reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_submitted: reviewSubmitted,
+    reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_breakdown: reviewData.breakdown, review_submitted: flag === "received" || flag === "published", review_published: flag === "published",
     page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/product/${product.handle || handle}`),
   }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }

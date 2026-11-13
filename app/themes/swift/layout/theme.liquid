@@ -39,7 +39,7 @@
     --qa-size:{{ settings.card_icon_size | default: 38 }}px;
     --qa-bg:{{ settings.card_icon_bg | default: '#ffffff' }};
     --qa-ink:{{ settings.card_icon_color | default: '#14171a' }};
-  }</style>
+  }.review__stars{color:{{ review_ui.star | default: '#15803d' }}}{% if review_ui.text != blank %}.reviews__item p{color:{{ review_ui.text }}}{% endif %}</style>
   {%- if shop.meta_pixel and editor != true and preview_draft != true -%}
   <script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','{{ shop.meta_pixel }}');fbq('track','PageView');</script>
   {%- endif -%}

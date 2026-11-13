@@ -19,6 +19,15 @@
     </details>
     {%- endif -%}
     {%- if product.description != blank -%}<div class="pdx__desc rte">{{ product.description }}</div>{%- endif -%}
+    {%- if product.banners.size > 0 -%}
+    <div class="pdx__banners{% if s.banner_gap %} pdx__banners--gap{% endif %}">
+      {%- for b in product.banners -%}
+      {%- if b.link != blank -%}<a href="{{ b.link | safe_url }}" class="pdx__bn">{%- else -%}<div class="pdx__bn">{%- endif -%}
+        <picture>{%- if b.mobile != blank -%}<source media="(max-width:749px)" srcset="{{ b.mobile | img_url: 900 }}">{%- endif -%}<img src="{{ b.image | img_url: 1800 }}" alt="{{ b.alt | escape }}" loading="lazy" width="1600" height="800"></picture>
+      {%- if b.link != blank -%}</a>{%- else -%}</div>{%- endif -%}
+      {%- endfor -%}
+    </div>
+    {%- endif -%}
     {%- if s.show_info -%}
     <div class="pdx__info">
       <div><span>Product name</span><b>{{ product.title }}</b></div>
@@ -38,10 +47,11 @@
   { "id": "usp_open", "type": "checkbox", "label": "Key features open", "default": true },
   { "id": "specs_title", "type": "text", "label": "Specifications heading", "default": "Specifications" },
   { "id": "specs_open", "type": "checkbox", "label": "Specifications open", "default": false },
+  { "id": "banner_gap", "type": "checkbox", "label": "Space and rounded corners between description banners (off = one seamless strip)", "default": false },
   { "id": "show_info", "type": "checkbox", "label": "Show the product information table", "default": true },
   { "id": "info_rows", "type": "list", "label": "Extra rows in that table (same on every product)", "item_label": "row", "fields": [
     { "id": "label", "type": "text", "label": "Label" }, { "id": "value", "type": "text", "label": "Value" }
   ], "default": [ { "label": "Manufactured & marketed by", "value": "Your brand, India" } ] },
-  { "type": "paragraph", "id": "p_help", "label": "Key features, specifications and questions come from each product: Catalog → product → Website details." }
+  { "type": "paragraph", "id": "p_help", "label": "Description banners, key features, specifications and questions come from each product: Catalog → product." }
 ] }
 {% endschema %}

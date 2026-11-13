@@ -3,14 +3,13 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
 import { useEffect, useRef, useState } from "react";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Icon } from "~/components/Icons";
 import { LearnMore, Notice } from "~/components/ui";
-import { billingUsage, db, storeSubscribers } from "~/db.server";
+import { db, storeSubscribers } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed } from "~/lib/catalog.server";
 import { storePath } from "~/lib/store-code";
-import { accountFor, recordBillingUsage } from "~/lib/subscription-billing.server";
 import { applyPreset, PRESETS, presetById } from "~/lib/theme-presets";
 import { BASE_THEME, defaultThemeData } from "~/lib/storefront.server";
 import { deleteThemeCopy, discardDraft, editorState, getThemeCopy, listThemeCopies, publishDraft, restoreVersion, saveDraft, saveThemeCopy, themeRow, vitalsSummary } from "~/lib/themes.server";
@@ -19,9 +18,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
-  const [st, row, vitals, copies, account, purchase, signups] = await Promise.all([
-    editorState(store.id), themeRow(store.id), vitalsSummary(store.id).catch(() => null), listThemeCopies(store.id), accountFor(store.id),
-    db.select({ id: billingUsage.id }).from(billingUsage).where(and(eq(billingUsage.storeId, store.id), eq(billingUsage.type, "theme_purchase"), eq(billingUsage.refType, "theme"), eq(billingUsage.refId, `scentelier-store-${store.id}-v1`))).limit(1),
+  const [st, row, vitals, copies, signups] = await Promise.all([
+    editorState(store.id), themeRow(store.id), vitalsSummary(store.id).catch(() => null), listThemeCopies(store.id),
     db.select({ n: sql<number>`count(*)::int` }).from(storeSubscribers).where(eq(storeSubscribers.storeId, store.id)).catch(() => [{ n: 0 }]),
   ]);
   const live = (row?.live?.settings?.preset as string | undefined) ?? "swift";
@@ -30,8 +28,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     store: { id: store.id, slug: store.slug, name: store.name, domain: store.storefrontDomainStatus === "live" ? store.storefrontDomain : null },
     signups: Number(signups[0]?.n ?? 0),
     hasDraft: st.hasDraft, publishedAt: st.publishedAt, updatedAt: st.updatedAt, history: st.history, vitals, livePreset: live, livePresetName,
-    presets: PRESETS.map((p) => ({ id: p.id, name: p.name, tagline: p.tagline, best: p.best, swatch: p.swatch, pricePaise: p.pricePaise ?? null })),
-    scentelierPurchased: purchase.length > 0, canBuyScentelier: account?.status === "active",
+    presets: PRESETS.map((p) => ({ id: p.id, name: p.name, tagline: p.tagline, best: p.best, swatch: p.swatch })),
     copies: copies.map((c) => ({ id: c.id, name: c.name, updatedAt: c.updatedAt.toISOString(), preset: String(c.data.settings.preset ?? "") })),
   });
 }
@@ -49,16 +46,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       case "preset": {
         const p = presetById(String(fd.get("preset")));
         if (!p) break;
-        if (p.pricePaise) {
-          const [existing] = await db.select({ id: billingUsage.id }).from(billingUsage).where(and(eq(billingUsage.storeId, store.id), eq(billingUsage.type, "theme_purchase"), eq(billingUsage.refType, "theme"), eq(billingUsage.refId, `scentelier-store-${store.id}-v1`))).limit(1);
-          if (!existing) {
-            const account = await accountFor(store.id);
-            if (account?.status !== "active") throw new Error("An active monthly billing plan is required before you can add this paid theme to your bill.");
-            if (fd.get("confirmPaidTheme") !== "yes") throw new Error("Confirm that the ₹1,599 theme fee plus GST will be added to your next monthly bill.");
-            const recorded = await recordBillingUsage({ storeId: store.id, type: "theme_purchase", amountPaise: p.pricePaise, refType: "theme", refId: `scentelier-store-${store.id}-v1`, note: "Scentelier premium perfume theme · ₹1,599 plus GST" });
-            if (!recorded) throw new Error("The theme could not be added to your monthly bill. Check your billing plan and try again.");
-          }
-        }
         const st = await editorState(store.id);
         await saveDraft(store.id, applyPreset(st.data, p, defaultThemeData(p.theme ?? BASE_THEME)));
         return redirect(`${storePath(store.id)}/editor?preset=${p.id}`);
@@ -73,16 +60,6 @@ export async function action({ request, params }: ActionFunctionArgs) {
       case "use-copy": {
         const copy = await getThemeCopy(store.id, Number(fd.get("copyId")));
         if (!copy) throw new Error("That saved theme could not be found.");
-        if (String(copy.data.settings.preset ?? "") === "scentelier") {
-          const [existing] = await db.select({ id: billingUsage.id }).from(billingUsage).where(and(eq(billingUsage.storeId, store.id), eq(billingUsage.type, "theme_purchase"), eq(billingUsage.refType, "theme"), eq(billingUsage.refId, `scentelier-store-${store.id}-v1`))).limit(1);
-          if (!existing) {
-            const account = await accountFor(store.id);
-            if (account?.status !== "active") throw new Error("An active monthly billing plan is required before you can add this paid theme to your bill.");
-            if (fd.get("confirmPaidTheme") !== "yes") throw new Error("Confirm that the ₹1,599 theme fee plus GST will be added to your next monthly bill.");
-            const recorded = await recordBillingUsage({ storeId: store.id, type: "theme_purchase", amountPaise: 159900, refType: "theme", refId: `scentelier-store-${store.id}-v1`, note: "Scentelier premium perfume theme · ₹1,599 plus GST" });
-            if (!recorded) throw new Error("The theme could not be added to your monthly bill. Check your billing plan and try again.");
-          }
-        }
         await saveDraft(store.id, copy.data);
         return redirect(`${storePath(store.id)}/editor`);
       }
@@ -116,7 +93,7 @@ const grade = (v: number | null, good: number, poor: number): Grade | null => (v
 const GRADE: Record<Grade, [string, string]> = { good: ["Good", "bg-[#cdfee1] text-[#0c5132]"], ok: ["Needs work", "bg-[#fff1e3] text-[#5e4200]"], poor: ["Poor", "bg-[#fee9e8] text-[#8e1f0b]"] };
 
 export default function OnlineStore() {
-  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, copies, livePreset, livePresetName, scentelierPurchased, canBuyScentelier, signups } = useLoaderData<typeof loader>();
+  const { store, hasDraft, publishedAt, updatedAt, history, vitals, presets, copies, livePreset, livePresetName, signups } = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
   const nav = useNavigation();
   const [preview, setPreview] = useState<{ name: string; src: string } | null>(null);
@@ -205,21 +182,15 @@ export default function OnlineStore() {
                   <p className="flex items-center gap-2 text-[13.5px] font-semibold">{p.name}<span className="flex -space-x-1">{p.swatch.map((c) => <span key={c} className="h-3.5 w-3.5 rounded-full shadow-[0_0_0_1.5px_#fff,0_0_0_2.5px_rgba(0,0,0,.12)]" style={{ background: c }} />)}</span></p>
                   <p className="mt-0.5 text-[12.5px] text-ink-soft">{p.tagline}</p>
                   <p className="mt-1 text-[11.5px] text-ink-faint">Best for: {p.best}</p>
-                  {p.pricePaise && <p className="mt-1 text-[12px] font-semibold">₹1,599 + GST{scentelierPurchased ? " · added to this store’s bill" : " · added to monthly bill"}</p>}
                 </div>
               </div>
               <div className="flex items-center justify-end gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
                 <Form method="post" onSubmit={(e) => {
-                  if (p.id === "scentelier" && !scentelierPurchased) {
-                    if (!canBuyScentelier) { e.preventDefault(); return; }
-                    if (!confirm("Use Scentelier? ₹1,599 + 18% GST (₹1,886.82 total) will be added to your next monthly bill. No payment is taken now. Your live storefront stays the same until you publish.")) e.preventDefault();
-                    else { const input = document.createElement("input"); input.type = "hidden"; input.name = "confirmPaidTheme"; input.value = "yes"; e.currentTarget.appendChild(input); }
-                  } else if (!confirm(`Use the ${p.name} look in your draft? Your live storefront stays the same until you publish.`)) e.preventDefault();
+                  if (!confirm(`Use the ${p.name} look in your draft? Your live storefront stays the same until you publish.`)) e.preventDefault();
                 }}>
                   <input type="hidden" name="intent" value="preset" /><input type="hidden" name="preset" value={p.id} />
-                  <button className="btn-secondary h-7 rounded-full px-4" disabled={nav.state !== "idle" || (p.id === "scentelier" && !scentelierPurchased && !canBuyScentelier)}>Use</button>
+                  <button className="btn-secondary h-7 rounded-full px-4" disabled={nav.state !== "idle"}>Use</button>
                 </Form>
-                {p.id === "scentelier" && !scentelierPurchased && !canBuyScentelier && <Link to={`${storePath(store.id)}/wallet`} className="text-[11px] text-ink-soft">Monthly plan required</Link>}
               </div>
             </article>
           ))}
@@ -238,12 +209,8 @@ export default function OnlineStore() {
             </div>
             <div className="flex flex-wrap gap-2 border-t border-rule bg-paper px-3.5 py-2.5">
               <Form method="post" className="flex-1" onSubmit={(e) => {
-                if (copy.preset === "scentelier" && !scentelierPurchased) {
-                  if (!canBuyScentelier) { e.preventDefault(); return; }
-                  if (!confirm("Use Scentelier? ₹1,599 + 18% GST (₹1,886.82 total) will be added to your next monthly bill. No payment is taken now.")) e.preventDefault();
-                  else { const input = document.createElement("input"); input.type = "hidden"; input.name = "confirmPaidTheme"; input.value = "yes"; e.currentTarget.appendChild(input); }
-                } else if (hasDraft && !confirm(`Use ${copy.name}? This replaces your current unpublished draft; the live site stays unchanged until you publish.`)) e.preventDefault();
-              }}><input type="hidden" name="intent" value="use-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle" || (copy.preset === "scentelier" && !scentelierPurchased && !canBuyScentelier)}>Use theme</button></Form>
+                if (hasDraft && !confirm(`Use ${copy.name}? This replaces your current unpublished draft; the live site stays unchanged until you publish.`)) e.preventDefault();
+              }}><input type="hidden" name="intent" value="use-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-primary h-7 w-full justify-center" disabled={nav.state !== "idle"}>Use theme</button></Form>
               <Form method="post" onSubmit={(e) => { if (!confirm(`Remove ${copy.name} from your theme library?`)) e.preventDefault(); }}><input type="hidden" name="intent" value="delete-copy" /><input type="hidden" name="copyId" value={copy.id} /><button className="btn-secondary h-7 text-[#8e1f0b]">Remove</button></Form>
             </div>
           </article>)}

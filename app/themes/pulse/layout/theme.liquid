@@ -14,13 +14,16 @@
   <link rel="apple-touch-icon" href="{{ favicon }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family={{ settings.font_heading | default: 'Outfit' | replace: ' ', '+' }}:wght@400;500;600;700;800{% if settings.font_body != settings.font_heading %}&family={{ settings.font_body | default: 'Inter' | replace: ' ', '+' }}:wght@400;500;600;700{% endif %}&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family={{ settings.font_heading | default: 'Sora' | replace: ' ', '+' }}:wght@400;500;600;700;800{% if settings.font_body != settings.font_heading %}&family={{ settings.font_body | default: 'Inter' | replace: ' ', '+' }}:wght@400;500;600;700{% endif %}&display=swap" rel="stylesheet">
   <style>{{ 'theme.css' | asset_content }}</style>
   {%- assign ratio = '1/1' -%}
   {%- if settings.card_ratio == 'portrait' -%}{%- assign ratio = '4/5' -%}{%- elsif settings.card_ratio == 'landscape' -%}{%- assign ratio = '4/3' -%}{%- endif -%}
   <style>:root{
-    --brand:{{ settings.color_brand | default: '#1fa7b8' }};
-    --btn-bg:{{ settings.color_button | default: '#111111' }};
+    --brand:{{ settings.color_brand | default: '#5146ff' }};
+    --pop:{{ settings.color_pop | default: '#d4ff3a' }};
+    --star:{{ review_ui.star | default: '#15803d' }};
+    --review-text:{{ review_ui.text | default: 'inherit' }};
+    --btn-bg:{{ settings.color_button | default: '#0e0f12' }};
     --btn-text:{{ settings.color_button_text | default: '#ffffff' }};
     --bg:{{ settings.color_bg | default: '#ffffff' }};
     --ink:{{ settings.color_text | default: '#111111' }};
@@ -28,14 +31,14 @@
     --tint:{{ settings.color_soft | default: '#f4f4f4' }};
     --line:{{ settings.color_line | default: '#e6e6e6' }};
     --sale:{{ settings.color_sale | default: '#16a34a' }};
-    --ft-bg:{{ settings.color_footer_bg | default: '#000000' }};
-    --ft-ink:{{ settings.color_footer_text | default: '#ffffff' }};
-    --font-heading:"{{ settings.font_heading | default: 'Outfit' }}";
+    --ft-bg:{{ settings.color_footer_bg | default: '#f3f4f6' }};
+    --ft-ink:{{ settings.color_footer_text | default: '#0e0f12' }};
+    --font-heading:"{{ settings.font_heading | default: 'Sora' }}";
     --font-body:"{{ settings.font_body | default: 'Inter' }}";
     --heading-scale:{{ settings.heading_scale | default: 100 | divided_by: 100.0 }};
     --heading-case:{% if settings.heading_uppercase %}uppercase{% else %}none{% endif %};
-    --btn-radius:{{ settings.button_radius | default: 6 }}px;
-    --radius:{{ settings.card_radius | default: 10 }}px;
+    --btn-radius:{{ settings.button_radius | default: 999 }}px;
+    --radius:{{ settings.card_radius | default: 16 }}px;
     --card-ratio:{{ ratio }};
     --logo-width:{{ settings.logo_width | default: 120 }}px;
     --logo-width-m:{{ settings.logo_width_mobile | default: 96 }}px;

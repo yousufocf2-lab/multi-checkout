@@ -10,6 +10,7 @@ import { renderCustomLiquid } from "./custom-liquid.server";
 import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
 import { accountSettings } from "./customer-accounts";
 import { storeIcon } from "./store-icon";
+import { isDark, widgetSettings } from "./widgets";
 import { PULSE_CATEGORIES, PULSE_FAQS, PULSE_PRODUCTS, pulseImg } from "./pulse-demo";
 
 const accountsOn = (s: Store) => accountSettings(s.accountSettings).enabled;
@@ -36,7 +37,7 @@ export function themeOf(data: { theme?: unknown } | null | undefined): string {
 
 const SCHEMA_RE = /\{%-?\s*schema\s*-?%\}([\s\S]*?)\{%-?\s*endschema\s*-?%\}/;
 type SchemaSetting = { id: string; default?: unknown };
-function schemaOf(src: string): { name?: string; category?: string; description?: string; settings?: SchemaSetting[] } {
+function schemaOf(src: string): { name?: string; category?: string; description?: string; requires?: string; settings?: SchemaSetting[] } {
   const m = src.match(SCHEMA_RE);
   if (!m) return {};
   try { return JSON.parse(m[1]); } catch { return {}; }
@@ -154,7 +155,7 @@ export const TEMPLATES = ["index", "product", "collection", "cart", "page"] as c
 
 type SettingDef = { id: string; type: string; label?: string; default?: unknown; [k: string]: unknown };
 export type SettingGroup = { name: string; settings: SettingDef[] };
-export type SectionKind = { type: string; name: string; settings: SettingDef[]; where: "template" | "header" | "footer" | "fixed"; category?: string; description?: string };
+export type SectionKind = { type: string; name: string; settings: SettingDef[]; where: "template" | "header" | "footer" | "fixed"; category?: string; description?: string; requires?: string };
 
 /** Everything the theme editor needs to know about a theme: global settings, the sections it can add, and its defaults. */
 export function themeManifest(theme: string) {
@@ -165,7 +166,7 @@ export function themeManifest(theme: string) {
     const type = f.slice(9, -7);
     const sc = schemaOf(files[f]);
     const where = type.startsWith("main-") ? "fixed" : type === "header" || type === "announcement" || type === "deal-bar" ? "header" : type === "footer" ? "footer" : "template";
-    return { type, name: sc.name ?? type, settings: (sc.settings ?? []) as SettingDef[], where, ...(sc.category ? { category: sc.category } : {}), ...(sc.description ? { description: sc.description } : {}) };
+    return { type, name: sc.name ?? type, settings: (sc.settings ?? []) as SettingDef[], where, ...(sc.category ? { category: sc.category } : {}), ...(sc.description ? { description: sc.description } : {}), ...(sc.requires ? { requires: sc.requires } : {}) };
   });
   return { settingsSchema, sections, defaults: defaultThemeData(theme) };
 }
@@ -201,7 +202,14 @@ export async function renderPage(theme: string, template: string, scope: Record<
   const tpl = saved?.templates?.[template] ?? base.templates[template] ?? EMPTY;
   const groups = { header: saved?.groups?.header ?? base.groups.header, footer: saved?.groups?.footer ?? base.groups.footer };
   const editor = Boolean(look.editor);
-  const full = { ...scope, settings: { ...base.settings, ...(saved?.settings ?? {}) }, editor };
+  const settings: Record<string, unknown> = { ...base.settings, ...(saved?.settings ?? {}) };
+  // Review stars and text: the colour set for light or dark backgrounds, chosen from the theme's background
+  const rw = (scope.widgets as { reviews?: { starLight: string; starDark: string; textLight: string; textDark: string } } | undefined)?.reviews;
+  const dark = isDark(settings.color_bg);
+  const review_ui = rw ? { star: dark ? rw.starDark : rw.starLight, text: dark ? rw.textDark : rw.textLight } : { star: dark ? "#f59e0b" : "#15803d", text: "" };
+  const reviewsOn = (scope.widgets as { reviews?: { enabled?: boolean } } | undefined)?.reviews?.enabled !== false;
+  settings.reviews_enabled = reviewsOn;
+  const full = { ...scope, settings, review_ui, reviews_enabled: reviewsOn, editor };
   const [content, head, foot] = await Promise.all([
     renderList(theme, tpl, "template", full, data, editor),
     renderList(theme, groups.header, "header", full, data, editor),
@@ -229,7 +237,7 @@ export async function storeBySlug(slug: string) {
 
 /** Storefront details a store adds per product (Catalog → product → Website details): card badge, short line, feature chips,
  *  key features, specifications and questions. Older products can use tags instead: "badge:New launch", "chip:32 dB ANC". */
-export type SiteExtra = { badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[]; rating?: number; ratingCount?: number };
+export type SiteExtra = { banners?: { image: string; mobile?: string; alt?: string; link?: string }[]; badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[]; rating?: number; ratingCount?: number };
 function siteExtra(item: CatalogItem) {
   const raw = ((item.extra ?? {}) as { site?: SiteExtra }).site ?? {};
   const tags = Array.isArray(item.tags) ? item.tags : [];
@@ -244,6 +252,8 @@ function siteExtra(item: CatalogItem) {
     usp: strs(raw.usp, 12),
     specs: (Array.isArray(raw.specs) ? raw.specs : []).filter((x) => x && String(x.label ?? "").trim()).slice(0, 30).map((x) => ({ label: String(x.label).trim(), value: String(x.value ?? "").trim() })),
     faqs: (Array.isArray(raw.faqs) ? raw.faqs : []).filter((x) => x && String(x.q ?? "").trim()).slice(0, 20).map((x) => ({ q: String(x.q).trim(), a: String(x.a ?? "").trim() })),
+    banners: (Array.isArray(raw.banners) ? raw.banners : []).filter((b) => b && typeof b.image === "string" && /^https?:\/\//.test(b.image)).slice(0, 20)
+      .map((b) => ({ image: b.image, mobile: typeof b.mobile === "string" && /^https?:\/\//.test(b.mobile) ? b.mobile : "", alt: String(b.alt ?? ""), link: String(b.link ?? "") })),
     demoRating: Number(raw.rating) || 0, demoCount: Number(raw.ratingCount) || 0,
   };
 }
@@ -282,7 +292,7 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
     ...(() => {
       const x = siteExtra(item);
       return {
-        badge: x.badge, subtitle: x.subtitle, feature: x.feature, chips: x.chips, usp: x.usp, specs: x.specs, faqs: x.faqs,
+        banners: x.banners, badge: x.badge, subtitle: x.subtitle, feature: x.feature, chips: x.chips, usp: x.usp, specs: x.specs, faqs: x.faqs,
         rating: rating?.count ? rating.average : x.demoRating, rating_count: rating?.count ? rating.count : x.demoCount,
         vendor: item.vendor ?? "", product_type: item.productType ?? "", origin: String((item.extra as { origin?: string } | null)?.origin ?? ""),
         second_image: item.images.filter((i) => (i.type ?? "image") === "image")[1]?.url ?? null,
@@ -408,10 +418,10 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const photos = [...p.colours.map((c) => c[1]), ...p.extra];
     const item = {
       id, storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: p.type, vendor: "Your brand", tags: ["sample"], source: "manual", sourceId: null,
-      descriptionHtml: `<h2>${p.subtitle}</h2><p>Sample product for the theme preview. Your own product description, with photos and banners, shows here.</p><img src="${pulseImg("photo-1605890822326-ab63270c7189", 1400, 800)}" alt=""><img src="${pulseImg(p.colours[0][1], 1400, 800)}" alt="">`,
+      descriptionHtml: `<h2>${p.subtitle}</h2><p>Sample product for the theme preview. Your own product description shows here, and the wide banners below come from Catalog → product → Description banners.</p>`,
       images: photos.map((ph, j) => ({ url: pulseImg(ph, 1100, 1100), alt: j === 0 ? p.title : `${p.title} view ${j + 1}` })),
       options: [{ name: "Colour", values: p.colours.map((c) => c[0]) }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
-      extra: { origin: "India", site: { badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), faqs: PULSE_FAQS, rating: p.rating, ratingCount: p.count } },
+      extra: { origin: "India", site: { banners: [{ image: pulseImg("photo-1605890822326-ab63270c7189", 1600, 800), mobile: pulseImg("photo-1605890822326-ab63270c7189", 800, 1000), alt: "Made for everyday listening" }, { image: pulseImg(p.colours[0][1], 1600, 800), alt: p.title }, { image: pulseImg(p.extra[0] ?? p.colours[1][1], 1600, 800), alt: `${p.title} detail` }], badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), faqs: PULSE_FAQS, rating: p.rating, ratingCount: p.count } },
     } as unknown as CatalogItem;
     const variants = p.colours.map(([colour, ph], j) => ({ id: id * 10 - j - 1, itemId: id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: pulseImg(ph, 1100, 1100), position: j })) as unknown as CatalogVariant[];
     return { ...productDrop(ctx, item, variants), demo: true };
@@ -587,6 +597,7 @@ export async function baseScope(ctx: ShopContext) {
     routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart`, search: `${ctx.root}/search`, account: accountsOn(ctx.store) ? `${ctx.root}/account` : null },
     collections, pages, preview: ctx.preview,
     ...nav, // menus (by handle), header_menu, footer_menu
+    widgets: (() => { const r = widgetSettings(ctx.store.widgetSettings).reviews; return { reviews: { enabled: r.enabled, starLight: r.starLight, starDark: r.starDark, textLight: r.textLight, textDark: r.textDark, allow_photos: r.allowPhotos, allow_videos: r.allowVideos, max_video: r.maxVideoSeconds, max_media: r.maxMedia, show_verified: r.showVerified, show_date: r.showDate, show_breakdown: r.showBreakdown } }; })(),
     demo_theme: ctx.owner ? ctx.demoPreset ?? "" : "",
     preview_draft: Boolean(ctx.demoPreset || ctx.ownerPreview),
   };
