@@ -1,0 +1,20 @@
+{%- assign s = section.settings -%}
+{%- if s.messages.size > 0 -%}
+<div class="ann" style="{% if s.bg != blank %}--ann-bg:{{ s.bg }};{% endif %}{% if s.text != blank %}--ann-ink:{{ s.text }}{% endif %}">
+  <div class="ann__in pw" data-ann>
+    {%- for m in s.messages -%}
+    <p class="ann__msg{% if forloop.first %} is-on{% endif %}">{%- if m.link != blank -%}<a href="{{ m.link | safe_url }}">{{ m.text }} <span aria-hidden="true">→</span></a>{%- else -%}{{ m.text }}{%- endif -%}</p>
+    {%- endfor -%}
+  </div>
+</div>
+{%- endif -%}
+{% schema %}
+{ "name": "Announcement bar", "category": "Header", "description": "A slim bar on top that rotates short messages", "settings": [
+  { "id": "messages", "type": "list", "label": "Messages", "item_label": "message", "max_items": 6, "fields": [
+    { "id": "text", "type": "text", "label": "Text", "default": "Free gift wrap on every order" },
+    { "id": "link", "type": "url", "label": "Link (optional)", "default": "" }
+  ] },
+  { "id": "bg", "type": "color", "label": "Background", "default": "#ffd23f" },
+  { "id": "text", "type": "color", "label": "Text", "default": "#221c46" }
+] }
+{% endschema %}

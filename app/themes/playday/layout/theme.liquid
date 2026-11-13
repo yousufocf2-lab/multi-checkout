@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title | default: shop.name }}{% if page_title and page_title != shop.name %} · {{ shop.name }}{% endif %}</title>
+  {% if canonical_url != blank %}<link rel="canonical" href="{{ canonical_url | escape }}">{% endif %}
+  {% if page_description %}<meta name="description" content="{{ page_description | strip_html | truncate: 160 | escape }}">{% endif %}
+  {% if preview %}<meta name="robots" content="noindex">{% endif %}
+  <meta property="og:title" content="{{ page_title | default: shop.name | escape }}">
+  {% if og_image %}<meta property="og:image" content="{{ og_image | img_url: 1200 }}">{% endif %}
+  {%- assign favicon = settings.favicon | default: shop.favicon -%}
+  <link rel="icon" href="{{ favicon }}">
+  <link rel="apple-touch-icon" href="{{ favicon }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  {%- assign fh = settings.font_heading | default: 'Fraunces' -%}{%- assign fb = settings.font_body | default: 'Nunito Sans' -%}
+  {%- assign ital = false -%}{%- if fh == 'Fraunces' or fh == 'Playfair Display' or fh == 'Nunito' or fh == 'Poppins' -%}{%- assign ital = true -%}{%- endif -%}
+  <link href="https://fonts.googleapis.com/css2?family={{ fh | replace: ' ', '+' }}:{% if ital %}ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600{% else %}wght@400;500;600;700{% endif %}{% if fb != fh %}&family={{ fb | replace: ' ', '+' }}:wght@400;500;600;700{% endif %}&display=swap" rel="stylesheet">
+  <style>{{ 'theme.css' | asset_content }}</style>
+  {%- assign ratio = '1/1' -%}
+  {%- if settings.card_ratio == 'portrait' -%}{%- assign ratio = '4/5' -%}{%- elsif settings.card_ratio == 'landscape' -%}{%- assign ratio = '4/3' -%}{%- endif -%}
+  <style>:root{
+    --brand:{{ settings.color_brand | default: '#ff6b3d' }};
+    --pop:{{ settings.color_pop | default: '#ffd23f' }};
+    --star:{{ review_ui.star | default: '#15803d' }};
+    --review-text:{{ review_ui.text | default: 'inherit' }};
+    --btn-bg:{{ settings.color_button | default: '#221c46' }};
+    --btn-text:{{ settings.color_button_text | default: '#ffffff' }};
+    --bg:{{ settings.color_bg | default: '#fffaf3' }};
+    --ink:{{ settings.color_text | default: '#221c46' }};
+    --soft:{{ settings.color_muted | default: '#6d6884' }};
+    --tint:{{ settings.color_soft | default: '#f7efe2' }};
+    --line:{{ settings.color_line | default: '#ece2d1' }};
+    --sale:{{ settings.color_sale | default: '#0f8a5f' }};
+    --hd-bg:{{ settings.color_header_bg | default: '#221c46' }};
+    --hd-ink:{{ settings.color_header_text | default: '#fffaf3' }};
+    --ft-bg:{{ settings.color_footer_bg | default: '#221c46' }};
+    --ft-ink:{{ settings.color_footer_text | default: '#fdf6ea' }};
+    --font-heading:"{{ settings.font_heading | default: 'Fraunces' }}";
+    --font-body:"{{ settings.font_body | default: 'Nunito Sans' }}";
+    --heading-scale:{{ settings.heading_scale | default: 100 | divided_by: 100.0 }};
+    --heading-case:{% if settings.heading_uppercase %}uppercase{% else %}none{% endif %};
+    --btn-radius:{{ settings.button_radius | default: 999 }}px;
+    --radius:{{ settings.card_radius | default: 16 }}px;
+    --card-ratio:{{ ratio }};
+    --logo-width:{{ settings.logo_width | default: 120 }}px;
+    --logo-width-m:{{ settings.logo_width_mobile | default: 96 }}px;
+    --page:{{ settings.page_width | default: 1440 }}px;
+    --gap:{{ settings.section_gap | default: 36 }}px;
+  }</style>
+  {%- if shop.meta_pixel and editor != true and preview_draft != true -%}
+  <script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','{{ shop.meta_pixel }}');fbq('track','PageView');</script>
+  {%- endif -%}
+  {% if settings.custom_css != blank %}<style>{{ settings.custom_css }}</style>{% endif %}
+  {% if editor %}<style>[data-gp-section]{display:contents}[data-gp-section]>*{cursor:pointer}[data-gp-section]>*:hover{outline:1px dashed #2563eb;outline-offset:-1px}[data-gp-section].gp-hl>*{outline:2px solid #2563eb!important;outline-offset:-2px}</style>{% endif %}
+</head>
+<body class="pl" data-shop="{{ shop.slug }}" data-root="{{ routes.base }}" data-preset="{{ settings.preset | escape }}" data-after-add="{{ settings.cart_after_add | default: 'drawer' }}" data-free-ship="{{ settings.cart_free_ship | default: 0 | times: 100 }}">
+  {{ content_for_header_group }}
+  <main id="main" class="pl-main pl-main--{{ template }}">{{ content_for_layout }}</main>
+  {{ content_for_footer_group }}
+  {%- if preview_draft -%}
+  <script>
+  (function(){var query=new URLSearchParams(location.search),preset=query.get('gp_preset'),library=query.get('gp_library'),root=document.body.getAttribute('data-root');if((!preset&&!library)||!root)return;
+    function keepPreviewLinks(node){(node.matches&&node.matches('a[href]')?[node]:[]).concat(node.querySelectorAll?Array.prototype.slice.call(node.querySelectorAll('a[href]')):[]).forEach(function(a){try{var u=new URL(a.href,location.href);if(u.origin!==location.origin||(u.pathname!==root&&u.pathname.indexOf(root+'/')!==0))return;var changed=false;if(preset&&!u.searchParams.has('gp_preset')){u.searchParams.set('gp_preset',preset);changed=true}if(library&&!u.searchParams.has('gp_library')){u.searchParams.set('gp_library',library);changed=true}if(changed)a.href=u.pathname+u.search+u.hash}catch(e){}})}
+    keepPreviewLinks(document);new MutationObserver(function(rows){rows.forEach(function(row){if(row.type==='childList')row.addedNodes.forEach(function(n){if(n.nodeType===1)keepPreviewLinks(n)});else if(row.target.matches&&row.target.matches('a[href]'))keepPreviewLinks(row.target)})}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['href']});
+  })();
+  </script>
+  {%- endif -%}
+  {%- if settings.whatsapp_number != blank -%}
+  <a class="wa-float" href="https://wa.me/{{ settings.whatsapp_number | remove: ' ' | remove: '+' | remove: '-' }}" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.4.6-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 .9c.3.1.5.2.5.3.1.2.1.7-.1 1.3z"/></svg>
+  </a>
+  {%- endif -%}
+  <div class="drawer" data-drawer hidden>
+    <div class="drawer__shade" data-drawer-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <div class="drawer__head"><h2 id="drawer-title">Your cart <span class="drawer__n" data-drawer-n></span></h2><button type="button" class="drawer__x" data-drawer-close aria-label="Close cart">{% render 'snippets/icon', name: 'close' %}</button></div>
+      <div class="drawer__ship" data-free-bar hidden><p data-free-text></p><span class="drawer__bar"><i data-free-fill></i></span></div>
+      <div class="drawer__body"><div class="drawer__lines" data-lines></div>
+        <div class="drawer__empty" data-lines-empty hidden>{% render 'snippets/icon', name: 'bag' %}<p>Your cart is empty.</p><a href="{{ routes.all }}" class="btn">Continue shopping</a></div>
+      </div>
+      <div class="drawer__foot" data-lines-summary hidden>
+        <div class="drawer__row"><span>Subtotal</span><b data-lines-subtotal></b></div>
+        <p class="drawer__save" data-lines-save hidden></p>
+        {%- if settings.cart_note != blank -%}<p class="drawer__note">{{ settings.cart_note }}</p>{%- endif -%}
+        <button type="button" class="btn btn--block" data-lines-checkout>Checkout</button>
+        <button type="button" class="drawer__more" data-drawer-close>Continue shopping</button>
+        <p class="drawer__note drawer__err" data-lines-error hidden></p>
+      </div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>{{ 'theme.js' | asset_content }}</script>
+  {%- unless editor -%}
+  <script>
+  /* Page visits, session visitors and Core Web Vitals are sent once when the page is hidden */
+  (function(){try{
+    var u;try{u=sessionStorage.getItem('gp_visit_id');if(!u){u=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));sessionStorage.setItem('gp_visit_id',u)}}catch(e){u=Date.now().toString(36)+Math.random().toString(36).slice(2)}
+    var v={s:{{ shop.slug | json }},p:location.pathname,d:matchMedia('(min-width:861px)').matches?'desktop':'mobile',u:u,cls:0},sent=false;
+    new PerformanceObserver(function(l){var e=l.getEntries();if(e.length)v.lcp=e[e.length-1].startTime}).observe({type:'largest-contentful-paint',buffered:true});
+    new PerformanceObserver(function(l){l.getEntries().forEach(function(e){if(!e.hadRecentInput)v.cls+=e.value})}).observe({type:'layout-shift',buffered:true});
+    try{new PerformanceObserver(function(l){l.getEntries().forEach(function(e){if(e.interactionId&&(!v.inp||e.duration>v.inp))v.inp=e.duration})}).observe({type:'event',buffered:true,durationThreshold:16})}catch(e){}
+    function send(){if(sent)return;sent=true;v.cls=Math.round(v.cls*1000)/1000;var body=JSON.stringify(v);if(!navigator.sendBeacon||!navigator.sendBeacon('/api/vitals',body))fetch('/api/vitals',{method:'POST',body:body,keepalive:true,mode:'no-cors'})}
+    addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')send()});addEventListener('pagehide',send);
+  }catch(e){}})();
+  /* Live view: a small heartbeat while the page is open (random tab id, page, device, where the visit came from, cart size) */
+  (function(){try{
+    var u=sessionStorage.getItem('gp_visit_id');if(!u)return;
+    var src=sessionStorage.getItem('gp_src');
+    if(src==null){var q=new URLSearchParams(location.search),ua=navigator.userAgent,ref='';try{ref=document.referrer?new URL(document.referrer).hostname:''}catch(e){}
+      src=q.get('utm_source')||(/Instagram/i.test(ua)?'instagram':/FBAN|FBAV|FB_IAB/i.test(ua)?'facebook':'')||(q.get('fbclid')?'facebook':q.get('gclid')?'google':'')||(ref&&ref!==location.hostname?ref:'')||'direct';
+      try{sessionStorage.setItem('gp_src',src)}catch(e){}}
+    var shop={{ shop.slug | json }},root=document.body.getAttribute('data-root')||'',dev=matchMedia('(min-width:861px)').matches?'desktop':'mobile';
+    var title=(document.title||'').replace(/\s+·\s+[^·]+$/,'');
+    function cart(){try{var c=JSON.parse(localStorage.getItem('gp_cart_'+document.body.getAttribute('data-shop'))||'[]');return c.reduce(function(a,l){a.q+=l.qty||0;a.v+=(l.price||0)*(l.qty||0);return a},{q:0,v:0})}catch(e){return{q:0,v:0}}}
+    function beat(leave){var c=cart(),b=JSON.stringify({s:shop,u:u,p:location.pathname,r:root,d:dev,t:title,src:src,q:c.q,v:c.v,e:leave?'leave':undefined});
+      if(leave){if(!navigator.sendBeacon||!navigator.sendBeacon('/api/live',b))fetch('/api/live',{method:'POST',body:b,keepalive:true,mode:'no-cors'});return}
+      fetch('/api/live',{method:'POST',body:b,keepalive:true,mode:'no-cors'}).catch(function(){})}
+    var t;function loop(){clearInterval(t);t=setInterval(function(){if(document.visibilityState==='visible')beat()},15000)}
+    beat();loop();
+    var d;document.addEventListener('gp:cart',function(){clearTimeout(d);d=setTimeout(function(){beat()},400)});
+    addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'){beat();loop()}});
+    addEventListener('pagehide',function(){beat(true)});
+  }catch(e){}})();
+  </script>
+  {%- endunless -%}
+  {% if editor %}<script>
+  (function(){
+    function hl(id, scroll){ document.querySelectorAll('.gp-hl').forEach(function(e){e.classList.remove('gp-hl')}); if(!id) return; var el=document.querySelector('[data-gp-section="'+id+'"]'); if(el){ el.classList.add('gp-hl'); var f=el.firstElementChild; if(scroll&&f){ var r=f.getBoundingClientRect(); if(r.top<70||r.top>innerHeight*0.6) window.scrollTo({top:Math.max(0,r.top+scrollY-80),behavior:'smooth'}); } } }
+    window.addEventListener('message', function(e){ var d=e.data||{}; if(d.gp === 'select') hl(d.id, true); if(d.gp === 'vars'){ for(var k in d.vars) document.documentElement.style.setProperty(k, d.vars[k]); } });
+    document.addEventListener('click', function(e){ var s=e.target.closest('[data-gp-section]'); if(!s) return; e.preventDefault(); e.stopPropagation(); hl(s.getAttribute('data-gp-section')); parent.postMessage({gp:'clicked', id:s.getAttribute('data-gp-section'), group:s.getAttribute('data-gp-group')}, '*'); }, true);
+    parent.postMessage({gp:'ready'}, '*');
+  })();
+  </script>{% endif %}
+</body>
+</html>

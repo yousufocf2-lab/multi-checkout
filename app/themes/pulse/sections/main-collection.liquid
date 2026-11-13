@@ -1,14 +1,9 @@
 {%- assign s = section.settings -%}
 {%- assign items = collection.products -%}
-{%- comment -%} Filter values from the products on this page {%- endcomment -%}
-{%- assign colours = '' -%}{%- assign feats = '' -%}
-{%- for p in items -%}
-  {%- for o in p.options -%}{%- assign on = o.name | downcase -%}{%- if on contains 'colo' -%}{%- for v in o.values -%}{%- assign key = '|' | append: v | append: '|' -%}{%- unless colours contains key -%}{%- assign colours = colours | append: key -%}{%- endunless -%}{%- endfor -%}{%- endif -%}{%- endfor -%}
-  {%- for c in p.chips -%}{%- assign key = '|' | append: c | append: '|' -%}{%- unless feats contains key -%}{%- assign feats = feats | append: key -%}{%- endunless -%}{%- endfor -%}
-{%- endfor -%}
-{%- assign colour_list = colours | split: '|' -%}
-{%- assign feat_list = feats | split: '|' -%}
-<section class="col" data-col>
+{%- assign use_filters = false -%}
+{%- if s.show_filters != false and collection.filters.enabled -%}{%- assign use_filters = true -%}{%- endif -%}
+{%- assign lay = s.filter_layout | default: 'store' -%}{%- if lay == 'store' -%}{%- assign lay = collection.filters.layout -%}{%- endif -%}
+<section class="col">
   {%- if s.banner != blank and collection.search == nil -%}
   <div class="col__banner"><picture>{%- if s.banner_mobile != blank -%}<source media="(max-width:749px)" srcset="{{ s.banner_mobile | img_url: 800 }}">{%- endif -%}<img src="{{ s.banner | img_url: 1920 }}" alt="{{ collection.title | escape }}"></picture></div>
   {%- endif -%}
@@ -20,70 +15,32 @@
     {%- if collection.search.categories.size > 0 -%}<div class="srch__pop">{%- for c in collection.search.categories -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div>{%- endif -%}
     {%- endif -%}
     <nav class="crumbs" aria-label="Breadcrumb"><a href="{{ routes.root }}">Home</a>{% render 'snippets/icon', name: 'right' %}<span>{{ collection.title }}</span></nav>
-    <div class="col__head"><h1 class="col__title">{{ collection.title }}</h1><span class="col__count" data-col-count>{{ items.size }} products</span></div>
+    <div class="col__head"><h1 class="col__title">{{ collection.title }}</h1>{%- unless use_filters -%}<span class="col__count">{{ items.size }} products</span>{%- endunless -%}</div>
+    {%- capture grid -%}
     {%- if items.size > 0 -%}
-    <div class="col__layout">
-      <aside class="col__side" data-col-side>
-        <div class="col__side-head"><b>Filters</b><button type="button" class="col__clear" data-col-clear>Clear all</button><button type="button" class="hd__ic col__close" data-col-close aria-label="Close filters">{% render 'snippets/icon', name: 'close' %}</button></div>
-        <details class="facet" open><summary>Sort{% render 'snippets/icon', name: 'down' %}</summary>
-          <div class="facet__b">
-            {%- assign sorts = 'featured=Featured,price-asc=Price: low to high,price-desc=Price: high to low,discount=Biggest discount,rating=Top rated' | split: ',' -%}
-            {%- for so in sorts -%}{%- assign kv = so | split: '=' -%}<label class="facet__opt"><input type="radio" name="sort" value="{{ kv[0] }}"{% if forloop.first %} checked{% endif %}><span>{{ kv[1] }}</span></label>{%- endfor -%}
-          </div></details>
-        {%- if s.show_price -%}
-        <details class="facet" open><summary>Price{% render 'snippets/icon', name: 'down' %}</summary>
-          <div class="facet__b">
-            {%- assign bands = s.price_bands | split: ',' -%}
-            {%- assign lo = 0 -%}
-            {%- for b in bands -%}{%- assign hi = b | strip | plus: 0 -%}<label class="facet__opt"><input type="checkbox" name="price" value="{{ lo }}-{{ hi }}"><span>{% if lo == 0 %}Under ₹{{ hi }}{% else %}₹{{ lo }} – ₹{{ hi }}{% endif %}</span></label>{%- assign lo = hi -%}{%- endfor -%}
-            <label class="facet__opt"><input type="checkbox" name="price" value="{{ lo }}-99999999"><span>₹{{ lo }} and above</span></label>
-          </div></details>
-        {%- endif -%}
-        {%- if colours != '' -%}
-        <details class="facet" open><summary>Colours{% render 'snippets/icon', name: 'down' %}</summary>
-          <div class="facet__b facet__b--chips">{%- for c in colour_list -%}{%- if c == '' -%}{%- continue -%}{%- endif -%}<label class="facet__chip"><input type="checkbox" name="colour" value="{{ c | escape }}"><span>{{ c }}</span></label>{%- endfor -%}</div></details>
-        {%- endif -%}
-        {%- if feats != '' -%}
-        <details class="facet"{% if feat_list.size < 8 %} open{% endif %}><summary>Features{% render 'snippets/icon', name: 'down' %}</summary>
-          <div class="facet__b">{%- for f in feat_list -%}{%- if f == '' -%}{%- continue -%}{%- endif -%}<label class="facet__opt"><input type="checkbox" name="feat" value="{{ f | escape }}"><span>{{ f }}</span></label>{%- endfor -%}</div></details>
-        {%- endif -%}
-        <details class="facet"><summary>More{% render 'snippets/icon', name: 'down' %}</summary>
-          <div class="facet__b">
-            <label class="facet__opt"><input type="checkbox" name="rating" value="4"><span>Rated 4★ and above</span></label>
-            <label class="facet__opt"><input type="checkbox" name="stock" value="1"><span>In stock only</span></label>
-            <label class="facet__opt"><input type="checkbox" name="sale" value="1"><span>On sale</span></label>
-          </div></details>
-        <button type="button" class="btn btn--block col__apply" data-col-close>Show results</button>
-      </aside>
-      <div class="col__main">
-        <div class="col__grid" data-col-grid style="--cols:{{ s.columns | default: 3 }}">
-          {%- for p in items -%}
-          {%- assign pc = '|' -%}{%- for o in p.options -%}{%- assign on = o.name | downcase -%}{%- if on contains 'colo' -%}{%- assign vals = o.values | join: '|' -%}{%- assign pc = pc | append: vals | append: '|' -%}{%- endif -%}{%- endfor -%}
-          <div class="col__cell" data-i="{{ forloop.index0 }}" data-price="{{ p.price | divided_by: 100 }}" data-disc="{{ p.discount_pct }}" data-rating="{{ p.rating }}" data-avail="{% if p.available %}1{% else %}0{% endif %}" data-colours="{{ pc | escape }}" data-feats="|{{ p.chips | join: '|' | escape }}|">
-            {% render 'snippets/product-card', product: p, settings: settings %}
-          </div>
-          {%- endfor -%}
-        </div>
-        <p class="empty" data-col-empty hidden>No products match these filters. <button type="button" class="link" data-col-clear>Clear filters</button></p>
-      </div>
+    <div class="col__grid" style="--cols:{{ s.columns | default: 3 }}">
+      {%- for p in items -%}<div class="col__cell">{% render 'snippets/product-card', product: p, settings: settings %}</div>{%- endfor -%}
     </div>
+    {%- elsif collection.filters.active_count > 0 -%}
+    <p class="empty">No products match these filters. <a href="{{ collection.filters.clear_url | escape }}" class="link">Clear filters</a></p>
     {%- else -%}
     <p class="empty">{% if collection.search %}Try another word, or browse the categories above.{% else %}Nothing here yet.{% endif %} <a href="{{ routes.all }}" class="link">See all products</a></p>
     {%- endif -%}
+    {%- endcapture -%}
+    {%- if use_filters -%}{% render 'snippets/filters', f: collection.filters, grid: grid, layout: lay %}{%- else -%}{{ grid }}{%- endif -%}
     {%- if collection.description != blank -%}
     <div class="col__seo"><div class="rte rte--clamp" data-clamp>{{ collection.description }}</div><button type="button" class="rtx__more" data-clamp-btn aria-label="Read more">{% render 'snippets/icon', name: 'down' %}</button></div>
     {%- endif -%}
   </div>
-  {%- if items.size > 0 -%}
-  <div class="col__bar"><button type="button" data-col-open>{% render 'snippets/icon', name: 'filter' %}Filter &amp; sort <span data-col-n></span></button></div>
-  {%- endif -%}
 </section>
 {% schema %}
 { "name": "Category page", "settings": [
   { "id": "banner", "type": "image", "label": "Banner on top (optional, same on every category)" },
   { "id": "banner_mobile", "type": "image", "label": "Phone banner (optional)" },
   { "id": "columns", "type": "range", "label": "Products per row (computer)", "min": 2, "max": 5, "step": 1, "default": 3 },
-  { "id": "show_price", "type": "checkbox", "label": "Show the price filter", "default": true },
-  { "id": "price_bands", "type": "text", "label": "Price filter steps in ₹ (comma separated)", "default": "999, 1999, 2999, 4999" }
+  { "type": "header", "id": "h_filters", "label": "Filters" },
+  { "type": "paragraph", "id": "p_filters", "label": "Which filters show, their order and their look are set in Settings → Widgets → Product filters." },
+  { "type": "checkbox", "id": "show_filters", "label": "Show product filters", "default": true },
+  { "type": "select", "id": "filter_layout", "label": "Filter position", "default": "store", "options": ["store", "sidebar", "top", "drawer"], "option_labels": ["Use store setting", "Sidebar", "Top bar", "Slide-out panel"] }
 ] }
 {% endschema %}

@@ -1,0 +1,46 @@
+{%- assign s = section.settings -%}
+{%- assign items = collection.products -%}
+{%- assign use_filters = false -%}
+{%- if s.show_filters != false and collection.filters.enabled -%}{%- assign use_filters = true -%}{%- endif -%}
+{%- assign lay = s.filter_layout | default: 'store' -%}{%- if lay == 'store' -%}{%- assign lay = collection.filters.layout -%}{%- endif -%}
+<section class="col">
+  {%- if s.banner != blank and collection.search == nil -%}
+  <div class="col__banner"><picture>{%- if s.banner_mobile != blank -%}<source media="(max-width:749px)" srcset="{{ s.banner_mobile | img_url: 800 }}">{%- endif -%}<img src="{{ s.banner | img_url: 1920 }}" alt="{{ collection.title | escape }}"></picture></div>
+  {%- endif -%}
+  <div class="pw">
+    {%- if collection.search -%}
+    <form action="{{ routes.search }}" method="get" class="col__search" role="search">
+      {% render 'snippets/icon', name: 'search' %}<input type="search" name="q" value="{{ collection.search.q | escape }}" placeholder="Search products" aria-label="Search products" autocomplete="off"><button type="submit" class="btn btn--sm">Search</button>
+    </form>
+    {%- if collection.search.categories.size > 0 -%}<div class="srch__pop">{%- for c in collection.search.categories -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div>{%- endif -%}
+    {%- endif -%}
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="{{ routes.root }}">Home</a>{% render 'snippets/icon', name: 'right' %}<span>{{ collection.title }}</span></nav>
+    <div class="col__head"><h1 class="col__title">{{ collection.title }}</h1>{%- unless use_filters -%}<span class="col__count">{{ items.size }} products</span>{%- endunless -%}</div>
+    {%- capture grid -%}
+    {%- if items.size > 0 -%}
+    <div class="col__grid" style="--cols:{{ s.columns | default: 3 }}">
+      {%- for p in items -%}<div class="col__cell">{% render 'snippets/product-card', product: p, settings: settings %}</div>{%- endfor -%}
+    </div>
+    {%- elsif collection.filters.active_count > 0 -%}
+    <p class="empty">No products match these filters. <a href="{{ collection.filters.clear_url | escape }}" class="link">Clear filters</a></p>
+    {%- else -%}
+    <p class="empty">{% if collection.search %}Try another word, or browse the categories above.{% else %}Nothing here yet.{% endif %} <a href="{{ routes.all }}" class="link">See all products</a></p>
+    {%- endif -%}
+    {%- endcapture -%}
+    {%- if use_filters -%}{% render 'snippets/filters', f: collection.filters, grid: grid, layout: lay %}{%- else -%}{{ grid }}{%- endif -%}
+    {%- if collection.description != blank -%}
+    <div class="col__seo"><div class="rte rte--clamp" data-clamp>{{ collection.description }}</div><button type="button" class="rtx__more" data-clamp-btn aria-label="Read more">{% render 'snippets/icon', name: 'down' %}</button></div>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Category page", "settings": [
+  { "id": "banner", "type": "image", "label": "Banner on top (optional, same on every category)" },
+  { "id": "banner_mobile", "type": "image", "label": "Phone banner (optional)" },
+  { "id": "columns", "type": "range", "label": "Products per row (computer)", "min": 2, "max": 5, "step": 1, "default": 3 },
+  { "type": "header", "id": "h_filters", "label": "Filters" },
+  { "type": "paragraph", "id": "p_filters", "label": "Which filters show, their order and their look are set in Settings → Widgets → Product filters." },
+  { "type": "checkbox", "id": "show_filters", "label": "Show product filters", "default": true },
+  { "type": "select", "id": "filter_layout", "label": "Filter position", "default": "store", "options": ["store", "sidebar", "top", "drawer"], "option_labels": ["Use store setting", "Sidebar", "Top bar", "Slide-out panel"] }
+] }
+{% endschema %}

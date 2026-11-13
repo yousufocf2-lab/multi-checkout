@@ -1,0 +1,81 @@
+{%- assign s = section.settings -%}
+<footer class="ft">
+  {%- if s.show_newsletter -%}
+  <div class="pw">
+    <div class="ft__news">
+      <div class="ft__news-copy"><p class="ft__nh">{{ s.news_heading }}</p>{%- if s.news_text != blank -%}<p class="ft__nt">{{ s.news_text }}</p>{%- endif -%}</div>
+      <form class="ft__form" data-subscribe>
+        <input type="email" name="email" required placeholder="Your email address" aria-label="Email" autocomplete="email">
+        <button type="submit" class="btn">{{ s.news_button | default: 'Subscribe' }}</button>
+        <p class="ft__msg" data-subscribe-msg hidden></p>
+      </form>
+    </div>
+  </div>
+  {%- endif -%}
+  <div class="pw ft__grid">
+    <div class="ft__brand">
+      <a href="{{ routes.root }}" class="ft__logo">{%- assign logo = settings.logo | default: shop.logo -%}{%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" loading="lazy">{%- else -%}{{ shop.name }}{%- endif -%}</a>
+      {%- if s.about != blank -%}<p class="ft__about">{{ s.about }}</p>{%- endif -%}
+      <div class="ft__social">
+        {%- if settings.social_instagram != blank -%}<a href="{{ settings.social_instagram }}" target="_blank" rel="noopener" aria-label="Instagram">{% render 'snippets/icon', name: 'instagram' %}</a>{%- endif -%}
+        {%- if settings.social_youtube != blank -%}<a href="{{ settings.social_youtube }}" target="_blank" rel="noopener" aria-label="YouTube">{% render 'snippets/icon', name: 'youtube' %}</a>{%- endif -%}
+        {%- if settings.social_facebook != blank -%}<a href="{{ settings.social_facebook }}" target="_blank" rel="noopener" aria-label="Facebook">{% render 'snippets/icon', name: 'facebook' %}</a>{%- endif -%}
+        {%- if settings.social_linkedin != blank -%}<a href="{{ settings.social_linkedin }}" target="_blank" rel="noopener" aria-label="LinkedIn">{% render 'snippets/icon', name: 'linkedin' %}</a>{%- endif -%}
+        {%- if settings.social_x != blank -%}<a href="{{ settings.social_x }}" target="_blank" rel="noopener" aria-label="X">{% render 'snippets/icon', name: 'x' %}</a>{%- endif -%}
+      </div>
+    </div>
+    <div class="ft__cols">
+      {%- assign used = 0 -%}
+      {%- for c in s.columns -%}
+        {%- assign m = menus[c.menu] -%}
+        {%- if m -%}
+        {%- assign used = used | plus: 1 -%}
+        <details class="ft__col" open><summary>{{ c.heading | default: m.title }}{% render 'snippets/icon', name: 'down' %}</summary>
+          <div class="ft__links">{%- for l in m.links -%}<a href="{{ l.url }}">{{ l.title }}</a>{%- for x in l.links -%}<a href="{{ x.url }}">{{ x.title }}</a>{%- endfor -%}{%- endfor -%}</div>
+        </details>
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if used == 0 -%}
+        <details class="ft__col" open><summary>{{ s.cat_heading | default: 'Shop by category' }}{% render 'snippets/icon', name: 'down' %}</summary>
+          <div class="ft__links"><a href="{{ routes.all }}">All products</a>{%- for c in collections limit: 10 -%}<a href="{{ c.url }}">{{ c.title }}</a>{%- endfor -%}</div></details>
+        {%- if footer_menu -%}
+        <details class="ft__col" open><summary>{{ footer_menu.title }}{% render 'snippets/icon', name: 'down' %}</summary>
+          <div class="ft__links">{%- for l in footer_menu.links -%}<a href="{{ l.url }}">{{ l.title }}</a>{%- endfor -%}</div></details>
+        {%- endif -%}
+        <details class="ft__col" open><summary>{{ s.help_heading | default: 'Support' }}{% render 'snippets/icon', name: 'down' %}</summary>
+          <div class="ft__links">
+            {%- for p in pages -%}<a href="{{ p.url }}">{{ p.title }}</a>{%- endfor -%}
+            {%- if routes.account -%}<a href="{{ routes.account }}">Track your order</a>{%- endif -%}
+            {%- if shop.phone -%}<a href="tel:{{ shop.phone }}">Call {{ shop.phone }}</a>{%- endif -%}
+            {%- if s.email != blank -%}<a href="mailto:{{ s.email }}">{{ s.email }}</a>{%- endif -%}
+          </div></details>
+      {%- endif -%}
+    </div>
+  </div>
+  <div class="pw ft__bottom">
+    {%- assign lm = menus[s.legal_menu] -%}
+    {%- if lm -%}<p class="ft__legal">{%- for l in lm.links -%}<a href="{{ l.url }}">{{ l.title }}</a>{%- endfor -%}</p>{%- endif -%}
+    <p class="ft__copy">© {{ 'now' | date: '%Y' }} {{ s.copyright | default: shop.name }}. All rights reserved.</p>
+  </div>
+</footer>
+{% schema %}
+{ "name": "Footer", "settings": [
+  { "type": "header", "id": "h_news", "label": "Newsletter" },
+  { "id": "show_newsletter", "type": "checkbox", "label": "Show the email signup card", "default": true },
+  { "id": "news_heading", "type": "text", "label": "Heading", "default": "Join the Playday club" },
+  { "id": "news_text", "type": "textarea", "label": "Text", "default": "New toys, play ideas and members-only treats. One happy email a week." },
+  { "id": "news_button", "type": "text", "label": "Button", "default": "Subscribe" },
+  { "id": "about", "type": "textarea", "label": "Short line about your brand (under the logo)", "default": "Toys that make room for big imaginations." },
+  { "type": "header", "id": "h_cols", "label": "Link columns" },
+  { "id": "columns", "type": "list", "label": "Columns (each one shows a menu; empty = categories and your pages)", "item_label": "column", "max_items": 6, "fields": [
+    { "id": "heading", "type": "text", "label": "Heading (empty = menu name)" },
+    { "id": "menu", "type": "menu", "label": "Menu" }
+  ], "default": [] },
+  { "id": "cat_heading", "type": "text", "label": "Heading for the categories column", "default": "Explore by category" },
+  { "id": "help_heading", "type": "text", "label": "Heading for the help column", "default": "Support" },
+  { "id": "email", "type": "text", "label": "Customer care email (optional)", "default": "" },
+  { "type": "header", "id": "h_bottom", "label": "Bottom row" },
+  { "id": "legal_menu", "type": "menu", "label": "Small links at the bottom (terms, privacy…)", "default": "" },
+  { "id": "copyright", "type": "text", "label": "Name after ©", "default": "" }
+] }
+{% endschema %}

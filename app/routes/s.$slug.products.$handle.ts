@@ -6,7 +6,7 @@ import { submitReview } from "~/lib/reviews.server";
 import { movedTo } from "~/lib/storefront-paths";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  if (params.handle === "all") return collectionPage(await previewContext(request, params.slug), "all");
+  if (params.handle === "all") return collectionPage(await previewContext(request, params.slug), "all", request);
   throw redirect(movedTo(request, `/s/${encodeURIComponent(params.slug ?? "")}/product/${encodeURIComponent(params.handle ?? "")}`), 301);
 };
 

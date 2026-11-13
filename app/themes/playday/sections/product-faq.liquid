@@ -1,0 +1,24 @@
+{%- assign s = section.settings -%}
+{%- assign list = product.faqs -%}
+<section class="faq sec" id="pfaq">
+  <div class="pw faq__in">
+    <h2 class="sec__h">{{ s.heading | default: 'FAQ' }}</h2>
+    {%- if list.size > 0 -%}
+      {%- for it in list -%}<details class="acc"><summary>{{ it.q }}{% render 'snippets/icon', name: 'down' %}</summary><div class="acc__b rte">{{ it.a | newline_to_br }}</div></details>{%- endfor -%}
+    {%- else -%}
+      {%- for it in s.items -%}<details class="acc"><summary>{{ it.q }}{% render 'snippets/icon', name: 'down' %}</summary><div class="acc__b rte">{{ it.a }}</div></details>{%- endfor -%}
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Product questions", "category": "Content", "description": "Product page FAQ: the product's own questions, else these", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "FAQ" },
+  { "id": "items", "type": "list", "label": "Questions for products without their own", "item_label": "question", "max_items": 20, "fields": [
+    { "id": "q", "type": "text", "label": "Question" }, { "id": "a", "type": "richtext", "label": "Answer" }
+  ], "default": [
+    { "q": "Is it safe for my child?", "a": "<p>Every toy is age-graded and made with child-safe, non-toxic materials. Check the recommended age before buying.</p>" },
+    { "q": "Can I pay cash on delivery?", "a": "<p>Yes, cash on delivery is available on most pincodes.</p>" },
+    { "q": "How fast is delivery?", "a": "<p>Most orders arrive in 3–6 working days.</p>" }
+  ] }
+] }
+{% endschema %}

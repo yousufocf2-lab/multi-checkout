@@ -1,0 +1,27 @@
+{%- assign s = section.settings -%}
+<section class="offers sec" id="{{ section.id }}">
+  <div class="pw">
+    {%- if s.heading != blank -%}<div class="sec__head sec__head--c"><div><h2 class="sec__h serif">{{ s.heading }}</h2></div></div>{%- endif -%}
+    <div class="offers__row" data-drag-scroll>
+      {%- for o in s.items -%}
+      <div class="offer" style="--off:{{ o.color | default: '#ff6b3d' }}">
+        <span class="offer__tag">{{ o.tag }}</span>
+        <div class="offer__body"><b>{{ o.title }}</b>{%- if o.text != blank -%}<small>{{ o.text }}</small>{%- endif -%}</div>
+        {%- if o.code != blank -%}<button type="button" class="offer__code" data-copy="{{ o.code | escape }}" aria-label="Copy code {{ o.code | escape }}">{{ o.code }}<span>Copy</span></button>{%- endif -%}
+      </div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Offer cards", "category": "Promotions", "description": "Ticket-style offers; tap a code to copy it", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Offers for you" },
+  { "id": "items", "type": "list", "label": "Offers", "item_label": "offer", "max_items": 6, "fields": [
+    { "id": "tag", "type": "text", "label": "Big tag", "default": "10% OFF" },
+    { "id": "title", "type": "text", "label": "Title", "default": "On your first order" },
+    { "id": "text", "type": "text", "label": "Small print", "default": "" },
+    { "id": "code", "type": "text", "label": "Code (optional)", "default": "" },
+    { "id": "color", "type": "color", "label": "Colour", "default": "#ff6b3d" }
+  ] }
+] }
+{% endschema %}

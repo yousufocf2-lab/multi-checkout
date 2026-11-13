@@ -1,0 +1,34 @@
+{%- assign s = section.settings -%}
+<section class="ages sec" id="{{ section.id }}">
+  <div class="pw">
+    <div class="ages__card">
+      <div class="ages__intro">
+        {%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}
+        <h2 class="sec__h serif">{{ s.heading }}</h2>
+        {%- if s.text != blank -%}<p class="sec__sub">{{ s.text }}</p>{%- endif -%}
+      </div>
+      <div class="ages__row" data-drag-scroll>
+        {%- for a in s.items -%}
+        <a href="{{ a.link | default: routes.all | safe_url }}" class="age" style="--age:{{ a.color | default: '#ffd23f' }}">
+          <span class="age__blob"><b>{{ a.label }}</b><small>{{ a.unit }}</small></span>
+          {%- if a.caption != blank -%}<span class="age__cap">{{ a.caption }}</span>{%- endif -%}
+        </a>
+        {%- endfor -%}
+      </div>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Shop by age", "category": "Categories", "description": "Round, colourful age buttons. Link each one to a filtered page, e.g. /products/all?f.age=3-5 years", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above (optional)", "default": "Just right" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Shop by age" },
+  { "id": "text", "type": "text", "label": "Text", "default": "Toys that grow with them, from first rattles to big-kid builds" },
+  { "id": "items", "type": "list", "label": "Ages", "item_label": "age", "max_items": 8, "fields": [
+    { "id": "label", "type": "text", "label": "Big text", "default": "3–5" },
+    { "id": "unit", "type": "text", "label": "Small text", "default": "years" },
+    { "id": "caption", "type": "text", "label": "Caption under it (optional)", "default": "" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" },
+    { "id": "color", "type": "color", "label": "Colour", "default": "#ffd23f" }
+  ] }
+] }
+{% endschema %}

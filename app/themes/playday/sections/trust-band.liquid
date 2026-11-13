@@ -1,0 +1,27 @@
+{%- assign s = section.settings -%}
+<section class="trust" id="{{ section.id }}" style="{% if s.bg != blank %}--trust-bg:{{ s.bg }};{% endif %}{% if s.text != blank %}--trust-ink:{{ s.text }}{% endif %}">
+  <div class="pw">
+    <span class="trust__ring">{% render 'snippets/icon', name: s.icon | default: 'shield' %}</span>
+    <h2 class="trust__h">{{ s.heading }}</h2>
+    {%- if s.subtext != blank -%}<p class="trust__sub">{{ s.subtext }}</p>{%- endif -%}
+    <div class="trust__grid">
+      {%- for i in s.items -%}
+      <div class="trust__item"><span>{% render 'snippets/icon', name: i.icon | default: 'check' %}</span><b>{{ i.title }}</b>{%- if i.text != blank -%}<small>{{ i.text }}</small>{%- endif -%}</div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Trust band", "category": "Trust", "description": "A dark band with a big promise and up to four reasons to trust you", "settings": [
+  { "id": "icon", "type": "select", "label": "Big icon", "options": ["shield", "lock", "badge", "medal", "sparkle", "gift"], "default": "shield" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Safe for little hands" },
+  { "id": "subtext", "type": "text", "label": "Text", "default": "" },
+  { "id": "bg", "type": "color", "label": "Background (empty = header colour)", "default": "" },
+  { "id": "text", "type": "color", "label": "Text (empty = header text colour)", "default": "" },
+  { "id": "items", "type": "list", "label": "Reasons", "item_label": "reason", "max_items": 4, "fields": [
+    { "id": "icon", "type": "select", "label": "Icon", "options": ["check", "shield", "badge", "truck", "refresh", "lock", "gift", "medal", "cash", "box"], "default": "check" },
+    { "id": "title", "type": "text", "label": "Title", "default": "" },
+    { "id": "text", "type": "text", "label": "Text", "default": "" }
+  ] }
+] }
+{% endschema %}

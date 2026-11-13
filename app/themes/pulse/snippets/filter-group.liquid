@@ -1,0 +1,19 @@
+{%- comment -%} One filter's values. g = a group from collection.filters.groups {%- endcomment -%}
+<div class="gf__vals gf__vals--{{ g.display }}">
+  {%- for v in g.values -%}
+  {%- capture cls -%}gf__v{% if v.count == 0 and v.active == false %} is-zero{% endif %}{% if forloop.index > g.max and v.active == false %} gf__more{% endif %}{%- endcapture -%}
+  {%- if g.display == 'list' -%}
+  <a href="{{ v.url | escape }}" class="gf__list {{ cls }}{% if v.active %} is-on{% endif %}" rel="nofollow">{{ v.label }}<span class="gf__n">{{ v.count }}</span></a>
+  {%- elsif g.display == 'chips' -%}
+  <label class="{{ cls }}"><input type="checkbox" name="{{ g.param }}" value="{{ v.value | escape }}"{% if v.active %} checked{% endif %}><span class="gf__chip">{{ v.label }}<span class="gf__n">{{ v.count }}</span></span></label>
+  {%- elsif g.display == 'swatch' -%}
+  <label class="{{ cls }}" title="{{ v.label | escape }}"><input type="checkbox" name="{{ g.param }}" value="{{ v.value | escape }}"{% if v.active %} checked{% endif %}><span class="gf__chip"><i class="gf__sw" style="background:{{ v.swatch | default: 'var(--gf-tint)' }}"></i>{{ v.label }}<span class="gf__n">{{ v.count }}</span></span></label>
+  {%- else -%}
+  <label class="{{ cls }}"><input type="checkbox" name="{{ g.param }}" value="{{ v.value | escape }}"{% if v.active %} checked{% endif %}><span class="gf__box"></span><span class="gf__lbl">{{ v.label }}<span class="gf__n">{{ v.count }}</span></span></label>
+  {%- endif -%}
+  {%- endfor -%}
+</div>
+{%- if g.has_more -%}<button type="button" class="gf__toggle" data-gf-more="+ {{ g.values.size | minus: g.max }} more">+ {{ g.values.size | minus: g.max }} more</button>{%- endif -%}
+{%- if g.type == 'price' -%}
+<div class="gf__range"><input type="number" name="price_min" min="0" inputmode="numeric" placeholder="Min ₹" value="{{ g.min }}" aria-label="Minimum price"><span>–</span><input type="number" name="price_max" min="0" inputmode="numeric" placeholder="Max ₹" value="{{ g.max_price }}" aria-label="Maximum price"></div>
+{%- endif -%}

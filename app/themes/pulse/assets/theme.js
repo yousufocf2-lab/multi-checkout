@@ -532,44 +532,6 @@
     });
   }
 
-  // ---------- category page filters ----------
-  var col = document.querySelector("[data-col]");
-  if (col && col.querySelector("[data-col-grid]")) {
-    var grid = col.querySelector("[data-col-grid]"), side = col.querySelector("[data-col-side]");
-    var cells = Array.prototype.slice.call(grid.children);
-    var count = col.querySelector("[data-col-count]"), empty = col.querySelector("[data-col-empty]"), nBadge = col.querySelector("[data-col-n]");
-    var shade = null;
-    function openSide() { side.classList.add("is-on"); shade = document.createElement("div"); shade.className = "col__shade"; shade.addEventListener("click", closeSide); document.body.appendChild(shade); document.documentElement.classList.add("no-scroll"); }
-    function closeSide() { side.classList.remove("is-on"); if (shade) shade.remove(); shade = null; document.documentElement.classList.remove("no-scroll"); }
-    col.querySelectorAll("[data-col-open]").forEach(function (b) { b.addEventListener("click", openSide); });
-    col.querySelectorAll("[data-col-close]").forEach(function (b) { b.addEventListener("click", closeSide); });
-    function vals(name) { return Array.prototype.slice.call(side.querySelectorAll('input[name="' + name + '"]:checked')).map(function (i) { return i.value; }); }
-    function apply() {
-      var price = vals("price").map(function (r) { var p = r.split("-"); return [+p[0], +p[1]]; }), colours = vals("colour"), feats = vals("feat");
-      var rating = vals("rating").length, stock = vals("stock").length, sale = vals("sale").length;
-      var shown = 0;
-      cells.forEach(function (c) {
-        var p = +c.getAttribute("data-price"), ok = true;
-        if (price.length && !price.some(function (r) { return p >= r[0] && p < r[1]; })) ok = false;
-        if (ok && colours.length) { var cs = c.getAttribute("data-colours") || ""; ok = colours.some(function (x) { return cs.indexOf("|" + x + "|") >= 0; }); }
-        if (ok && feats.length) { var fs = c.getAttribute("data-feats") || ""; ok = feats.some(function (x) { return fs.indexOf("|" + x + "|") >= 0; }); }
-        if (ok && rating && +c.getAttribute("data-rating") < 4) ok = false;
-        if (ok && stock && c.getAttribute("data-avail") !== "1") ok = false;
-        if (ok && sale && +c.getAttribute("data-disc") <= 0) ok = false;
-        c.classList.toggle("is-hidden", !ok); if (ok) shown++;
-      });
-      var sort = (side.querySelector('input[name="sort"]:checked') || {}).value || "featured";
-      var key = { "price-asc": function (c) { return +c.getAttribute("data-price"); }, "price-desc": function (c) { return -c.getAttribute("data-price"); }, discount: function (c) { return -c.getAttribute("data-disc"); }, rating: function (c) { return -c.getAttribute("data-rating"); } }[sort] || function (c) { return +c.getAttribute("data-i"); };
-      cells.slice().sort(function (a, b) { return key(a) - key(b) || a.getAttribute("data-i") - b.getAttribute("data-i"); }).forEach(function (c) { grid.appendChild(c); });
-      if (count) count.textContent = shown + " product" + (shown === 1 ? "" : "s");
-      if (empty) empty.hidden = shown > 0;
-      var active = price.length + colours.length + feats.length + rating + stock + sale + (sort !== "featured" ? 1 : 0);
-      if (nBadge) nBadge.textContent = active ? active : "";
-    }
-    side.addEventListener("change", apply);
-    col.querySelectorAll("[data-col-clear]").forEach(function (b) { b.addEventListener("click", function () { side.querySelectorAll("input[type=checkbox]").forEach(function (i) { i.checked = false; }); var f = side.querySelector('input[name="sort"][value="featured"]'); if (f) f.checked = true; apply(); }); });
-  }
-
   // ---------- cart page ----------
   var itemsBox = document.querySelector("[data-cart-items]");
   if (itemsBox) {

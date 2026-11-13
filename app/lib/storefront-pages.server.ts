@@ -7,7 +7,8 @@ import { clientIp } from "./orders.server";
 import { pageByHandle, publishedPage } from "./store-pages.server";
 import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
 import { PAGE_BLOCKS_CSS } from "./page-blocks";
-import { baseScope, demoProducts, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, themeOf, isDemo, type ShopContext } from "./storefront.server";
+import { applyFilters } from "./filters.server";
+import { baseScope, withCategories, demoProducts, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, themeOf, isDemo, type ShopContext } from "./storefront.server";
 import { requestHost, storeBaseUrl } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
 import { widgetSettings } from "./widgets";
@@ -59,12 +60,20 @@ export async function productPage(ctx: ShopContext, handle: string, review: stri
   }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }
 
-export async function collectionPage(ctx: ShopContext, handle: string) {
+/** Store filters + sort from the URL, for a category or search page. */
+async function filtered<T extends Parameters<typeof applyFilters>[0][number] & { id: number; categories: string[] }>(ctx: ShopContext, request: Request | undefined, products: T[], base: string, categories: { handle: string; title: string }[]) {
+  const url = new URL(request?.url ?? "http://x/");
+  const r = applyFilters(isDemo(ctx) ? products : await withCategories(ctx, products), widgetSettings(ctx.store.widgetSettings).filters, url, { base, keep: ["q", "gp_preset", "gp_library"], categories });
+  return r;
+}
+
+export async function collectionPage(ctx: ShopContext, handle: string, request?: Request) {
   const scope = await baseScope(ctx);
   const cat = handle === "all" ? null : scope.collections.find((c) => c.handle === handle);
   if (handle !== "all" && !cat) throw await notFound(ctx, "This category isn't available. Have a look at everything in the shop.");
-  const products = isDemo(ctx) ? demoProducts(ctx, cat?.handle) : await loadProducts(ctx, { category: cat?.handle });
-  const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products };
+  const all = isDemo(ctx) ? demoProducts(ctx, cat?.handle) : await loadProducts(ctx, { category: cat?.handle });
+  const f = await filtered(ctx, request, all, `${ctx.root}${handle === "all" ? "/products/all" : `/category/${handle}`}`, scope.collections);
+  const collection = { title: cat?.title ?? "All products", description: cat?.description ?? "", handle, products: f.products, filters: f.filters, all_count: all.length };
   return html(await renderPage(themeOf(ctx.look?.data), "collection", { ...scope, template: "collection", collection, page_title: collection.title, canonical_url: canonical(ctx, handle === "all" ? "/products/all" : `/category/${handle}`) }, sectionData(ctx), ctx.look));
 }
 
@@ -190,9 +199,9 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
 export async function searchPage(ctx: ShopContext, request: Request) {
   const q = (new URL(request.url).searchParams.get("q") ?? "").trim().slice(0, 80);
   const [scope, r] = await Promise.all([baseScope(ctx), searchProducts(ctx.store.id, q, 48)]);
-  const products = await loadProductsByIds(ctx, r.ids);
+  const f = await filtered(ctx, request, await loadProductsByIds(ctx, r.ids), `${ctx.root}/search`, scope.collections);
   const collection = {
-    title: q ? `Results for “${q}”` : "Search", handle: "search", products,
+    title: q ? `Results for “${q}”` : "Search", handle: "search", products: f.products, filters: f.filters, all_count: r.ids.length,
     description: q && !r.exact ? "We couldn't find an exact match, so here are the closest products." : "",
     search: { q, exact: r.exact, categories: r.categories.map((c) => ({ title: c.title, url: `${ctx.root}/category/${c.handle}` })) },
   };

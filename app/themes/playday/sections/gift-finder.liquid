@@ -1,0 +1,42 @@
+{%- assign s = section.settings -%}
+<section class="gift sec" id="{{ section.id }}">
+  <div class="pw">
+    <div class="gift__box" style="--gift:{{ s.color | default: '#ff6b3d' }}">
+      <div class="gift__intro">
+        <span class="gift__ic">{% render 'snippets/icon', name: 'gift' %}</span>
+        <h2 class="sec__h serif">{{ s.heading }}</h2>
+        {%- if s.text != blank -%}<p>{{ s.text }}</p>{%- endif -%}
+        {%- if s.budgets.size > 0 -%}
+        <p class="gift__lbl">{{ s.budget_label }}</p>
+        <div class="gift__chips">{%- for b in s.budgets -%}<a href="{{ b.link | default: routes.all | safe_url }}" class="gift__chip">{{ b.label }}</a>{%- endfor -%}</div>
+        {%- endif -%}
+      </div>
+      <div class="gift__occ" data-drag-scroll>
+        {%- for o in s.occasions -%}
+        <a href="{{ o.link | default: routes.all | safe_url }}" class="gocc">
+          <span class="gocc__img">{%- if o.image != blank -%}<img src="{{ o.image | img_url: 600 }}" alt="" loading="lazy">{%- endif -%}</span>
+          <b>{{ o.title }}</b>{%- if o.text != blank -%}<small>{{ o.text }}</small>{%- endif -%}
+        </a>
+        {%- endfor -%}
+      </div>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Gift finder", "category": "Promotions", "description": "Budget chips and occasion cards to help shoppers find a present fast", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Need a gift, fast?" },
+  { "id": "text", "type": "text", "label": "Text", "default": "Pick a budget or an occasion – we'll do the rest, wrap included." },
+  { "id": "color", "type": "color", "label": "Box colour", "default": "#ff6b3d" },
+  { "id": "budget_label", "type": "text", "label": "Label above budgets", "default": "Shop by budget" },
+  { "id": "budgets", "type": "list", "label": "Budget chips (link to a price filter, e.g. /products/all?f.price=0-499)", "item_label": "budget", "max_items": 6, "fields": [
+    { "id": "label", "type": "text", "label": "Text", "default": "Under ₹499" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" }
+  ] },
+  { "id": "occasions", "type": "list", "label": "Occasion cards", "item_label": "occasion", "max_items": 6, "fields": [
+    { "id": "image", "type": "image", "label": "Picture" },
+    { "id": "title", "type": "text", "label": "Title", "default": "Birthday hits" },
+    { "id": "text", "type": "text", "label": "Small text", "default": "" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" }
+  ] }
+] }
+{% endschema %}

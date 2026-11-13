@@ -1,0 +1,411 @@
+{
+ "sections": {
+  "hero": {
+   "type": "play-hero",
+   "settings": {
+    "sticker": "Safe • Joyful • Made to last",
+    "height": 620,
+    "autoplay": 6,
+    "slides": [
+     {
+      "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=1920&h=1000&q=80",
+      "image_mobile": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?auto=format&fit=crop&w=900&h=1200&q=80",
+      "eyebrow": "The wooden collection",
+      "heading": "Big adventures for",
+      "accent": "little hands",
+      "text": "Heirloom-quality toys in calm colours, finished with child-safe paints.",
+      "button": "Discover",
+      "link": "/category/baby-toddler",
+      "align": "left"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&w=1920&h=1000&q=80",
+      "image_mobile": "https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&w=900&h=1200&q=80",
+      "eyebrow": "Build & create",
+      "heading": "Every brick is",
+      "accent": "a new idea",
+      "text": "Sets for first builders and big engineers, with ideas to get started.",
+      "button": "Start building",
+      "link": "/category/building",
+      "align": "left"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1602734846297-9299fc2d4703?auto=format&fit=crop&w=1920&h=1000&q=80",
+      "image_mobile": "https://images.unsplash.com/photo-1602734846297-9299fc2d4703?auto=format&fit=crop&w=900&h=1200&q=80",
+      "eyebrow": "Soft friends",
+      "heading": "A best friend",
+      "accent": "for every hug",
+      "text": "Super-soft, washable plush that's ready to be loved for years.",
+      "button": "Meet them",
+      "link": "/category/plush",
+      "align": "left"
+     }
+    ]
+   }
+  },
+  "worlds": {
+   "type": "world-grid",
+   "settings": {
+    "overlap": true,
+    "columns": 5,
+    "heading": "Pick a world to play in",
+    "text": "Everything to play with, chosen with love",
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Building",
+      "link": "/category/building",
+      "color": "#ffd23f"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1602734846297-9299fc2d4703?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Soft toys",
+      "link": "/category/plush",
+      "color": "#ff9ec7"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1574492909706-09f2b2f0d909?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Puzzles",
+      "link": "/category/puzzles",
+      "color": "#7fd1b9"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1560859251-d563a49c5e4a?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Cars & trains",
+      "link": "/category/vehicles",
+      "color": "#8fb8ff"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1453749024858-4bca89bd9edc?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Arts & crafts",
+      "link": "/category/arts-crafts",
+      "color": "#ffb38a"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1618842676088-c4d48a6a7c9d?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Baby & toddler",
+      "link": "/category/baby-toddler",
+      "color": "#c7b8ff"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1629760946220-5693ee4c46ac?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Board games",
+      "link": "/category/games",
+      "color": "#ffd23f"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1720990779375-d98f2fd3765a?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Outdoor play",
+      "link": "/category/outdoor",
+      "color": "#7fd1b9"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1504484656217-38f8ffc617f9?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "Music & sound",
+      "link": "/category/baby-toddler",
+      "color": "#ff9ec7"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1568828668638-b1b4014d91a2?auto=format&fit=crop&w=600&h=760&q=80",
+      "title": "STEM & learning",
+      "link": "/category/building",
+      "color": "#8fb8ff"
+     }
+    ]
+   }
+  },
+  "ages": {
+   "type": "age-picker",
+   "settings": {
+    "eyebrow": "Just right",
+    "heading": "Shop by age",
+    "text": "Toys that grow with them, from first rattles to big-kid builds",
+    "items": [
+     {
+      "label": "0–2",
+      "unit": "years",
+      "caption": "First giggles",
+      "link": "/products/all?f.age=0-2%20years",
+      "color": "#ff9ec7"
+     },
+     {
+      "label": "3–5",
+      "unit": "years",
+      "caption": "Little explorers",
+      "link": "/products/all?f.age=3-5%20years",
+      "color": "#ffd23f"
+     },
+     {
+      "label": "6–8",
+      "unit": "years",
+      "caption": "Busy builders",
+      "link": "/products/all?f.age=6-8%20years",
+      "color": "#7fd1b9"
+     },
+     {
+      "label": "9–12",
+      "unit": "years",
+      "caption": "Big thinkers",
+      "link": "/products/all?f.age=9-12%20years",
+      "color": "#8fb8ff"
+     },
+     {
+      "label": "12+",
+      "unit": "years",
+      "caption": "Game night pros",
+      "link": "/products/all?f.age=12+%20years",
+      "color": "#ffb38a"
+     }
+    ]
+   }
+  },
+  "best": {
+   "type": "product-carousel",
+   "settings": {
+    "eyebrow": "Loved by parents",
+    "heading": "Bestsellers",
+    "center": false,
+    "columns": 4,
+    "limit": 12
+   }
+  },
+  "collections": {
+   "type": "card-rail",
+   "settings": {
+    "heading": "Collections we love",
+    "text": "Small makers, big imaginations",
+    "center": true,
+    "caption": "overlay",
+    "ratio": "4/5",
+    "columns": "3.2",
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1769072385024-c962e061c523?auto=format&fit=crop&w=900&h=1100&q=80",
+      "tag": "New",
+      "title": "Wooden wonders",
+      "text": "Heirloom toys in calm colours",
+      "link": "/category/baby-toddler"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1596068587619-e4b11c7a3488?auto=format&fit=crop&w=900&h=1100&q=80",
+      "title": "The cuddle shelf",
+      "text": "Plush pals for every bedtime",
+      "link": "/category/plush"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1484820540004-14229fe36ca4?auto=format&fit=crop&w=900&h=1100&q=80",
+      "title": "Tiny engineers",
+      "text": "Stack it, sort it, build it",
+      "link": "/category/building"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1651346845985-8ebabdcbb0f2?auto=format&fit=crop&w=900&h=1100&q=80",
+      "title": "Little artists",
+      "text": "Washable colours, endless ideas",
+      "link": "/category/arts-crafts"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1599376672737-bd66af54c8f5?auto=format&fit=crop&w=900&h=1100&q=80",
+      "title": "Ride & roll",
+      "text": "Wheels for big adventures",
+      "link": "/category/vehicles"
+     }
+    ]
+   }
+  },
+  "curated": {
+   "type": "editorial-split",
+   "settings": {
+    "heading": "Curated for you",
+    "big_image": "https://images.unsplash.com/photo-1758790015863-4f9798bb818f?auto=format&fit=crop&w=1100&h=1400&q=80",
+    "big_eyebrow": "The playroom edit",
+    "big_title": "Calm, wooden and made to last",
+    "big_text": "Pieces that look lovely on the shelf and even better on the floor.",
+    "big_link": "/category/baby-toddler",
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1574492909706-09f2b2f0d909?auto=format&fit=crop&w=900&h=700&q=80",
+      "eyebrow": "Rainy-day rescue",
+      "title": "Puzzles that keep little minds busy",
+      "text": "Big pieces, bright pictures and a proud ‘I did it!’",
+      "link": "/category/puzzles"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1577896849786-738ed6c78bd3?auto=format&fit=crop&w=900&h=700&q=80",
+      "eyebrow": "Family time",
+      "title": "Games the whole table will love",
+      "text": "Quick to learn, hard to stop playing.",
+      "link": "/category/games"
+     }
+    ]
+   }
+  },
+  "gifts": {
+   "type": "gift-finder",
+   "settings": {
+    "heading": "Need a gift, fast?",
+    "text": "Pick a budget or an occasion – we'll gift-wrap it and add a handwritten card.",
+    "color": "#ff6b3d",
+    "budget_label": "Shop by budget",
+    "budgets": [
+     {
+      "label": "Under ₹499",
+      "link": "/products/all?f.price=0-499"
+     },
+     {
+      "label": "₹499 – ₹999",
+      "link": "/products/all?f.price=499-999"
+     },
+     {
+      "label": "₹999 – ₹1,999",
+      "link": "/products/all?f.price=999-1999"
+     },
+     {
+      "label": "₹1,999 & above",
+      "link": "/products/all?f.price=1999-4999"
+     }
+    ],
+    "occasions": [
+     {
+      "image": "https://images.unsplash.com/photo-1530325553241-4f6e7690cf36?auto=format&fit=crop&w=600&h=600&q=80",
+      "title": "Birthday hits",
+      "text": "Wrapped & ready",
+      "link": "/category/plush"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1558060370-d644479cb6f7?auto=format&fit=crop&w=600&h=600&q=80",
+      "title": "Return gifts",
+      "text": "Under ₹499",
+      "link": "/products/all?f.price=0-499"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1545558014-8692077e9b5c?auto=format&fit=crop&w=600&h=600&q=80",
+      "title": "New baby",
+      "text": "Soft & safe",
+      "link": "/category/baby-toddler"
+     }
+    ]
+   }
+  },
+  "new": {
+   "type": "product-carousel",
+   "settings": {
+    "eyebrow": "Just landed",
+    "heading": "New in the toy box",
+    "collection": "building",
+    "columns": 4,
+    "limit": 8
+   }
+  },
+  "offers": {
+   "type": "offer-cards",
+   "settings": {
+    "heading": "Offers for you",
+    "items": [
+     {
+      "tag": "10% OFF",
+      "title": "On your first order",
+      "text": "Min. order ₹799",
+      "code": "PLAY10",
+      "color": "#ff6b3d"
+     },
+     {
+      "tag": "FREE",
+      "title": "Gift wrap + card",
+      "text": "On every order, always",
+      "code": "",
+      "color": "#7fd1b9"
+     },
+     {
+      "tag": "₹150 OFF",
+      "title": "On prepaid orders above ₹1,999",
+      "text": "Auto-applied at checkout",
+      "code": "",
+      "color": "#8fb8ff"
+     }
+    ]
+   }
+  },
+  "explore": {
+   "type": "card-rail",
+   "settings": {
+    "heading": "More to explore",
+    "text": "Dive into our wider toy box",
+    "center": true,
+    "caption": "below",
+    "ratio": "1/1",
+    "columns": "4.2",
+    "items": [
+     {
+      "image": "https://images.unsplash.com/photo-1626300881606-c2a174a2eefe?auto=format&fit=crop&w=800&h=800&q=80",
+      "title": "Brick builders",
+      "link": "/category/building"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1504484656217-38f8ffc617f9?auto=format&fit=crop&w=800&h=800&q=80",
+      "title": "Music makers",
+      "link": "/category/baby-toddler"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1606092195730-5d7b9af1efc5?auto=format&fit=crop&w=800&h=800&q=80",
+      "title": "Party games",
+      "link": "/category/outdoor"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1526369120040-e88e9e510796?auto=format&fit=crop&w=800&h=800&q=80",
+      "title": "Car collectors",
+      "link": "/category/vehicles"
+     },
+     {
+      "image": "https://images.unsplash.com/photo-1588335923756-d61f9b3b7c31?auto=format&fit=crop&w=800&h=800&q=80",
+      "title": "Quiet-time play",
+      "link": "/category/puzzles"
+     }
+    ]
+   }
+  },
+  "trust": {
+   "type": "trust-band",
+   "settings": {
+    "icon": "shield",
+    "heading": "Safe for little hands, always",
+    "subtext": "Every toy is tested, every payment is protected, and every order is packed with care.",
+    "items": [
+     {
+      "icon": "badge",
+      "title": "Safety tested",
+      "text": "Age-graded and certified toys only"
+     },
+     {
+      "icon": "check",
+      "title": "Child-safe materials",
+      "text": "Non-toxic paints and BPA-free plastics"
+     },
+     {
+      "icon": "refresh",
+      "title": "Easy 7-day returns",
+      "text": "Unopened toys, no questions asked"
+     },
+     {
+      "icon": "lock",
+      "title": "Secure payments",
+      "text": "UPI, cards and cash on delivery"
+     }
+    ]
+   }
+  }
+ },
+ "order": [
+  "hero",
+  "worlds",
+  "ages",
+  "best",
+  "collections",
+  "curated",
+  "gifts",
+  "new",
+  "offers",
+  "explore",
+  "trust"
+ ]
+}

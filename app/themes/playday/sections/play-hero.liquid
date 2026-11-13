@@ -1,0 +1,54 @@
+{%- assign s = section.settings -%}
+<section class="phero" id="{{ section.id }}" style="--phero-h:{{ s.height | default: 620 }}px">
+  <div class="phero__wrap" data-slider data-autoplay="{{ s.autoplay | default: 0 }}">
+    <div class="phero__track" data-track>
+      {%- for sl in s.slides -%}
+      <article class="phero__slide phero__slide--{{ sl.align | default: 'left' }}" data-slide>
+        {%- if sl.image != blank -%}
+        <picture class="phero__media">{%- if sl.image_mobile != blank -%}<source media="(max-width:749px)" srcset="{{ sl.image_mobile | img_url: 900 }}">{%- endif -%}<img src="{{ sl.image | img_url: 1920 }}" alt="{{ sl.heading | strip_html | escape }}"{% unless forloop.first %} loading="lazy"{% endunless %}></picture>
+        {%- endif -%}
+        <div class="phero__copy pw">
+          <div class="phero__box">
+            {%- if sl.eyebrow != blank -%}<p class="phero__eye">{{ sl.eyebrow }}</p>{%- endif -%}
+            <h2 class="phero__h">{{ sl.heading }}{% if sl.accent != blank %} <em>{{ sl.accent }}</em>{% endif %}</h2>
+            {%- if sl.text != blank -%}<p class="phero__t">{{ sl.text }}</p>{%- endif -%}
+            {%- if sl.button != blank -%}<a href="{{ sl.link | default: routes.all | safe_url }}" class="phero__btn">{{ sl.button }}<span aria-hidden="true">{% render 'snippets/icon', name: 'right' %}</span></a>{%- endif -%}
+          </div>
+        </div>
+      </article>
+      {%- endfor -%}
+    </div>
+    {%- if s.sticker != blank -%}
+    <div class="phero__sticker" aria-hidden="true">
+      <svg viewBox="0 0 120 120"><defs><path id="{{ section.id }}-c" d="M60 60m-44 0a44 44 0 1 1 88 0a44 44 0 1 1-88 0"/></defs><text><textPath href="#{{ section.id }}-c" textLength="272" lengthAdjust="spacing">{{ s.sticker | upcase }} • </textPath></text></svg>
+      <span>{% render 'snippets/icon', name: 'sparkle' %}</span>
+    </div>
+    {%- endif -%}
+    {%- if s.slides.size > 1 -%}
+    <div class="phero__nav pw">
+      <span class="phero__num"><b data-num>01</b> / {% if s.slides.size < 10 %}0{% endif %}{{ s.slides.size }}</span>
+      <div class="phero__dots" data-dots></div>
+      <button type="button" class="phero__arrow" data-prev aria-label="Previous slide">{% render 'snippets/icon', name: 'left' %}</button>
+      <button type="button" class="phero__arrow" data-next aria-label="Next slide">{% render 'snippets/icon', name: 'right' %}</button>
+    </div>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Storybook hero", "category": "Banners", "description": "Big sliding banners on the dark header colour, with a serif headline and a round sticker", "settings": [
+  { "id": "slides", "type": "list", "label": "Slides", "item_label": "slide", "max_items": 6, "fields": [
+    { "id": "image", "type": "image", "label": "Computer image (wide)" },
+    { "id": "image_mobile", "type": "image", "label": "Phone image (tall, optional)" },
+    { "id": "eyebrow", "type": "text", "label": "Small line on top", "default": "New in" },
+    { "id": "heading", "type": "text", "label": "Heading", "default": "Big adventures for" },
+    { "id": "accent", "type": "text", "label": "Last words in italics (optional)", "default": "little hands" },
+    { "id": "text", "type": "text", "label": "Text", "default": "" },
+    { "id": "button", "type": "text", "label": "Button", "default": "Discover" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" },
+    { "id": "align", "type": "select", "label": "Text position", "options": ["left", "center"], "option_labels": ["Left", "Centre"], "default": "left" }
+  ] },
+  { "id": "sticker", "type": "text", "label": "Round sticker text (empty = no sticker)", "default": "Safe • Joyful • Made to last" },
+  { "id": "height", "type": "range", "label": "Height on computer", "min": 420, "max": 820, "step": 20, "unit": "px", "default": 620 },
+  { "id": "autoplay", "type": "range", "label": "Change slide every (0 = never)", "min": 0, "max": 10, "step": 1, "unit": "s", "default": 6 }
+] }
+{% endschema %}

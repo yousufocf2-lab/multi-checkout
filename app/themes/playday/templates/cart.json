@@ -1,0 +1,1 @@
+{ "sections": { "main": { "type": "main-cart", "settings": {} }, "deals": { "type": "product-carousel", "settings": { "heading": "Add these to your cart", "limit": 8 } } }, "order": ["main", "deals"] }

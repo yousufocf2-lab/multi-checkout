@@ -1,0 +1,44 @@
+{%- assign s = section.settings -%}
+<section class="rail sec rail--{{ s.caption | default: 'overlay' }}" id="{{ section.id }}">
+  <div class="pw">
+    <div class="sec__head{% if s.center %} sec__head--c{% endif %}"><div>
+      {%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}
+      {%- if s.heading != blank -%}<h2 class="sec__h serif">{{ s.heading }}</h2>{%- endif -%}
+      {%- if s.text != blank -%}<p class="sec__sub">{{ s.text }}</p>{%- endif -%}
+    </div></div>
+    <div class="rail__wrap" data-slider>
+      <div class="rail__track" data-track style="--cols:{{ s.columns | default: 3.2 }}">
+        {%- for c in s.items -%}
+        <a href="{{ c.link | default: routes.all | safe_url }}" class="rcard" data-slide>
+          <span class="rcard__media" style="aspect-ratio:{{ s.ratio | default: '4/5' }}">{%- if c.image != blank -%}<img src="{{ c.image | img_url: 900 }}" alt="" loading="lazy">{%- endif -%}</span>
+          <span class="rcard__copy">
+            {%- if c.tag != blank -%}<span class="rcard__tag">{{ c.tag }}</span>{%- endif -%}
+            <b class="rcard__title">{{ c.title }}</b>
+            {%- if c.text != blank -%}<span class="rcard__text">{{ c.text }}</span>{%- endif -%}
+          </span>
+        </a>
+        {%- endfor -%}
+      </div>
+      <button type="button" class="sl-arrow sl-arrow--prev" data-prev aria-label="Previous">{% render 'snippets/icon', name: 'left' %}</button>
+      <button type="button" class="sl-arrow sl-arrow--next" data-next aria-label="Next">{% render 'snippets/icon', name: 'right' %}</button>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Picture card row", "category": "Collections", "description": "A sliding row of tall picture cards: collections, brands or stories", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above (optional)", "default": "" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Collections we love" },
+  { "id": "text", "type": "text", "label": "Text (optional)", "default": "" },
+  { "id": "center", "type": "checkbox", "label": "Heading in the middle", "default": true },
+  { "id": "caption", "type": "select", "label": "Card text", "options": ["overlay", "below"], "option_labels": ["On the picture", "Under the picture"], "default": "overlay" },
+  { "id": "ratio", "type": "select", "label": "Card shape", "options": ["4/5", "3/4", "1/1", "16/10"], "option_labels": ["Portrait", "Tall", "Square", "Wide"], "default": "4/5" },
+  { "id": "columns", "type": "select", "label": "Cards on screen (computer)", "options": ["2.2", "3.2", "4.2", "5.2"], "option_labels": ["2", "3", "4", "5"], "default": "3.2" },
+  { "id": "items", "type": "list", "label": "Cards", "item_label": "card", "max_items": 12, "fields": [
+    { "id": "image", "type": "image", "label": "Picture" },
+    { "id": "tag", "type": "text", "label": "Small tag (optional)", "default": "" },
+    { "id": "title", "type": "text", "label": "Title", "default": "Wooden wonders" },
+    { "id": "text", "type": "text", "label": "One line (optional)", "default": "" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" }
+  ] }
+] }
+{% endschema %}

@@ -1,0 +1,32 @@
+{%- assign s = section.settings -%}
+<section class="ibn{% if s.full_width %} ibn--full{% else %} pw{% endif %}">
+  {%- if s.link != blank -%}<a href="{{ s.link | safe_url }}" class="ibn__a">{%- else -%}<div class="ibn__a">{%- endif -%}
+    <picture>
+      {%- if s.image_mobile != blank -%}<source media="(max-width: 749px)" srcset="{{ s.image_mobile | img_url: 800 }}">{%- endif -%}
+      {%- if s.image != blank -%}<img src="{{ s.image | img_url: 1920 }}" alt="{{ s.heading | default: s.alt | escape }}" loading="lazy" width="1920" height="480">
+      {%- else -%}<span class="ibn__ph" style="--a:{{ s.color_a | default: '#140006' }};--b:{{ s.color_b | default: '#7a0f22' }}"></span>{%- endif -%}
+    </picture>
+    {%- if s.heading != blank or s.button != blank -%}
+    <div class="ibn__copy" style="color:{{ s.text_color | default: '#ffffff' }}">
+      {%- if s.heading != blank -%}<h2 class="ibn__h">{{ s.heading }}</h2>{%- endif -%}
+      {%- if s.text != blank -%}<p class="ibn__t">{{ s.text }}</p>{%- endif -%}
+      {%- if s.button != blank -%}<span class="btn btn--gold">{{ s.button }}</span>{%- endif -%}
+    </div>
+    {%- endif -%}
+  {%- if s.link != blank -%}</a>{%- else -%}</div>{%- endif -%}
+</section>
+{% schema %}
+{ "name": "Image banner", "category": "Media", "description": "One wide banner with an optional heading and button (track order, launch, sale)", "settings": [
+  { "id": "image", "type": "image", "label": "Computer image" },
+  { "id": "image_mobile", "type": "image", "label": "Phone image (optional)" },
+  { "id": "link", "type": "url", "label": "Link", "default": "" },
+  { "id": "alt", "type": "text", "label": "Image description" },
+  { "id": "heading", "type": "richtext", "label": "Heading on the banner (optional, <b> for bold)", "default": "<b>Ordered</b> already? Track your order" },
+  { "id": "text", "type": "text", "label": "Text (optional)", "default": "" },
+  { "id": "button", "type": "text", "label": "Button text (optional)", "default": "Track order" },
+  { "id": "text_color", "type": "color", "label": "Text colour", "default": "#ffffff" },
+  { "id": "color_a", "type": "color", "label": "Background when there is no image (left)", "default": "#140006" },
+  { "id": "color_b", "type": "color", "label": "Background when there is no image (right)", "default": "#7a0f22" },
+  { "id": "full_width", "type": "checkbox", "label": "Edge to edge", "default": true }
+] }
+{% endschema %}

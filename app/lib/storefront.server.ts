@@ -11,6 +11,7 @@ import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
 import { accountSettings } from "./customer-accounts";
 import { storeIcon } from "./store-icon";
 import { isDark, widgetSettings } from "./widgets";
+import { PLAY_CATEGORIES, PLAY_FAQS, PLAY_PRODUCTS, playImg } from "./playday-demo";
 import { PULSE_CATEGORIES, PULSE_FAQS, PULSE_PRODUCTS, pulseImg } from "./pulse-demo";
 
 const accountsOn = (s: Store) => accountSettings(s.accountSettings).enabled;
@@ -295,6 +296,7 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
         banners: x.banners, badge: x.badge, subtitle: x.subtitle, feature: x.feature, chips: x.chips, usp: x.usp, specs: x.specs, faqs: x.faqs,
         rating: rating?.count ? rating.average : x.demoRating, rating_count: rating?.count ? rating.count : x.demoCount,
         vendor: item.vendor ?? "", product_type: item.productType ?? "", origin: String((item.extra as { origin?: string } | null)?.origin ?? ""),
+        tags: item.tags ?? [], categories: [] as string[],
         second_image: item.images.filter((i) => (i.type ?? "image") === "image")[1]?.url ?? null,
       };
     })(),
@@ -356,15 +358,6 @@ const SHOE_PRODUCTS = [
   { handle: "stride-retro-court", title: "Retro Court 88", category: "sneakers", price: 299900, compare: 379900, image: "https://images.unsplash.com/photo-1553835584-c3eab150319e?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1581285864607-ef85509e7324?auto=format&fit=crop&w=1000&q=82" },
 ] as const;
 
-const PLAYDAY_PRODUCTS = [
-  { handle: "playday-rainbow-stackers", title: "Rainbow Stacker Set", category: "learning-toys", price: 89900, compare: 119900, image: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1575364289437-fb1479d52732?auto=format&fit=crop&w=1000&q=82" },
-  { handle: "playday-little-builder", title: "Little Builder Blocks", category: "building-toys", price: 129900, compare: 169900, image: "https://images.unsplash.com/photo-1672770057229-72f8150aece3?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1575364289437-fb1479d52732?auto=format&fit=crop&w=1000&q=82" },
-  { handle: "playday-cuddle-buddy", title: "Cuddle Buddy", category: "soft-toys", price: 69900, compare: 89900, image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1000&q=82" },
-  { handle: "playday-tiny-roadster", title: "Tiny Roadster Set", category: "pretend-play", price: 99900, compare: 129900, image: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1000&q=82" },
-  { handle: "playday-story-puzzle", title: "Woodland Story Puzzle", category: "learning-toys", price: 79900, compare: 99900, image: "https://images.unsplash.com/photo-1575364289437-fb1479d52732?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=1000&q=82" },
-  { handle: "playday-playroom-friends", title: "Playroom Friends", category: "soft-toys", price: 109900, compare: 139900, image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=1000&q=82", altImage: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=1000&q=82" },
-] as const;
-
 const SCENTELIER_PRODUCTS = [
   { handle: "scentelier-amber-veil", title: "Amber Veil · Eau de Parfum", category: "warm-woods", price: 189900, compare: 229900, image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=1100&q=85", notes: "Saffron · amber · sandalwood" },
   { handle: "scentelier-rose-afterglow", title: "Rose Afterglow · Eau de Parfum", category: "floral", price: 159900, compare: 199900, image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1100&q=85", altImage: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=1100&q=85", notes: "Damask rose · peony · musk" },
@@ -424,7 +417,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
       extra: { origin: "India", site: { banners: [{ image: pulseImg("photo-1605890822326-ab63270c7189", 1600, 800), mobile: pulseImg("photo-1605890822326-ab63270c7189", 800, 1000), alt: "Made for everyday listening" }, { image: pulseImg(p.colours[0][1], 1600, 800), alt: p.title }, { image: pulseImg(p.extra[0] ?? p.colours[1][1], 1600, 800), alt: `${p.title} detail` }], badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), faqs: PULSE_FAQS, rating: p.rating, ratingCount: p.count } },
     } as unknown as CatalogItem;
     const variants = p.colours.map(([colour, ph], j) => ({ id: id * 10 - j - 1, itemId: id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: pulseImg(ph, 1100, 1100), position: j })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
   if (ctx.demoPreset === "scentelier") return SCENTELIER_PRODUCTS.filter((p) => !category || category === "fragrance" || p.category === category).map((p, i) => {
     const now = new Date();
@@ -435,20 +428,21 @@ export function demoProducts(ctx: ShopContext, category?: string) {
       options: [{ name: "Size", values: ["50 ml", "10 ml travel"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
     } as unknown as CatalogItem;
     const variants = ["50 ml", "10 ml travel"].map((size, j) => ({ id: -((i + 501) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: j === 0 ? p.price : Math.round(p.price * .38), compareAtPaise: j === 0 ? p.compare : Math.round(p.compare * .38), stock: null, sku: null, imageUrl: null, position: j })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
-  if (ctx.demoPreset === "playday") return PLAYDAY_PRODUCTS.filter((p) => !category || category === "toys" || p.category === category).map((p, i) => {
+  if (ctx.demoPreset === "playday") return PLAY_PRODUCTS.filter((p) => !category || category === "all" || category === "toys" || p.category === category).map((p, i) => {
     const now = new Date();
+    const id = -(i + 401);
+    const photos = [...p.colours.map((c) => c[1]), ...p.extra];
     const item = {
-      id: -(i + 401), storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: "Kids Toys", vendor: "Playday Toy Co.", tags: ["sample", "kids", "toys"], source: "manual", sourceId: null,
-      descriptionHtml: `<p>Big ideas start with little hands. ${p.title} is a cheerful playtime pick designed to invite curious minds to build, imagine and discover at their own pace.</p><h3>Made for happy play</h3><ul><li>Easy to pick up, share and enjoy together</li><li>Encourages creative, open-ended play</li><li>A lovely choice for birthdays and everyday surprises</li></ul><h3>A little more to know</h3><p>Recommended age: 3 years and up. Adult supervision is recommended. Please check the product packaging for care and safety information.</p><p>Sample product shown for theme preview only.</p>`,
-      images: [{ url: p.image, alt: p.title }, { url: p.altImage, alt: `${p.title} in play` }],
-      options: [{ name: "Age group", values: ["3–5 years", "6–8 years"] }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+      id, storeId: ctx.store.id, title: p.title, handle: p.handle, status: "active", productType: p.type, vendor: "Your brand", tags: ["sample", ...p.ages.map((a) => `age:${a}`)], source: "manual", sourceId: null,
+      descriptionHtml: `<h2>${p.subtitle}</h2><p>Sample toy for the theme preview. Your own product description shows here, and the wide pictures below come from Catalog → product → Description banners.</p><ul>${p.usp.map((u) => `<li>${u}</li>`).join("")}</ul>`,
+      images: photos.map((ph, j) => ({ url: playImg(ph, 1100, 1100), alt: j === 0 ? p.title : `${p.title} view ${j + 1}` })),
+      options: [{ name: "Colour", values: p.colours.map((c) => c[0]) }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
+      extra: { origin: "India", site: { banners: [{ image: playImg("photo-1515488042361-ee00e0ddd4e4", 1600, 760), mobile: playImg("photo-1515488042361-ee00e0ddd4e4", 800, 1000), alt: "Made for happy, safe play" }, { image: playImg(p.extra[0] ?? p.colours[0][1], 1600, 760), alt: p.title }], badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), faqs: PLAY_FAQS, rating: p.rating, ratingCount: p.count } },
     } as unknown as CatalogItem;
-    const variants = ["3–5 years", "6–8 years"].map((age, j) => ({
-      id: -((i + 401) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: age, optionValues: [age], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
-    })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    const variants = p.colours.map(([colour, ph], j) => ({ id: id * 10 - j - 1, itemId: id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: playImg(ph, 1100, 1100), position: j })) as unknown as CatalogVariant[];
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
   if (ctx.demoPreset === "stride") return SHOE_PRODUCTS.filter((p) => !category || category === "footwear" || p.category === category).map((p, i) => {
     const now = new Date();
@@ -461,7 +455,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const variants = ["UK 6", "UK 7", "UK 8", "UK 9", "UK 10"].map((size, j) => ({
       id: -((i + 301) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
     })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
   if (ctx.demoPreset === "thread") return THREAD_CLOTHES.filter((p) => !category || category === "apparel" || p.category === category).map((p, i) => {
     const now = new Date();
@@ -474,7 +468,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const variants = ["XS", "S", "M", "L", "XL"].map((size, j) => ({
       id: -((i + 201) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
     })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
   if (ctx.demoPreset === "luma") return LUMA_BEAUTY.filter((p) => !category || category === "skincare" || p.category === category).map((p, i) => {
     const now = new Date();
@@ -487,7 +481,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const variants = ["50 ml", "Travel size"].map((size, j) => ({
       id: -((i + 101) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: size, optionValues: [size], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: null, position: j,
     })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
   return MIRA_BAGS.filter((b) => !category || b.category === category).map((b, i) => {
     const now = new Date();
@@ -500,7 +494,7 @@ export function demoProducts(ctx: ShopContext, category?: string) {
     const variants = ["Classic", "Soft neutral"].map((colour, j) => ({
       id: -((i + 1) * 10 + j + 1), itemId: item.id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: b.price, compareAtPaise: b.compare, stock: null, sku: null, imageUrl: null, position: j,
     })) as unknown as CatalogVariant[];
-    return { ...productDrop(ctx, item, variants), demo: true };
+    return { ...productDrop(ctx, item, variants), demo: true, categories: [b.category as string] };
   });
 }
 
@@ -529,6 +523,18 @@ export async function loadProducts(ctx: ShopContext, opts: { category?: string; 
   return items.map((i) => productDrop(ctx, i, vmap.get(i.id) ?? [], rmap.get(i.id)));
 }
 
+/** Category handles of each product, for the category filter. */
+export async function withCategories<T extends { id: number; categories: string[] }>(ctx: ShopContext, products: T[]) {
+  const ids = products.map((p) => p.id).filter((id) => id > 0);
+  if (!ids.length) return products;
+  const rows = await db.select({ item: catalogCategoryItems.itemId, handle: catalogCategories.handle }).from(catalogCategoryItems)
+    .innerJoin(catalogCategories, eq(catalogCategories.id, catalogCategoryItems.categoryId))
+    .where(and(eq(catalogCategories.storeId, ctx.store.id), inArray(catalogCategoryItems.itemId, ids)));
+  const map = new Map<number, string[]>();
+  for (const r of rows) (map.get(r.item) ?? map.set(r.item, []).get(r.item)!).push(r.handle);
+  return products.map((p) => (p.id > 0 ? { ...p, categories: map.get(p.id) ?? [] } : p));
+}
+
 export async function loadProduct(ctx: ShopContext, handle: string) {
   let [item] = await db.select().from(catalogItems).where(and(eq(catalogItems.storeId, ctx.store.id), eq(catalogItems.handle, handle), eq(catalogItems.status, "active"))).limit(1);
   // Imported handles were cut to 80 characters; old Shopify/ad links still carry the full handle. Match the longest stored handle the link starts with.
@@ -550,12 +556,7 @@ export async function loadCategories(ctx: ShopContext) {
     { id: -53, title: "Soft scents", handle: "soft-scents", description: "A quiet signature, close to you.", image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "soft-scents") },
     { id: -54, title: "Discovery sets", handle: "discovery-sets", description: "Meet your next favourite.", image: "https://images.unsplash.com/photo-1590736969955-71cc94901144?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "discovery-sets") },
   ];
-  if (ctx.demoPreset === "playday") return [
-    { id: -41, title: "Build & create", handle: "building-toys", description: "Stack up a brand-new idea.", image: "https://images.unsplash.com/photo-1672770057229-72f8150aece3?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "building-toys") },
-    { id: -42, title: "Learn through play", handle: "learning-toys", description: "Little discoveries, every day.", image: "https://images.unsplash.com/photo-1637728225397-d72d1b938506?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "learning-toys") },
-    { id: -43, title: "Soft friends", handle: "soft-toys", description: "Ready for a new best friend?", image: "https://images.unsplash.com/photo-1777732785698-ef6f31e91b38?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "soft-toys") },
-    { id: -44, title: "Make-believe", handle: "pretend-play", description: "Where every game has a story.", image: "https://images.unsplash.com/photo-1532330393533-443990a51d10?auto=format&fit=crop&w=900&q=82", url: categoryPath(ctx.root, "pretend-play") },
-  ];
+  if (ctx.demoPreset === "playday") return PLAY_CATEGORIES.map((c, i) => ({ id: -(41 + i), title: c.title, handle: c.handle, description: c.text, image: playImg(c.image, 600, 760), url: categoryPath(ctx.root, c.handle) }));
   if (ctx.demoPreset === "stride") return [
     { id: -31, title: "Shop all footwear", handle: "footwear", description: "Find your next everyday pair.", url: categoryPath(ctx.root, "footwear") },
     { id: -32, title: "Sneakers", handle: "sneakers", description: "Clean lines. All-day comfort.", url: categoryPath(ctx.root, "sneakers") },

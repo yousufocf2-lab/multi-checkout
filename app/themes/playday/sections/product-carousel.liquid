@@ -1,0 +1,41 @@
+{%- assign s = section.settings -%}
+{%- assign items = section.products -%}
+<section class="pcar sec" id="{{ section.id }}">
+  <div class="pw">
+    {%- if s.heading != blank or s.show_all -%}
+    <div class="sec__head{% if s.center %} sec__head--c{% endif %}">
+      <div>{%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}{%- if s.heading != blank -%}<h2 class="sec__h">{{ s.heading }}</h2>{%- endif -%}</div>
+      {%- if s.show_all -%}<a class="sec__all" href="{{ section.collection_url }}">{{ s.all_label | default: 'View all' }} {% render 'snippets/icon', name: 'right' %}</a>{%- endif -%}
+    </div>
+    {%- endif -%}
+    {%- if items.size > 0 -%}
+    <div class="pcar__wrap" data-slider>
+      <div class="pcar__track{% if s.layout == 'grid' %} pcar__track--grid{% endif %}" data-track style="--cols:{{ s.columns | default: 4 }};--cols-m:{{ s.columns_mobile | default: 1.6 }}">
+        {%- for p in items -%}<div class="pcar__cell" data-slide>{% render 'snippets/product-card', product: p, settings: settings, label: s.label %}</div>{%- endfor -%}
+      </div>
+      {%- if s.layout != 'grid' -%}
+      <button type="button" class="sl-arrow sl-arrow--prev" data-prev aria-label="Previous">{% render 'snippets/icon', name: 'left' %}</button>
+      <button type="button" class="sl-arrow sl-arrow--next" data-next aria-label="Next">{% render 'snippets/icon', name: 'right' %}</button>
+      {%- endif -%}
+    </div>
+    {%- elsif editor -%}
+    <p class="empty">Add products to your catalog, or pick products in this section, and they show here.</p>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Product carousel", "category": "Products", "description": "A sliding row of product cards with ratings, badges and an Add button", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above the heading (optional)", "default": "" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Bestsellers" },
+  { "id": "center", "type": "checkbox", "label": "Heading in the middle", "default": false },
+  { "id": "label", "type": "text", "label": "Badge on every card in this row (empty = each product's own badge)", "default": "" },
+  { "id": "collection", "type": "collection", "label": "Products from", "default": "" },
+  { "id": "products", "type": "products", "label": "Or pick products (overrides the category)", "default": [] },
+  { "id": "limit", "type": "range", "label": "Most products", "min": 2, "max": 24, "step": 1, "default": 12 },
+  { "id": "layout", "type": "select", "label": "Layout", "options": ["carousel", "grid"], "option_labels": ["Sliding row", "Grid"], "default": "carousel" },
+  { "id": "columns", "type": "range", "label": "Cards per row (computer)", "min": 2, "max": 6, "step": 1, "default": 4 },
+  { "id": "columns_mobile", "type": "select", "label": "Cards per row (phone)", "options": ["1.2", "1.6", "2"], "option_labels": ["One big card", "One and a half (peek)", "Two"], "default": "1.6" },
+  { "id": "show_all", "type": "checkbox", "label": "Show a “View all” link", "default": true },
+  { "id": "all_label", "type": "text", "label": "“View all” text", "default": "View all" }
+] }
+{% endschema %}

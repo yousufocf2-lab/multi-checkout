@@ -1,0 +1,22 @@
+{%- assign s = section.settings -%}
+<section class="pay sec">
+  <div class="pw">
+    {%- if s.heading != blank -%}<p class="pay__h">{% render 'snippets/icon', name: 'lock' %}{{ s.heading }}</p>{%- endif -%}
+    <div class="pay__row">
+      {%- for it in s.items -%}
+      <span class="pay__it" style="{% if it.bg != blank %}background:{{ it.bg }};{% endif %}{% if it.color != blank %}color:{{ it.color }}{% endif %}">{%- if it.image != blank -%}<img src="{{ it.image | img_url: 240 }}" alt="{{ it.name | escape }}" loading="lazy">{%- else -%}{{ it.name }}{%- endif -%}</span>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Secure payment logos", "category": "Trust", "description": "Payment method logos in rounded tiles", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "100% secure payment" },
+  { "id": "items", "type": "list", "label": "Payment methods", "item_label": "method", "max_items": 10, "fields": [
+    { "id": "image", "type": "image", "label": "Logo" },
+    { "id": "name", "type": "text", "label": "Name (shown when there is no logo)" },
+    { "id": "bg", "type": "color", "label": "Tile colour", "default": "" },
+    { "id": "color", "type": "color", "label": "Text colour", "default": "" }
+  ], "default": [ { "name": "UPI" }, { "name": "RuPay" }, { "name": "Visa" }, { "name": "Mastercard" }, { "name": "Net banking" }, { "name": "Cash on delivery" } ] }
+] }
+{% endschema %}

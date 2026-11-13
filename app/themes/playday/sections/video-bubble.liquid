@@ -1,0 +1,16 @@
+{%- assign s = section.settings -%}
+{%- if s.video != blank -%}
+<div class="vbub" data-vbub>
+  <button type="button" class="vbub__x" data-vbub-x aria-label="Close video">{% render 'snippets/icon', name: 'close' %}</button>
+  <button type="button" class="vbub__v" data-vbub-open aria-label="Play video">
+    <video src="{{ s.video }}" {% if s.image != blank %}poster="{{ s.image | img_url: 300 }}"{% endif %} muted loop playsinline autoplay></video>
+    <span class="vbub__play">{% render 'snippets/icon', name: 'play' %}</span>
+  </button>
+</div>
+{%- endif -%}
+{% schema %}
+{ "name": "Floating video", "category": "Media", "description": "A small looping video in the corner; tap to watch it big with sound", "settings": [
+  { "id": "video", "type": "video", "label": "Video (vertical MP4)" },
+  { "id": "image", "type": "image", "label": "Cover image" }
+] }
+{% endschema %}

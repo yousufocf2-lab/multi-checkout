@@ -1,0 +1,32 @@
+{%- assign s = section.settings -%}
+{%- unless s.hidden -%}
+<nav class="tabbar" aria-label="Quick links">
+  {%- for it in s.items -%}
+  {%- assign href = it.link | safe_url -%}
+  {%- if it.action == 'home' -%}{%- assign href = routes.root -%}{%- elsif it.action == 'shop' -%}{%- assign href = routes.all -%}{%- elsif it.action == 'account' -%}{%- assign href = routes.account | default: routes.cart -%}{%- elsif it.action == 'cart' -%}{%- assign href = routes.cart -%}{%- endif -%}
+  {%- if it.action == 'menu' -%}
+  <button type="button" class="tabbar__it" data-menu-open>{% render 'snippets/icon', name: it.icon %}<span>{{ it.label }}</span></button>
+  {%- elsif it.action == 'search' -%}
+  <button type="button" class="tabbar__it" data-search-open>{% render 'snippets/icon', name: it.icon %}<span>{{ it.label }}</span></button>
+  {%- else -%}
+  <a class="tabbar__it{% if it.action == 'home' and template == 'index' %} is-on{% endif %}{% if it.action == 'cart' %} header__cart{% endif %}" href="{{ href | default: '#' }}">{% render 'snippets/icon', name: it.icon %}<span>{{ it.label }}</span>{% if it.action == 'cart' %}<span class="hd__count" data-cart-count hidden>0</span>{% endif %}</a>
+  {%- endif -%}
+  {%- endfor -%}
+</nav>
+{%- endunless -%}
+{% schema %}
+{ "name": "Phone bottom bar", "category": "Layout", "description": "App-style tab bar fixed at the bottom on phones", "settings": [
+  { "id": "hidden", "type": "checkbox", "label": "Hide the bar", "default": false },
+  { "id": "items", "type": "list", "label": "Tabs", "item_label": "tab", "max_items": 5, "fields": [
+    { "id": "label", "type": "text", "label": "Label" },
+    { "id": "action", "type": "select", "label": "Opens", "options": ["home", "shop", "menu", "search", "cart", "account", "link"], "option_labels": ["Home", "All products", "Menu", "Search", "Cart", "Account", "A link"], "default": "link" },
+    { "id": "icon", "type": "select", "label": "Icon", "options": ["home", "grid", "menu", "search", "bag", "user", "box", "clock", "gift", "tag", "fire", "headphones", "phone"], "default": "home" },
+    { "id": "link", "type": "url", "label": "Link (for “A link”)" }
+  ], "default": [
+    { "label": "Home", "action": "home", "icon": "home" },
+    { "label": "Categories", "action": "menu", "icon": "grid" },
+    { "label": "Search", "action": "search", "icon": "search" },
+    { "label": "Cart", "action": "cart", "icon": "bag" }
+  ] }
+] }
+{% endschema %}

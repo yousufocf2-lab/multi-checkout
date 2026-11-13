@@ -1,0 +1,43 @@
+{%- assign s = section.settings -%}
+{%- assign tiles = s.items -%}
+<section class="wgrid sec{% if s.overlap %} sheet{% endif %}" id="{{ section.id }}">
+  <div class="pw">
+    <div class="sec__head sec__head--c"><div>
+      {%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}
+      {%- if s.heading != blank -%}<h2 class="sec__h serif">{{ s.heading }}</h2>{%- endif -%}
+      {%- if s.text != blank -%}<p class="sec__sub">{{ s.text }}</p>{%- endif -%}
+    </div></div>
+    <div class="wgrid__grid" style="--cols:{{ s.columns | default: 5 }}">
+      {%- if tiles.size > 0 -%}
+      {%- for t in tiles -%}
+      <a href="{{ t.link | default: routes.all | safe_url }}" class="wtile" style="--tile:{{ t.color | default: '#ffd23f' }}">
+        <span class="wtile__media">{%- if t.image != blank -%}<img src="{{ t.image | img_url: 600 }}" alt="" loading="lazy">{%- endif -%}</span>
+        <span class="wtile__name">{{ t.title }}</span>
+      </a>
+      {%- endfor -%}
+      {%- else -%}
+      {%- for c in collections limit: 10 -%}
+      <a href="{{ c.url }}" class="wtile">
+        <span class="wtile__media">{%- if c.image -%}<img src="{{ c.image | img_url: 600 }}" alt="" loading="lazy">{%- endif -%}</span>
+        <span class="wtile__name">{{ c.title }}</span>
+      </a>
+      {%- endfor -%}
+      {%- endif -%}
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Shop by world", "category": "Categories", "description": "A grid of tall rounded picture tiles with names (empty list = your categories)", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above (optional)", "default": "" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Pick a world to play in" },
+  { "id": "text", "type": "text", "label": "Text under the heading", "default": "Hand-picked toys for every kind of curious" },
+  { "id": "items", "type": "list", "label": "Tiles (empty = your categories)", "item_label": "tile", "max_items": 15, "fields": [
+    { "id": "image", "type": "image", "label": "Picture (tall)" },
+    { "id": "title", "type": "text", "label": "Name", "default": "Building" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" },
+    { "id": "color", "type": "color", "label": "Tag colour", "default": "#ffd23f" }
+  ] },
+  { "id": "columns", "type": "range", "label": "Tiles per row (computer)", "min": 3, "max": 6, "step": 1, "default": 5 },
+  { "id": "overlap", "type": "checkbox", "label": "Curve up over the banner above", "default": false }
+] }
+{% endschema %}

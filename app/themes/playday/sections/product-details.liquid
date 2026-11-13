@@ -1,0 +1,57 @@
+{%- assign s = section.settings -%}
+<section class="pdx">
+  <nav class="pdx__tabs" data-pdx-tabs aria-label="Product sections">
+    <div class="pw pdx__tabs-in">
+      <a href="#pdx-desc" class="is-on">{{ s.tab_desc | default: 'Description' }}</a>
+      <a href="#reviews">{{ s.tab_reviews | default: 'Reviews' }}</a>
+      <a href="#pfaq">{{ s.tab_faq | default: 'FAQ' }}</a>
+    </div>
+  </nav>
+  <div class="pw pdx__in" id="pdx-desc">
+    {%- if product.usp.size > 0 -%}
+    <details class="acc acc--lg"{% if s.usp_open %} open{% endif %}><summary>{{ s.usp_title | default: 'Key features' }}{% render 'snippets/icon', name: 'down' %}</summary>
+      <ul class="pdx__usp">{%- for u in product.usp -%}<li>{% render 'snippets/icon', name: 'check' %}{{ u }}</li>{%- endfor -%}</ul>
+    </details>
+    {%- endif -%}
+    {%- if product.specs.size > 0 -%}
+    <details class="acc acc--lg"{% if s.specs_open %} open{% endif %}><summary>{{ s.specs_title | default: 'Specifications' }}{% render 'snippets/icon', name: 'down' %}</summary>
+      <dl class="pdx__specs">{%- for sp in product.specs -%}<div><dt>{{ sp.label }}</dt><dd>{{ sp.value }}</dd></div>{%- endfor -%}</dl>
+    </details>
+    {%- endif -%}
+    {%- if product.description != blank -%}<div class="pdx__desc rte">{{ product.description }}</div>{%- endif -%}
+    {%- if product.banners.size > 0 -%}
+    <div class="pdx__banners{% if s.banner_gap %} pdx__banners--gap{% endif %}">
+      {%- for b in product.banners -%}
+      {%- if b.link != blank -%}<a href="{{ b.link | safe_url }}" class="pdx__bn">{%- else -%}<div class="pdx__bn">{%- endif -%}
+        <picture>{%- if b.mobile != blank -%}<source media="(max-width:749px)" srcset="{{ b.mobile | img_url: 900 }}">{%- endif -%}<img src="{{ b.image | img_url: 1800 }}" alt="{{ b.alt | escape }}" loading="lazy" width="1600" height="800"></picture>
+      {%- if b.link != blank -%}</a>{%- else -%}</div>{%- endif -%}
+      {%- endfor -%}
+    </div>
+    {%- endif -%}
+    {%- if s.show_info -%}
+    <div class="pdx__info">
+      <div><span>Product name</span><b>{{ product.title }}</b></div>
+      {%- if product.product_type != blank -%}<div><span>Category</span><b>{{ product.product_type }}</b></div>{%- endif -%}
+      {%- if product.origin != blank -%}<div><span>Country of origin</span><b>{{ product.origin }}</b></div>{%- endif -%}
+      {%- for r in s.info_rows -%}<div><span>{{ r.label }}</span><b>{{ r.value }}</b></div>{%- endfor -%}
+    </div>
+    {%- endif -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Description, features and specs", "category": "Products", "description": "Product page: sticky tabs, key features, specifications, description and product info", "settings": [
+  { "id": "tab_desc", "type": "text", "label": "Tab: description", "default": "Description" },
+  { "id": "tab_reviews", "type": "text", "label": "Tab: reviews", "default": "Reviews" },
+  { "id": "tab_faq", "type": "text", "label": "Tab: questions", "default": "FAQ" },
+  { "id": "usp_title", "type": "text", "label": "Key features heading", "default": "Key features" },
+  { "id": "usp_open", "type": "checkbox", "label": "Key features open", "default": true },
+  { "id": "specs_title", "type": "text", "label": "Specifications heading", "default": "Specifications" },
+  { "id": "specs_open", "type": "checkbox", "label": "Specifications open", "default": false },
+  { "id": "banner_gap", "type": "checkbox", "label": "Space and rounded corners between description banners (off = one seamless strip)", "default": false },
+  { "id": "show_info", "type": "checkbox", "label": "Show the product information table", "default": true },
+  { "id": "info_rows", "type": "list", "label": "Extra rows in that table (same on every product)", "item_label": "row", "fields": [
+    { "id": "label", "type": "text", "label": "Label" }, { "id": "value", "type": "text", "label": "Value" }
+  ], "default": [ { "label": "Manufactured & marketed by", "value": "Your brand, India" } ] },
+  { "type": "paragraph", "id": "p_help", "label": "Description banners, key features, specifications and questions come from each product: Catalog → product." }
+] }
+{% endschema %}

@@ -1,0 +1,183 @@
+{%- comment -%}
+  Store product filters (Settings → Widgets → Product filters). Same markup in every theme.
+  f = collection.filters, grid = the product grid html, layout = sidebar | top | drawer
+{%- endcomment -%}
+{%- assign lay = layout | default: f.layout -%}
+{%- capture gf_hidden -%}{%- for k in f.keep -%}<input type="hidden" name="{{ k.name | escape }}" value="{{ k.value | escape }}">{%- endfor -%}{%- if f.sort_value != '' -%}<input type="hidden" name="sort" value="{{ f.sort_value | escape }}">{%- endif -%}{%- endcapture -%}
+<div class="gf gf--{{ lay }} gf--{{ f.side }} gf--{{ f.style }} gf--m-{{ f.mobile }}{% unless f.show_counts %} gf--nocount{% endunless %}" data-gf>
+  <div class="gf__bar">
+    <button type="button" class="gf__open" data-gf-open aria-haspopup="dialog">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      <span>Filter</span>{%- if f.active_count > 0 -%}<i class="gf__badge">{{ f.active_count }}</i>{%- endif -%}
+    </button>
+    {%- if lay == 'top' -%}
+    <form class="gf__pops" action="{{ f.action }}" method="get" data-gf-auto>
+      {{ gf_hidden }}
+      {%- for g in f.groups -%}
+      <details class="gf__pop{% if g.active_count > 0 %} is-on{% endif %}">
+        <summary>{{ g.label }}{%- if g.active_count > 0 -%}<i class="gf__badge">{{ g.active_count }}</i>{%- endif -%}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+        <div class="gf__popbody">{% render 'snippets/filter-group', g: g %}</div>
+      </details>
+      {%- endfor -%}
+    </form>
+    {%- endif -%}
+    <span class="gf__total">{{ f.total }} {% if f.total == 1 %}product{% else %}products{% endif %}</span>
+    {%- if f.show_sort -%}
+    <label class="gf__sort"><span>Sort by</span>
+      <select data-gf-sort aria-label="Sort products">{%- for o in f.sort.options -%}<option value="{{ o.url | escape }}"{% if o.active %} selected{% endif %}>{{ o.label }}</option>{%- endfor -%}</select>
+    </label>
+    {%- endif -%}
+  </div>
+  {%- if f.active_count > 0 -%}
+  <div class="gf__active">
+    {%- for a in f.active -%}<a href="{{ a.remove_url | escape }}" class="gf__pill" aria-label="Remove {{ a.label | escape }}">{{ a.label }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></a>{%- endfor -%}
+    <a href="{{ f.clear_url | escape }}" class="gf__clear">Clear all</a>
+  </div>
+  {%- endif -%}
+  <div class="gf__body">
+    {%- if lay == 'sidebar' -%}
+    <aside class="gf__side" aria-label="Filters">
+      <form action="{{ f.action }}" method="get" data-gf-auto>
+        {{ gf_hidden }}
+        {%- for g in f.groups -%}
+        <details class="gf__group"{% if g.open %} open{% endif %}>
+          <summary>{{ g.label }}{%- if g.active_count > 0 -%}<i class="gf__badge">{{ g.active_count }}</i>{%- endif -%}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+          {% render 'snippets/filter-group', g: g %}
+        </details>
+        {%- endfor -%}
+        <noscript><button type="submit" class="gf__apply">Apply</button></noscript>
+      </form>
+    </aside>
+    {%- endif -%}
+    <div class="gf__grid">{{ grid }}</div>
+  </div>
+  <div class="gf__sheet" data-gf-sheet hidden>
+    <div class="gf__shade" data-gf-close></div>
+    <form class="gf__panel" action="{{ f.action }}" method="get" role="dialog" aria-modal="true" aria-label="Filters">
+      <div class="gf__phead"><b>Filters</b><button type="button" class="gf__x" data-gf-close aria-label="Close filters"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <div class="gf__pbody">
+        {{ gf_hidden }}
+        {%- for g in f.groups -%}
+        <details class="gf__group"{% if g.open or forloop.index < 3 %} open{% endif %}>
+          <summary>{{ g.label }}{%- if g.active_count > 0 -%}<i class="gf__badge">{{ g.active_count }}</i>{%- endif -%}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+          {% render 'snippets/filter-group', g: g %}
+        </details>
+        {%- endfor -%}
+      </div>
+      <div class="gf__pfoot"><a href="{{ f.clear_url | escape }}" class="gf__clear">Clear all</a><button type="submit" class="gf__apply">Show results</button></div>
+    </form>
+  </div>
+</div>
+<style>
+.gf{--gf-ink:var(--ink,#111);--gf-soft:var(--soft,#6b6b6b);--gf-line:var(--line,rgba(0,0,0,.12));--gf-tint:var(--tint,#f4f4f4);--gf-bg:var(--bg,#fff);--gf-acc:var(--brand,#111);--gf-r:var(--radius,12px);color:var(--gf-ink)}
+.gf__bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0 14px;border-bottom:1px solid var(--gf-line);margin-bottom:18px}
+.gf__open{display:none;align-items:center;gap:8px;padding:9px 14px;border:1px solid var(--gf-line);border-radius:999px;background:var(--gf-bg);color:inherit;font:inherit;font-weight:600;cursor:pointer}
+.gf--drawer .gf__open{display:inline-flex}
+.gf__badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--gf-acc);color:var(--gf-bg);font-size:11px;font-style:normal;font-weight:700;margin-left:6px}
+.gf__total{color:var(--gf-soft);font-size:14px}
+.gf--sidebar .gf__total,.gf--drawer .gf__total{margin-right:auto}
+.gf__sort{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--gf-soft)}
+.gf__sort select{font:inherit;color:var(--gf-ink);padding:8px 30px 8px 12px;border:1px solid var(--gf-line);border-radius:999px;background:var(--gf-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23777' stroke-width='2.4'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 11px center;appearance:none;-webkit-appearance:none;cursor:pointer}
+.gf__pops{display:flex;flex-wrap:wrap;gap:8px;flex:1}
+.gf--top .gf__total{order:3;margin-left:auto}
+.gf--top .gf__sort{order:4}
+.gf__pop{position:relative}
+.gf__pop>summary,.gf__group>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px}
+.gf__pop>summary::-webkit-details-marker,.gf__group>summary::-webkit-details-marker{display:none}
+.gf__pop>summary{padding:9px 14px;border:1px solid var(--gf-line);border-radius:999px;font-size:14px;font-weight:600;background:var(--gf-bg)}
+.gf__pop.is-on>summary{border-color:var(--gf-ink)}
+.gf__pop[open]>summary svg,.gf__group[open]>summary svg{transform:rotate(180deg)}
+.gf__popbody{position:absolute;z-index:30;top:calc(100% + 8px);left:0;min-width:250px;max-height:360px;overflow:auto;padding:14px;background:var(--gf-bg);border:1px solid var(--gf-line);border-radius:var(--gf-r);box-shadow:0 18px 40px -18px rgba(0,0,0,.35)}
+.gf__active{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:-4px 0 18px}
+.gf__pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px 6px 12px;border-radius:999px;background:var(--gf-tint);color:inherit;text-decoration:none;font-size:13px;font-weight:600}
+.gf__pill:hover{background:var(--gf-line)}
+.gf__clear{font-size:13px;color:var(--gf-soft);text-decoration:underline;text-underline-offset:3px}
+.gf__body{display:block}
+.gf--sidebar .gf__body{display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px;align-items:start}
+.gf--sidebar.gf--right .gf__side{order:2}
+.gf__side{position:sticky;top:90px;max-height:calc(100vh - 110px);overflow:auto;padding-right:4px}
+.gf__group{border-bottom:1px solid var(--gf-line);padding:4px 0}
+.gf__group>summary{justify-content:space-between;padding:12px 0;font-weight:700;font-size:14px}
+.gf__group>summary svg{margin-left:auto}
+.gf__group>summary .gf__badge{margin-left:8px}
+.gf__vals{display:flex;flex-direction:column;gap:2px;padding:0 0 12px}
+.gf__vals--chips,.gf__vals--swatch{flex-direction:row;flex-wrap:wrap;gap:8px}
+.gf__v{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px;cursor:pointer;color:inherit;text-decoration:none}
+.gf__v input{position:absolute;opacity:0;pointer-events:none}
+.gf__box{width:18px;height:18px;flex:none;border:1.5px solid var(--gf-line);border-radius:5px;display:grid;place-items:center;background:var(--gf-bg);transition:.15s}
+.gf__v input:checked+.gf__box{background:var(--gf-ink);border-color:var(--gf-ink)}
+.gf__v input:checked+.gf__box::after{content:"";width:9px;height:5px;border:2px solid var(--gf-bg);border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+.gf__v input:focus-visible+.gf__box,.gf__v input:focus-visible+.gf__chip{outline:2px solid var(--gf-acc);outline-offset:2px}
+.gf__vals--checkbox .gf__lbl{flex:1;display:flex;gap:8px;align-items:center}
+.gf__n{margin-left:auto;color:var(--gf-soft);font-size:12px}
+.gf--nocount .gf__n{display:none}
+.gf__v.is-zero{opacity:.45}
+.gf__vals--chips .gf__v,.gf__vals--swatch .gf__v{padding:0}
+.gf__chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--gf-line);border-radius:999px;font-size:13px;background:var(--gf-bg);transition:.15s}
+.gf__chip .gf__n{margin:0}
+.gf__v input:checked+.gf__chip{background:var(--gf-ink);color:var(--gf-bg);border-color:var(--gf-ink)}
+.gf__v input:checked+.gf__chip .gf__n{color:inherit;opacity:.7}
+.gf__sw{width:22px;height:22px;border-radius:50%;border:1px solid rgba(0,0,0,.15);flex:none}
+.gf__vals--swatch .gf__chip{padding:4px 12px 4px 5px}
+.gf__list{color:inherit;text-decoration:none;padding:6px 0;font-size:14px;display:flex;gap:8px}
+.gf__list.is-on{font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.gf__more{display:none!important}
+.gf__vals.is-open .gf__more{display:flex!important}
+.gf__vals--chips.is-open .gf__more,.gf__vals--swatch.is-open .gf__more{display:inline-flex!important}
+.gf__toggle{border:0;background:none;padding:6px 0;font:inherit;font-size:13px;font-weight:700;color:var(--gf-acc);cursor:pointer;text-align:left}
+.gf__range{display:flex;align-items:center;gap:8px;padding:2px 0 12px}
+.gf__range input{width:100%;min-width:0;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--gf-line);border-radius:8px;background:var(--gf-bg);color:inherit}
+.gf__range span{color:var(--gf-soft)}
+/* Styles */
+.gf--boxed .gf__side{padding:6px 18px;border:1px solid var(--gf-line);border-radius:var(--gf-r);background:var(--gf-bg)}
+.gf--boxed .gf__group:last-child{border-bottom:0}
+.gf--pills .gf__vals{flex-direction:row;flex-wrap:wrap;gap:8px}
+.gf--pills .gf__v{padding:0}
+.gf--pills .gf__vals--checkbox .gf__box{display:none}
+.gf--pills .gf__vals--checkbox .gf__lbl{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--gf-line);border-radius:999px;font-size:13px}
+.gf--pills .gf__vals--checkbox input:checked~.gf__lbl{background:var(--gf-ink);color:var(--gf-bg);border-color:var(--gf-ink)}
+.gf--pills .gf__vals--checkbox .gf__n{margin:0}
+/* Sheet / drawer */
+.gf__sheet{position:fixed;inset:0;z-index:1000}
+.gf__sheet[hidden]{display:none}
+.gf__shade{position:absolute;inset:0;background:rgba(10,10,12,.45);animation:gfFade .2s}
+.gf__panel{position:absolute;top:0;bottom:0;width:min(400px,92vw);background:var(--gf-bg);color:var(--gf-ink);display:flex;flex-direction:column;box-shadow:0 0 50px rgba(0,0,0,.25);animation:gfIn .25s ease}
+.gf--left .gf__panel{left:0}.gf--right .gf__panel{right:0}
+.gf__phead{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--gf-line);font-size:17px}
+.gf__x{border:0;background:var(--gf-tint);width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:inherit;cursor:pointer}
+.gf__pbody{flex:1;overflow:auto;padding:4px 20px}
+.gf__pfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--gf-line)}
+.gf__apply{flex:1;max-width:220px;padding:13px 18px;border:0;border-radius:var(--btn-radius,999px);background:var(--btn-bg,var(--gf-ink));color:var(--btn-text,var(--gf-bg));font:inherit;font-weight:700;cursor:pointer}
+@keyframes gfFade{from{opacity:0}}
+@keyframes gfIn{from{transform:translateX(var(--gf-from,-30px));opacity:.4}}
+.gf--right .gf__panel{--gf-from:30px}
+body.gf-lock{overflow:hidden}
+@media (max-width:899px){
+  .gf__open{display:inline-flex}
+  .gf__pops,.gf__side{display:none!important}
+  .gf--sidebar .gf__body{display:block}
+  .gf__total{margin-right:auto}
+  .gf__sort span{display:none}
+  .gf--m-sheet .gf__panel{top:auto;left:0;right:0;width:auto;max-height:86vh;border-radius:20px 20px 0 0;--gf-from:0;animation:gfUp .28s ease}
+  .gf--m-sheet .gf__phead::before{content:"";position:absolute;left:50%;top:7px;width:38px;height:4px;margin-left:-19px;border-radius:4px;background:var(--gf-line)}
+  .gf--m-sheet .gf__phead{position:relative}
+}
+@keyframes gfUp{from{transform:translateY(40px);opacity:.4}}
+</style>
+<script>
+(function(){if(window.__gf)return;window.__gf=1;
+function clean(form){form.querySelectorAll('input[type=number]').forEach(function(i){if(!i.value)i.disabled=true})}
+document.addEventListener('change',function(e){var t=e.target;
+  if(t.matches('[data-gf-sort]')){location.href=t.value;return}
+  var form=t.closest('form[data-gf-auto]');if(form&&(t.type==='checkbox'||t.type==='number')){clean(form);form.submit()}});
+document.addEventListener('submit',function(e){if(e.target.closest('[data-gf]'))clean(e.target)});
+document.addEventListener('click',function(e){var t=e.target;
+  var o=t.closest('[data-gf-open]');if(o){var s=o.closest('[data-gf]').querySelector('[data-gf-sheet]');s.hidden=false;document.body.classList.add('gf-lock');return}
+  if(t.closest('[data-gf-close]')){var sh=t.closest('[data-gf-sheet]');sh.hidden=true;document.body.classList.remove('gf-lock');return}
+  var m=t.closest('[data-gf-more]');if(m){var v=m.previousElementSibling;var on=v.classList.toggle('is-open');m.textContent=on?'Show less':m.getAttribute('data-gf-more');return}
+  if(!t.closest('.gf__pop'))document.querySelectorAll('.gf__pop[open]').forEach(function(d){d.open=false});
+});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){document.querySelectorAll('[data-gf-sheet]:not([hidden])').forEach(function(s){s.hidden=true});document.body.classList.remove('gf-lock')}});
+document.addEventListener('toggle',function(e){var d=e.target;if(d.classList&&d.classList.contains('gf__pop')&&d.open)document.querySelectorAll('.gf__pop[open]').forEach(function(x){if(x!==d)x.open=false})},true);
+})();
+</script>

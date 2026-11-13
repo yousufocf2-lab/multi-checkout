@@ -1,0 +1,19 @@
+{%- assign pt = section.settings.padding_top | default: 0 -%}
+{%- assign pb = section.settings.padding_bottom | default: 0 -%}
+<section class="gp-code{% if section.settings.full_width %} gp-code--full{% endif %}" style="padding-top:{{ pt }}px;padding-bottom:{{ pb }}px;{% if section.settings.background != blank %}background:{{ section.settings.background | escape }};{% endif %}">
+  <div class="{% if section.settings.full_width %}gp-code__full{% else %}wrap{% endif %}">{{ section.custom_html }}</div>
+</section>
+{% schema %}
+{
+  "name": "Custom Liquid",
+  "settings": [
+    { "id": "code", "type": "liquid", "label": "Liquid code", "default": "" },
+    { "id": "collection", "type": "collection_optional", "label": "Products for {{ products }} (optional)", "default": "" },
+    { "id": "limit", "type": "range", "label": "How many products", "min": 1, "max": 24, "step": 1, "default": 8 },
+    { "id": "full_width", "type": "checkbox", "label": "Full width (edge to edge)", "default": false },
+    { "id": "padding_top", "type": "range", "label": "Space above", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 24 },
+    { "id": "padding_bottom", "type": "range", "label": "Space below", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 24 },
+    { "id": "background", "type": "color", "label": "Background", "default": "" }
+  ]
+}
+{% endschema %}

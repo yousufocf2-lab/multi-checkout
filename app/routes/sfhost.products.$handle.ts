@@ -8,7 +8,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (params.handle !== "all") throw redirect(movedTo(request, `/product/${encodeURIComponent(params.handle ?? "")}`), 301);
   const ctx = await domainContext(request);
   if (!ctx) throw new Response("Not found", { status: 404 });
-  return collectionPage(ctx, "all");
+  return collectionPage(ctx, "all", request);
 }
 
 // Review forms on pages opened before the move

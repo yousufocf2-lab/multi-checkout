@@ -1,0 +1,53 @@
+{%- assign s = section.settings -%}
+<section class="edit sec" id="{{ section.id }}">
+  <div class="pw">
+    <div class="sec__head sec__head--c"><div>
+      {%- if s.eyebrow != blank -%}<p class="sec__eye">{{ s.eyebrow }}</p>{%- endif -%}
+      {%- if s.heading != blank -%}<h2 class="sec__h serif">{{ s.heading }}</h2>{%- endif -%}
+    </div></div>
+    <div class="edit__grid{% if s.flip %} edit__grid--flip{% endif %}">
+      <a href="{{ s.big_link | default: routes.all | safe_url }}" class="edit__big">
+        {%- if s.big_image != blank -%}<img src="{{ s.big_image | img_url: 1200 }}" alt="" loading="lazy">{%- endif -%}
+        <span class="edit__cap">
+          {%- if s.big_eyebrow != blank -%}<small>{{ s.big_eyebrow }}</small>{%- endif -%}
+          <b>{{ s.big_title }}</b>
+          {%- if s.big_text != blank -%}<span>{{ s.big_text }}</span>{%- endif -%}
+          <i class="edit__go">Explore {% render 'snippets/icon', name: 'right' %}</i>
+        </span>
+      </a>
+      <div class="edit__side">
+        {%- for c in s.items limit: 2 -%}
+        <a href="{{ c.link | default: routes.all | safe_url }}" class="edit__card{% cycle '', ' edit__card--rev' %}">
+          <span class="edit__img">{%- if c.image != blank -%}<img src="{{ c.image | img_url: 900 }}" alt="" loading="lazy">{%- endif -%}</span>
+          <span class="edit__txt">
+            {%- if c.eyebrow != blank -%}<small>{{ c.eyebrow }}</small>{%- endif -%}
+            <b>{{ c.title }}</b>
+            {%- if c.text != blank -%}<span>{{ c.text }}</span>{%- endif -%}
+            <i class="edit__go">Shop now {% render 'snippets/icon', name: 'right' %}</i>
+          </span>
+        </a>
+        {%- endfor -%}
+      </div>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Curated story", "category": "Collections", "description": "One big picture next to two smaller stories, like a magazine page", "settings": [
+  { "id": "eyebrow", "type": "text", "label": "Small line above (optional)", "default": "" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Curated for you" },
+  { "id": "flip", "type": "checkbox", "label": "Big picture on the right", "default": false },
+  { "type": "header", "id": "h_big", "label": "Big picture" },
+  { "id": "big_image", "type": "image", "label": "Picture (tall)" },
+  { "id": "big_eyebrow", "type": "text", "label": "Small line", "default": "The playroom edit" },
+  { "id": "big_title", "type": "text", "label": "Title", "default": "Calm, wooden and made to last" },
+  { "id": "big_text", "type": "text", "label": "Text", "default": "" },
+  { "id": "big_link", "type": "url", "label": "Link", "default": "/products/all" },
+  { "id": "items", "type": "list", "label": "Two smaller stories", "item_label": "story", "max_items": 2, "fields": [
+    { "id": "image", "type": "image", "label": "Picture" },
+    { "id": "eyebrow", "type": "text", "label": "Small line", "default": "" },
+    { "id": "title", "type": "text", "label": "Title", "default": "" },
+    { "id": "text", "type": "text", "label": "Text", "default": "" },
+    { "id": "link", "type": "url", "label": "Link", "default": "/products/all" }
+  ] }
+] }
+{% endschema %}

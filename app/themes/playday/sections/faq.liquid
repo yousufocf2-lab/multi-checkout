@@ -1,0 +1,22 @@
+{%- assign s = section.settings -%}
+<section class="faq sec">
+  <div class="pw faq__in">
+    {%- if s.heading != blank -%}<h2 class="sec__h">{{ s.heading }}</h2>{%- endif -%}
+    {%- for it in s.items -%}
+    <details class="acc"><summary>{{ it.q }}{% render 'snippets/icon', name: 'down' %}</summary><div class="acc__b rte">{{ it.a }}</div></details>
+    {%- endfor -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Questions (FAQ)", "category": "Content", "description": "Questions and answers that open and close", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "FAQ" },
+  { "id": "items", "type": "list", "label": "Questions", "item_label": "question", "max_items": 30, "fields": [
+    { "id": "q", "type": "text", "label": "Question" },
+    { "id": "a", "type": "richtext", "label": "Answer" }
+  ], "default": [
+    { "q": "Is cash on delivery available?", "a": "<p>Yes. Cash on delivery is available on most pincodes. Prepaid orders may get an extra discount.</p>" },
+    { "q": "How long does delivery take?", "a": "<p>Most orders arrive in 3–6 working days, depending on your pincode.</p>" },
+    { "q": "Are your toys safe for young children?", "a": "<p>Every toy shows a recommended age, and toys for under-3s have no small parts.</p>" }
+  ] }
+] }
+{% endschema %}

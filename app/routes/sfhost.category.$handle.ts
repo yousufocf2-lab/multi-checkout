@@ -7,5 +7,5 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (params.handle === "all") throw redirect(movedTo(request, "/products/all"), 301);
   const ctx = await domainContext(request);
   if (!ctx) throw new Response("Not found", { status: 404 });
-  return collectionPage(ctx, params.handle ?? "all");
+  return collectionPage(ctx, params.handle ?? "all", request);
 }

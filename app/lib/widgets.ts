@@ -15,7 +15,7 @@ export type ReviewSettings = {
   showVerified: boolean; showDate: boolean; showBreakdown: boolean;
   sort: "newest" | "highest" | "media";
 };
-export type WidgetSettings = { reviews: ReviewSettings };
+export type WidgetSettings = { reviews: ReviewSettings; filters: FilterSettings };
 
 export const REVIEW_DEFAULTS: ReviewSettings = {
   enabled: true, starLight: "#15803d", starDark: "#f59e0b", textLight: "", textDark: "",
@@ -47,8 +47,8 @@ export function reviewSettings(raw: unknown): ReviewSettings {
 }
 
 export function widgetSettings(raw: unknown): WidgetSettings {
-  const w = (raw && typeof raw === "object" ? raw : {}) as { reviews?: unknown };
-  return { reviews: reviewSettings(w.reviews) };
+  const w = (raw && typeof raw === "object" ? raw : {}) as { reviews?: unknown; filters?: unknown };
+  return { reviews: reviewSettings(w.reviews), filters: filterSettings(w.filters) };
 }
 
 /** Does a new review wait for the owner's approval? */
@@ -66,4 +66,94 @@ export function isDark(hex: unknown) {
   const f = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(f.slice(i, i + 2), 16) / 255);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.45;
+}
+
+// ---------- Product filters (Storefront → Product filters) ----------
+
+export type FilterType = "price" | "category" | "option" | "availability" | "rating" | "discount" | "vendor" | "type" | "feature" | "tag";
+export type FilterDisplay = "checkbox" | "chips" | "swatch" | "list";
+export type FilterDef = {
+  id: string; type: FilterType; label: string;
+  /** option filters: the option name (Colour, Size…); tag filters: the tag prefix ("age:" → "age:3-5 years") */
+  key?: string;
+  display: FilterDisplay; open: boolean;
+};
+export type FilterSettings = {
+  enabled: boolean;
+  layout: "sidebar" | "top" | "drawer";
+  side: "left" | "right";
+  style: "minimal" | "boxed" | "pills";
+  mobile: "sheet" | "drawer";
+  showCounts: boolean; hideEmpty: boolean; maxValues: number;
+  showSort: boolean; sorts: string[];
+  priceBands: number[]; // rupees
+  filters: FilterDef[];
+};
+
+export const SORTS: [string, string][] = [
+  ["featured", "Featured"], ["newest", "Newest first"], ["price-asc", "Price: low to high"], ["price-desc", "Price: high to low"],
+  ["discount", "Biggest discount"], ["rating", "Top rated"], ["name", "Name A–Z"],
+];
+export const FILTER_TYPES: { type: FilterType; label: string; needsKey?: "option" | "tag"; displays: FilterDisplay[] }[] = [
+  { type: "price", label: "Price", displays: ["checkbox", "chips"] },
+  { type: "category", label: "Category", displays: ["checkbox", "chips", "list"] },
+  { type: "option", label: "Variant option (Colour, Size, Age…)", needsKey: "option", displays: ["checkbox", "chips", "swatch"] },
+  { type: "availability", label: "In stock only", displays: ["checkbox"] },
+  { type: "rating", label: "Customer rating", displays: ["checkbox", "chips"] },
+  { type: "discount", label: "Discount", displays: ["checkbox", "chips"] },
+  { type: "vendor", label: "Brand", displays: ["checkbox", "chips", "list"] },
+  { type: "type", label: "Product type", displays: ["checkbox", "chips", "list"] },
+  { type: "feature", label: "Feature chips", displays: ["checkbox", "chips"] },
+  { type: "tag", label: "Tags with a prefix (age:, material:…)", needsKey: "tag", displays: ["checkbox", "chips"] },
+];
+
+export const FILTER_DEFAULTS: FilterSettings = {
+  enabled: true, layout: "sidebar", side: "left", style: "minimal", mobile: "sheet",
+  showCounts: true, hideEmpty: true, maxValues: 6,
+  showSort: true, sorts: ["featured", "newest", "price-asc", "price-desc", "discount", "rating"],
+  priceBands: [499, 999, 1999, 4999],
+  filters: [
+    { id: "price", type: "price", label: "Price", display: "checkbox", open: true },
+    { id: "category", type: "category", label: "Category", display: "checkbox", open: true },
+    { id: "colour", type: "option", key: "Colour", label: "Colour", display: "swatch", open: true },
+    { id: "age", type: "tag", key: "age", label: "Age", display: "chips", open: true },
+    { id: "size", type: "option", key: "Size", label: "Size", display: "chips", open: false },
+    { id: "rating", type: "rating", label: "Rating", display: "checkbox", open: false },
+    { id: "stock", type: "availability", label: "Availability", display: "checkbox", open: false },
+  ],
+};
+
+const ID_RE = /^[a-z0-9-]{1,30}$/;
+export function filterSettings(raw: unknown): FilterSettings {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Partial<FilterSettings>;
+  const d = FILTER_DEFAULTS;
+  const types = new Set(FILTER_TYPES.map((t) => t.type));
+  const sortIds = new Set(SORTS.map((s) => s[0]));
+  const seen = new Set<string>();
+  const filters = (Array.isArray(r.filters) ? r.filters : d.filters).flatMap((f): FilterDef[] => {
+    if (!f || !types.has(f.type)) return [];
+    let id = String(f.id ?? f.type).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 30) || f.type;
+    if (!ID_RE.test(id) || seen.has(id)) id = `${f.type}-${seen.size + 1}`;
+    seen.add(id);
+    const meta = FILTER_TYPES.find((t) => t.type === f.type)!;
+    const display = meta.displays.includes(f.display) ? f.display : meta.displays[0];
+    const key = meta.needsKey ? String(f.key ?? "").trim().slice(0, 40) : undefined;
+    if (meta.needsKey && !key) return [];
+    return [{ id, type: f.type, label: String(f.label ?? meta.label).trim().slice(0, 40) || meta.label, ...(key ? { key } : {}), display, open: f.open !== false }];
+  }).slice(0, 16);
+  const bands = (Array.isArray(r.priceBands) ? r.priceBands : d.priceBands).map((n) => Math.round(Number(n))).filter((n) => n > 0 && n < 10_000_000).sort((a, b) => a - b);
+  return {
+    enabled: typeof r.enabled === "boolean" ? r.enabled : d.enabled,
+    layout: r.layout === "top" || r.layout === "drawer" ? r.layout : "sidebar",
+    side: r.side === "right" ? "right" : "left",
+    style: r.style === "boxed" || r.style === "pills" ? r.style : "minimal",
+    mobile: r.mobile === "drawer" ? "drawer" : "sheet",
+    showCounts: typeof r.showCounts === "boolean" ? r.showCounts : d.showCounts,
+    hideEmpty: typeof r.hideEmpty === "boolean" ? r.hideEmpty : d.hideEmpty,
+    maxValues: Math.min(30, Math.max(3, Math.round(Number(r.maxValues) || d.maxValues))),
+    showSort: typeof r.showSort === "boolean" ? r.showSort : d.showSort,
+    sorts: (Array.isArray(r.sorts) ? r.sorts : d.sorts).filter((s) => sortIds.has(s)).slice(0, 7),
+    priceBands: [...new Set(bands)].slice(0, 8),
+    filters,
+  };
 }

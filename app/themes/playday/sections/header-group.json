@@ -1,0 +1,31 @@
+{
+ "sections": {
+  "ann": {
+   "type": "announcement",
+   "settings": {
+    "messages": [
+     {
+      "text": "Free gift wrap + a handwritten card on every order",
+      "link": ""
+     },
+     {
+      "text": "Free delivery over ₹999",
+      "link": "/products/all"
+     },
+     {
+      "text": "New: wooden toys for first birthdays",
+      "link": "/category/baby-toddler"
+     }
+    ]
+   }
+  },
+  "header": {
+   "type": "header",
+   "settings": {}
+  }
+ },
+ "order": [
+  "ann",
+  "header"
+ ]
+}
