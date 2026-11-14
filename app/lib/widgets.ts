@@ -108,7 +108,7 @@ export const FILTER_TYPES: { type: FilterType; label: string; needsKey?: "option
 ];
 
 export const FILTER_DEFAULTS: FilterSettings = {
-  enabled: true, layout: "sidebar", side: "left", style: "minimal", mobile: "sheet",
+  enabled: false, layout: "sidebar", side: "left", style: "minimal", mobile: "sheet",
   showCounts: true, hideEmpty: true, maxValues: 6,
   showSort: true, sorts: ["featured", "newest", "price-asc", "price-desc", "discount", "rating"],
   priceBands: [499, 999, 1999, 4999],

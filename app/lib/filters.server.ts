@@ -151,7 +151,8 @@ export function applyFilters<T extends FP>(
   return {
     products: shown,
     filters: {
-      enabled: fs.enabled && groups.length > 0, layout: opts.layout && ["sidebar", "top", "drawer"].includes(opts.layout) ? opts.layout : fs.layout,
+      // The bar (count + sort) shows when either filters or sorting is on; filters only when the owner turned them on
+      enabled: (fs.enabled && groups.length > 0) || (fs.showSort && fs.sorts.length > 1), has_filters: fs.enabled && groups.length > 0, layout: opts.layout && ["sidebar", "top", "drawer"].includes(opts.layout) ? opts.layout : fs.layout,
       side: fs.side, style: fs.style, mobile: fs.mobile, show_counts: fs.showCounts,
       groups, active, active_count: active.length, clear_url: link((q) => { for (const k of [...q.keys()]) if (k.startsWith("f.") || k === "price_min" || k === "price_max") q.delete(k); }),
       action: opts.base, keep: keepFields, total: shown.length, all_total: products.length,

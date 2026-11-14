@@ -3,11 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {%- if template == 'index' -%}{%- if settings.seo_home_title != blank -%}{%- assign page_title = settings.seo_home_title -%}{%- endif -%}{%- if settings.seo_home_description != blank -%}{%- assign page_description = settings.seo_home_description -%}{%- endif -%}{%- endif -%}
+  {%- if settings.google_verification != blank -%}{%- assign gsv = settings.google_verification | split: 'content="' | last | split: '"' | first | strip -%}<meta name="google-site-verification" content="{{ gsv | escape }}">{%- endif -%}
   <title>{{ page_title | default: shop.name }}{% if page_title and page_title != shop.name %}{% unless page_title contains shop.name %} · {{ shop.name }}{% endunless %}{% endif %}</title>
   {% if canonical_url != blank %}<link rel="canonical" href="{{ canonical_url | escape }}">{% endif %}
   {% if page_description %}<meta name="description" content="{{ page_description | strip_html | truncate: 160 | escape }}">{% endif %}
   {% if preview %}<meta name="robots" content="noindex">{% endif %}
   <meta property="og:title" content="{{ page_title | default: shop.name | escape }}">
+  {% if page_description %}<meta property="og:description" content="{{ page_description | strip_html | truncate: 200 | escape }}">{% endif %}
+  <meta property="og:site_name" content="{{ shop.name | escape }}">
   {% if og_image %}<meta property="og:image" content="{{ og_image | img_url: 1200 }}">{% endif %}
   {%- assign favicon = settings.favicon | default: shop.favicon -%}
   <link rel="icon" href="{{ favicon }}">

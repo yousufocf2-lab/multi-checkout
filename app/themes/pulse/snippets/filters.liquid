@@ -2,14 +2,16 @@
   Store product filters (Settings → Widgets → Product filters). Same markup in every theme.
   f = collection.filters, grid = the product grid html, layout = sidebar | top | drawer
 {%- endcomment -%}
-{%- assign lay = layout | default: f.layout -%}
+{%- assign lay = layout | default: f.layout -%}{%- unless f.has_filters -%}{%- assign lay = 'none' -%}{%- endunless -%}
 {%- capture gf_hidden -%}{%- for k in f.keep -%}<input type="hidden" name="{{ k.name | escape }}" value="{{ k.value | escape }}">{%- endfor -%}{%- if f.sort_value != '' -%}<input type="hidden" name="sort" value="{{ f.sort_value | escape }}">{%- endif -%}{%- endcapture -%}
 <div class="gf gf--{{ lay }} gf--{{ f.side }} gf--{{ f.style }} gf--m-{{ f.mobile }}{% unless f.show_counts %} gf--nocount{% endunless %}" data-gf>
   <div class="gf__bar">
+    {%- if f.has_filters -%}
     <button type="button" class="gf__open" data-gf-open aria-haspopup="dialog">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
       <span>Filter</span>{%- if f.active_count > 0 -%}<i class="gf__badge">{{ f.active_count }}</i>{%- endif -%}
     </button>
+    {%- endif -%}
     {%- if lay == 'top' -%}
     <form class="gf__pops" action="{{ f.action }}" method="get" data-gf-auto>
       {{ gf_hidden }}
@@ -51,6 +53,7 @@
     {%- endif -%}
     <div class="gf__grid">{{ grid }}</div>
   </div>
+  {%- if f.has_filters -%}
   <div class="gf__sheet" data-gf-sheet hidden>
     <div class="gf__shade" data-gf-close></div>
     <form class="gf__panel" action="{{ f.action }}" method="get" role="dialog" aria-modal="true" aria-label="Filters">
@@ -67,6 +70,7 @@
       <div class="gf__pfoot"><a href="{{ f.clear_url | escape }}" class="gf__clear">Clear all</a><button type="submit" class="gf__apply">Show results</button></div>
     </form>
   </div>
+  {%- endif -%}
 </div>
 <style>
 .gf{--gf-ink:var(--ink,#111);--gf-soft:var(--soft,#6b6b6b);--gf-line:var(--line,rgba(0,0,0,.12));--gf-tint:var(--tint,#f4f4f4);--gf-bg:var(--bg,#fff);--gf-acc:var(--brand,#111);--gf-r:var(--radius,12px);color:var(--gf-ink)}
@@ -75,7 +79,7 @@
 .gf--drawer .gf__open{display:inline-flex}
 .gf__badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--gf-acc);color:var(--gf-bg);font-size:11px;font-style:normal;font-weight:700;margin-left:6px}
 .gf__total{color:var(--gf-soft);font-size:14px}
-.gf--sidebar .gf__total,.gf--drawer .gf__total{margin-right:auto}
+.gf--sidebar .gf__total,.gf--drawer .gf__total,.gf--none .gf__total{margin-right:auto}
 .gf__sort{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--gf-soft)}
 .gf__sort select{font:inherit;color:var(--gf-ink);padding:8px 30px 8px 12px;border:1px solid var(--gf-line);border-radius:999px;background:var(--gf-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23777' stroke-width='2.4'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 11px center;appearance:none;-webkit-appearance:none;cursor:pointer}
 .gf__pops{display:flex;flex-wrap:wrap;gap:8px;flex:1}
@@ -154,6 +158,7 @@
 body.gf-lock{overflow:hidden}
 @media (max-width:899px){
   .gf__open{display:inline-flex}
+  .gf--none .gf__open{display:none}
   .gf__pops,.gf__side{display:none!important}
   .gf--sidebar .gf__body{display:block}
   .gf__total{margin-right:auto}

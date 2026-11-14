@@ -419,5 +419,28 @@
     "default": ""
    }
   ]
+ },
+ {
+  "name": "Search engines (SEO)",
+  "settings": [
+   {
+    "id": "seo_home_title",
+    "type": "text",
+    "label": "Home page title on Google (empty = store name)",
+    "default": ""
+   },
+   {
+    "id": "seo_home_description",
+    "type": "textarea",
+    "label": "Home page description on Google (about 150 characters)",
+    "default": ""
+   },
+   {
+    "id": "google_verification",
+    "type": "text",
+    "label": "Google Search Console verification code (paste the meta tag or just the code)",
+    "default": ""
+   }
+  ]
  }
 ]
