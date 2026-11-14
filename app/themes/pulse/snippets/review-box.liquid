@@ -426,15 +426,15 @@ function init(box){
   document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!modal.hidden)close()});
   back.addEventListener('click',function(){go(cur-1,true)});
   skip.addEventListener('click',function(){go(cur+1)});
-  next.addEventListener('click',function(){if(next.disabled)return;if(cur<steps.length-1){go(cur+1);return}submit()});
+  next.addEventListener('click',function(){if(sent){close();return}if(next.disabled||next.classList.contains('is-busy'))return;if(cur<steps.length-1){go(cur+1);return}submit()});
   form.addEventListener('submit',function(e){e.preventDefault();if(!next.disabled)next.click()});
   form.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.type!=='file'){e.preventDefault();next.click()}});
-  function submit(){err.hidden=true;next.disabled=true;next.classList.add('is-busy');
+  function submit(){if(sent)return;err.hidden=true;next.disabled=true;next.classList.add('is-busy');
     var fd=new FormData(form);fd.set('rating',String(rating));
     fetch(location.pathname,{method:'POST',body:fd,headers:{Accept:'text/html'}}).then(function(r){
       if(!r.ok)return r.text().then(function(t){throw new Error(t&&t.length<300?t:'Something went wrong. Please try again.')});
       var live=/review=published/.test(r.url);sent=true;steps.forEach(function(s){s.hidden=true});done.hidden=false;bars.forEach(function(b){b.classList.add('is-on')});
-      stepn.textContent='';back.hidden=true;skip.hidden=true;next.classList.remove('is-busy');next.disabled=false;next.textContent='Done';next.onclick=function(){close()};
+      stepn.textContent='';back.hidden=true;skip.hidden=true;next.classList.remove('is-busy');next.disabled=false;next.textContent='Done';
       var nm=nameIn.value.trim().split(' ')[0];form.querySelector('[data-rbx-thanks]').textContent='Thank you, '+nm+'!';
       form.querySelector('[data-rbx-donemsg]').textContent=live?'Your review is live now. It really helps other shoppers.':'We got your review. It will show here once the store has checked it.';
     }).catch(function(x){err.textContent=x.message||'Something went wrong. Please try again.';err.hidden=false;next.classList.remove('is-busy');check();});}
