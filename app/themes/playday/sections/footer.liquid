@@ -14,7 +14,9 @@
   {%- endif -%}
   <div class="pw ft__grid">
     <div class="ft__brand">
-      <a href="{{ routes.root }}" class="ft__logo">{%- assign logo = settings.logo | default: shop.logo -%}{%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" loading="lazy">{%- else -%}{{ shop.name }}{%- endif -%}</a>
+      {%- if s.show_logo != false -%}
+      <a href="{{ routes.root }}" class="ft__logo" style="--ft-logo:{{ s.logo_width | default: 140 }}px;--ft-logo-m:{{ s.logo_width_mobile | default: 120 }}px">{%- assign logo = s.logo | default: settings.logo | default: shop.logo -%}{%- if logo -%}<img src="{{ logo }}" alt="{{ shop.name }}" loading="lazy">{%- else -%}{{ shop.name }}{%- endif -%}</a>
+      {%- endif -%}
       {%- if s.about != blank -%}<p class="ft__about">{{ s.about }}</p>{%- endif -%}
       <div class="ft__social">
         {%- if settings.social_instagram != blank -%}<a href="{{ settings.social_instagram }}" target="_blank" rel="noopener" aria-label="Instagram">{% render 'snippets/icon', name: 'instagram' %}</a>{%- endif -%}
@@ -60,6 +62,11 @@
 </footer>
 {% schema %}
 { "name": "Footer", "settings": [
+  { "type": "header", "id": "h_logo", "label": "Footer logo" },
+  { "id": "show_logo", "type": "checkbox", "label": "Show a logo in the footer", "default": true },
+  { "id": "logo", "type": "image", "label": "Footer logo (empty = your main logo). Use a light version on a dark footer." },
+  { "id": "logo_width", "type": "range", "label": "Logo width (computer)", "min": 60, "max": 320, "step": 5, "unit": "px", "default": 140 },
+  { "id": "logo_width_mobile", "type": "range", "label": "Logo width (phone)", "min": 50, "max": 260, "step": 5, "unit": "px", "default": 120 },
   { "type": "header", "id": "h_news", "label": "Newsletter" },
   { "id": "show_newsletter", "type": "checkbox", "label": "Show the email signup card", "default": true },
   { "id": "news_heading", "type": "text", "label": "Heading", "default": "Join the Playday club" },
