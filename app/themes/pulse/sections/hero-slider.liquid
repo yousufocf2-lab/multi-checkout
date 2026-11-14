@@ -16,11 +16,11 @@
         {%- else -%}<span class="hero__ph" style="--a:{{ sl.color | default: '#1b1b1f' }}"></span>{%- endif -%}
       </picture>
       {%- if sl.heading != blank or sl.text != blank or sl.button != blank -%}
-      <div class="hero__copy hero__copy--{{ sl.align | default: 'left' }}" style="color:{{ sl.text_color | default: '#ffffff' }}">
+      <div class="hero__copy hero__copy--{{ sl.align | default: 'left' }}{% if sl.shade == false %} hero__copy--clear{% endif %}" style="color:{{ sl.text_color | default: '#ffffff' }}">
         {%- if sl.eyebrow != blank -%}<p class="hero__eye">{{ sl.eyebrow }}</p>{%- endif -%}
         {%- if sl.heading != blank -%}<h2 class="hero__h">{{ sl.heading }}</h2>{%- endif -%}
         {%- if sl.text != blank -%}<p class="hero__t">{{ sl.text }}</p>{%- endif -%}
-        {%- if sl.button != blank -%}<span class="btn btn--light">{{ sl.button }}</span>{%- endif -%}
+        {%- if sl.button != blank -%}<span class="btn btn--light{% if sl.button_style == 'dark' %} hero__btn--dark{% endif %}">{{ sl.button }}</span>{%- endif -%}
       </div>
       {%- endif -%}
       {%- if sl.link != blank -%}</a>{%- endif -%}
@@ -60,6 +60,8 @@
     { "id": "button", "type": "text", "label": "Button text (optional)" },
     { "id": "align", "type": "select", "label": "Text position", "options": ["left", "center", "right"], "default": "left" },
     { "id": "text_color", "type": "color", "label": "Text colour", "default": "#ffffff" },
+    { "id": "shade", "type": "checkbox", "label": "Darken the image behind the text (turn off for light banners with dark text)", "default": true },
+    { "id": "button_style", "type": "select", "label": "Button", "options": ["light", "dark"], "option_labels": ["White", "Dark"], "default": "light" },
     { "id": "color", "type": "color", "label": "Background when there is no image", "default": "#17171c" }
   ], "default": [] },
   { "id": "side", "type": "list", "label": "Promo cards next to the slider (computer; under it on phones)", "item_label": "card", "max_items": 2, "fields": [
