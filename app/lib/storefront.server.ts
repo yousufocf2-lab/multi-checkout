@@ -586,7 +586,19 @@ export async function loadCategories(ctx: ShopContext) {
     { id: -3, title: "Crossbody bags", handle: "crossbody", description: "Hands-free pieces for on the go.", url: categoryPath(ctx.root, "crossbody") },
   ];
   const rows = await db.select().from(catalogCategories).where(eq(catalogCategories.storeId, ctx.store.id)).orderBy(asc(catalogCategories.position), asc(catalogCategories.title));
-  return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, image: c.imageUrl ?? null, url: categoryPath(ctx.root, c.handle) }));
+  // A category without its own picture shows the photo of one of its products
+  const bare = rows.filter((c) => !c.imageUrl).map((c) => c.id);
+  const fallback = new Map<number, string>();
+  if (bare.length) {
+    const items = await db.select({ cat: catalogCategoryItems.categoryId, images: catalogItems.images }).from(catalogCategoryItems)
+      .innerJoin(catalogItems, eq(catalogItems.id, catalogCategoryItems.itemId))
+      .where(and(inArray(catalogCategoryItems.categoryId, bare), eq(catalogItems.status, "active"))).orderBy(asc(catalogItems.id));
+    for (const it of items) {
+      const img = (it.images as { url?: string; type?: string }[] | null)?.find((m) => m?.url && m.type !== "video")?.url;
+      if (img && !fallback.has(it.cat)) fallback.set(it.cat, img);
+    }
+  }
+  return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, image: c.imageUrl ?? fallback.get(c.id) ?? null, url: categoryPath(ctx.root, c.handle) }));
 }
 
 /** Everything every page gets: shop, routes, menu categories. */
