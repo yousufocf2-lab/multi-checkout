@@ -78,6 +78,16 @@
   <div class="hd__strip"><div class="pw hd__strip-in" data-drag-scroll>{{ tiles }}</div></div>
   {%- endif -%}
 </header>
+<nav class="toy-age-nav" aria-label="Shop by age">
+  <div class="pw toy-age-nav__inner">
+    <span>Find their next favourite</span>
+    <a href="{{ routes.all }}?f.age=0-2%20years">0–2</a>
+    <a href="{{ routes.all }}?f.age=3-5%20years">3–5</a>
+    <a href="{{ routes.all }}?f.age=6-8%20years">6–8</a>
+    <a href="{{ routes.all }}?f.age=9-12%20years">9–12</a>
+    <a href="{{ routes.all }}?f.age=12%2B%20years">12+</a>
+  </div>
+</nav>
 
 <div class="srch tiles--{{ s.tile_fit | default: 'cover' }}" data-search hidden>
   <div class="srch__shade" data-search-close></div>
@@ -110,6 +120,7 @@
       <button type="button" class="hd__ic" data-hd-close aria-label="Close menu">{% render 'snippets/icon', name: 'close' %}</button>
     </div>
     <div class="mnav__body">
+      <section class="toy-age-drawer"><p class="mnav__label">Find toys by age</p><div class="toy-age-drawer__chips"><a href="{{ routes.all }}?f.age=0-2%20years">0–2 years</a><a href="{{ routes.all }}?f.age=3-5%20years">3–5 years</a><a href="{{ routes.all }}?f.age=6-8%20years">6–8 years</a><a href="{{ routes.all }}?f.age=9-12%20years">9–12 years</a><a href="{{ routes.all }}?f.age=12%2B%20years">12+ years</a></div></section>
       {%- if s.mega_label != blank -%}
       <details class="mnav__group" open><summary>{{ s.mega_label }}{% render 'snippets/icon', name: 'down' %}</summary><div class="mnav__tiles">{{ tiles }}</div></details>
       {%- endif -%}
@@ -191,7 +202,7 @@
     { "id": "tag", "type": "text", "label": "Small tag under the name (for example “New”)" },
     { "id": "color", "type": "color", "label": "Tile background", "default": "#f4f4f4" }
   ], "default": [] },
-  { "id": "mega_promo_title", "type": "text", "label": "Promo card title (empty = no promo card)", "default": "New toys every Friday" },
+  { "id": "mega_promo_title", "type": "text", "label": "Promo card title (empty = no promo card)", "default": "" },
   { "id": "mega_promo_eyebrow", "type": "text", "label": "Promo card small line", "default": "Just landed" },
   { "id": "mega_promo_button", "type": "text", "label": "Promo card link text", "default": "Shop new" },
   { "id": "mega_promo_link", "type": "url", "label": "Promo card link", "default": "/products/all" },

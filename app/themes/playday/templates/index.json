@@ -3,7 +3,7 @@
   "hero": {
    "type": "play-hero",
    "settings": {
-    "sticker": "Safe • Joyful • Made to last",
+    "sticker": "Play • Imagine • Discover",
     "height": 620,
     "autoplay": 6,
     "slides": [
@@ -13,7 +13,7 @@
       "eyebrow": "The wooden collection",
       "heading": "Big adventures for",
       "accent": "little hands",
-      "text": "Heirloom-quality toys in calm colours, finished with child-safe paints.",
+      "text": "Stack, sort and discover a world of colour.",
       "button": "Discover",
       "link": "/category/baby-toddler",
       "align": "left"
@@ -35,7 +35,7 @@
       "eyebrow": "Soft friends",
       "heading": "A best friend",
       "accent": "for every hug",
-      "text": "Super-soft, washable plush that's ready to be loved for years.",
+      "text": "Meet a new soft friend for story time and play.",
       "button": "Meet them",
       "link": "/category/plush",
       "align": "left"
@@ -162,8 +162,8 @@
   "best": {
    "type": "product-carousel",
    "settings": {
-    "eyebrow": "Loved by parents",
-    "heading": "Bestsellers",
+    "eyebrow": "A little inspiration",
+    "heading": "Playday picks",
     "center": false,
     "columns": 4,
     "limit": 12
@@ -281,7 +281,7 @@
      {
       "image": "https://images.unsplash.com/photo-1545558014-8692077e9b5c?auto=format&fit=crop&w=600&h=600&q=80",
       "title": "New baby",
-      "text": "Soft & safe",
+      "text": "First toys, first giggles",
       "link": "/category/baby-toddler"
      }
     ]
@@ -295,35 +295,6 @@
     "collection": "building",
     "columns": 4,
     "limit": 8
-   }
-  },
-  "offers": {
-   "type": "offer-cards",
-   "settings": {
-    "heading": "Offers for you",
-    "items": [
-     {
-      "tag": "10% OFF",
-      "title": "On your first order",
-      "text": "Min. order ₹799",
-      "code": "PLAY10",
-      "color": "#ff6b3d"
-     },
-     {
-      "tag": "FREE",
-      "title": "Gift wrap + card",
-      "text": "On every order, always",
-      "code": "",
-      "color": "#7fd1b9"
-     },
-     {
-      "tag": "₹150 OFF",
-      "title": "On prepaid orders above ₹1,999",
-      "text": "Auto-applied at checkout",
-      "code": "",
-      "color": "#8fb8ff"
-     }
-    ]
    }
   },
   "explore": {
@@ -363,36 +334,6 @@
      }
     ]
    }
-  },
-  "trust": {
-   "type": "trust-band",
-   "settings": {
-    "icon": "shield",
-    "heading": "Safe for little hands, always",
-    "subtext": "Every toy is tested, every payment is protected, and every order is packed with care.",
-    "items": [
-     {
-      "icon": "badge",
-      "title": "Safety tested",
-      "text": "Age-graded and certified toys only"
-     },
-     {
-      "icon": "check",
-      "title": "Child-safe materials",
-      "text": "Non-toxic paints and BPA-free plastics"
-     },
-     {
-      "icon": "refresh",
-      "title": "Easy 7-day returns",
-      "text": "Unopened toys, no questions asked"
-     },
-     {
-      "icon": "lock",
-      "title": "Secure payments",
-      "text": "UPI, cards and cash on delivery"
-     }
-    ]
-   }
   }
  },
  "order": [
@@ -404,8 +345,6 @@
   "curated",
   "gifts",
   "new",
-  "offers",
-  "explore",
-  "trust"
+  "explore"
  ]
 }

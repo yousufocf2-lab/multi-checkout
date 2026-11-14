@@ -12,9 +12,9 @@
   </div>
 </section>
 {% schema %}
-{ "name": "Trust band", "category": "Trust", "description": "A dark band with a big promise and up to four reasons to trust you", "settings": [
+{ "name": "Trust band", "category": "Trust", "description": "A dark band for store-provided information and service details", "settings": [
   { "id": "icon", "type": "select", "label": "Big icon", "options": ["shield", "lock", "badge", "medal", "sparkle", "gift"], "default": "shield" },
-  { "id": "heading", "type": "text", "label": "Heading", "default": "Safe for little hands" },
+  { "id": "heading", "type": "text", "label": "Heading", "default": "A few good things" },
   { "id": "subtext", "type": "text", "label": "Text", "default": "" },
   { "id": "bg", "type": "color", "label": "Background (empty = header colour)", "default": "" },
   { "id": "text", "type": "color", "label": "Text (empty = header text colour)", "default": "" },
@@ -22,6 +22,6 @@
     { "id": "icon", "type": "select", "label": "Icon", "options": ["check", "shield", "badge", "truck", "refresh", "lock", "gift", "medal", "cash", "box"], "default": "check" },
     { "id": "title", "type": "text", "label": "Title", "default": "" },
     { "id": "text", "type": "text", "label": "Text", "default": "" }
-  ] }
+  ], "default": [] }
 ] }
 {% endschema %}

@@ -338,6 +338,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, offerDiscount: p.mixDiscount,
       shipping: p.shipping, shippingTitle: p.shippingName, total: p.total, paymentFee: p.paymentFee, tip, advance,
       saveAddress: savedId > 0 || fd.get("saveAddress") === "on",
+      customerNote: session.tracking?.giftWrap ? "Gift wrap + card requested." : null,
       tracking: {
         ...(session.tracking ?? {}),
         ...(proxyOrigin ? { proxyOrigin } : {}),

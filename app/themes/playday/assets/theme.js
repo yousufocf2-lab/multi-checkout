@@ -2,6 +2,7 @@
   var body = document.body;
   var root = body.getAttribute("data-root") || "";
   var KEY = "gp_cart_" + body.getAttribute("data-shop");
+  var GIFT_KEY = KEY + "_gift_wrap";
   var FREE = parseInt(body.getAttribute("data-free-ship") || "0", 10) || 0;
   var desk = window.matchMedia ? matchMedia("(min-width:990px)") : { matches: true };
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -27,10 +28,12 @@
   paintCount();
 
   // ---------- checkout (cart page, side cart and "Buy now") ----------
-  function startCheckout(lines, done) {
-    return fetch(root + "/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ src: (function () { try { return sessionStorage.getItem("gp_src") || ""; } catch (e) { return ""; } })(), lines: lines.map(function (l) { return { variantId: l.variantId, qty: l.qty }; }) }) })
+  function giftSelected(box) { if (box) return box.checked; try { return localStorage.getItem(GIFT_KEY) === "1"; } catch (e) { return false; } }
+  document.querySelectorAll("[data-gift-wrap]").forEach(function (box) { box.checked = giftSelected(); box.addEventListener("change", function () { try { localStorage.setItem(GIFT_KEY, box.checked ? "1" : "0"); } catch (e) {} document.querySelectorAll("[data-gift-wrap]").forEach(function (other) { other.checked = box.checked; }); }); });
+  function startCheckout(lines, done, giftWrap) {
+    return fetch(root + "/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ src: (function () { try { return sessionStorage.getItem("gp_src") || ""; } catch (e) { return ""; } })(), giftWrap: giftWrap === undefined ? giftSelected() : !!giftWrap, lines: lines.map(function (l) { return { variantId: l.variantId, qty: l.qty }; }) }) })
       .then(function (r) { return r.json(); })
-      .then(function (d) { if (d.url) { location.href = d.url; return; } done(d.error || "Couldn't open checkout. Please try again."); })
+      .then(function (d) { if (d.url) { try { localStorage.removeItem(GIFT_KEY); } catch (e) {} location.href = d.url; return; } done(d.error || "Couldn't open checkout. Please try again."); })
       .catch(function () { done("No internet. Please try again."); });
   }
 
@@ -421,7 +424,7 @@
         // Buy now: only this product goes to checkout; the saved cart is left as it is
         var b = e.submitter, label = b.textContent;
         b.disabled = true; b.textContent = "Opening checkout…";
-        startCheckout([line], function (err) { b.disabled = false; b.textContent = label; toast(err); });
+        startCheckout([line], function (err) { b.disabled = false; b.textContent = label; toast(err); }, giftSelected(form.querySelector("[data-gift-wrap]")));
         return;
       }
       add(line);
@@ -496,6 +499,9 @@
           '<div class="line__right"><b>' + money(l.price * l.qty) + '</b><button type="button" class="line__remove" data-rm="' + i + '">Remove</button></div></div>';
       }).join("");
       document.querySelector("[data-cart-subtotal]").textContent = money(c.reduce(function (s, l) { return s + l.price * l.qty; }, 0));
+      var progress = document.querySelector("[data-free-progress]"), threshold = FREE;
+      if (progress && threshold > 0 && c.length) { var total = c.reduce(function (s, l) { return s + l.price * l.qty; }, 0), fill = Math.min(100, total / threshold * 100), text = progress.querySelector("[data-free-text]"), bar = progress.querySelector("[data-free-fill]"); progress.hidden = false; text.textContent = total >= threshold ? "Your cart reached the free-delivery threshold." : "Add " + money(threshold - total) + " more to reach the free-delivery threshold."; bar.style.width = fill + "%"; }
+      else if (progress) progress.hidden = true;
     }
     itemsBox.addEventListener("click", function (e) {
       var b = e.target.closest("button"); if (!b) return;

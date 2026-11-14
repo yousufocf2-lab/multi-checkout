@@ -165,7 +165,7 @@ function metaCookies(request: Request) {
 
 export async function startCheckout(request: Request, ctx: ShopContext) {
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-  let body: { lines?: { variantId?: unknown; qty?: unknown }[]; src?: unknown } = {};
+  let body: { lines?: { variantId?: unknown; qty?: unknown }[]; src?: unknown; giftWrap?: unknown } = {};
   try { body = await request.json(); } catch { return reply({ error: "Your cart couldn't be read. Please try again." }, 400); }
 
   const merged = new Map<string, number>();
@@ -190,6 +190,7 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
       ip: clientIp(request), ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined, sourceUrl: request.headers.get("referer")?.slice(0, 500) ?? undefined,
       ...metaCookies(request),
       ...(typeof body.src === "string" && body.src ? { src: body.src.replace(/[^\w.\- ]/g, "").slice(0, 60) } : {}),
+      ...(body.giftWrap === true ? { giftWrap: true } : {}),
     },
   });
   const sum = (xs: { quantity: number }[]) => xs.reduce((n, x) => n + x.quantity, 0);

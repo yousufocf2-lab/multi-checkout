@@ -1,37 +1,34 @@
-{%- comment -%} Product card. Pass: product, settings, label (badge text for the whole row, optional) {%- endcomment -%}
+{%- comment -%} Playday product card. Keep data-card and data-quick-add for the shared cart script. {%- endcomment -%}
 {%- assign badge = label | default: product.badge -%}
-{%- assign btn = settings.card_button -%}
-<div class="pc{% if settings.card_style == 'plain' %} pc--plain{% endif %}" data-card data-product="{{ product.json | escape }}">
-  <a class="pc__media" href="{{ product.url }}" aria-label="{{ product.title | escape }}">
+{%- assign btn = settings.card_button | default: 'Add' -%}
+{%- assign age_tag = '' -%}
+{%- for tag in product.tags -%}{%- if tag contains 'age:' -%}{%- assign age_tag = tag | remove: 'age:' -%}{%- break -%}{%- endif -%}{%- endfor -%}
+<article class="pc toy-card" data-card data-product="{{ product.json | escape }}">
+  <a class="pc__media toy-card__media" href="{{ product.url }}" aria-label="{{ product.title | escape }}">
+    <span class="toy-card__blob" aria-hidden="true"></span>
     {%- if product.featured_image -%}
-      <img class="pc__img" src="{{ product.featured_image | img_url: 600 }}" alt="{{ product.title | escape }}" loading="lazy" width="600" height="600">
-      {%- if settings.card_hover_image and product.second_image -%}<img class="pc__img pc__img--alt" src="{{ product.second_image | img_url: 600 }}" alt="" loading="lazy" width="600" height="600">{%- endif -%}
+      <img class="pc__img toy-card__img" src="{{ product.featured_image | img_url: 700 }}" alt="{{ product.title | escape }}" loading="lazy" width="700" height="800">
+      {%- if settings.card_hover_image and product.second_image -%}<img class="pc__img pc__img--alt toy-card__img" src="{{ product.second_image | img_url: 700 }}" alt="" loading="lazy" width="700" height="800">{%- endif -%}
     {%- elsif product.featured_video -%}
-      <video class="pc__img" src="{{ product.featured_video }}" muted loop playsinline preload="metadata" data-inview-play></video>
+      <video class="pc__img toy-card__img" src="{{ product.featured_video }}" muted loop playsinline preload="metadata" data-inview-play></video>
     {%- else -%}<span class="pc__ph"></span>{%- endif -%}
-    {%- if settings.card_show_badge != false and badge != blank -%}<span class="pc__badge">{{ badge }}</span>{%- endif -%}
-    {%- if settings.card_show_discount != false and product.discount_pct > 0 -%}<span class="pc__off">−{{ product.discount_pct }}%</span>{%- endif -%}
+    {%- if age_tag != blank -%}<span class="toy-card__age">Ages {{ age_tag | remove: ' years' }}</span>{%- endif -%}
+    {%- if settings.card_show_badge != false and badge != blank -%}<span class="pc__badge toy-card__sticker">{{ badge }}</span>{%- endif -%}
+    {%- if settings.card_show_discount != false and product.discount_pct > 0 -%}<span class="pc__off toy-card__off">Save {{ product.discount_pct }}%</span>{%- endif -%}
     {%- unless product.available or product.demo -%}<span class="pc__sold">Sold out</span>{%- endunless -%}
+    <span class="toy-card__view" aria-hidden="true">Meet this toy <span>↗</span></span>
   </a>
-  <div class="pc__body">
-    {%- if product.feature != blank -%}<p class="pc__feat">{{ product.feature }}</p>{%- endif -%}
-    <a class="pc__title" href="{{ product.url }}">{{ product.title }}</a>
+  <div class="pc__body toy-card__body">
+    {%- if product.feature != blank -%}<p class="pc__feat toy-card__feature">{{ product.feature }}</p>{%- endif -%}
+    <a class="pc__title toy-card__title" href="{{ product.url }}">{{ product.title }}</a>
     {%- if settings.card_show_rating != false and settings.reviews_enabled != false and product.rating > 0 -%}
-    <p class="pc__rate">{% render 'snippets/icon', name: 'star' %}<b>{{ product.rating }}</b>{%- if product.rating_count > 0 -%}<span>({{ product.rating_count }})</span>{%- endif -%}</p>
+      <p class="pc__rate toy-card__rating">{% render 'snippets/icon', name: 'star' %}<b>{{ product.rating }}</b>{%- if product.rating_count > 0 -%}<span>({{ product.rating_count }})</span>{%- endif -%}</p>
     {%- endif -%}
-    {%- if settings.card_show_chips != false and product.chips.size > 0 -%}
-    <div class="pc__chips">{%- for c in product.chips limit: 2 -%}<span class="chip">{{ c }}</span>{%- endfor -%}</div>
-    {%- elsif product.subtitle != blank -%}<p class="pc__sub">{{ product.subtitle }}</p>{%- endif -%}
-    <div class="pc__foot">
-      <p class="pc__price">
-        {%- if settings.card_price_prefix != blank -%}<small>{{ settings.card_price_prefix }}</small>{%- endif -%}
-        <b>{{ product.price | money }}</b>
-        {%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s>{%- endif -%}
-      </p>
-      {%- if btn != blank and product.available -%}
-      <button type="button" class="pc__add" data-quick-add{% if product.demo %} disabled title="Preview item"{% endif %} aria-label="Add {{ product.title | escape }} to cart">{% render 'snippets/icon', name: 'plus', stroke: '2.2' %}<span>{{ btn }}</span></button>
-      {%- endif -%}
+    {%- if settings.card_show_chips != false and product.chips.size > 0 -%}<div class="pc__chips toy-card__chips">{%- for c in product.chips limit: 2 -%}<span class="chip">{{ c }}</span>{%- endfor -%}</div>
+    {%- elsif product.subtitle != blank -%}<p class="pc__sub toy-card__sub">{{ product.subtitle }}</p>{%- endif -%}
+    <div class="pc__foot toy-card__foot">
+      <p class="pc__price toy-card__price"><b>{{ product.price | money }}</b>{%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s>{%- endif -%}</p>
+      {%- if btn != blank and product.available -%}<button type="button" class="pc__add toy-card__add" data-quick-add{% if product.demo %} disabled title="Preview item"{% endif %} aria-label="Add {{ product.title | escape }} to cart">{% render 'snippets/icon', name: 'plus', stroke: '2.2' %}<span>{{ btn }}</span></button>{%- endif -%}
     </div>
-    {%- if settings.card_emi != blank -%}<p class="pc__emi">{{ settings.card_emi }}</p>{%- endif -%}
   </div>
-</div>
+</article>

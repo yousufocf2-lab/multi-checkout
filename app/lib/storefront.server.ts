@@ -11,7 +11,7 @@ import { allProductsPath, categoryPath, productPath } from "./storefront-paths";
 import { accountSettings } from "./customer-accounts";
 import { storeIcon } from "./store-icon";
 import { isDark, widgetSettings } from "./widgets";
-import { PLAY_CATEGORIES, PLAY_FAQS, PLAY_PRODUCTS, playImg } from "./playday-demo";
+import { PLAY_CATEGORIES, PLAY_PRODUCTS, playImg } from "./playday-demo";
 import { PULSE_CATEGORIES, PULSE_FAQS, PULSE_PRODUCTS, pulseImg } from "./pulse-demo";
 
 const accountsOn = (s: Store) => accountSettings(s.accountSettings).enabled;
@@ -441,9 +441,9 @@ export function demoProducts(ctx: ShopContext, category?: string) {
       descriptionHtml: `<h2>${p.subtitle}</h2><p>Sample toy for the theme preview. Your own product description shows here, and the wide pictures below come from Catalog → product → Description banners.</p><ul>${p.usp.map((u) => `<li>${u}</li>`).join("")}</ul>`,
       images: photos.map((ph, j) => ({ url: playImg(ph, 1100, 1100), alt: j === 0 ? p.title : `${p.title} view ${j + 1}` })),
       options: [{ name: "Colour", values: p.colours.map((c) => c[0]) }], seoTitle: null, seoDescription: null, createdAt: now, updatedAt: now,
-      extra: { origin: "India", site: { banners: [{ image: playImg("photo-1515488042361-ee00e0ddd4e4", 1600, 760), mobile: playImg("photo-1515488042361-ee00e0ddd4e4", 800, 1000), alt: "Made for happy, safe play" }, { image: playImg(p.extra[0] ?? p.colours[0][1], 1600, 760), alt: p.title }], badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), faqs: PLAY_FAQS, rating: p.rating, ratingCount: p.count } },
+      extra: { site: { banners: [{ image: playImg("photo-1515488042361-ee00e0ddd4e4", 1600, 760), mobile: playImg("photo-1515488042361-ee00e0ddd4e4", 800, 1000), alt: "A colourful toy collection" }, { image: playImg(p.extra[0] ?? p.colours[0][1], 1600, 760), alt: p.title }], badge: p.badge, subtitle: p.subtitle, feature: p.feature, chips: p.chips, usp: p.usp, specs: p.specs.map(([label, value]) => ({ label, value })), rating: 0, ratingCount: 0 } },
     } as unknown as CatalogItem;
-    const variants = p.colours.map(([colour, ph], j) => ({ id: id * 10 - j - 1, itemId: id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: p.price, compareAtPaise: p.compare, stock: null, sku: null, imageUrl: playImg(ph, 1100, 1100), position: j })) as unknown as CatalogVariant[];
+    const variants = p.colours.map(([colour, ph], j) => ({ id: id * 10 - j - 1, itemId: id, storeId: ctx.store.id, title: colour, optionValues: [colour], pricePaise: p.price, compareAtPaise: p.price, stock: null, sku: null, imageUrl: playImg(ph, 1100, 1100), position: j })) as unknown as CatalogVariant[];
     return { ...productDrop(ctx, item, variants), demo: true, categories: [p.category as string] };
   });
   if (ctx.demoPreset === "stride") return SHOE_PRODUCTS.filter((p) => !category || category === "footwear" || p.category === category).map((p, i) => {

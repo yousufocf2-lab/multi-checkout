@@ -1,17 +1,25 @@
-<section class="cartp pw">
-  <h1 class="col__title">Your cart</h1>
-  <div class="cartp__grid">
-    <div><div data-cart-items class="cartp__items"></div>
-      <p data-cart-empty class="empty" hidden>Your cart is empty. <a href="{{ routes.all }}" class="link">Start shopping</a></p></div>
-    <aside data-cart-summary class="cartp__sum" hidden>
-      <div class="drawer__row"><span>Subtotal</span><b data-cart-subtotal></b></div>
-      {%- if settings.cart_note != blank -%}<p class="drawer__note">{{ settings.cart_note }}</p>{%- endif -%}
-      <button type="button" class="btn btn--block" data-checkout>Checkout</button>
-      <p class="drawer__note" data-checkout-note hidden></p>
-      <p class="cartp__safe">{% render 'snippets/icon', name: 'lock' %}Safe and secure payments · Cash on delivery</p>
+<section class="toy-cart pw">
+  <header class="toy-cart__head"><p class="toy-cart__eyebrow">Your next little adventure</p><h1>Your toy box</h1><span class="toy-cart__line" aria-hidden="true"></span></header>
+  <div class="toy-cart__progress" data-free-progress hidden><span class="toy-cart__truck" aria-hidden="true">{% render 'snippets/icon', name: 'truck' %}</span><div class="toy-cart__progress-copy"><p data-free-text></p><span><i data-free-fill></i></span></div></div>
+  <div class="toy-cart__grid">
+    <div class="toy-cart__items-wrap">
+      <div data-cart-items class="toy-cart__items"></div>
+      <div data-cart-empty class="toy-cart__empty" hidden>
+        <svg viewBox="0 0 180 140" role="img" aria-label="An empty toy box"><path d="M28 54 90 25l62 29-62 31z" fill="#ffd23f" stroke="#221c46" stroke-width="4" stroke-linejoin="round"/><path d="M28 54v51l62 29V83z" fill="#ffb38a" stroke="#221c46" stroke-width="4" stroke-linejoin="round"/><path d="M152 54v51l-62 29V83z" fill="#7fd1b9" stroke="#221c46" stroke-width="4" stroke-linejoin="round"/><path d="M67 41V24h46v17M90 25v30" fill="none" stroke="#221c46" stroke-width="4" stroke-linecap="round"/><path d="m47 77 18 8m68-8-18 8" stroke="#fffaf3" stroke-width="5" stroke-linecap="round"/></svg>
+        <h2>Your toy box is waiting</h2><p>Pick a playtime favourite and bring it along.</p><a href="{{ routes.all }}" class="btn">Explore toys</a>
+      </div>
+    </div>
+    <aside data-cart-summary class="toy-cart__summary" hidden>
+      <div class="toy-cart__sum-title"><span>Little details</span><span aria-hidden="true">✳</span></div>
+      <div class="toy-cart__sum-row"><span>Subtotal</span><b data-cart-subtotal></b></div>
+      <label class="toy-gift"><input type="checkbox" data-gift-wrap><span class="toy-gift__box" aria-hidden="true">{% render 'snippets/icon', name: 'gift' %}</span><span><b>Add gift wrap + card</b><small>We’ll add your request to the order.</small></span></label>
+      {%- if settings.cart_note != blank -%}<p class="toy-cart__note">{{ settings.cart_note }}</p>{%- endif -%}
+      <button type="button" class="btn btn--block toy-cart__checkout" data-checkout>Continue to checkout <span aria-hidden="true">→</span></button>
+      <p class="toy-cart__safe">{% render 'snippets/icon', name: 'lock' %}Secure checkout</p>
+      <p class="toy-cart__error" data-checkout-note hidden></p>
     </aside>
   </div>
 </section>
 {% schema %}
-{ "name": "Cart page", "settings": [] }
+{ "name": "Toy box cart", "category": "Cart", "description": "A playful cart summary with gift wrap and delivery progress", "settings": [] }
 {% endschema %}
