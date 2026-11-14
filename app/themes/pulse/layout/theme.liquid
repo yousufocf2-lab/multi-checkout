@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ page_title | default: shop.name }}{% if page_title and page_title != shop.name %} · {{ shop.name }}{% endif %}</title>
+  <title>{{ page_title | default: shop.name }}{% if page_title and page_title != shop.name %}{% unless page_title contains shop.name %} · {{ shop.name }}{% endunless %}{% endif %}</title>
   {% if canonical_url != blank %}<link rel="canonical" href="{{ canonical_url | escape }}">{% endif %}
   {% if page_description %}<meta name="description" content="{{ page_description | strip_html | truncate: 160 | escape }}">{% endif %}
   {% if preview %}<meta name="robots" content="noindex">{% endif %}
