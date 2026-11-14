@@ -210,7 +210,9 @@ export async function renderPage(theme: string, template: string, scope: Record<
   const review_ui = rw ? { star: dark ? rw.starDark : rw.starLight, text: dark ? rw.textDark : rw.textLight } : { star: dark ? "#f59e0b" : "#15803d", text: "" };
   const reviewsOn = (scope.widgets as { reviews?: { enabled?: boolean } } | undefined)?.reviews?.enabled !== false;
   settings.reviews_enabled = reviewsOn;
-  const full = { ...scope, settings, review_ui, reviews_enabled: reviewsOn, editor };
+  // Section types on this page, so a section can step aside when a dedicated one is added (e.g. reviews)
+  const template_sections = tpl.order.map((id) => (tpl.sections[id] as { type?: string; disabled?: boolean } | undefined)).filter((x) => x && !x.disabled).map((x) => x!.type ?? "");
+  const full = { ...scope, settings, review_ui, reviews_enabled: reviewsOn, editor, template_sections };
   const [content, head, foot] = await Promise.all([
     renderList(theme, tpl, "template", full, data, editor),
     renderList(theme, groups.header, "header", full, data, editor),

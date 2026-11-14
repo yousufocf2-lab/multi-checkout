@@ -1,8 +1,29 @@
 {
   "sections": {
-    "main": { "type": "main-product", "settings": {} },
-    "trust": { "type": "trust-badges", "settings": {} },
-    "related": { "type": "product-grid", "settings": { "heading": "You may also like", "limit": 4 } }
+    "main": {
+      "type": "main-product",
+      "settings": {}
+    },
+    "trust": {
+      "type": "trust-badges",
+      "settings": {}
+    },
+    "related": {
+      "type": "product-grid",
+      "settings": {
+        "heading": "You may also like",
+        "limit": 4
+      }
+    },
+    "reviews": {
+      "type": "product-reviews",
+      "settings": {}
+    }
   },
-  "order": ["main", "trust", "related"]
+  "order": [
+    "main",
+    "trust",
+    "reviews",
+    "related"
+  ]
 }

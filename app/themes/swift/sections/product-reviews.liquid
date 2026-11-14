@@ -1,0 +1,18 @@
+{%- assign s = section.settings -%}
+{%- if reviews_enabled and template == 'product' -%}
+<section class="wrap" id="sec-{{ section.id }}" style="max-width:1200px;margin:{{ s.space_top | default: 56 }}px auto {{ s.space_bottom | default: 24 }}px">
+  {% render 'snippets/review-box', product: product, reviews: reviews, count: review_count, average: review_average, breakdown: review_breakdown, media_count: review_media_count, published: review_published, submitted: review_submitted, w: widgets.reviews, ui: review_ui, shop: shop, heading: s.heading, write_label: s.write_label, show_gallery: s.show_gallery %}
+</section>
+{%- elsif editor -%}
+<section class="wrap" style="max-width:1200px;margin:40px auto"><p class="muted">{% if reviews_enabled %}Product reviews show on product pages.{% else %}Reviews are switched off. Turn them on in Settings → Widgets.{% endif %}</p></section>
+{%- endif -%}
+{% schema %}
+{ "name": "Product reviews", "category": "Trust", "requires": "reviews", "description": "Rating summary with bars, customer photos, review list and the write-a-review form. Add it to the product page and move it anywhere.", "settings": [
+  { "id": "heading", "type": "text", "label": "Heading", "default": "Customer reviews" },
+  { "id": "write_label", "type": "text", "label": "Button text", "default": "Write a review" },
+  { "id": "show_gallery", "type": "checkbox", "label": "Show customer photos and videos in a strip", "default": true },
+  { "id": "space_top", "type": "range", "label": "Space above", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 56 },
+  { "id": "space_bottom", "type": "range", "label": "Space below", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 24 },
+  { "type": "paragraph", "id": "p_more", "label": "Colours, approval rules and photo/video limits are in Settings → Widgets → Reviews. The star rating near the price stays in the product section." }
+] }
+{% endschema %}

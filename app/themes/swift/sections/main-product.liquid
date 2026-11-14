@@ -102,7 +102,9 @@
   {%- for b in product.banners -%}<picture style="display:block">{%- if b.mobile != blank -%}<source media="(max-width:749px)" srcset="{{ b.mobile | img_url: 900 }}">{%- endif -%}<img src="{{ b.image | img_url: 1800 }}" alt="{{ b.alt | escape }}" loading="lazy" style="display:block;width:100%;height:auto"></picture>{%- endfor -%}
 </section>
 {%- endif -%}
-{%- if reviews_enabled -%}
+{%- comment -%} Reviews live in their own "Product reviews" section. Older product pages without it still show them here. {%- endcomment -%}
+{%- assign rev_section = false -%}{%- if template_sections contains 'product-reviews' -%}{%- assign rev_section = true -%}{%- endif -%}
+{%- if reviews_enabled and rev_section == false -%}
 <section class="wrap" style="max-width:1200px;margin:56px auto 0">
   {% render 'snippets/review-box', product: product, reviews: reviews, count: review_count, average: review_average, breakdown: review_breakdown, media_count: review_media_count, published: review_published, submitted: review_submitted, w: widgets.reviews, ui: review_ui, shop: shop, heading: 'Customer reviews', write_label: 'Write a review', show_gallery: true %}
 </section>
