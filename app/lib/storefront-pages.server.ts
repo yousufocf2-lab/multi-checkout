@@ -40,7 +40,11 @@ export async function homePage(ctx: ShopContext) {
           : ctx.demoPreset === "playday" ? "https://images.unsplash.com/photo-1685358268305-c621b38e75d8?auto=format&fit=crop&w=1800&q=82" : null;
   const hero = ctx.demoPreset === "scentelier" ? "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=2000&q=85" : sampleHero;
   return html(await renderPage(themeOf(ctx.look?.data), "index", {
-    ...scope, template: "index", page_title: ctx.store.name, hero_image: hero ?? first[0]?.featured_image ?? null, og_image: hero ?? first[0]?.featured_image ?? null, canonical_url: canonical(ctx, "/"),
+    ...scope, template: "index", page_title: ctx.store.name,
+    structured_data: JSON.stringify({ "@context": "https://schema.org", "@graph": [
+      { "@type": "Organization", name: ctx.store.name, url: canonical(ctx, "/"), ...(ctx.store.logoUrl ? { logo: ctx.store.logoUrl } : {}) },
+      { "@type": "WebSite", name: ctx.store.name, url: canonical(ctx, "/"), potentialAction: { "@type": "SearchAction", target: `${canonical(ctx, "/search")}?q={search_term_string}`, "query-input": "required name=search_term_string" } },
+    ] }).replace(/</g, "\\u003c"), hero_image: hero ?? first[0]?.featured_image ?? null, og_image: hero ?? first[0]?.featured_image ?? null, canonical_url: canonical(ctx, "/"),
   }, sectionData(ctx), ctx.look));
 }
 
@@ -53,7 +57,27 @@ export async function productPage(ctx: ShopContext, handle: string, review: stri
   const rs = widgetSettings(ctx.store.widgetSettings).reviews;
   const reviewData = product.id > 0 && rs.enabled ? await reviewsForProduct(ctx.store.id, Number(product.id), rs.sort) : { rows: [], count: 0, average: 0, breakdown: [5, 4, 3, 2, 1].map((stars) => ({ stars, count: 0, pct: 0 })) };
   const flag = review === true ? "received" : String(review || "");
+  const url = canonical(ctx, `/product/${product.handle || handle}`);
+  // Google rich results: price, stock and rating under the listing
+  const variantList = (product.variants as { price: number; available: boolean; sku?: string | null; title: string }[]) ?? [];
+  const offer = (v: { price: number; available: boolean; sku?: string | null }) => ({
+    "@type": "Offer", url, priceCurrency: "INR", price: (v.price / 100).toFixed(2), itemCondition: "https://schema.org/NewCondition",
+    availability: v.available ? "https://schema.org/InStock" : "https://schema.org/OutOfStock", ...(v.sku ? { sku: v.sku } : {}),
+  });
+  const prices = variantList.map((v) => v.price);
+  const ld: Record<string, unknown> = {
+    "@context": "https://schema.org", "@type": "Product", name: product.title, url,
+    image: ((product.images as { src?: string; url?: string; type?: string }[] | undefined) ?? []).filter((i) => i.type !== "video").map((i) => i.src ?? i.url).filter(Boolean).slice(0, 8),
+    description: String(product.seo_description || product.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 5000),
+    brand: { "@type": "Brand", name: product.vendor || ctx.store.name },
+    ...(variantList[0]?.sku ? { sku: variantList[0].sku } : {}),
+    offers: variantList.length > 1
+      ? { "@type": "AggregateOffer", priceCurrency: "INR", lowPrice: (Math.min(...prices) / 100).toFixed(2), highPrice: (Math.max(...prices) / 100).toFixed(2), offerCount: variantList.length, offers: variantList.map(offer) }
+      : offer(variantList[0] ?? { price: product.price as number, available: Boolean(product.available) }),
+    ...(reviewData.count > 0 ? { aggregateRating: { "@type": "AggregateRating", ratingValue: reviewData.average, reviewCount: reviewData.count, bestRating: 5, worstRating: 1 } } : {}),
+  };
   return html(await renderPage(themeOf(ctx.look?.data), "product", {
+    structured_data: JSON.stringify(ld).replace(/</g, "\\u003c"),
     ...scope, template: "product", product,
     reviews: reviewData.rows.map((r) => ({ id: r.id, authorName: r.authorName, rating: r.rating, title: r.title ?? "", body: r.body, media: r.media, verified: r.verified, createdAt: r.createdAt })),
     review_media_count: reviewData.rows.filter((r) => r.media.length > 0).length, review_count: reviewData.count, review_average: reviewData.average, review_breakdown: reviewData.breakdown, review_submitted: flag === "received" || flag === "published", review_published: flag === "published",
