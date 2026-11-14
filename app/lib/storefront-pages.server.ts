@@ -51,11 +51,12 @@ export async function productPage(ctx: ShopContext, handle: string, review: stri
   if (!product) throw await notFound(ctx, "This product isn't available any more. Have a look at everything else in the shop.");
   const scope = await baseScope(ctx);
   const rs = widgetSettings(ctx.store.widgetSettings).reviews;
-  const reviewData = product.id > 0 && rs.enabled ? await reviewsForProduct(ctx.store.id, Number(product.id), rs.sort) : { rows: [], count: 0, average: 0, breakdown: [] };
+  const reviewData = product.id > 0 && rs.enabled ? await reviewsForProduct(ctx.store.id, Number(product.id), rs.sort) : { rows: [], count: 0, average: 0, breakdown: [5, 4, 3, 2, 1].map((stars) => ({ stars, count: 0, pct: 0 })) };
   const flag = review === true ? "received" : String(review || "");
   return html(await renderPage(themeOf(ctx.look?.data), "product", {
     ...scope, template: "product", product,
-    reviews: reviewData.rows, review_count: reviewData.count, review_average: reviewData.average, review_breakdown: reviewData.breakdown, review_submitted: flag === "received" || flag === "published", review_published: flag === "published",
+    reviews: reviewData.rows.map((r) => ({ id: r.id, authorName: r.authorName, rating: r.rating, title: r.title ?? "", body: r.body, media: r.media, verified: r.verified, createdAt: r.createdAt })),
+    review_media_count: reviewData.rows.filter((r) => r.media.length > 0).length, review_count: reviewData.count, review_average: reviewData.average, review_breakdown: reviewData.breakdown, review_submitted: flag === "received" || flag === "published", review_published: flag === "published",
     page_title: product.seo_title || product.title, page_description: product.seo_description || product.description, og_image: product.featured_image, canonical_url: canonical(ctx, `/product/${product.handle || handle}`),
   }, sectionData(ctx, { exclude: product.id }), ctx.look));
 }

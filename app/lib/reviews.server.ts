@@ -53,12 +53,13 @@ export async function submitReview(storeId: number, handle: string, form: FormDa
   const name = String(form.get("name") ?? "").trim().slice(0, 80);
   const email = String(form.get("email") ?? "").trim().slice(0, 254);
   const body = String(form.get("body") ?? "").trim().slice(0, 2000);
+  const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
   const rating = Number(form.get("rating"));
   if (!name || name.length > 80 || body.length < 10 || !Number.isInteger(rating) || rating < 1 || rating > 5 || (email && !/^\S+@\S+\.\S+$/.test(email))) {
     throw new Response("Please enter your name, a valid rating, and a review of at least 10 characters.", { status: 400 });
   }
   const media = cleanMedia(storeId, form.get("media"), settings.maxMedia, { photos: settings.allowPhotos, videos: settings.allowVideos });
   const status = needsApproval(settings, rating, media.length > 0) ? "pending" : "approved";
-  await db.insert(productReviews).values({ storeId, productId: product.id, authorName: name, email: email || null, rating, body, media, status });
+  await db.insert(productReviews).values({ storeId, productId: product.id, authorName: name, email: email || null, rating, title: title || null, body, media, status });
   return status;
 }

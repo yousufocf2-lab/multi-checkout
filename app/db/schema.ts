@@ -1413,6 +1413,8 @@ export const productReviews = pgTable(
     authorName: text("author_name").notNull(),
     email: text("email"),
     rating: integer("rating").notNull(),
+    /** Optional short headline the shopper gives their review */
+    title: text("title"),
     body: text("body").notNull(),
     status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
     /** Photos and short videos the customer added (or the owner, for reviews they enter themselves) */

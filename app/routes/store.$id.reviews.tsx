@@ -23,7 +23,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const tab = (new URL(request.url).searchParams.get("tab") ?? "pending") as Tab;
   const where = tab === "all" ? eq(productReviews.storeId, store.id) : and(eq(productReviews.storeId, store.id), eq(productReviews.status, tab));
   const [reviews, counts, products, settings] = await Promise.all([
-    db.select({ id: productReviews.id, authorName: productReviews.authorName, email: productReviews.email, rating: productReviews.rating, body: productReviews.body, createdAt: productReviews.createdAt, status: productReviews.status, media: productReviews.media, source: productReviews.source, verified: productReviews.verified, productTitle: catalogItems.title, productHandle: catalogItems.handle })
+    db.select({ id: productReviews.id, authorName: productReviews.authorName, email: productReviews.email, rating: productReviews.rating, title: productReviews.title, body: productReviews.body, createdAt: productReviews.createdAt, status: productReviews.status, media: productReviews.media, source: productReviews.source, verified: productReviews.verified, productTitle: catalogItems.title, productHandle: catalogItems.handle })
       .from(productReviews).innerJoin(catalogItems, eq(catalogItems.id, productReviews.productId))
       .where(where).orderBy(desc(productReviews.createdAt)).limit(300),
     db.select({ status: productReviews.status, n: sql<number>`count(*)::int` }).from(productReviews).where(eq(productReviews.storeId, store.id)).groupBy(productReviews.status),
@@ -46,13 +46,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const [p] = await db.select({ id: catalogItems.id }).from(catalogItems).where(and(eq(catalogItems.storeId, store.id), eq(catalogItems.id, productId))).limit(1);
     const name = String(fd.get("name") ?? "").trim().slice(0, 80);
     const body = String(fd.get("body") ?? "").trim().slice(0, 2000);
+    const title = String(fd.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
     const rating = Number(fd.get("rating"));
     const date = String(fd.get("date") ?? "");
     if (!p) return json({ error: "Choose a product.", ok: null }, { status: 400 });
     if (!name || !body || !Number.isInteger(rating) || rating < 1 || rating > 5) return json({ error: "Add the customer’s name, a rating and the review text.", ok: null }, { status: 400 });
     const when = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T12:00:00+05:30`) : new Date();
     const media: ReviewMedia[] = cleanMedia(store.id, String(fd.get("media") ?? "[]"), 8, { photos: true, videos: true });
-    await db.insert(productReviews).values({ storeId: store.id, productId: p.id, authorName: name, rating, body, media, source: "owner", verified: fd.get("verified") === "on", status: "approved", createdAt: when > new Date() ? new Date() : when });
+    await db.insert(productReviews).values({ storeId: store.id, productId: p.id, authorName: name, rating, title: title || null, body, media, source: "owner", verified: fd.get("verified") === "on", status: "approved", createdAt: when > new Date() ? new Date() : when });
     return json({ ok: "Review added and live on your website.", error: null });
   }
   const id = Number(fd.get("id"));
@@ -105,7 +106,8 @@ export default function StoreReviews() {
               <span className={`rounded px-1.5 text-[11px] font-semibold ${r.status === "approved" ? "bg-[#cdfee1] text-[#0c5132]" : r.status === "pending" ? "bg-[#fff1e3] text-[#5e4200]" : "bg-[#f1f1f1] text-ink-soft"}`}>{r.status === "approved" ? "Live" : r.status === "pending" ? "Waiting" : "Hidden"}</span>
             </div>
             <p className="mt-1 text-[12px] text-ink-soft">on <b className="font-medium text-ink">{r.productTitle}</b>{r.email ? ` · ${r.email}` : ""}</p>
-            <p className="mt-2 whitespace-pre-wrap text-[13.5px]">{r.body}</p>
+            {r.title && <p className="mt-2 text-[13.5px] font-semibold">{r.title}</p>}
+            <p className={`${r.title ? "mt-0.5" : "mt-2"} whitespace-pre-wrap text-[13.5px]`}>{r.body}</p>
             {r.media.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {r.media.map((m) => (
@@ -183,6 +185,7 @@ function AddReview({ storeId, products, error }: { storeId: number; products: { 
         <label className="block"><span className="label">Customer name</span><input name="name" required maxLength={80} className="input w-full" placeholder="Rahul S." /></label>
         <label className="block"><span className="label">Date</span><input name="date" type="date" className="input w-full" max={new Date().toISOString().slice(0, 10)} /></label>
       </div>
+      <label className="block"><span className="label">Title (optional)</span><input name="title" maxLength={120} className="input w-full" placeholder="Loved the sound" /></label>
       <label className="block"><span className="label">Review</span><textarea name="body" required rows={4} maxLength={2000} className="input w-full" placeholder="What the customer said" /></label>
       <div>
         <span className="label">Photos and videos (optional)</span>

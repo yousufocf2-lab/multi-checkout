@@ -1,0 +1,465 @@
+{%- comment -%}
+  Reviews: rating summary, filterable review list and a step-by-step "rate this product" form.
+  Same markup in every theme. Colours come from Settings → Widgets → Reviews.
+  Pass: product, reviews, count, average, breakdown, media_count, published, submitted, w (widgets.reviews), ui (review_ui), shop,
+        heading, write_label, show_gallery
+{%- endcomment -%}
+{%- capture star -%}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg>{%- endcapture -%}
+{%- assign avg_pct = average | times: 20 -%}
+<div class="rbx" id="reviews" data-rbx style="--rbx-star:{{ ui.star | default: '#15803d' }};{% if ui.text != blank %}--rbx-text:{{ ui.text }};{% endif %}">
+  <div class="rbx__head">
+    <h2 class="rbx__h">{{ heading | default: 'Customer reviews' }}</h2>
+    {%- if published -%}<p class="rbx__ok">{{ star }}Thank you! Your review is live.</p>
+    {%- elsif submitted -%}<p class="rbx__ok">{{ star }}Thank you! Your review will show once the store checks it.</p>{%- endif -%}
+  </div>
+
+  <div class="rbx__sum">
+    <div class="rbx__score">
+      <p class="rbx__avg"><b>{% if count > 0 %}{{ average }}{% else %}0.0{% endif %}</b><span>out of 5</span></p>
+      <span class="rbx__stars rbx__stars--lg" style="--p:{{ avg_pct }}%" role="img" aria-label="{{ average }} out of 5 stars">
+        <span class="rbx__stars-bg">{{ star }}{{ star }}{{ star }}{{ star }}{{ star }}</span><span class="rbx__stars-fg">{{ star }}{{ star }}{{ star }}{{ star }}{{ star }}</span>
+      </span>
+      <p class="rbx__count">{% if count > 0 %}{{ count }} rating{% if count != 1 %}s{% endif %}{% if media_count > 0 %} · {{ media_count }} with photos{% endif %}{% else %}No ratings yet{% endif %}</p>
+    </div>
+    {%- if w.show_breakdown != false -%}
+    <div class="rbx__bars">
+      {%- for b in breakdown -%}
+      <button type="button" class="rbx__bar" data-rbx-filter="{{ b.stars }}"{% if b.count == 0 %} disabled{% endif %} aria-label="Show {{ b.stars }} star reviews ({{ b.count }})">
+        <span class="rbx__bl">{{ b.stars }}{{ star }}</span>
+        <i><em style="width:{{ b.pct }}%"></em></i>
+        <span class="rbx__bp">{{ b.pct }}%</span><span class="rbx__bc">{{ b.count }}</span>
+      </button>
+      {%- endfor -%}
+    </div>
+    {%- endif -%}
+    {%- unless product.demo -%}
+    <div class="rbx__cta">
+      <p class="rbx__cta-h">Bought this? Rate it</p>
+      <p class="rbx__cta-t">Your review helps other shoppers choose.</p>
+      <div class="rbx__quick" role="group" aria-label="Rate this product">
+        {%- for i in (1..5) -%}<button type="button" data-rbx-open="{{ i }}" aria-label="Rate {{ i }} out of 5">{{ star }}</button>{%- endfor -%}
+      </div>
+      <button type="button" class="rbx__btn" data-rbx-open>{{ write_label | default: 'Write a review' }}</button>
+    </div>
+    {%- endunless -%}
+  </div>
+
+  {%- assign gallery = '' | split: '' -%}
+  {%- for r in reviews -%}{%- for m in r.media -%}{%- assign gallery = gallery | push: m -%}{%- endfor -%}{%- endfor -%}
+  {%- if show_gallery != false and gallery.size > 0 -%}
+  <div class="rbx__gal">
+    <p class="rbx__sub">Customer photos &amp; videos</p>
+    <div class="rbx__galrow">{%- for m in gallery limit: 18 -%}<button type="button" class="rbx__media" data-media="{{ m.url }}" data-type="{{ m.type }}">{%- if m.type == 'video' -%}<video src="{{ m.url }}#t=0.1" muted preload="metadata"></video><span class="rbx__play"></span>{%- else -%}<img src="{{ m.url }}" alt="" loading="lazy">{%- endif -%}</button>{%- endfor -%}</div>
+  </div>
+  {%- endif -%}
+
+  {%- if reviews.size > 0 -%}
+  <div class="rbx__tools">
+    <div class="rbx__chips" role="group" aria-label="Filter reviews">
+      <button type="button" class="is-on" data-rbx-filter="all">All</button>
+      {%- if media_count > 0 -%}<button type="button" data-rbx-filter="media">With photos</button>{%- endif -%}
+      {%- for b in breakdown -%}{%- if b.count > 0 -%}<button type="button" data-rbx-filter="{{ b.stars }}">{{ b.stars }}★</button>{%- endif -%}{%- endfor -%}
+    </div>
+    <label class="rbx__sort"><span>Sort</span><select data-rbx-sort aria-label="Sort reviews"><option value="new">Most recent</option><option value="high">Highest rated</option><option value="low">Lowest rated</option><option value="media">With photos first</option></select></label>
+  </div>
+  <div class="rbx__list" data-rbx-list>
+    {%- for r in reviews -%}
+    <article class="rbx__it" data-stars="{{ r.rating }}" data-media-n="{{ r.media.size }}" data-i="{{ forloop.index0 }}">
+      <div class="rbx__ith">
+        <span class="rbx__av rbx__av--{{ forloop.index0 | modulo: 5 }}">{{ r.authorName | slice: 0 | upcase }}</span>
+        <div class="rbx__who"><b>{{ r.authorName | escape }}</b>
+          {%- if w.show_verified != false and r.verified -%}<em><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>Verified buyer</em>{%- endif -%}
+        </div>
+        {%- if w.show_date != false -%}<time>{{ r.createdAt | date: '%d %b %Y' }}</time>{%- endif -%}
+      </div>
+      {%- assign rp = r.rating | times: 20 -%}
+      <span class="rbx__stars" style="--p:{{ rp }}%" role="img" aria-label="{{ r.rating }} out of 5 stars"><span class="rbx__stars-bg">{{ star }}{{ star }}{{ star }}{{ star }}{{ star }}</span><span class="rbx__stars-fg">{{ star }}{{ star }}{{ star }}{{ star }}{{ star }}</span></span>
+      {%- if r.title != blank -%}<p class="rbx__title">{{ r.title | escape }}</p>{%- endif -%}
+      <p class="rbx__body" data-rbx-body>{{ r.body | escape | newline_to_br }}</p>
+      {%- if r.media.size > 0 -%}
+      <div class="rbx__mrow">{%- for m in r.media -%}<button type="button" class="rbx__media" data-media="{{ m.url }}" data-type="{{ m.type }}">{%- if m.type == 'video' -%}<video src="{{ m.url }}#t=0.1" muted preload="metadata"></video><span class="rbx__play"></span>{%- else -%}<img src="{{ m.url }}" alt="" loading="lazy">{%- endif -%}</button>{%- endfor -%}</div>
+      {%- endif -%}
+    </article>
+    {%- endfor -%}
+  </div>
+  <p class="rbx__empty" data-rbx-none hidden>No reviews match. <button type="button" data-rbx-filter="all">Show all</button></p>
+  {%- if reviews.size > 6 -%}<button type="button" class="rbx__more" data-rbx-more>Show more reviews</button>{%- endif -%}
+  {%- else -%}
+  <div class="rbx__first">
+    <span class="rbx__first-ic">{{ star }}</span>
+    <div><b>No reviews yet</b><p>Be the first to share what you think{% unless product.demo %} – it only takes a minute{% endunless %}.</p></div>
+  </div>
+  {%- endif -%}
+
+  {%- unless product.demo -%}
+  {%- assign media_on = false -%}{%- if w.allow_photos or w.allow_videos -%}{%- assign media_on = true -%}{%- endif -%}
+  <div class="rbx-m" data-rbx-modal hidden style="--rbx-star:{{ ui.star | default: '#15803d' }};{% if ui.text != blank %}--rbx-text:{{ ui.text }};{% endif %}">
+    <div class="rbx-m__shade" data-rbx-close></div>
+    <form class="rbx-m__box" method="post" role="dialog" aria-modal="true" aria-label="Write a review" data-rbx-form data-store="{{ shop.slug }}" data-max-video="{{ w.max_video | default: 30 }}" data-max-media="{{ w.max_media | default: 4 }}" novalidate>
+      <div class="rbx-m__top">
+        <div class="rbx-m__prog" aria-hidden="true">{%- if media_on -%}<i></i><i></i><i></i><i></i>{%- else -%}<i></i><i></i><i></i>{%- endif -%}</div>
+        <span class="rbx-m__step" data-rbx-stepn></span>
+        <button type="button" class="rbx-m__x" data-rbx-close aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
+
+      <section class="rbx-s" data-step="rate">
+        <div class="rbx-s__prod">
+          {%- if product.featured_image -%}<img src="{{ product.featured_image | img_url: 300 }}" alt="">{%- endif -%}
+          <b>{{ product.title }}</b>
+        </div>
+        <h3 class="rbx-s__h">How would you rate it?</h3>
+        <p class="rbx-s__t">Tap a star – there are no wrong answers.</p>
+        <div class="rbx-pick" role="radiogroup" aria-label="Your rating" data-rbx-pick>
+          {%- for i in (1..5) -%}<label><input type="radio" name="rating" value="{{ i }}"><span>{{ star }}</span><em class="sr">{{ i }} star{% if i > 1 %}s{% endif %}</em></label>{%- endfor -%}
+        </div>
+        <p class="rbx-pick__say" data-rbx-say aria-live="polite">&nbsp;</p>
+        <div class="rbx-pick__scale" aria-hidden="true"><span>Poor</span><span>Great</span></div>
+      </section>
+
+      <section class="rbx-s" data-step="write" hidden>
+        <div class="rbx-s__mini"><span class="rbx-s__mstars" data-rbx-mini></span><button type="button" data-rbx-go="rate">Change</button></div>
+        <h3 class="rbx-s__h">Tell us more</h3>
+        <p class="rbx-s__t">Tap a phrase to start, then add your own words.</p>
+        <div class="rbx-tags" data-rbx-tags data-good="Great quality|Value for money|Looks premium|Easy to use|Fast delivery|Worth it" data-bad="Not as described|Quality could be better|Stopped working|Late delivery|Too expensive|Hard to use"></div>
+        <label class="rbx-f"><span>Title <small>(optional)</small></span><input name="title" maxlength="120" placeholder="Sum it up in a few words" autocomplete="off"></label>
+        <label class="rbx-f"><span>Your review</span><textarea name="body" maxlength="2000" rows="5" placeholder="What did you like or dislike? How do you use it?" data-rbx-body-in></textarea>
+          <small class="rbx-f__count" data-rbx-count>At least 10 characters</small></label>
+      </section>
+
+      {%- if media_on -%}
+      <section class="rbx-s" data-step="media" hidden>
+        <h3 class="rbx-s__h">Add {% if w.allow_photos %}photos{% endif %}{% if w.allow_photos and w.allow_videos %} or {% endif %}{% if w.allow_videos %}a video{% endif %}</h3>
+        <p class="rbx-s__t">Reviews with pictures help other shoppers the most. This step is optional.</p>
+        <label class="rbx-drop" data-rbx-drop>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1.5M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5"/></svg>
+          <b>Tap to add, or drop files here</b>
+          <small>{% if w.allow_photos %}JPG, PNG or WebP{% endif %}{% if w.allow_photos and w.allow_videos %} · {% endif %}{% if w.allow_videos %}videos up to {{ w.max_video | default: 30 }} sec{% endif %} · up to {{ w.max_media | default: 4 }} files</small>
+          <input type="file" accept="{% if w.allow_photos %}image/jpeg,image/png,image/webp{% endif %}{% if w.allow_photos and w.allow_videos %},{% endif %}{% if w.allow_videos %}video/mp4,video/webm,video/quicktime{% endif %}" multiple data-rbx-files>
+        </label>
+        <p class="rbx-hint" data-rbx-hint></p>
+        <div class="rbx-thumbs" data-rbx-thumbs></div>
+        <input type="hidden" name="media" value="[]" data-rbx-media>
+      </section>
+      {%- endif -%}
+
+      <section class="rbx-s" data-step="you" hidden>
+        <h3 class="rbx-s__h">Almost done</h3>
+        <p class="rbx-s__t">Your name shows with your review. Your email stays private.</p>
+        <label class="rbx-f"><span>Your name</span><input name="name" maxlength="80" autocomplete="name" placeholder="e.g. Priya S."></label>
+        <label class="rbx-f"><span>Email <small>(optional)</small></span><input name="email" type="email" maxlength="254" autocomplete="email" placeholder="Only used if we need to reach you about this review"></label>
+        <div class="rbx-trap" aria-hidden="true"><label>Leave this blank<input name="website" tabindex="-1" autocomplete="off"></label></div>
+        <div class="rbx-recap" data-rbx-recap></div>
+        <p class="rbx-err" data-rbx-err role="alert" hidden></p>
+      </section>
+
+      <section class="rbx-s rbx-s--done" data-step="done" hidden>
+        <span class="rbx-done__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span>
+        <h3 class="rbx-s__h" data-rbx-thanks>Thank you!</h3>
+        <p class="rbx-s__t" data-rbx-donemsg></p>
+      </section>
+
+      <div class="rbx-m__foot">
+        <button type="button" class="rbx-m__back" data-rbx-back><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Back</button>
+        <button type="button" class="rbx-m__skip" data-rbx-skip hidden>Skip</button>
+        <button type="button" class="rbx-m__next" data-rbx-next>Next</button>
+      </div>
+    </form>
+  </div>
+  {%- endunless -%}
+</div>
+<style>
+.rbx,.rbx-m{--rbx-ink:var(--ink,#16161a);--rbx-soft:var(--soft,var(--muted,#6b6b72));--rbx-line:var(--line,rgba(0,0,0,.1));--rbx-tint:var(--tint,#f4f4f5);--rbx-bg:var(--bg,#fff);--rbx-r:var(--radius,14px);--rbx-btn:var(--btn-bg,var(--rbx-ink));--rbx-btn-ink:var(--btn-text,#fff);color:var(--rbx-ink)}
+.rbx svg,.rbx-m svg{display:block}
+.rbx__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+.rbx__h{margin:0;font-size:clamp(22px,2.4vw,30px);letter-spacing:-.01em}
+.rbx__ok{display:inline-flex;align-items:center;gap:8px;margin:0;padding:9px 14px;border-radius:999px;background:color-mix(in srgb,var(--rbx-star) 12%,var(--rbx-bg));color:var(--rbx-star);font-weight:700;font-size:14px}
+.rbx__ok svg{width:16px;height:16px;fill:currentColor}
+.rbx__sum{display:grid;gap:18px;padding:22px;border-radius:calc(var(--rbx-r) + 6px);background:var(--rbx-tint)}
+@media(min-width:900px){.rbx__sum{grid-template-columns:200px minmax(0,1fr) 260px;gap:32px;align-items:center;padding:28px 32px}}
+.rbx__avg{display:flex;align-items:baseline;gap:8px;margin:0}
+.rbx__avg b{font-size:54px;line-height:1;letter-spacing:-.04em;font-weight:800}
+.rbx__avg span{color:var(--rbx-soft);font-size:14px}
+.rbx__stars{position:relative;display:inline-flex;margin-top:6px;--sz:16px}
+.rbx__stars--lg{--sz:24px;margin-top:10px}
+.rbx__stars-bg,.rbx__stars-fg{display:flex;gap:2px}
+.rbx__stars svg{width:var(--sz);height:var(--sz)}
+.rbx__stars-bg svg{fill:color-mix(in srgb,var(--rbx-ink) 14%,transparent)}
+.rbx__stars-fg{position:absolute;inset:0;width:var(--p);overflow:hidden}
+.rbx__stars-fg svg{fill:var(--rbx-star);flex:none}
+.rbx__count{margin:8px 0 0;color:var(--rbx-soft);font-size:13.5px}
+.rbx__bars{display:flex;flex-direction:column;gap:6px}
+.rbx__bar{display:grid;grid-template-columns:36px 1fr 40px 44px;align-items:center;gap:10px;padding:4px 8px;margin:0 -8px;border:0;border-radius:8px;background:none;font:inherit;font-size:13.5px;color:inherit;cursor:pointer;text-align:left;transition:background .15s}
+.rbx__bar:hover:not(:disabled){background:color-mix(in srgb,var(--rbx-ink) 6%,transparent)}
+.rbx__bar:disabled{cursor:default;opacity:.55}
+.rbx__bar.is-on{background:color-mix(in srgb,var(--rbx-star) 14%,transparent)}
+.rbx__bl{display:inline-flex;align-items:center;gap:3px;font-weight:700}
+.rbx__bl svg{width:13px;height:13px;fill:var(--rbx-star)}
+.rbx__bar i{display:block;height:10px;border-radius:10px;background:color-mix(in srgb,var(--rbx-ink) 9%,transparent);overflow:hidden}
+.rbx__bar em{display:block;height:100%;border-radius:10px;background:var(--rbx-star);transform-origin:left;animation:rbxGrow .8s cubic-bezier(.2,.8,.2,1)}
+@keyframes rbxGrow{from{transform:scaleX(0)}}
+.rbx__bp{font-weight:700;text-align:right}
+.rbx__bc{color:var(--rbx-soft);font-size:12.5px}
+.rbx__cta{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:18px;border-radius:var(--rbx-r);background:var(--rbx-bg);box-shadow:0 1px 0 var(--rbx-line),0 10px 30px -18px rgba(0,0,0,.25)}
+.rbx__cta-h{margin:0;font-weight:800;font-size:15.5px}
+.rbx__cta-t{margin:0;color:var(--rbx-soft);font-size:13px}
+.rbx__quick{display:flex;gap:4px;margin:10px 0 12px}
+.rbx__quick button{padding:2px;border:0;background:none;cursor:pointer;transition:transform .15s}
+.rbx__quick svg{width:30px;height:30px;fill:none;stroke:var(--rbx-star);stroke-width:1.6;stroke-linejoin:round;transition:fill .15s}
+.rbx__quick:hover button svg{fill:var(--rbx-star)}
+.rbx__quick button:hover~button svg{fill:none}
+.rbx__quick button:hover{transform:scale(1.15) rotate(-6deg)}
+.rbx__btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 20px;border:0;border-radius:var(--btn-radius,999px);background:var(--rbx-btn);color:var(--rbx-btn-ink);font:inherit;font-weight:700;font-size:14px;cursor:pointer;transition:transform .15s,opacity .15s}
+.rbx__btn:hover{opacity:.9}
+.rbx__btn:active{transform:scale(.97)}
+.rbx__cta .rbx__btn{width:100%}
+.rbx__sub{margin:0 0 10px;font-weight:700;font-size:14px}
+.rbx__gal{margin-top:26px}
+.rbx__galrow{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.rbx__galrow::-webkit-scrollbar{display:none}
+.rbx__media{position:relative;flex:none;width:96px;height:96px;padding:0;border:0;border-radius:12px;overflow:hidden;background:var(--rbx-tint);cursor:zoom-in}
+.rbx__media img,.rbx__media video{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s}
+.rbx__media:hover img,.rbx__media:hover video{transform:scale(1.06)}
+.rbx__play{position:absolute;inset:0;margin:auto;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.55)}
+.rbx__play::after{content:"";position:absolute;left:12px;top:9px;border:7px solid transparent;border-left:10px solid #fff;border-right:0}
+.rbx__tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:28px 0 6px}
+.rbx__chips{display:flex;flex-wrap:wrap;gap:8px}
+.rbx__chips button,.rbx__empty button{padding:7px 14px;border:1px solid var(--rbx-line);border-radius:999px;background:var(--rbx-bg);color:inherit;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.rbx__chips button.is-on{background:var(--rbx-ink);border-color:var(--rbx-ink);color:var(--rbx-bg)}
+.rbx__sort{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--rbx-soft)}
+.rbx__sort select{font:inherit;color:var(--rbx-ink);padding:7px 12px;border:1px solid var(--rbx-line);border-radius:999px;background:var(--rbx-bg)}
+.rbx__list{display:grid;gap:0}
+@media(min-width:900px){.rbx__list{grid-template-columns:1fr 1fr;column-gap:40px}}
+.rbx__it{padding:20px 0;border-bottom:1px solid var(--rbx-line)}
+.rbx__it[hidden]{display:none}
+.rbx__ith{display:flex;align-items:center;gap:12px}
+.rbx__av{width:40px;height:40px;flex:none;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:15px;color:#fff;background:#6d5efc}
+.rbx__av--1{background:#ef6c4a}.rbx__av--2{background:#14a37f}.rbx__av--3{background:#e0a400}.rbx__av--4{background:#2f80ed}
+.rbx__who{display:flex;flex-direction:column;gap:1px;min-width:0}
+.rbx__who b{font-size:14.5px}
+.rbx__who em{display:inline-flex;align-items:center;gap:4px;font-style:normal;font-size:12px;font-weight:700;color:var(--rbx-star)}
+.rbx__who em svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.rbx__ith time{margin-left:auto;color:var(--rbx-soft);font-size:12.5px;white-space:nowrap}
+.rbx__it .rbx__stars{margin-top:12px}
+.rbx__title{margin:8px 0 0;font-weight:800;font-size:15px}
+.rbx__body{margin:6px 0 0;font-size:14.5px;line-height:1.6;color:var(--rbx-text,inherit);display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.rbx__body.is-open{display:block}
+.rbx__rm{margin-top:4px;padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:700;color:var(--rbx-ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.rbx__mrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.rbx__mrow .rbx__media{width:72px;height:72px;border-radius:10px}
+.rbx__more{display:block;margin:22px auto 0;padding:11px 22px;border:1.5px solid var(--rbx-ink);border-radius:999px;background:none;color:inherit;font:inherit;font-weight:700;font-size:14px;cursor:pointer}
+.rbx__empty{margin:20px 0;color:var(--rbx-soft);font-size:14px}
+.rbx__first{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-top:18px;padding:20px 22px;border:1.5px dashed var(--rbx-line);border-radius:var(--rbx-r)}
+.rbx__first>div{flex:1;min-width:200px}
+.rbx__first b{font-size:15px}
+.rbx__first p{margin:2px 0 0;color:var(--rbx-soft);font-size:14px}
+.rbx__first-ic{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--rbx-star) 14%,transparent)}
+.rbx__first-ic svg{width:24px;height:24px;fill:var(--rbx-star)}
+/* Modal */
+.rbx-m{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:16px}
+.rbx-m[hidden]{display:none}
+.rbx-m__shade{position:absolute;inset:0;background:rgba(12,12,18,.5);backdrop-filter:blur(3px);animation:rbxFade .2s}
+.rbx-m__box{position:relative;display:flex;flex-direction:column;width:min(560px,100%);max-height:min(720px,calc(100vh - 32px));background:var(--rbx-bg);color:var(--rbx-ink);border-radius:24px;box-shadow:0 30px 80px -20px rgba(0,0,0,.45);overflow:hidden;animation:rbxPop .3s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes rbxFade{from{opacity:0}}
+@keyframes rbxPop{from{transform:translateY(16px) scale(.97);opacity:0}}
+.rbx-m__top{display:flex;align-items:center;gap:12px;padding:16px 18px 0}
+.rbx-m__prog{flex:1;display:flex;gap:6px}
+.rbx-m__prog i{flex:1;height:5px;border-radius:5px;background:var(--rbx-tint);overflow:hidden;position:relative}
+.rbx-m__prog i::after{content:"";position:absolute;inset:0;background:var(--rbx-star);transform:scaleX(0);transform-origin:left;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+.rbx-m__prog i.is-on::after{transform:none}
+.rbx-m__step{font-size:12px;font-weight:700;color:var(--rbx-soft);white-space:nowrap}
+.rbx-m__x{width:36px;height:36px;flex:none;border:0;border-radius:50%;background:var(--rbx-tint);color:inherit;display:grid;place-items:center;cursor:pointer}
+.rbx-m__x svg,.rbx-m__back svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.rbx-s{flex:1;overflow:auto;padding:22px 26px 8px;animation:rbxIn .3s ease}
+.rbx-s[hidden]{display:none}
+@keyframes rbxIn{from{opacity:0;transform:translateX(14px)}}
+.rbx-s.is-back{animation-name:rbxInB}
+@keyframes rbxInB{from{opacity:0;transform:translateX(-14px)}}
+.rbx-s__prod{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.rbx-s__prod img{width:96px;height:96px;object-fit:cover;border-radius:18px;background:var(--rbx-tint)}
+.rbx-s__prod b{font-size:14px;line-height:1.35;max-width:380px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rbx-s__h{margin:18px 0 0;font-size:22px;letter-spacing:-.01em;text-align:center}
+.rbx-s__t{margin:6px 0 0;text-align:center;color:var(--rbx-soft);font-size:14px}
+.rbx-s[data-step=write] .rbx-s__h,.rbx-s[data-step=write] .rbx-s__t,.rbx-s[data-step=you] .rbx-s__h,.rbx-s[data-step=you] .rbx-s__t,.rbx-s[data-step=media] .rbx-s__h,.rbx-s[data-step=media] .rbx-s__t{text-align:left}
+.rbx-s[data-step=write] .rbx-s__h{margin-top:10px}
+.rbx-pick{display:flex;justify-content:center;gap:6px;margin-top:22px}
+.rbx-pick label{position:relative;cursor:pointer}
+.rbx-pick input{position:absolute;opacity:0;width:1px;height:1px}
+.rbx-pick span{display:block;padding:4px;transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
+.rbx-pick svg{width:48px;height:48px;fill:none;stroke:var(--rbx-star);stroke-width:1.5;stroke-linejoin:round;transition:fill .15s}
+.rbx-pick label.is-lit svg{fill:var(--rbx-star)}
+.rbx-pick label:hover span{transform:scale(1.14) rotate(-8deg)}
+.rbx-pick label.is-pop span{animation:rbxStar .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes rbxStar{40%{transform:scale(1.35) rotate(-12deg)}}
+.rbx-pick input:focus-visible+span{outline:2px solid var(--rbx-star);outline-offset:2px;border-radius:8px}
+.rbx-pick__say{min-height:26px;margin:12px 0 0;text-align:center;font-weight:800;font-size:16px;color:var(--rbx-star)}
+.rbx-pick__scale{display:flex;justify-content:space-between;width:min(280px,100%);margin:6px auto 12px;color:var(--rbx-soft);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.rbx-s__mini{display:flex;align-items:center;gap:10px}
+.rbx-s__mstars{display:flex;gap:2px}
+.rbx-s__mstars svg{width:20px;height:20px;fill:var(--rbx-star)}
+.rbx-s__mstars svg.off{fill:color-mix(in srgb,var(--rbx-ink) 14%,transparent)}
+.rbx-s__mini b{font-size:13.5px}
+.rbx-s__mini button{margin-left:auto;padding:0;border:0;background:none;font:inherit;font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;color:inherit;cursor:pointer}
+.rbx-tags{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 4px}
+.rbx-tags button{padding:7px 13px;border:1px solid var(--rbx-line);border-radius:999px;background:var(--rbx-bg);color:inherit;font:inherit;font-size:13px;cursor:pointer;transition:.15s}
+.rbx-tags button::before{content:"+ ";opacity:.5}
+.rbx-tags button.is-on{background:color-mix(in srgb,var(--rbx-star) 14%,var(--rbx-bg));border-color:var(--rbx-star);color:var(--rbx-star);font-weight:700}
+.rbx-tags button.is-on::before{content:"✓ ";opacity:1}
+.rbx-f{display:flex;flex-direction:column;gap:6px;margin-top:16px;font-size:13.5px;font-weight:700}
+.rbx-f small{font-weight:500;color:var(--rbx-soft)}
+.rbx-f input,.rbx-f textarea{width:100%;box-sizing:border-box;padding:12px 14px;border:1.5px solid var(--rbx-line);border-radius:12px;background:var(--rbx-bg);color:var(--rbx-ink);font:inherit;font-weight:400;font-size:15px;transition:border-color .15s,box-shadow .15s;resize:vertical}
+.rbx-f input:focus,.rbx-f textarea:focus{outline:0;border-color:var(--rbx-star);box-shadow:0 0 0 4px color-mix(in srgb,var(--rbx-star) 16%,transparent)}
+.rbx-f.is-bad input,.rbx-f.is-bad textarea{border-color:#d93025}
+.rbx-f__count{align-self:flex-end;font-size:12px!important}
+.rbx-f__count.is-ok{color:var(--rbx-star)!important}
+.rbx-drop{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:18px;padding:28px 16px;border:2px dashed var(--rbx-line);border-radius:18px;text-align:center;cursor:pointer;transition:.2s}
+.rbx-drop:hover,.rbx-drop.is-over{border-color:var(--rbx-star);background:color-mix(in srgb,var(--rbx-star) 6%,transparent)}
+.rbx-drop svg{width:34px;height:34px;fill:none;stroke:var(--rbx-star);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-bottom:4px}
+.rbx-drop b{font-size:15px}
+.rbx-drop small{color:var(--rbx-soft);font-size:12.5px}
+.rbx-drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.rbx-hint{min-height:18px;margin:8px 0 0;font-size:12.5px;color:#d93025}
+.rbx-thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:4px}
+.rbx-th{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;background:var(--rbx-tint)}
+.rbx-th img,.rbx-th video{width:100%;height:100%;object-fit:cover}
+.rbx-th button{position:absolute;top:5px;right:5px;width:24px;height:24px;border:0;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:15px;line-height:1;cursor:pointer}
+.rbx-th--busy{display:grid;place-items:center}
+.rbx-th--busy::after{content:"";width:26px;height:26px;border-radius:50%;border:3px solid var(--rbx-line);border-top-color:var(--rbx-star);animation:rbxSpin .8s linear infinite}
+@keyframes rbxSpin{to{transform:rotate(360deg)}}
+.rbx-trap{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
+.rbx-recap{display:flex;gap:12px;align-items:flex-start;margin-top:18px;padding:14px;border-radius:14px;background:var(--rbx-tint);font-size:13.5px}
+.rbx-recap:empty{display:none}
+.rbx-recap p{margin:2px 0 0;color:var(--rbx-soft);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rbx-err{margin:14px 0 0;padding:10px 12px;border-radius:10px;background:#fdecea;color:#a50e0e;font-size:13.5px}
+.rbx-s--done{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 26px 24px;text-align:center}
+.rbx-done__ic{width:84px;height:84px;border-radius:50%;display:grid;place-items:center;background:var(--rbx-star);animation:rbxPopIn .5s cubic-bezier(.3,1.6,.5,1)}
+.rbx-done__ic svg{width:42px;height:42px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:30;stroke-dashoffset:30;animation:rbxTick .5s .25s forwards}
+@keyframes rbxPopIn{from{transform:scale(.3);opacity:0}}
+@keyframes rbxTick{to{stroke-dashoffset:0}}
+.rbx-m__foot{display:flex;align-items:center;gap:10px;padding:14px 18px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--rbx-line)}
+.rbx-m__back{display:inline-flex;align-items:center;gap:4px;padding:10px 6px;border:0;background:none;color:inherit;font:inherit;font-weight:700;font-size:14px;cursor:pointer}
+.rbx-m__back[hidden]{display:none}
+.rbx-m__skip{margin-left:auto;padding:10px 14px;border:0;background:none;color:var(--rbx-soft);font:inherit;font-weight:700;font-size:14px;cursor:pointer}
+.rbx-m__next{margin-left:auto;min-width:140px;height:48px;padding:0 24px;border:0;border-radius:var(--btn-radius,999px);background:var(--rbx-star);color:#fff;font:inherit;font-weight:800;font-size:15px;cursor:pointer;transition:opacity .15s,transform .15s}
+.rbx-m__skip:not([hidden])+.rbx-m__next{margin-left:0}
+.rbx-m__next:disabled{opacity:.35;cursor:not-allowed}
+.rbx-m__next:not(:disabled):active{transform:scale(.97)}
+.rbx-m__next.is-busy{color:transparent;position:relative}
+.rbx-m__next.is-busy::after{content:"";position:absolute;inset:0;margin:auto;width:20px;height:20px;border-radius:50%;border:3px solid rgba(255,255,255,.4);border-top-color:#fff;animation:rbxSpin .8s linear infinite}
+body.rbx-lock{overflow:hidden}
+@media(max-width:640px){
+  .rbx-m{padding:0;align-items:flex-end}
+  .rbx-m__box{width:100%;max-height:92vh;border-radius:22px 22px 0 0;animation:rbxUp .32s cubic-bezier(.2,.9,.3,1)}
+  .rbx-pick svg{width:42px;height:42px}
+  .rbx-s{padding:18px 20px 8px}
+  .rbx__bar{grid-template-columns:34px 1fr 38px 36px;gap:8px}
+}
+@keyframes rbxUp{from{transform:translateY(60px);opacity:.4}}
+@media (prefers-reduced-motion:reduce){.rbx *,.rbx-m *{animation:none!important;transition:none!important}}
+.rbx-lb{position:fixed;inset:0;z-index:1300;display:grid;place-items:center;background:rgba(0,0,0,.85);padding:20px;animation:rbxFade .2s}
+.rbx-lb img,.rbx-lb video{max-width:min(960px,100%);max-height:86vh;border-radius:14px}
+.rbx-lb button{position:absolute;top:16px;right:16px;width:42px;height:42px;border:0;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:24px;cursor:pointer}
+</style>
+<script>
+(function(){if(window.__rbx)return;window.__rbx=1;
+var SAY=["","Terrible 😣","Not great 😕","It's okay 🙂","Really good 😀","Love it! 😍"];
+var STAR='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg>';
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function init(box){
+  // ----- list: filter, sort, show more, read more
+  var list=box.querySelector('[data-rbx-list]'),items=list?[].slice.call(list.children):[],limit=6,filter='all';
+  function paint(){var shown=0;items.forEach(function(it){var ok=filter==='all'||(filter==='media'?+it.dataset.mediaN>0:it.dataset.stars===filter);it.hidden=!ok||shown>=limit;if(ok&&shown<limit)shown++;});
+    var total=items.filter(function(it){return filter==='all'||(filter==='media'?+it.dataset.mediaN>0:it.dataset.stars===filter)}).length;
+    var more=box.querySelector('[data-rbx-more]');if(more)more.hidden=total<=limit;var none=box.querySelector('[data-rbx-none]');if(none)none.hidden=total>0;
+    box.querySelectorAll('[data-rbx-filter]').forEach(function(b){b.classList.toggle('is-on',b.dataset.rbxFilter===filter)});
+    items.forEach(function(it){var b=it.querySelector('[data-rbx-body]');if(!b||it.hidden||b.dataset.done)return;b.dataset.done=1;if(b.scrollHeight>b.clientHeight+4){var r=document.createElement('button');r.type='button';r.className='rbx__rm';r.textContent='Read more';r.onclick=function(){var o=b.classList.toggle('is-open');r.textContent=o?'Show less':'Read more'};b.after(r)}});}
+  if(list){paint();
+    box.addEventListener('click',function(e){var f=e.target.closest('[data-rbx-filter]');if(f){filter=f.dataset.rbxFilter;limit=6;paint();if(f.classList.contains('rbx__bar'))list.scrollIntoView({behavior:'smooth',block:'start'});}
+      if(e.target.closest('[data-rbx-more]')){limit+=6;paint();}});
+    var so=box.querySelector('[data-rbx-sort]');if(so)so.addEventListener('change',function(){var k=so.value;items.sort(function(a,b){if(k==='high')return b.dataset.stars-a.dataset.stars||a.dataset.i-b.dataset.i;if(k==='low')return a.dataset.stars-b.dataset.stars||a.dataset.i-b.dataset.i;if(k==='media')return b.dataset.mediaN-a.dataset.mediaN||a.dataset.i-b.dataset.i;return a.dataset.i-b.dataset.i});items.forEach(function(it){list.appendChild(it)});paint();});
+  }
+  // ----- lightbox
+  box.addEventListener('click',function(e){var m=e.target.closest('[data-media]');if(!m)return;var v=m.dataset.type==='video',d=document.createElement('div');d.className='rbx-lb';d.innerHTML=(v?'<video src="'+esc(m.dataset.media)+'" controls autoplay playsinline></video>':'<img src="'+esc(m.dataset.media)+'" alt="">')+'<button type="button" aria-label="Close">×</button>';d.onclick=function(ev){if(ev.target===d||ev.target.tagName==='BUTTON')d.remove()};document.body.appendChild(d);});
+  // ----- the step-by-step form
+  var modal=box.querySelector('[data-rbx-modal]');if(!modal)return;
+  var form=modal.querySelector('[data-rbx-form]');document.body.appendChild(modal);
+  var steps=[].slice.call(form.querySelectorAll('.rbx-s')).filter(function(s){return s.dataset.step!=='done'});
+  var done=form.querySelector('[data-step=done]'),bars=[].slice.call(form.querySelectorAll('.rbx-m__prog i'));
+  var next=form.querySelector('[data-rbx-next]'),back=form.querySelector('[data-rbx-back]'),skip=form.querySelector('[data-rbx-skip]'),stepn=form.querySelector('[data-rbx-stepn]');
+  var labels=[].slice.call(form.querySelectorAll('[data-rbx-pick] label')),say=form.querySelector('[data-rbx-say]');
+  var body=form.querySelector('[data-rbx-body-in]'),count=form.querySelector('[data-rbx-count]'),tags=form.querySelector('[data-rbx-tags]'),err=form.querySelector('[data-rbx-err]');
+  var nameIn=form.querySelector('input[name=name]'),titleIn=form.querySelector('input[name=title]');
+  var cur=0,rating=0,uploading=0,media=[],sent=false,lastFocus=null;
+  function light(n){labels.forEach(function(l,i){l.classList.toggle('is-lit',i<n)})}
+  function setRating(n,pop){rating=n;var r=form.querySelector('input[name=rating][value="'+n+'"]');if(r)r.checked=true;light(n);say.textContent=SAY[n]||'\u00a0';
+    if(pop){var l=labels[n-1];l.classList.remove('is-pop');void l.offsetWidth;l.classList.add('is-pop')}
+    var mini=form.querySelector('[data-rbx-mini]');if(mini){var h='';for(var i=1;i<=5;i++)h+=STAR.replace('<svg','<svg class="'+(i<=n?'':'off')+'"');mini.innerHTML=h+'<b>'+esc(SAY[n]||'')+'</b>';}
+    var list=(n>=4?tags.dataset.good:n?tags.dataset.bad:'').split('|').filter(Boolean);if(n===3)list=['Good for the price','Does the job','Could be better','As described'];
+    tags.innerHTML=list.map(function(t){return'<button type="button">'+esc(t)+'</button>'}).join('');syncTags();check();}
+  labels.forEach(function(l,i){l.addEventListener('mouseenter',function(){light(i+1);say.textContent=SAY[i+1]});l.addEventListener('mouseleave',function(){light(rating);say.textContent=SAY[rating]||'\u00a0'});
+    l.querySelector('input').addEventListener('change',function(){setRating(i+1,true);setTimeout(function(){if(cur===0&&rating)go(1)},380)});});
+  function syncTags(){[].forEach.call(tags.children,function(b){b.classList.toggle('is-on',body.value.toLowerCase().indexOf(b.textContent.toLowerCase())>-1)})}
+  tags.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var t=b.textContent,v=body.value;
+    if(b.classList.contains('is-on')){body.value=v.replace(new RegExp('\\s*'+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\.?','i'),'').trim()}else{body.value=(v.trim()?v.trim().replace(/[.!]?$/,'. '):'')+t+'.'}
+    syncTags();check();body.focus();});
+  body.addEventListener('input',function(){syncTags();check()});
+  function check(){var s=steps[cur],ok=true;
+    if(s.dataset.step==='rate')ok=rating>0;
+    if(s.dataset.step==='write'){var n=body.value.trim().length;ok=n>=10;count.textContent=n>=10?n+' / 2000 ✓':(n?(10-n)+' more character'+(10-n===1?'':'s')+' to go':'At least 10 characters');count.classList.toggle('is-ok',ok)}
+    if(s.dataset.step==='media')ok=uploading===0;
+    if(s.dataset.step==='you')ok=nameIn.value.trim().length>0&&uploading===0;
+    next.disabled=!ok;}
+  nameIn.addEventListener('input',check);
+  function go(i,isBack){if(i<0||i>=steps.length)return;steps[cur].hidden=true;cur=i;var s=steps[cur];s.hidden=false;s.classList.toggle('is-back',!!isBack);
+    bars.forEach(function(b,k){b.classList.toggle('is-on',k<=cur)});stepn.textContent='Step '+(cur+1)+' of '+steps.length;
+    back.hidden=cur===0;skip.hidden=s.dataset.step!=='media'||media.length>0;next.textContent=cur===steps.length-1?'Submit review':'Next';
+    if(s.dataset.step==='you')recap();check();
+    setTimeout(function(){var f=s.querySelector(s.dataset.step==='write'?'textarea':s.dataset.step==='you'?'input[name=name]':'input');if(f&&s.dataset.step!=='media')f.focus({preventScroll:true})},60);}
+  function recap(){var r=form.querySelector('[data-rbx-recap]'),t=titleIn.value.trim();var h='';for(var i=1;i<=5;i++)h+=STAR.replace('<svg','<svg style="width:15px;height:15px;fill:'+(i<=rating?'var(--rbx-star)':'rgba(0,0,0,.14)')+'"');
+    r.innerHTML='<div style="display:flex;gap:1px;flex:none;padding-top:2px">'+h+'</div><div>'+(t?'<b>'+esc(t)+'</b>':'')+'<p>'+esc(body.value.trim())+'</p>'+(media.length?'<p>'+media.length+' file'+(media.length>1?'s':'')+' attached</p>':'')+'</div>';}
+  function open(n){if(sent){location.reload();return}lastFocus=document.activeElement;modal.hidden=false;document.body.classList.add('rbx-lock');steps.forEach(function(s){s.hidden=true});done.hidden=true;steps[0].hidden=false;cur=0;
+    next.hidden=false;if(n)setRating(n,false);go(n?1:0);if(!n)setTimeout(function(){var f=labels[0]&&labels[0].querySelector('input');if(f)f.focus({preventScroll:true})},80);}
+  function close(){modal.hidden=true;document.body.classList.remove('rbx-lock');if(sent)location.reload();else if(lastFocus)lastFocus.focus({preventScroll:true})}
+  box.addEventListener('click',function(e){var o=e.target.closest('[data-rbx-open]');if(o){e.preventDefault();open(+o.dataset.rbxOpen||0)}});
+  document.addEventListener('click',function(e){var j=e.target.closest('[data-review-jump],a[href="#reviews"][data-review-jump]');if(j&&!box.closest('[hidden]')){e.preventDefault();box.scrollIntoView({behavior:'smooth'});setTimeout(function(){open(0)},350)}});
+  modal.addEventListener('click',function(e){if(e.target.closest('[data-rbx-close]'))close();var g=e.target.closest('[data-rbx-go]');if(g)go(0,true)});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!modal.hidden)close()});
+  back.addEventListener('click',function(){go(cur-1,true)});
+  skip.addEventListener('click',function(){go(cur+1)});
+  next.addEventListener('click',function(){if(next.disabled)return;if(cur<steps.length-1){go(cur+1);return}submit()});
+  form.addEventListener('submit',function(e){e.preventDefault();if(!next.disabled)next.click()});
+  form.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.tagName==='INPUT'&&e.target.type!=='file'){e.preventDefault();next.click()}});
+  function submit(){err.hidden=true;next.disabled=true;next.classList.add('is-busy');
+    var fd=new FormData(form);fd.set('rating',String(rating));
+    fetch(location.pathname,{method:'POST',body:fd,headers:{Accept:'text/html'}}).then(function(r){
+      if(!r.ok)return r.text().then(function(t){throw new Error(t&&t.length<300?t:'Something went wrong. Please try again.')});
+      var live=/review=published/.test(r.url);sent=true;steps.forEach(function(s){s.hidden=true});done.hidden=false;bars.forEach(function(b){b.classList.add('is-on')});
+      stepn.textContent='';back.hidden=true;skip.hidden=true;next.classList.remove('is-busy');next.disabled=false;next.textContent='Done';next.onclick=function(){close()};
+      var nm=nameIn.value.trim().split(' ')[0];form.querySelector('[data-rbx-thanks]').textContent='Thank you, '+nm+'!';
+      form.querySelector('[data-rbx-donemsg]').textContent=live?'Your review is live now. It really helps other shoppers.':'We got your review. It will show here once the store has checked it.';
+    }).catch(function(x){err.textContent=x.message||'Something went wrong. Please try again.';err.hidden=false;next.classList.remove('is-busy');check();});}
+  // ----- photos and videos
+  var files=form.querySelector('[data-rbx-files]');
+  if(files){var thumbs=form.querySelector('[data-rbx-thumbs]'),hidden=form.querySelector('[data-rbx-media]'),hint=form.querySelector('[data-rbx-hint]'),drop=form.querySelector('[data-rbx-drop]');
+    var maxV=parseInt(form.dataset.maxVideo||'30',10),maxM=parseInt(form.dataset.maxMedia||'4',10);
+    var paintM=function(){hidden.value=JSON.stringify(media);thumbs.innerHTML=media.map(function(m,i){return'<span class="rbx-th">'+(m.type==='video'?'<video src="'+esc(m.url)+'#t=0.1" muted></video>':'<img src="'+esc(m.url)+'" alt="">')+'<button type="button" data-rm="'+i+'" aria-label="Remove">×</button></span>'}).join('')+new Array(uploading+1).join('<span class="rbx-th rbx-th--busy"></span>');skip.hidden=steps[cur].dataset.step!=='media'||media.length>0||uploading>0;check();};
+    var dur=function(f){return new Promise(function(res){var v=document.createElement('video');v.preload='metadata';v.onloadedmetadata=function(){URL.revokeObjectURL(v.src);res(v.duration||0)};v.onerror=function(){res(0)};v.src=URL.createObjectURL(f)})};
+    var add=function(list){hint.textContent='';[].slice.call(list).forEach(function(f){
+      if(media.length+uploading>=maxM){hint.textContent='You can add up to '+maxM+' files.';return}
+      if(files.accept&&files.accept.split(',').indexOf(f.type)<0){hint.textContent='That file type isn\u2019t allowed.';return}
+      var isV=/^video\//.test(f.type);(isV?dur(f):Promise.resolve(0)).then(function(sec){
+        if(isV&&sec>maxV+.5){hint.textContent='That video is '+Math.round(sec)+' seconds. Please keep it under '+maxV+' seconds.';return}
+        uploading++;paintM();
+        fetch('/api/review-media',{method:'POST',headers:{'Content-Type':f.type,'X-Store':form.dataset.store},body:f}).then(function(r){return r.json()})
+          .then(function(d){if(d.url)media.push({url:d.url,type:d.type});else hint.textContent=d.error||'Upload failed.'})
+          .catch(function(){hint.textContent='Upload failed. Please try again.'}).then(function(){uploading--;paintM()});});});};
+    files.addEventListener('change',function(){add(files.files);files.value=''});
+    ['dragenter','dragover'].forEach(function(t){drop.addEventListener(t,function(e){e.preventDefault();drop.classList.add('is-over')})});
+    ['dragleave','drop'].forEach(function(t){drop.addEventListener(t,function(e){e.preventDefault();drop.classList.remove('is-over')})});
+    drop.addEventListener('drop',function(e){if(e.dataTransfer)add(e.dataTransfer.files)});
+    thumbs.addEventListener('click',function(e){var b=e.target.closest('[data-rm]');if(!b)return;media.splice(+b.dataset.rm,1);paintM()});}
+}
+function boot(){document.querySelectorAll('[data-rbx]').forEach(init)}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+</script>

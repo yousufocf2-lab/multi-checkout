@@ -26,14 +26,16 @@
 
   <div class="pdp__info">
     {%- assign blocks = section.settings.blocks -%}
+    {%- assign has_rating = false -%}{%- for b in blocks -%}{%- if b.block == 'rating' -%}{%- assign has_rating = true -%}{%- endif -%}{%- endfor -%}
     {%- for b in blocks -%}
     {%- case b.block -%}
     {%- when 'title' -%}
       {%- if b.text != blank -%}<p class="eyebrow">{{ b.text }}</p>{%- endif -%}
       <h1 class="pdp__title">{{ product.title }}</h1>
+      {%- if reviews_enabled and has_rating == false -%}{%- assign rp = review_average | times: 20 -%}<a href="#reviews" class="pdp__rating" data-review-jump style="--rbx-star:{{ review_ui.star | default: '#15803d' }}"><span class="rbx__stars" style="--p:{{ rp }}%" aria-hidden="true"><span class="rbx__stars-bg"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg></span><span class="rbx__stars-fg"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg></span></span> {% if review_count > 0 %}<b>{{ review_average }}</b> <span class="muted">({{ review_count }} review{% if review_count != 1 %}s{% endif %})</span>{% else %}<span class="muted">{{ nil | default: 'Be the first to review this product' }}</span>{% endif %}</a>{%- endif -%}
     {%- when 'rating' -%}
       {%- unless reviews_enabled -%}{%- continue -%}{%- endunless -%}
-      <p class="pdp__rating"><span class="review__stars">★★★★★</span> {% if review_count > 0 %}{{ review_average }} / 5 · {{ review_count }} reviews{% else %}{{ b.text | default: 'Be the first to review this product' }}{% endif %}</p>
+      {%- assign rp = review_average | times: 20 -%}<a href="#reviews" class="pdp__rating" data-review-jump style="--rbx-star:{{ review_ui.star | default: '#15803d' }}"><span class="rbx__stars" style="--p:{{ rp }}%" aria-hidden="true"><span class="rbx__stars-bg"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg></span><span class="rbx__stars-fg"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.85 6.05 6.65.83-4.9 4.6 1.27 6.58L12 17.4l-5.87 3.26 1.27-6.58-4.9-4.6 6.65-.83z"/></svg></span></span> {% if review_count > 0 %}<b>{{ review_average }}</b> <span class="muted">({{ review_count }} review{% if review_count != 1 %}s{% endif %})</span>{% else %}<span class="muted">{{ b.text | default: 'Be the first to review this product' }}</span>{% endif %}</a>
     {%- when 'price' -%}
       <div class="pdp__price" data-price>{% render 'snippets/price', price: product.price, compare: product.compare_at_price %}</div>
       {%- if product.discount_pct > 0 and section.settings.show_savings -%}<p class="save" data-save>You save {{ product.compare_at_price | minus: product.price | money }} ({{ product.discount_pct }}%)</p>{%- endif -%}
@@ -101,29 +103,8 @@
 </section>
 {%- endif -%}
 {%- if reviews_enabled -%}
-<section class="reviews wrap" id="reviews">
-  <h2>Customer reviews{% if review_count > 0 %} <span class="reviews__summary">{{ review_average }} / 5 · {{ review_count }}</span>{% endif %}</h2>
-  {% if review_published %}<p class="reviews__notice">Thank you. Your review is live.</p>{% elsif review_submitted %}<p class="reviews__notice">Thank you. Your review will appear once the store checks it.</p>{% endif %}
-  {% if reviews.size > 0 %}
-    <div class="reviews__list">
-      {% for review in reviews %}
-        <article class="reviews__item">
-          <p class="review__stars" aria-label="{{ review.rating }} out of 5 stars">{% if review.rating >= 1 %}★{% endif %}{% if review.rating >= 2 %}★{% endif %}{% if review.rating >= 3 %}★{% endif %}{% if review.rating >= 4 %}★{% endif %}{% if review.rating >= 5 %}★{% endif %}</p>
-          <p>{{ review.body | escape }}</p><small>{{ review.authorName | escape }} · {{ review.createdAt | date: '%d %b %Y' }}</small>
-        </article>
-      {% endfor %}
-    </div>
-  {% endif %}
-  {%- unless product.demo -%}<details class="reviews__write"><summary>Write a review</summary>
-    <form method="post" class="reviews__form">
-      <label>Name<input name="name" maxlength="80" required autocomplete="name"></label>
-      <label>Email (optional)<input name="email" type="email" maxlength="254" autocomplete="email"></label>
-      <label>Rating<select name="rating" required><option value="">Choose a rating</option><option value="5">5 — Excellent</option><option value="4">4 — Good</option><option value="3">3 — Average</option><option value="2">2 — Poor</option><option value="1">1 — Very poor</option></select></label>
-      <label>Your review<textarea name="body" minlength="10" maxlength="2000" required rows="4"></textarea></label>
-      <div class="reviews__trap" aria-hidden="true"><label>Leave this blank<input name="website" tabindex="-1" autocomplete="off"></label></div>
-      <button class="btn btn--primary" type="submit">Submit review</button>
-    </form>
-  </details>{%- endunless -%}
+<section class="wrap" style="max-width:1200px;margin:56px auto 0">
+  {% render 'snippets/review-box', product: product, reviews: reviews, count: review_count, average: review_average, breakdown: review_breakdown, media_count: review_media_count, published: review_published, submitted: review_submitted, w: widgets.reviews, ui: review_ui, shop: shop, heading: 'Customer reviews', write_label: 'Write a review', show_gallery: true %}
 </section>
 {%- endif -%}
 <script type="application/json" id="product-json">{{ product.json }}</script>
