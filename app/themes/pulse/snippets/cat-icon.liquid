@@ -1,0 +1,18 @@
+{%- comment -%} Picks a line icon for a category: {% render 'snippets/cat-icon', title: c.title, icon: t.icon %} {%- endcomment -%}
+{%- assign k = icon | default: 'auto' -%}
+{%- if k == 'auto' or k == blank -%}
+  {%- assign n = title | downcase -%}
+  {%- if n contains 'watch' or n contains 'band' or n contains 'wearable' -%}{%- assign k = 'watch' -%}
+  {%- elsif n contains 'earbud' or n contains 'tws' or n contains 'buds' or n contains 'earphone' or n contains 'neckband' -%}{%- assign k = 'earbuds' -%}
+  {%- elsif n contains 'headphone' or n contains 'headset' or n contains 'audio' -%}{%- assign k = 'headphones' -%}
+  {%- elsif n contains 'speaker' or n contains 'soundbar' -%}{%- assign k = 'speaker' -%}
+  {%- elsif n contains 'tripod' or n contains 'selfie' or n contains 'accessor' -%}{%- assign k = 'tripod' -%}
+  {%- elsif n contains 'cable' or n contains 'charger' or n contains 'power' -%}{%- assign k = 'cable' -%}
+  {%- elsif n contains 'phone' or n contains 'mobile' -%}{%- assign k = 'phone-device' -%}
+  {%- elsif n contains 'gift' -%}{%- assign k = 'gift' -%}
+  {%- elsif n contains 'sale' or n contains 'offer' or n contains 'deal' -%}{%- assign k = 'tag' -%}
+  {%- elsif n contains 'new' -%}{%- assign k = 'sparkle' -%}
+  {%- else -%}{%- assign k = 'grid' -%}
+  {%- endif -%}
+{%- endif -%}
+{%- render 'snippets/icon', name: k, stroke: '1.5' -%}

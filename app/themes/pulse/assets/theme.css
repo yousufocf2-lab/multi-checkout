@@ -222,6 +222,10 @@ a.tick__m:hover{text-decoration:underline}
 .cats__img img{width:100%;height:100%;object-fit:cover;transition:transform .45s}
 .cats--contain .cats__img img{object-fit:contain;padding:10px}
 .cats__img b{font-size:28px;color:var(--soft)}
+.cats__ic{display:flex;align-items:center;justify-content:center;width:46%;aspect-ratio:1/1;color:var(--ink);transition:transform .3s,color .2s}
+.cats__ic .ic{width:100%;height:100%}
+.cats--show-icons .cats__img{background:var(--tile,var(--tint));box-shadow:inset 0 0 0 1px var(--line)}
+.cats__it:hover .cats__ic{transform:translateY(-2px);color:var(--brand)}
 .cats__it:hover .cats__img img{transform:scale(1.06)}
 .cats__t{font-size:13px;font-weight:600;line-height:1.25}
 .cats__tag{align-self:flex-start;margin-top:-4px;padding:1px 7px;border-radius:999px;background:var(--pop);color:#0e0f12;font-size:9px;font-weight:700;text-transform:uppercase}
