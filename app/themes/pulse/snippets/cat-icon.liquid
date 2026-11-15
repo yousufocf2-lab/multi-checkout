@@ -15,4 +15,9 @@
   {%- else -%}{%- assign k = 'grid' -%}
   {%- endif -%}
 {%- endif -%}
+{%- comment -%} Round picture icons for the main electronics categories; line icons for the rest {%- endcomment -%}
+{%- if k == 'watch' or k == 'earbuds' or k == 'headphones' or k == 'speaker' or k == 'tripod' -%}
+<img class="cats__icimg" src="/theme-icons/pulse/{{ k }}.webp" alt="" width="200" height="200" loading="lazy">
+{%- else -%}
 {%- render 'snippets/icon', name: k, stroke: '1.5' -%}
+{%- endif -%}
