@@ -1256,3 +1256,12 @@ body:has(.pl-main .trust:last-child) .ft{margin-top:0}
 .ft__form button{border-radius:999px}
 @media(max-width:749px){.toy-pdp{display:block}.toy-pdp__media{grid-template-columns:48px minmax(0,1fr);gap:9px;margin-bottom:26px}.toy-pdp .pdp__th{width:44px;height:44px}.toy-pdp__info{padding:0}.toy-pdp .pdp__btns{grid-template-columns:1fr}.toy-details__facts{grid-template-columns:1fr}.toy-details__nav{justify-content:flex-start;overflow:auto}.toy-collection__head{align-items:center}.toy-cart__summary{position:static}.ft__logo img{max-width:var(--ft-logo-m)}}
 @media(prefers-reduced-motion:reduce){.toy-card,.toy-card__blob,.toy-card__img,.toy-details__spark{animation:none!important;transition:none!important}}
+
+/* Small flag-style price tag on variant choices (theme setting) */
+.opt--tags .opt__values{padding-top:9px}
+.opt--tags .pill,.opt--tags .sw{position:relative;display:inline-block;overflow:visible}
+.vtag{position:absolute;top:-9px;right:4px;z-index:1;padding:1px 5px 1px 5px;border-radius:5px 5px 5px 1px;background:var(--ink,#111);color:var(--bg,#fff);font-size:9px;font-weight:700;line-height:1.35;letter-spacing:.01em;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.vtag::after{content:"";position:absolute;left:0;bottom:-3px;border-left:4px solid var(--ink,#111);border-bottom:3px solid transparent}
+input:checked~.vtag{background:var(--brand,var(--accent,#111))}
+input:checked~.vtag::after{border-left-color:var(--brand,var(--accent,#111))}
+.vtag[hidden]{display:none}

@@ -882,3 +882,12 @@ body:has(.tabbar){--tab-h:80px}
 .gp-spacer__line hr{border:0;border-top:1px solid var(--line);margin:0}
 .gp-spacer{display:flex;align-items:center}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* Small flag-style price tag on variant choices (theme setting) */
+.opt--tags .opt__values{padding-top:9px}
+.opt--tags .pill,.opt--tags .sw{position:relative;display:inline-block;overflow:visible}
+.vtag{position:absolute;top:-9px;right:4px;z-index:1;padding:1px 5px 1px 5px;border-radius:5px 5px 5px 1px;background:var(--ink,#111);color:var(--bg,#fff);font-size:9px;font-weight:700;line-height:1.35;letter-spacing:.01em;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.vtag::after{content:"";position:absolute;left:0;bottom:-3px;border-left:4px solid var(--ink,#111);border-bottom:3px solid transparent}
+input:checked~.vtag{background:var(--brand,var(--accent,#111))}
+input:checked~.vtag::after{border-left-color:var(--brand,var(--accent,#111))}
+.vtag[hidden]{display:none}

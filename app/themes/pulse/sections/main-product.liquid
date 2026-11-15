@@ -66,7 +66,7 @@
       {%- assign oi = forloop.index0 -%}
       {%- assign oname = option.name | downcase -%}
       {%- assign is_colour = false -%}{%- if oname contains 'colo' or oname contains 'shade' -%}{%- assign is_colour = true -%}{%- endif -%}
-      <fieldset class="opt">
+      <fieldset class="opt{% if section.settings.variant_price_tag and product.variants.size > 1 %} opt--tags{% endif %}">
         <legend>{{ option.name }}: <b data-opt-label="{{ oi }}">{{ option.values | first }}</b></legend>
         <div class="opt__values{% if is_colour %} opt__values--sw{% endif %}">
           {%- for value in option.values -%}
@@ -76,6 +76,7 @@
           <label class="{% if is_colour %}sw{% else %}pill{% endif %}" title="{{ value | escape }}">
             <input type="radio" name="option{{ oi }}" value="{{ value | escape }}" {% if forloop.first %}checked{% endif %}>
             {%- if is_colour and img -%}<span class="sw__img"><img src="{{ img | img_url: 140 }}" alt="{{ value | escape }}" loading="lazy"></span>{%- else -%}<span>{{ value }}</span>{%- endif -%}
+            {%- if section.settings.variant_price_tag and product.variants.size > 1 -%}{%- for pv in product.variants -%}{%- if pv.option_values[oi] == value -%}<small class="vtag" data-vtag>{{ pv.price | money }}</small>{%- break -%}{%- endif -%}{%- endfor -%}{%- endif -%}
           </label>
           {%- endfor -%}
         </div>
@@ -136,6 +137,7 @@
 {%- endif -%}
 {% schema %}
 { "name": "Product details", "settings": [
+  { "id": "variant_price_tag", "type": "checkbox", "label": "Small price tag on each variant (shows what each choice costs)", "default": false },
   { "type": "header", "id": "h_rating", "label": "Star rating", "visible_if": "reviews" },
   { "id": "rating_position", "type": "select", "label": "Where the stars show", "visible_if": "reviews", "options": ["title", "above_price", "below_price", "hidden"], "option_labels": ["Under the title", "Above the price", "Under the price", "Don’t show"], "default": "title" },
   { "id": "rating_write", "type": "checkbox", "label": "“Write a review” link next to the stars", "visible_if": "reviews", "default": true },

@@ -48,14 +48,14 @@
       {%- assign oi = forloop.index0 -%}
       {%- if section.settings.variant_style == 'dropdown' -%}
       <label class="opt"><span class="opt__label">{{ option.name }}</span>
-        <select class="select" name="option{{ oi }}">{%- for value in option.values -%}<option value="{{ value | escape }}">{{ value }}</option>{%- endfor -%}</select>
+        <select class="select" name="option{{ oi }}"{% if section.settings.variant_price_tag and product.variants.size > 1 %} data-vtag-select{% endif %}>{%- for value in option.values -%}<option value="{{ value | escape }}">{{ value }}</option>{%- endfor -%}</select>
       </label>
       {%- else -%}
-      <fieldset class="opt">
+      <fieldset class="opt{% if section.settings.variant_price_tag and product.variants.size > 1 %} opt--tags{% endif %}">
         <legend>{{ option.name }}</legend>
         <div class="opt__values">
           {%- for value in option.values -%}
-          <label class="pill"><input type="radio" name="option{{ oi }}" value="{{ value | escape }}" {% if forloop.first %}checked{% endif %}><span>{{ value }}</span></label>
+          <label class="pill"><input type="radio" name="option{{ oi }}" value="{{ value | escape }}" {% if forloop.first %}checked{% endif %}><span>{{ value }}</span>{%- if section.settings.variant_price_tag and product.variants.size > 1 -%}{%- for pv in product.variants -%}{%- if pv.option_values[oi] == value -%}<small class="vtag" data-vtag>{{ pv.price | money }}</small>{%- break -%}{%- endif -%}{%- endfor -%}{%- endif -%}</label>
           {%- endfor -%}
         </div>
       </fieldset>
@@ -116,6 +116,7 @@
 </div>{%- endif -%}
 {% schema %}
 { "name": "Product details", "settings": [
+  { "id": "variant_price_tag", "type": "checkbox", "label": "Small price tag on each variant (shows what each choice costs)", "default": false },
   { "id": "blocks", "type": "list", "label": "Blocks (drag order with the arrows)", "item_label": "block", "fields": [
     { "id": "block", "type": "select", "label": "Block", "options": ["title", "rating", "price", "offer", "buy", "highlights", "delivery", "trust", "description", "text", "share"], "option_labels": ["Title", "Star rating line", "Price", "Offer box", "Variants + Buy buttons", "Highlights (✓ list)", "Delivery info", "Trust row", "Description", "Custom text", "Share buttons"] },
     { "id": "text", "type": "textarea", "label": "Text (optional — depends on the block)" }

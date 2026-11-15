@@ -413,6 +413,21 @@
       v.option_values.forEach(function (val, i) { form.querySelectorAll('input[name="option' + i + '"]').forEach(function (r) { r.checked = r.value === val; }); });
     })();
     form.addEventListener("change", function (e) { if (/^option\d+$/.test(e.target.name || "")) paint(); });
+    // Small price tags on variant choices (theme setting): each tag shows the price of that choice with the other options as picked
+    function vtags() {
+      var vals = product.options.map(function (o, i) { var r = form.querySelector('input[name="option' + i + '"]:checked') || form.querySelector('select[name="option' + i + '"]'); return r ? r.value : null; });
+      var find = function (i, val) { return product.variants.find(function (v) { return v.option_values.every(function (x, j) { return j === i ? x === val : x === vals[j]; }); }); };
+      form.querySelectorAll('input[name^="option"]').forEach(function (r) {
+        var t = r.parentNode.querySelector("[data-vtag]"); if (!t) return;
+        var v = find(+r.name.slice(6), r.value); t.hidden = !v; if (v) t.textContent = money(v.price);
+      });
+      form.querySelectorAll('select[data-vtag-select] option').forEach(function (o) {
+        var i = +o.parentNode.name.slice(6), v = find(i, o.value);
+        o.textContent = o.value + (v ? " · " + money(v.price) : "");
+      });
+    }
+    if (form.querySelector("[data-vtag],[data-vtag-select]")) { form.addEventListener("change", vtags); vtags(); }
+
     setTimeout(function () { var v = chosen(); px("track", "ViewContent", { content_ids: ids(v.id, v.meta_alt), content_type: "product", content_name: product.title, value: v.price / 100, currency: "INR" }); }, 0);
     function lineFor() { return lineOf(product, current, 1); }
     form.addEventListener("submit", function (e) {

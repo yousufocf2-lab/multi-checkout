@@ -513,7 +513,14 @@ function Toggle({ name, label, checked, onChange }: { name: string; label: strin
 
 function OptionEditor({ option, hint, onChange }: { option: { name: string; values: string[] }; hint: string; onChange: (o: { name: string; values: string[] } | null) => void }) {
   const [draft, setDraft] = useState("");
+  const [drag, setDrag] = useState<number | null>(null);
   const add = () => { const v = draft.trim(); if (v && !option.values.includes(v)) onChange({ ...option, values: [...option.values, v] }); setDraft(""); };
+  /** Moves a value to a new place. The order here is the order shoppers see, and the first value is picked first. */
+  const moveTo = (from: number, to: number) => {
+    if (from === to || to < 0 || to >= option.values.length) return;
+    const n = option.values.slice(); const [v] = n.splice(from, 1); n.splice(to, 0, v);
+    onChange({ ...option, values: n });
+  };
   return (
     <div className="rounded-lg p-3 shadow-[inset_0_0_0_1px_rgb(var(--rule))]">
       <div className="flex items-end gap-2">
@@ -523,8 +530,13 @@ function OptionEditor({ option, hint, onChange }: { option: { name: string; valu
       </div>
       <span className="label mt-3">Option values</span>
       <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-[#fdfdfd] p-1.5 shadow-[inset_0_0_0_1px_#d4d4d4] focus-within:shadow-[inset_0_0_0_2px_#005bd3]">
-        {option.values.map((v) => (
-          <span key={v} className="inline-flex h-6 items-center gap-1 rounded-md bg-paper-sunk pl-2 pr-1 text-[12.5px]">{v}
+        {option.values.map((v, i) => (
+          <span key={v} draggable onDragStart={(e) => { setDrag(i); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => setDrag(null)}
+            onDragOver={(e) => { if (drag !== null) e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); if (drag !== null) moveTo(drag, i); setDrag(null); }}
+            className={`inline-flex h-6 cursor-grab items-center gap-0.5 rounded-md bg-paper-sunk pl-1 pr-1 text-[12.5px] active:cursor-grabbing ${drag === i ? "opacity-40" : ""}`}>
+            <button type="button" onClick={() => moveTo(i, i - 1)} disabled={i === 0} className="rounded px-0.5 text-[13px] leading-none text-ink-soft hover:bg-black/10 disabled:opacity-25" aria-label={`Move ${v} earlier`} title="Move earlier">‹</button>
+            <span className="px-0.5">{v}</span>
+            <button type="button" onClick={() => moveTo(i, i + 1)} disabled={i === option.values.length - 1} className="rounded px-0.5 text-[13px] leading-none text-ink-soft hover:bg-black/10 disabled:opacity-25" aria-label={`Move ${v} later`} title="Move later">›</button>
             <button type="button" onClick={() => onChange({ ...option, values: option.values.filter((x) => x !== v) })} className="rounded p-0.5 hover:bg-black/10" aria-label={`Remove ${v}`}><Icon name="close" className="h-3 w-3" /></button>
           </span>
         ))}
@@ -532,6 +544,7 @@ function OptionEditor({ option, hint, onChange }: { option: { name: string; valu
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } else if (e.key === "Backspace" && !draft && option.values.length) onChange({ ...option, values: option.values.slice(0, -1) }); }}
           placeholder={option.values.length ? "Add another value" : "Type a value and press Enter"} className="h-6 min-w-[140px] flex-1 border-0 bg-transparent px-1 text-[13px] outline-none" />
       </div>
+      {option.values.length > 1 && <p className="mt-1.5 text-[12px] text-ink-soft">Drag a value or use ‹ › to change the order. Your website shows them in this order, and the first one is picked when the page opens.</p>}
     </div>
   );
 }
