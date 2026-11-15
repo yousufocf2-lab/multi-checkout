@@ -1,6 +1,6 @@
 {%- assign s = section.settings -%}
 {%- assign show = s.show | default: 'icons' -%}
-<section class="cats cats--{{ s.style | default: 'tiles' }} cats--{{ s.fit | default: 'cover' }} cats--show-{{ show }} sec">
+<section class="cats cats--{{ s.style | default: 'tiles' }} cats--{{ s.fit | default: 'cover' }} cats--show-{{ show }} cats--text-{{ s.text_align | default: 'center' }} sec">
   <div class="pw">
     {%- if s.heading != blank -%}<h2 class="sec__h{% if s.center %} sec__h--c{% endif %}">{{ s.heading }}</h2>{%- endif -%}
     <div class="cats__row" data-drag-scroll>
@@ -27,6 +27,7 @@
 { "name": "Category row", "category": "Products", "description": "Categories in a scrolling row with icons or photos: soft tiles or round circles", "settings": [
   { "id": "heading", "type": "text", "label": "Heading (optional)", "default": "" },
   { "id": "center", "type": "checkbox", "label": "Heading in the middle", "default": true },
+  { "id": "text_align", "type": "select", "label": "Category name position", "options": ["center", "left"], "option_labels": ["Centre", "Left"], "default": "center" },
   { "id": "show", "type": "select", "label": "Show", "options": ["icons", "photos"], "option_labels": ["Icons (clean and even)", "Photos"], "default": "icons" },
   { "id": "fit", "type": "select", "label": "Photo fit (when showing photos)", "options": ["cover", "contain"], "option_labels": ["Fill the tile (photos)", "Fit inside the tile (cut-out PNGs)"], "default": "cover" },
   { "id": "style", "type": "select", "label": "Look", "options": ["tiles", "circles"], "option_labels": ["Soft tiles (under the header)", "Round circles"], "default": "tiles" },
