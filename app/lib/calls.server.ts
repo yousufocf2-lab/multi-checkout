@@ -52,14 +52,14 @@ export type CallTab = (typeof CALL_TABS)[number];
 
 /**
  * Which tab an assigned order belongs to. Every assigned order is always in exactly one tab, so nothing disappears:
- * confirmed / cancelled on the call, or by the customer on WhatsApp, or cancelled by the owner; shipped orders stay where they are.
+ * confirmed / cancelled on the call, cancelled by the customer on WhatsApp or by the owner; shipped orders stay where they are.
+ * Confirmed on WhatsApp stays in To call: only the calling team moves an order to Confirmed.
  */
 const bucket = sql<CallTab>`case
   when ${orders.callStatus} = 'confirmed' then 'confirmed'
   when ${orders.callStatus} = 'cancelled' or ${orders.status} = 'cancelled' or ${orders.confirmStatus} = 'cancelled' then 'cancelled'
   when ${orders.callStatus} = 'follow_up' then 'follow_up'
-  when ${orders.confirmStatus} = 'confirmed' then 'confirmed'
-  else 'to_call' end`;
+  else 'to_call' end`; // a WhatsApp "confirm" doesn't move the order: it stays in To call (with a double tick) until the team calls
 
 /**
  * Everything the calling page shows. `me` = the caller's team member id (null for the owner / a manager, who see all,

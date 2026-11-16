@@ -185,7 +185,6 @@ const TAB_STYLE: Record<string, [string, string]> = {
 };
 /** Why an order is in its tab when it wasn't the call that put it there. */
 function via(o: O) {
-  if (o.tab === "confirmed" && o.call !== "confirmed" && o.wa === "confirmed") return "on WhatsApp";
   if (o.tab === "cancelled" && o.call !== "cancelled") return o.wa === "cancelled" ? "on WhatsApp" : o.status === "cancelled" ? "by the store" : "";
   return o.callBy ? `by ${o.callBy}` : "";
 }
@@ -316,7 +315,7 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => v
         <span className={`rounded-md px-1.5 py-px font-semibold ${o.method === "prepaid" ? "bg-[#e9eef5] text-[#1c5cab]" : o.method === "partial" ? "bg-violet-50 text-violet-700" : "bg-[#fff1e3] text-[#8a4b00]"}`}>
           {o.method === "prepaid" ? `Paid ${inr(o.total)}` : `${o.method === "partial" ? "Partial COD · " : "COD · "}collect ${inr(o.toCollect)}`}
         </span>
-        {o.wa && <span className={`rounded-md px-1.5 py-px font-medium ${o.wa === "confirmed" ? "bg-[#e3f1ea] text-[#1f6f4a]" : o.wa === "cancelled" ? "bg-[#fdeceb] text-[#b42318]" : "bg-black/[.05] text-ink-soft"}`}>WhatsApp: {o.wa === "sent" ? "no reply" : o.wa}</span>}
+        {o.wa && <span title={o.wa === "confirmed" ? "The customer confirmed on WhatsApp. Still call to confirm." : undefined} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium ${o.wa === "confirmed" ? "bg-[#e3f1ea] text-[#1f6f4a]" : o.wa === "cancelled" ? "bg-[#fdeceb] text-[#b42318]" : "bg-black/[.05] text-ink-soft"}`}>{o.wa === "confirmed" && <svg viewBox="0 0 18 12" className="h-2.5 w-[15px]" fill="none" stroke="#1d9bf0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 6.5 4 9.5 10.5 2.5M7.5 9.5 14 2.5"/></svg>}WhatsApp: {o.wa === "sent" ? "no reply" : o.wa}</span>}
         {o.attempts > 0 && <span className="text-ink-faint">· {o.attempts} call{o.attempts === 1 ? "" : "s"}</span>}
         {o.shipped && <span className="rounded-md bg-[#e9eef5] px-1.5 py-px font-medium text-[#1c5cab]">Shipped · {o.shipped.awb}</span>}
         {due && <span className="font-medium text-[#5b6cf0]">· call at {at(o.followUpAt!)}</span>}
