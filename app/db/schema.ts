@@ -1014,6 +1014,17 @@ export type WelcomeSettings = {
 };
 export type BillingDetails = { name?: string; gstin?: string; address?: string; state?: string; email?: string; phone?: string };
 
+/** Super admin "Special logic". Stores never see these settings. */
+export type StoreConnectGroup = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  storeIds: number[]; // 2 to 10 stores that share customer order data
+  blockOn: { placed: boolean; inTransit: boolean; delivered: boolean }; // COD is blocked while the customer has such an order
+  sameStore: boolean; // also count the customer's orders on the store they are buying from
+};
+export type SpecialLogic = { storeConnect?: { groups?: StoreConnectGroup[] } };
+
 /** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */
 export const platformSettings = pgTable("platform_settings", {
   id: integer("id").primaryKey(),
@@ -1028,6 +1039,7 @@ export const platformSettings = pgTable("platform_settings", {
   messaging: jsonb("messaging").$type<MessagingSettings>().notNull().default({}),
   dropshipZones: jsonb("dropship_zones").$type<Partial<DropshipZones>>().notNull().default({}), // paise per order
   marketing: jsonb("marketing").$type<MarketingSettings>().notNull().default({}),
+  specialLogic: jsonb("special_logic").$type<SpecialLogic>().notNull().default({}), // super admin only, never shown to stores
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

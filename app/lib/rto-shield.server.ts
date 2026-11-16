@@ -1,6 +1,7 @@
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { db, orders, rtoShieldExempt, type Store } from "~/db.server";
 import { hasCourier } from "./logistics.server";
+import { linkedCodBlocked } from "./store-connect.server";
 import { decideShield, resolveShield, type ShieldHit, type ShipCounts, type ShipStatus } from "./rto-shield";
 
 const STATUSES: ShipStatus[] = ["in_transit", "delivered", "rto_transit", "rto", "returned", "cancelled"];
@@ -18,8 +19,17 @@ export async function shipCounts(storeId: number, phone: string): Promise<ShipCo
   return Object.fromEntries(rows.map((r) => [r.s, Number(r.n)])) as ShipCounts;
 }
 
-/** RTO Shield decision for a phone at checkout. Never throws (checkout must keep working). */
+/**
+ * RTO Shield decision for a phone at checkout, plus the super admin's Store data connect
+ * (COD blocked while the customer has a live order on a connected store). Never throws.
+ */
 export async function shieldFor(store: Store, phone: string): Promise<ShieldHit | null> {
+  const [own, linked] = await Promise.all([ownShield(store, phone), linkedCodBlocked(store.id, phone)]);
+  if (own) return own;
+  return linked ? { scope: "cod", reason: "linked" } : null;
+}
+
+async function ownShield(store: Store, phone: string): Promise<ShieldHit | null> {
   try {
     const s = resolveShield(store.rtoShield);
     if (!s.enabled || !/^\d{10}$/.test(phone)) return null;
