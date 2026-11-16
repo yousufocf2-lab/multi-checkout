@@ -26,6 +26,20 @@
      Grid children default to "as wide as my content"; let them shrink so truncate/wrap works. */
   .admin-main { overflow-x: clip; }
   .admin-main .grid > * { min-width: 0; }
+  /* Older iPhones (iOS 15 and below) don't know "clip": the page could slide sideways and a
+     vertical swipe felt stuck. Hide the sideways overflow on the page itself there instead. */
+  @supports not (overflow: clip) {
+    html:has(.admin), body:has(.admin) { overflow-x: hidden; }
+  }
+}
+
+/* Dashboard on phones: smooth, never-stuck scrolling */
+@media (max-width: 1023px) {
+  /* No double-tap-to-zoom wait: taps and swipes start at once */
+  .admin { touch-action: manipulation; }
+  /* Sideways-scrolling tables and chip rows: swiping up/down on them scrolls the page, and their own
+     sideways scroll doesn't drag the whole page */
+  .admin .overflow-x-auto, .admin .overflow-auto { overscroll-behavior-x: contain; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
 }
 
 @layer components {
@@ -214,8 +228,12 @@
 .admin .gp-nav .nav-badge { background: rgba(255,255,255,.12); color: #f2f3f5; }
 .admin main { background: #f3f4f6; box-shadow: 0 0 0 1px rgba(222,225,231,.7), 0 18px 44px -32px rgba(24,31,43,.20); }
 .admin .mobile-admin-header { background: #171a20; color: #fff; }
-.admin main .panel { transition: border-color .18s ease, box-shadow .18s ease; }
-.admin main .panel:hover { border-color: #d8dce3; box-shadow: 0 3px 10px rgba(24,31,43,.045), 0 18px 34px -26px rgba(24,31,43,.22); }
+/* Card hover lift only with a real mouse: on phones a touch "hovers" the card and the big shadow
+   repaints while the finger is scrolling */
+@media (hover: hover) and (pointer: fine) {
+  .admin main .panel { transition: border-color .18s ease, box-shadow .18s ease; }
+  .admin main .panel:hover { border-color: #d8dce3; box-shadow: 0 3px 10px rgba(24,31,43,.045), 0 18px 34px -26px rgba(24,31,43,.22); }
+}
 .admin input.outline-none:focus-visible, .admin .gp-nav input:focus-visible { outline: none; }
 
 .admin[data-theme="dark"] {
