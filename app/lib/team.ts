@@ -23,7 +23,7 @@ export const OWNER_PERMS: (Perm & { group: "Sell" | "Grow" | "Manage" })[] = [
   { id: "products", label: "Products", description: "Products, collections, inventory and media.", group: "Sell" },
   { id: "inbox", label: "WhatsApp inbox", description: "Read and reply to customers on WhatsApp.", group: "Sell" },
   { id: "confirm", label: "Order confirmation (calling)", description: "Gets new orders in turn to call the customer: confirm, follow up or cancel, fix the address and add notes. Sees mobile numbers only of their own orders.", group: "Sell" },
-  { id: "rto", label: "Shipping & RTO", description: "Shipping rates, couriers, shipments, RTO Shield and RTO suite.", group: "Sell" },
+  { id: "rto", label: "Shipping", description: "Shipping rates, couriers, shipments, failed shipping, remittance, RTO Shield and RTO suite.", group: "Sell" },
   { id: "ads", label: "Marketing & ads", description: "Meta and Google ad reports, profit share.", group: "Grow" },
   { id: "offers", label: "Discounts & offers", description: "Discounts, coupons, bank offers and free gifts.", group: "Grow" },
   { id: "analytics", label: "Analytics", description: "Checkout funnel and reports.", group: "Grow" },
@@ -76,7 +76,7 @@ type Need = "open" | string | null;
 const STORE_SECTION: Record<string, string> = {
   orders: "orders", funnel: "analytics", diagnostics: "analytics", ads: "ads", google: "ads", inbox: "inbox", whatsapp: "settings",
   discounts: "offers", coupons: "offers", offers: "offers", gifts: "offers",
-  logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto",
+  logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto", "ship-failed": "rto", remittance: "rto",
   wallet: "billing", settings: "settings", design: "settings", install: "developer", payments: "settings", locations: "settings", checkout: "settings", "payment-rules": "settings",
   products: "open",
   promotions: "offers", "to-ship": "orders", profit: "ads",

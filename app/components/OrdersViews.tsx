@@ -344,8 +344,17 @@ function FulfillmentStatusPill({ o }: { o: OrderRow }) {
   return o.awb ? <Pill tone="gray">Fulfilled</Pill> : <Pill tone="yellow">Unfulfilled</Pill>;
 }
 function Tags({ o, compact = false }: { o: OrderRow; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
   if (!o.tags.length) return <span className="text-ink-faint">—</span>;
-  return <span className="flex max-w-[260px] flex-wrap gap-1">{o.tags.slice(0, compact ? 2 : 4).map((t) => <span key={t} className="rounded-md border border-rule bg-paper px-1.5 py-0.5 text-[10.5px] font-medium text-ink-soft">{t}</span>)}{o.tags.length > (compact ? 2 : 4) && <span className="text-[10.5px] text-ink-faint">+{o.tags.length - (compact ? 2 : 4)}</span>}</span>;
+  const max = compact ? 2 : 4;
+  const shown = open ? o.tags : o.tags.slice(0, max);
+  const hidden = o.tags.length - max;
+  // "+N" opens the rest right here, without opening the order
+  const flip = (e: React.SyntheticEvent) => { e.stopPropagation(); e.preventDefault(); setOpen((v) => !v); };
+  return <span className="flex max-w-[260px] flex-wrap items-center gap-1">{shown.map((t) => <span key={t} className="rounded-md border border-rule bg-paper px-1.5 py-0.5 text-[10.5px] font-medium text-ink-soft">{t}</span>)}{hidden > 0 && (
+    <button type="button" onClick={flip} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") flip(e); }} aria-expanded={open} title={open ? "Show fewer tags" : o.tags.slice(max).join(", ")}
+      className="rounded-md px-1 py-0.5 text-[10.5px] font-medium text-ink-soft underline decoration-dotted underline-offset-2 hover:bg-paper hover:text-ink">{open ? "less" : `+${hidden}`}</button>
+  )}</span>;
 }
 function FulfilledBy({ o }: { o: OrderRow }) {
   if (!o.courier) return <span className="text-ink-faint">—</span>;

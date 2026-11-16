@@ -176,3 +176,44 @@ export async function cancelBookedShipment(storeId: number, o: Pick<Order, "id" 
   if (r.ok) await db.update(orders).set({ shipStatus: "cancelled", shipStatusRaw: "Cancelled", shipStatusAt: new Date() }).where(eq(orders.id, o.id));
   else console.warn(`[auto-ship] cancel ${o.id} ${o.awb}: ${r.error}`);
 }
+
+/** Orders whose automatic booking failed and are still waiting for a tracking number (Shipping → Failed shipping). */
+export async function failedShipments(storeId: number) {
+  return db.select().from(orders).where(and(
+    eq(orders.storeId, storeId), inArray(orders.status, ["paid", "cod_placed"]), isNotNull(orders.shipError), isNull(orders.awb), isNull(orders.courierRef),
+    or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
+    or(isNull(orders.callStatus), ne(orders.callStatus, "cancelled")),
+  )).orderBy(asc(orders.createdAt)).limit(500);
+}
+
+/**
+ * Reship: tries the store's couriers again right now for the chosen failed orders, oldest connection first;
+ * a pincode error moves on to the next courier. Ignores the shipping rule and the retry wait (the store asked for it).
+ */
+export async function reshipOrders(store: Store, ids: string[]) {
+  const couriers = (await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), inArray(courierAccounts.courier, BOOKS))).orderBy(asc(courierAccounts.createdAt))).filter(bookable);
+  if (!couriers.length) return { error: "Connect Delhivery (with a pickup location) or Shiprocket under Shipments first.", results: [] as { id: string; name: string; ok: boolean; message: string }[] };
+  const list = ids.length ? await db.select().from(orders).where(and(
+    eq(orders.storeId, store.id), inArray(orders.id, ids.slice(0, 200)), inArray(orders.status, ["paid", "cod_placed"]), isNull(orders.awb), isNull(orders.courierRef),
+    or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
+  )) : [];
+  const results: { id: string; name: string; ok: boolean; message: string }[] = [];
+  for (const o of list) {
+    const name = o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`;
+    const errors: string[] = [];
+    let done: { ok: boolean; awb?: string; courier?: string } = { ok: false };
+    for (const acc of couriers) {
+      const r = await bookOrder(store, o, acc);
+      if (r.ok) { done = { ok: true, awb: "awb" in r ? (r.awb as string | undefined) : undefined, courier: acc.courier }; break; }
+      errors.push(r.error ?? "");
+      if (!isPinError(r.error ?? "")) break;
+    }
+    if (done.ok) results.push({ id: o.id, name, ok: true, message: `Booked with ${done.courier === "shiprocket" ? "Shiprocket" : "Delhivery"}${done.awb ? `, AWB ${done.awb}` : ""}` });
+    else {
+      const msg = errors.length > 1 && errors.every(isPinError) ? `None of your couriers deliver to pincode ${o.customer.pincode}. Book it by hand.` : errors[errors.length - 1] || "Couldn't book";
+      if (errors.length > 1) await db.update(orders).set({ shipError: msg }).where(eq(orders.id, o.id));
+      results.push({ id: o.id, name, ok: false, message: msg });
+    }
+  }
+  return { error: null, results };
+}

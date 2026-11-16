@@ -31,7 +31,7 @@ const name = (o: Order) => o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase(
 /** Books each order with the chosen courier (or the store's first one). */
 export async function shipOrders(store: Store, ids: string[], courier: string | null, by: string) {
   const accs = await bookableCouriers([store.id]);
-  if (!accs.length) return { shipped: [] as string[], failed: [{ name: "", error: "Connect a courier first (Shipping & RTO → Shipments)." }] };
+  if (!accs.length) return { shipped: [] as string[], failed: [{ name: "", error: "Connect a courier first (Shipping → Shipments)." }] };
   const acc = (courier && accs.find((a) => a.courier === courier)) || accs[0];
   const list = await db.select().from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.id, ids.slice(0, 100))));
   const shipped: string[] = [], failed: { name: string; error: string }[] = [];
