@@ -340,6 +340,7 @@ export const stores = pgTable("stores", {
   profitSettledFrom: text("profit_settled_from"), // PayU settlements are fetched for every day from this date (YYYY-MM-DD)
   // Growpefy Store (own storefront platform): what the business sells and where
   businessType: text("business_type").$type<BusinessType>().notNull().default("store"),
+  restaurant: jsonb("restaurant").$type<import("~/lib/restaurant").RestaurantSettings>().notNull().default({}), // restaurant / cloud kitchen settings (businessType = restaurant)
   storefrontEnabled: boolean("storefront_enabled").notNull().default(false),
   // Own website domain (www.brand.com) and the DNS target Railway gave for it (CNAME); status: pending | live
   storefrontDomain: text("storefront_domain").unique(),
@@ -927,11 +928,17 @@ export const orders = pgTable(
     shipStatusRaw: text("ship_status_raw"),
     shipStatusAt: timestamp("ship_status_at", { withTimezone: true }),
     shipCheckedAt: timestamp("ship_checked_at", { withTimezone: true }),
+    // Restaurants: how the food reaches the customer, the table for dine-in, and the kitchen's progress
+    fulfilment: text("fulfilment").$type<import("~/lib/restaurant").Fulfilment>(),
+    tableNo: text("table_no"),
+    kitchenStatus: text("kitchen_status").$type<import("~/lib/restaurant").KitchenStatus>(),
+    kitchenAt: timestamp("kitchen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("orders_store_created_idx").on(t.storeId, t.createdAt),
+    index("orders_store_kitchen_idx").on(t.storeId, t.kitchenStatus),
     index("orders_store_ship_idx").on(t.storeId, t.shipStatus),
     index("orders_session_idx").on(t.sessionId),
     index("orders_store_phone_idx").on(t.storeId, sql`(customer->>'phone')`),

@@ -19,7 +19,7 @@ export type BusinessPack = {
 
 export const BUSINESS_PACKS: Record<BusinessType, BusinessPack> = {
   store: { id: "store", name: "Online store", examples: "Clothes, gadgets, beauty, home goods", items: "Products", item: "product", orders: "Orders", categories: "Categories", optionHints: ["Size", "Colour", "Material"], ready: true },
-  restaurant: { id: "restaurant", name: "Restaurant or cloud kitchen", examples: "Delivery, pickup, dine-in with table QR", items: "Menu", item: "dish", orders: "Food orders", categories: "Menu sections", optionHints: ["Portion", "Spice level"], ready: false },
+  restaurant: { id: "restaurant", name: "Restaurant or cloud kitchen", examples: "Delivery, pickup, dine-in with table QR", items: "Menu", item: "dish", orders: "Food orders", categories: "Menu sections", optionHints: ["Portion", "Spice level"], ready: true },
   coaching: { id: "coaching", name: "Coaching or courses", examples: "Live classes, recorded courses, test series", items: "Courses", item: "course", orders: "Admissions", categories: "Subjects", optionHints: ["Batch", "Language"], ready: false },
   hotel: { id: "hotel", name: "Hotel or homestay", examples: "Rooms, villas, guest houses", items: "Rooms", item: "room", orders: "Bookings", categories: "Properties", optionHints: ["Meal plan", "Occupancy"], ready: false },
   services: { id: "services", name: "Services", examples: "Salon, clinic, repair, consultant", items: "Services", item: "service", orders: "Appointments", categories: "Service groups", optionHints: ["Duration", "Staff"], ready: false },

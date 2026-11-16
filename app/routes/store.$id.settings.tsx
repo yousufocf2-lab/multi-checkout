@@ -1,3 +1,4 @@
+import { BUSINESS_PACKS } from "~/lib/business-types";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import { Form, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
@@ -35,7 +36,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     ownOrders: store.platform === "growpefy" || store.storefrontEnabled, platform: store.platform,
     address: store.storefrontDomain && store.storefrontDomainStatus === "live" ? store.storefrontDomain : `${new URL(env.appUrl).host}/s/${store.slug}`,
   };
-  return json({ store: storeForClient(store), owners, isAdmin: viewer.role === "admin", profit, profile });
+  return json({ store: storeForClient(store), owners, isAdmin: viewer.role === "admin", profit, profile, businessType: store.businessType, packs: Object.values(BUSINESS_PACKS).filter((p) => p.ready).map((p) => ({ id: p.id, name: p.name })) });
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -45,6 +46,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = fd.get("intent");
 
   const str = (k: string, max = 120) => String(fd.get(k) ?? "").trim().slice(0, max);
+  if (intent === "storeType") {
+    if (viewer.role !== "admin") throw new Response("Not allowed", { status: 403 });
+    const t = String(fd.get("businessType"));
+    if (!BUSINESS_PACKS[t as keyof typeof BUSINESS_PACKS]?.ready) return json({ ok: null, errors: { businessType: "Pick an available type." }, intent }, { status: 400 });
+    await db.update(stores).set({ businessType: t as typeof store.businessType }).where(eq(stores.id, store.id));
+    return json({ ok: `Store type changed to ${BUSINESS_PACKS[t as keyof typeof BUSINESS_PACKS].name}.`, errors: {}, intent });
+  }
   if (intent === "business") {
     const errors: Record<string, string> = {};
     const type = str("type") as EntityType;
@@ -157,7 +165,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function StoreSettings() {
-  const { store, owners, isAdmin, profit, profile } = useLoaderData<typeof loader>();
+  const { store, owners, isAdmin, profit, profile, businessType, packs } = useLoaderData<typeof loader>();
   const res = useActionData<typeof action>();
   const errors = (res?.errors ?? {}) as Record<string, string>;
   const resIntent = (res as { intent?: string } | undefined)?.intent;
@@ -188,6 +196,17 @@ export default function StoreSettings() {
         </Section>
       )}
 
+      {isAdmin && (
+        <Section title="Store type (admin only)" description="What this store sells. Restaurant turns on the kitchen screen and restaurant settings. The store owner can't change this.">
+          <Form method="post" className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="intent" value="storeType" />
+            <select name="businessType" defaultValue={businessType} className="input h-9 w-64">
+              {packs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <SubmitButton className="btn-secondary h-9" busyText="Saving">Change type</SubmitButton>
+          </Form>
+        </Section>
+      )}
       {isAdmin && profit && (
         <Section title="Sales and profit dashboard" description="Off by default. When enabled, the store owner can see the available checkout orders, revenue, PayU settlements, ad costs and profit share.">
           <Form method="post" className="space-y-4">

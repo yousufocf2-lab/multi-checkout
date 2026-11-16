@@ -76,7 +76,7 @@ type Need = "open" | string | null;
 const STORE_SECTION: Record<string, string> = {
   orders: "orders", funnel: "analytics", diagnostics: "analytics", ads: "ads", google: "ads", inbox: "inbox", whatsapp: "settings",
   discounts: "offers", coupons: "offers", offers: "offers", gifts: "offers",
-  logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto", "ship-failed": "rto", remittance: "rto",
+  logistics: "rto", shipping: "rto", rto: "rto", "rto-shield": "rto", "ship-failed": "rto", remittance: "rto", kitchen: "orders", restaurant: "settings",
   wallet: "billing", settings: "settings", design: "settings", install: "developer", payments: "settings", locations: "settings", checkout: "settings", "payment-rules": "settings",
   products: "open",
   promotions: "offers", "to-ship": "orders", profit: "ads",

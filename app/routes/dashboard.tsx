@@ -141,6 +141,7 @@ export default function DashboardLayout() {
       { label: "Recover checkouts", to: "/dashboard/orders/abandoned", show: true },
       { label: "Ship queue", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: storefront },
     ] },
+    { label: "Kitchen", to: storeHref("kitchen"), icon: "bell", match: /\/kitchen$|next=kitchen\b/, show: focus?.businessType === "restaurant" && may("orders") },
     { label: "Order confirmation", to: storeHref("calls"), icon: "phone", match: /\/calls$|next=calls\b/, show: may("confirm") },
     { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/(catalog|collections|inventory)(\/|$)|next=(catalog|collections|inventory)\b/, show: storefront && may("products"), children: [
       { label: "Product groups", to: storeHref("collections"), match: /\/collections$|next=collections/, show: true },
@@ -178,6 +179,7 @@ export default function DashboardLayout() {
   // ---- store settings navigation ----
   const storeSettings: NavNode[] = [
     { label: "Business profile", to: storeHref("settings"), icon: "stores", match: /\/settings$|next=settings\b/, show: may("settings") },
+    { label: "Restaurant", to: storeHref("restaurant"), icon: "clock", match: /\/restaurant$|next=restaurant\b/, show: focus?.businessType === "restaurant" && may("settings") },
     { label: "Customer accounts", to: storeHref("customer-accounts"), icon: "user", match: /\/customer-accounts$|next=customer-accounts/, show: may("settings") },
     { label: "Widgets", to: storeHref("widgets"), icon: "sparkle", match: /\/widgets$|next=widgets\b/, show: storefront && may("settings") },
     { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing") },

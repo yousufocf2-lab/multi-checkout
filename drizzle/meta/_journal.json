@@ -512,6 +512,13 @@
       "when": 1795238400000,
       "tag": "0072_special_logic",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795324800000,
+      "tag": "0073_restaurant",
+      "breakpoints": true
     }
   ]
 }
