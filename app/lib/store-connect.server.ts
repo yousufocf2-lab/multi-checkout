@@ -1,5 +1,5 @@
 // Store data connect: server side. Super admin only; stores never see the settings or the reason.
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { db, orders, platformSettings, type StoreConnectGroup } from "~/db.server";
 import { PLACED_WINDOW_DAYS, resolveGroups, type LinkedHit } from "./store-connect";
 
@@ -33,9 +33,9 @@ export async function groupFor(storeId: number) {
 export async function linkedOrders(storeId: number, phone: string, group: StoreConnectGroup, limit = 5): Promise<LinkedHit[]> {
   const ids = group.storeIds.filter((id) => group.sameStore || id !== storeId);
   if (!ids.length || !/^\d{10}$/.test(phone)) return [];
-  const states = [] as ReturnType<typeof sql>[];
+  const states: SQL[] = [];
   const since = new Date(Date.now() - PLACED_WINDOW_DAYS * 86400_000);
-  if (group.blockOn.placed) states.push(sql`(${orders.shipStatus} is null and ${orders.createdAt} >= ${since})`);
+  if (group.blockOn.placed) states.push(and(isNull(orders.shipStatus), gte(orders.createdAt, since))!);
   if (group.blockOn.inTransit) states.push(sql`${orders.shipStatus} = 'in_transit'`);
   if (group.blockOn.delivered) states.push(sql`${orders.shipStatus} = 'delivered'`);
   if (!states.length) return [];
