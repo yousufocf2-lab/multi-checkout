@@ -1,7 +1,7 @@
 // Calling team: employees who phone customers to confirm orders. New orders are shared out round-robin;
 // each caller sees full details (with the mobile number) only for their own orders, and a summary of teammates' work.
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { db, orders, stores, teamMembers, type Order, type OrderEvent, type Store } from "~/db.server";
+import { db, orderCallEvents, orders, stores, teamMembers, type Order, type OrderEvent, type Store } from "~/db.server";
 import { cancelOrders } from "./order-actions.server";
 
 export const CALL_PERM = "confirm";
@@ -45,7 +45,7 @@ export async function assignCalls(store: Store) {
 
 const istStart = () => { const d = new Date(Date.now() + 5.5 * 3600_000); d.setUTCHours(0, 0, 0, 0); return new Date(d.getTime() - 5.5 * 3600_000); };
 
-type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "callAttempts" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier">;
+type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier">;
 
 export const CALL_TABS = ["to_call", "follow_up", "confirmed", "cancelled", "shipped", "all"] as const;
 export type CallTab = (typeof CALL_TABS)[number];
@@ -65,7 +65,7 @@ const bucket = sql<CallTab>`case
  * Everything the calling page shows. `me` = the caller's team member id (null for the owner / a manager, who see all,
  * phone numbers included). `since`/`until` are IST dates (YYYY-MM-DD) on when the order was placed.
  */
-export async function callBoard(store: Store, me: number | null, tab: CallTab, since: string, until: string) {
+export async function callBoard(store: Store, me: number | null, tab: CallTab, since: string, until: string, query = "") {
   await assignCalls(store);
   const team = await callersFor(store);
   const dayStart = istStart().toISOString();
@@ -80,12 +80,20 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   const cols = {
     id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status,
     total: orders.total, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
-    callStatus: orders.callStatus, followUpAt: orders.followUpAt, callAttempts: orders.callAttempts, staffNote: orders.staffNote, customerNote: orders.customerNote,
+    callStatus: orders.callStatus, followUpAt: orders.followUpAt, staffNote: orders.staffNote, customerNote: orders.customerNote,
     callAt: orders.callAt, callBy: orders.callBy, assignedTo: orders.assignedTo, timeline: orders.timeline, awb: orders.awb, courier: orders.courier,
   };
+  const term = query.replace(/[\\%_]/g, "\\$&");
+  const mobile = query.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
+  const match = query ? or(
+    sql`${orders.shopifyOrderName} ilike ${`%${term}%`}`,
+    sql`right(${orders.id}, 6) ilike ${term.replace(/^#/, "")}`,
+    sql`trim(concat_ws(' ', ${orders.customer}->>'firstName', ${orders.customer}->>'lastName')) ilike ${`%${term}%`}`,
+    mobile.length === 10 ? sql`${orders.customer}->>'phone' = ${mobile}` : undefined,
+  ) : undefined;
   const shipped = sql`${orders.awb} is not null or ${orders.courierRef} is not null`;
   const [list, counts, [ship]] = await Promise.all([
-    db.select({ ...cols, tab: bucket }).from(orders).where(tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`))
+    db.select({ ...cols, tab: bucket }).from(orders).where(and(match, tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`)))
       .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last` : desc(orders.createdAt)).limit(300),
     db.select({ tab: bucket, n: sql<number>`count(*)::int` }).from(orders).where(base).groupBy(bucket),
     db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(base, shipped)),
@@ -108,7 +116,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     id: o.id, name: o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`, at: o.createdAt.toISOString(), method: o.paymentMethod, status: o.status,
     total: o.total, toCollect: o.paymentMethod === "cod" ? o.total : o.paymentMethod === "partial" ? o.total - (o.amountPaid ?? o.advance ?? 0) : 0,
     items: o.items.map((l) => ({ title: l.title, variant: l.variantTitle, qty: l.quantity })),
-    customer: o.customer, wa: o.confirmStatus, call: o.callStatus, tab: o.tab, followUpAt: o.followUpAt?.toISOString() ?? null, attempts: o.callAttempts,
+    customer: { ...o.customer, phone: "" }, wa: o.confirmStatus, call: o.callStatus, tab: o.tab, followUpAt: o.followUpAt?.toISOString() ?? null,
     staffNote: o.staffNote ?? "", customerNote: o.customerNote ?? "", callAt: o.callAt?.toISOString() ?? null, callBy: o.callBy,
     shipped: o.awb ? { awb: o.awb, courier: o.courier } : null,
     assignee: o.assignedTo != null ? nameOf.get(o.assignedTo) ?? "Former member" : null,
@@ -140,21 +148,31 @@ const stamp = (by: string, text: string): OrderEvent => ({ at: new Date().toISOS
 
 /** Confirm / follow-up / cancel from a call. A caller may only act on their own orders. */
 export async function recordCall(store: Store, orderId: string, me: number | null, by: string, act: { kind: "confirmed" | "follow_up" | "cancelled"; followUpAt?: Date | null; note?: string; reason?: string }) {
-  const [o] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.storeId, store.id))).limit(1);
-  if (!o) return { error: "Order not found." };
-  if (me != null && o.assignedTo !== me) return { error: "This order is assigned to someone else." };
-  if (!["paid", "cod_placed"].includes(o.status)) return { error: "This order isn't open any more." };
   const note = (act.note ?? "").trim().slice(0, 300);
   const text = act.kind === "confirmed" ? "Confirmed on call"
     : act.kind === "follow_up" ? `Follow-up${act.followUpAt ? ` at ${act.followUpAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}`
     : `Cancelled on call${act.reason ? `: ${act.reason}` : ""}`;
-  await db.update(orders).set({
-    callStatus: act.kind, callAt: new Date(), callBy: by.slice(0, 120), updatedAt: new Date(),
-    followUpAt: act.kind === "follow_up" ? act.followUpAt ?? new Date(Date.now() + 3600_000) : null,
-    callAttempts: sql`${orders.callAttempts} + 1`,
-    ...(note ? { staffNote: o.staffNote ? `${o.staffNote}\n${note}` : note } : {}),
-    timeline: sql`${orders.timeline} || ${JSON.stringify([stamp(by, note ? `${text} (${note})` : text)])}::jsonb`,
-  }).where(eq(orders.id, o.id));
+  const saved = await db.transaction(async (tx) => {
+    const [order] = await tx.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.storeId, store.id))).for("update");
+    if (!order) return { error: "Order not found." };
+    if (me !== null && order.assignedTo !== me) return { error: "This order is assigned to someone else." };
+    if (!["paid", "cod_placed"].includes(order.status)) return { error: "This order isn't open any more." };
+
+    const now = new Date();
+    await tx.update(orders).set({
+      callStatus: act.kind, callAt: now, callBy: by.slice(0, 120), updatedAt: now,
+      followUpAt: act.kind === "follow_up" ? act.followUpAt ?? new Date(now.getTime() + 3600_000) : null,
+      ...(note ? { staffNote: order.staffNote ? `${order.staffNote}\n${note}` : note } : {}),
+      timeline: sql`${orders.timeline} || ${JSON.stringify([stamp(by, note ? `${text} (${note})` : text)])}::jsonb`,
+    }).where(and(eq(orders.id, order.id), eq(orders.storeId, store.id)));
+    await tx.update(orderCallEvents).set({ resolvedAt: now }).where(and(
+      eq(orderCallEvents.storeId, store.id), eq(orderCallEvents.orderId, order.id),
+      eq(orderCallEvents.kind, "skip"), isNull(orderCallEvents.resolvedAt),
+    ));
+    return { order };
+  });
+  if (!saved.order) return { error: saved.error! };
+  const o = saved.order;
   // A COD order cancelled on the call is cancelled for real (shipment stopped, stock back). Paid orders stay for the owner to refund.
   if (act.kind === "cancelled" && o.paymentMethod === "cod") {
     await cancelOrders(store, [o.id], { refund: false, reason: `Cancelled on call${act.reason ? `: ${act.reason}` : ""}`, by });

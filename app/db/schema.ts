@@ -949,6 +949,24 @@ export const orders = pgTable(
 );
 
 /** Meta ad account balance readings, used to detect prepaid recharges. Money is paise. storeId null = Growpefy's own ad account. */
+export const orderCallEvents = pgTable("order_call_events", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  actor: text("actor").notNull(),
+  memberId: integer("member_id"),
+  kind: text("kind").$type<"skip" | "manual" | "provider">().notNull(),
+  provider: text("provider"),
+  providerRef: text("provider_ref"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("order_call_events_store_idx").on(t.storeId, t.kind, t.createdAt),
+  index("order_call_events_order_idx").on(t.orderId),
+  uniqueIndex("order_call_events_open_skip_idx").on(t.storeId, t.orderId, t.memberId)
+    .where(sql`${t.kind} = 'skip' and ${t.resolvedAt} is null`),
+]);
+
 export const metaSnapshots = pgTable(
   "meta_snapshots",
   {

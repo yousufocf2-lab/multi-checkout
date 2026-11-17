@@ -3,7 +3,7 @@
 // as numbers and customer names, never their customers' mobile numbers.
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
+import { Form, Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "@remix-run/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { and, eq } from "drizzle-orm";
 import { Icon } from "~/components/Icons";
@@ -14,6 +14,8 @@ import { CALL_TABS, callBoard, callersFor, reassign, recordCall, teammateOrders,
 import { resolveRange } from "~/lib/dates";
 import { RangePicker } from "~/components/Overview";
 import { readAddress, updateOrderAddress, updateOrderNotes } from "~/lib/order-edit.server";
+import { callActivity, providerCallInfo, skipOrders, startOrderCall } from "~/lib/order-call-events.server";
+import { callerProvider } from "~/lib/calling-providers.server";
 import { CANCEL_REASONS } from "~/lib/order-actions.server";
 import { shipRuleOf } from "~/lib/ship-rule";
 import { storePath } from "~/lib/store-code";
@@ -36,13 +38,19 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const me = await whoAmI(viewer, store);
   if (!sp.get("range")) sp.set("range", "max"); // nothing hidden by default
   const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
-  const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until);
+  const manager = me === null && can(viewer, "orders");
+  if (!manager && me === null) throw new Response("Not allowed", { status: 403 });
+  const query = (sp.get("q") ?? "").trim().slice(0, 100);
+  const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until, query);
+  const showSkips = manager && sp.get("activity") === "skips";
+  const activity = await callActivity(store.id, manager ? null : me, range.since, range.until, showSkips, board.orders.map((o) => o.id));
+  const providerLabel = providerFor(store.id)?.label ?? null;
   const member = Number(sp.get("member")) || null;
   const rule = shipRuleOf(store);
   return json({
-    base: storePath(store.id), tab, me, manager: me == null, rule, range,
+    base: storePath(store.id), tab, me, manager, rule, range, query, activity, showSkips, providerLabel,
     board: tab === "team" ? { ...board, orders: [] } : board,
-    teammate: tab === "team" && member && board.team.some((t) => t.id === member)
+    teammate: manager && tab === "team" && member && board.team.some((t) => t.id === member)
       ? { id: member, orders: await teammateOrders(store, member, me != null && member !== me) } : null,
     reasons: [...CANCEL_REASONS].filter((r) => r !== "Duplicate order"),
   });
@@ -56,6 +64,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = String(fd.get("intent") ?? "");
   const id = String(fd.get("orderId") ?? "");
   const me = await whoAmI(viewer, store);
+  const manager = me === null && can(viewer, "orders");
+  if (me === null && !manager) return json({ ok: null, error: "Not allowed" }, { status: 403 });
   const by = byName(viewer);
   const mine = async () => {
     const [o] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.storeId, store.id))).limit(1);
@@ -63,6 +73,25 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (me != null && o.assignedTo !== me) return null;
     return o;
   };
+  if (intent === "skip" && me !== null) {
+    const ids = [...new Set(fd.getAll("skipId").map(String))].slice(0, 300);
+    const count = ids.length ? await skipOrders(store.id, me, by, ids) : 0;
+    return json({ ok: count ? `You skipped ${count} order${count === 1 ? "" : "s"}. Please complete them.` : "Moved to the next order.", error: null });
+  }
+  if (intent === "dial" || (intent === "call-info" && manager)) {
+    try {
+      if (intent === "call-info") {
+        const info = await providerCallInfo(store.id, Number(fd.get("eventId")));
+        return json({ ok: null, error: null, info });
+      }
+      const order = await mine();
+      if (!order) return json({ ok: null, error: "Order not found." }, { status: 404 });
+      const call = await startOrderCall(store.id, order.id, order.customer.phone, me, by, callerProvider(store.id));
+      return json({ ok: call.dial ? "Opening dialler." : "Call sent to the provider.", error: null, ...call });
+    } catch (error) {
+      return json({ ok: null, error: error instanceof Error ? error.message : "Could not load call data." }, { status: 400 });
+    }
+  }
   if (intent === "confirmed" || intent === "follow_up" || intent === "cancelled") {
     const mins = Number(fd.get("in")) || 60;
     const r = await recordCall(store, id, me, by, {
@@ -74,7 +103,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (intent === "address") {
     const o = await mine();
     if (!o) return json({ ok: null, error: "This order is assigned to someone else." });
-    const r = await updateOrderAddress(store, o, readAddress(fd), by);
+    const r = await updateOrderAddress(store, o, { ...readAddress(fd), phone: o.customer.phone, email: o.customer.email }, by);
     return json("error" in r ? { ok: null, error: r.error } : { ok: r.ok, error: null });
   }
   if (intent === "notes") {
@@ -91,6 +120,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   return json({ ok: null, error: "Unknown action" }, { status: 400 });
 }
 
+function providerFor(storeId: number) {
+  try { return callerProvider(storeId); } catch { return null; }
+}
+
 function tomorrow10() {
   const ist = new Date(Date.now() + 5.5 * 3600_000);
   ist.setUTCDate(ist.getUTCDate() + 1); ist.setUTCHours(10, 0, 0, 0);
@@ -99,7 +132,8 @@ function tomorrow10() {
 
 type D = ReturnType<typeof useLoaderData<typeof loader>>;
 type O = D["board"]["orders"][number];
-type Res = { ok: string | null; error: string | null };
+type Res = { ok: string | null; error: string | null; phone?: string; dial?: boolean;
+  info?: { status: string; seconds: number | null; recording: string | null } };
 
 const ago = (iso: string) => {
   const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
@@ -114,9 +148,9 @@ export default function Calls() {
   const [toast, setToast] = useState<Res | null>(null);
   // New orders arrive while the team works: refresh quietly every 30 seconds
   useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate(); }, 30_000);
+    const t = setInterval(() => { if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate(); }, d.manager ? 5_000 : 30_000);
     return () => clearInterval(t);
-  }, [revalidator]);
+  }, [revalidator, d.manager]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); }, [toast]);
 
   const c = d.board.counts;
@@ -127,10 +161,39 @@ export default function Calls() {
     { id: "cancelled", label: "Cancelled", n: c.cancelled, tone: "#c5280c" },
     { id: "shipped", label: "Shipped", n: c.shipped, tone: "#1c5cab" },
     { id: "all", label: "All", n: c.all, tone: "" },
-    { id: "team", label: "Team", n: null, tone: "" },
+    ...(d.manager ? [{ id: "team" as const, label: "Team", n: null, tone: "" }] : []),
   ];
   const tabLink = (t: string) => { const p = new URLSearchParams(params); p.set("tab", t); p.delete("member"); return `?${p}`; };
   const [openId, setOpenId] = useState<string | null>(null);
+  const alerts = new URLSearchParams(params);
+  if (d.showSkips) alerts.delete("activity"); else alerts.set("activity", "skips");
+  const lastOrder = useRef<{ id: string; queue: string }>();
+  const queue = params.toString();
+  const pendingJump = useRef<string | null>(null);
+  const skip = useFetcher<Res>();
+  useEffect(() => {
+    if (skip.state !== "idle" || !pendingJump.current || !skip.data) return;
+    const next = pendingJump.current;
+    pendingJump.current = null;
+    setToast(skip.data);
+    if (skip.data.ok) { lastOrder.current = { id: next, queue }; setOpenId(next); }
+  }, [skip.state, skip.data, queue]);
+  const openFromList = (id: string, current = openId ?? (lastOrder.current?.queue === queue ? lastOrder.current.id : null)) => {
+    const list = d.board.orders;
+    const from = list.findIndex((o) => o.id === current);
+    const to = list.findIndex((o) => o.id === id);
+    if (!d.manager && from >= 0 && to > from) {
+      if (pendingJump.current) return;
+      const form = new FormData();
+      form.set("intent", "skip");
+      for (const order of list.slice(from, to)) form.append("skipId", order.id);
+      pendingJump.current = id;
+      skip.submit(form, { method: "post" });
+      return;
+    }
+    lastOrder.current = { id, queue };
+    setOpenId(id);
+  };
 
   if (!d.board.team.length && d.manager) {
     return <EmptyState title="Add your calling team" action={<Link to="/dashboard/team" className="btn-primary">Add a team member</Link>}>
@@ -141,10 +204,53 @@ export default function Calls() {
   return (
     <div className="mx-auto max-w-4xl space-y-3">
       <style>{CSS}</style>
+      <header className="rounded-2xl bg-ink p-5 text-white">
+        <h1 className="text-xl font-semibold">Order confirmation</h1>
+        <p className="mt-1 text-sm text-white/70">{d.providerLabel ? `Calling via ${d.providerLabel}` : "Manual calling"}</p>
+      </header>
+      {!d.manager && d.activity.warnings > 0 && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+        You skipped {d.activity.warnings} order{d.activity.warnings === 1 ? "" : "s"}. Please complete them.
+      </p>}
+      {d.manager && <section className="grid gap-3 sm:grid-cols-2">
+        <Link to={`?${alerts}`} className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800" aria-expanded={d.showSkips}>
+          <p className="text-sm font-semibold">Skipped orders</p>
+          <p className="text-2xl font-bold">{d.activity.skipped}</p>
+          <p className="text-xs">{d.activity.unresolved} unresolved · {d.showSkips ? "Hide details" : "View details"}</p>
+        </Link>
+        <div className="panel p-4"><p className="text-sm font-semibold">Manual dial requests</p>
+          <p className="text-2xl font-bold">{d.activity.daily.filter((point) => point != null).reduce((n, row) => n + (row.kind === "manual" ? row.count : 0), 0)}</p>
+          <p className="text-xs text-ink-soft">Tracked separately from verified calls</p>
+        </div>
+      </section>}
+      {d.manager && d.activity.daily.length > 0 && <details className="panel p-4">
+        <summary className="cursor-pointer font-semibold">Daily team activity</summary>
+        <div className="mt-3 max-h-64 space-y-2 overflow-auto">
+          {d.activity.daily.filter((point) => point != null).map((row) => <div key={JSON.stringify([row.day, row.actor, row.kind])} className="grid grid-cols-[minmax(0,1fr)_5rem_2rem] items-center gap-3 text-xs">
+            <span>{row.day} · {row.actor} · {row.kind === "skip" ? "Skipped" : row.kind === "manual" ? "Manual dial" : "Provider request"}</span>
+            <meter className="w-full" min={0} max={Math.max(1, ...d.activity.daily.map((point) => point?.count ?? 0))} value={row.count} aria-label="Activity count" />
+            <span className="text-right">{row.count}</span>
+          </div>)}
+        </div>
+      </details>}
+      {d.showSkips && <section className="panel max-h-[32rem] overflow-auto p-4">
+        <h2 className="font-semibold">Skipped orders by employee</h2>
+        {!d.activity.skips.length && <p className="mt-2 text-sm">No skipped orders in this range.</p>}
+        {d.activity.skips.filter((entry) => entry != null).map((entry) => <details key={entry.id} className="border-b border-rule py-2 text-sm">
+          <summary className="cursor-pointer">{entry.name ?? `#${entry.orderId.slice(-6).toUpperCase()}`} · {entry.actor} · {at(entry.at)} · {entry.resolvedAt ? "Resolved" : "Open"}</summary>
+          <p>{entry.customer.firstName} {entry.customer.lastName} · {inr(entry.total)} · {entry.status}</p>
+          <p>{[entry.customer.address1, entry.customer.address2, entry.customer.city, entry.customer.state, entry.customer.pincode].filter(Boolean).join(", ")}</p>
+          <p>{entry.items.map((item) => `${item.title} ×${item.quantity}`).join(", ")}</p>
+        </details>)}
+      </section>}
       <section className="panel relative z-20 p-0">
         <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5">
           <RangePicker current={d.range} />
-          <span className="ml-auto text-[12px] text-ink-faint">{d.manager ? "Whole team" : "Your orders"} · refreshes every 30 s</span>
+          <Form method="get" className="flex min-w-0 flex-1 gap-2">
+            {[...params].filter(([key]) => key !== "q" && key !== "tab").map(([key, value]) => <input key={key} name={key} type="hidden" value={value} />)}
+            <input name="tab" type="hidden" value={d.tab === "team" ? "all" : d.tab} />
+            <input className="input min-w-0 flex-1" aria-label="Search orders" name="q" defaultValue={d.query} placeholder="Order number, name or mobile" />
+            <button type="submit" className="btn-secondary">Search</button>
+          </Form>
         </div>
         {/* status tabs with counts: every assigned order is in exactly one of them */}
         <nav className="flex gap-1 overflow-x-auto px-2 py-2" aria-label="Order status">
@@ -167,10 +273,10 @@ export default function Calls() {
           <p className="mt-1 max-w-xs text-[12.5px] text-ink-faint">{d.tab === "to_call" ? "New orders show up here on their own." : "Try another date range."}</p>
         </div>
       ) : (
-        <CallList d={d} onOpen={setOpenId} />
+        <CallList d={d} onOpen={openFromList} />
       )}
 
-      {openId && d.tab !== "team" && <Sheet d={d} startId={openId} onClose={() => setOpenId(null)} onDone={setToast} />}
+      {openId && d.tab !== "team" && <Sheet key={openId} d={d} startId={openId} onClose={() => setOpenId(null)} onDone={setToast} onSkip={openFromList} />}
 
       {toast && (toast.ok || toast.error) && (
         <div className={`cl-pop fixed bottom-5 left-1/2 z-[80] max-w-[90vw] -translate-x-1/2 rounded-lg px-3.5 py-2 text-[13px] font-medium text-white shadow-lg ${toast.error ? "bg-[#b42318]" : "bg-[#1a1a1a]"}`} role="status">{toast.error ?? toast.ok}</div>
@@ -224,7 +330,7 @@ function CallList({ d, onOpen }: { d: D; onOpen: (id: string) => void }) {
  * The order card over the list (full screen on a phone, a side panel on a computer). Swipe or use the arrows for the
  * next / previous order of the same list. After Confirmed / Follow-up / Cancel the order moves to its tab and the next one opens.
  */
-function Sheet({ d, startId, onClose, onDone }: { d: D; startId: string; onClose: () => void; onDone: (r: Res) => void }) {
+function Sheet({ d, startId, onClose, onDone, onSkip }: { d: D; startId: string; onClose: () => void; onDone: (r: Res) => void; onSkip: (id: string, current: string) => void }) {
   const list = d.board.orders;
   const [curId, setCurId] = useState(startId);
   const [dir, setDir] = useState<1 | -1>(1);
@@ -246,8 +352,11 @@ function Sheet({ d, startId, onClose, onDone }: { d: D; startId: string; onClose
   }, [list, i, curId, onClose]);
   const go = useCallback((step: 1 | -1) => {
     const j = Math.max(0, Math.min(list.length - 1, i + step));
-    if (j !== i) { setDir(step); setCurId(list[j].id); }
-  }, [i, list]);
+    if (j === i || !list[i]) return;
+    if (step === 1 && !d.manager) { onSkip(list[j].id, list[i].id); return; }
+    setDir(step);
+    setCurId(list[j].id);
+  }, [i, list, d.manager, onSkip]);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest("input, textarea, select")) return;
@@ -281,8 +390,9 @@ function Sheet({ d, startId, onClose, onDone }: { d: D; startId: string; onClose
         </div>
         <div className="flex-1 touch-pan-y overflow-y-auto overflow-x-hidden p-3" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
           <ul key={o.id} className={dir > 0 ? "cl-next" : "cl-prev"} style={dx ? { transform: `translateX(${dx}px) rotate(${dx / 60}deg)`, transition: "none" } : { transition: "transform .2s ease-out" }}>
-            <OrderCall o={o} d={d} onDone={(r) => { if (r.ok) advanceFrom.current = o.id; onDone(r); }} onNext={i < list.length - 1 ? () => go(1) : undefined} />
+            <OrderCall o={o} d={d} onDone={(r, outcome) => { if (r.ok && outcome) advanceFrom.current = o.id; onDone(r); }} onNext={i < list.length - 1 ? () => go(1) : undefined} />
           </ul>
+          {!d.manager && i < list.length - 1 && <button type="button" onClick={() => go(1)} className="btn-secondary mt-3 w-full">Skip &amp; next</button>}
           <p className="mt-2 text-center text-[11.5px] text-ink-faint sm:hidden">Swipe left for the next order</p>
         </div>
       </aside>
@@ -290,25 +400,54 @@ function Sheet({ d, startId, onClose, onDone }: { d: D; startId: string; onClose
   );
 }
 
-function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => void; onNext?: () => void }) {
+function CallRecord({ entry }: { entry: NonNullable<D["activity"]["calls"][number]> }) {
+  const info = useFetcher<Res>();
+  const data = info.data?.info;
+  return <li className="border-t border-rule py-2 text-xs">
+    {at(entry.at)} · {entry.actor} · {entry.kind === "manual" ? "Manual dial request" : entry.linked ? "Provider request" : "No provider reference"}
+    {entry.linked && <button type="button" className="ml-2 underline" disabled={info.state !== "idle"}
+      onClick={() => info.submit({ intent: "call-info", eventId: String(entry.id) }, { method: "post" })}>Load call details</button>}
+    {data && <p>{data.status}{data.seconds != null ? ` · ${Math.floor(data.seconds / 60)}m ${data.seconds % 60}s talk time` : ""}
+      {data.recording && <> · <a href={data.recording} target="_blank" rel="noreferrer" className="underline">Play recording</a></>}</p>}
+    {info.data?.error && <p className="text-red-700">{info.data.error}</p>}
+  </li>;
+}
+
+function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outcome: boolean) => void; onNext?: () => void }) {
   const f = useFetcher<Res>();
   const [panel, setPanel] = useState<null | "follow" | "cancel" | "address" | "notes">(null);
   const [note, setNote] = useState("");
   const thenNext = useRef(false);
+  const outcome = useRef(false);
   const busy = f.state !== "idle";
   useEffect(() => {
     if (f.state !== "idle" || !f.data) return;
-    onDone(f.data);
+    onDone(f.data, outcome.current);
+    outcome.current = false;
     if (f.data.ok) { setPanel(null); if (thenNext.current && onNext) onNext(); }
     thenNext.current = false;
   }, [f.state, f.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const c = o.customer;
-  const send = (intent: string, extra: Record<string, string> = {}) => f.submit({ intent, orderId: o.id, note, ...extra }, { method: "post" });
-  const tel = `+91${c.phone}`;
+  const send = (intent: string, extra: Record<string, string> = {}) => {
+    outcome.current = ["confirmed", "follow_up", "cancelled"].includes(intent);
+    f.submit({ intent, orderId: o.id, note, ...extra }, { method: "post" });
+  };
+  const dial = useFetcher<Res>();
+  const phone = dial.data?.phone;
+  const consumed = useRef<Res>();
+  useEffect(() => {
+    if (dial.state !== "idle" || !dial.data || consumed.current === dial.data) return;
+    consumed.current = dial.data;
+    if (dial.data.dial && dial.data.phone) window.location.href = `tel:+91${dial.data.phone}`;
+  }, [dial.state, dial.data]);
   const items = o.items.map((l) => `${l.title}${l.variant ? ` (${l.variant})` : ""} ×${l.qty}`).join(", ");
   const due = o.call === "follow_up" && o.followUpAt;
   return (
     <li className={`panel cl-in overflow-hidden p-0 ${busy ? "opacity-60" : ""}`}>
+      {d.manager && <details className="px-4 py-2 text-sm">
+        <summary className="cursor-pointer font-medium">Call history · {d.activity.calls.filter((entry) => entry?.orderId === o.id && entry.verifiedAt).length} verified</summary>
+        <ul>{d.activity.calls.filter((entry): entry is NonNullable<typeof entry> => entry != null && entry.orderId === o.id).map((entry) => <CallRecord key={entry.id} entry={entry} />)}</ul>
+      </details>}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-rule px-4 py-2 text-[12px]">
         <b className="num text-[13px]">{o.name}</b>
         <span className="text-ink-faint">{ago(o.at)}</span>
@@ -316,7 +455,6 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => v
           {o.method === "prepaid" ? `Paid ${inr(o.total)}` : `${o.method === "partial" ? "Partial COD · " : "COD · "}collect ${inr(o.toCollect)}`}
         </span>
         {o.wa && <span title={o.wa === "confirmed" ? "The customer confirmed on WhatsApp. Still call to confirm." : undefined} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium ${o.wa === "confirmed" ? "bg-[#e3f1ea] text-[#1f6f4a]" : o.wa === "cancelled" ? "bg-[#fdeceb] text-[#b42318]" : "bg-black/[.05] text-ink-soft"}`}>{o.wa === "confirmed" && <svg viewBox="0 0 18 12" className="h-2.5 w-[15px]" fill="none" stroke="#1d9bf0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 6.5 4 9.5 10.5 2.5M7.5 9.5 14 2.5"/></svg>}WhatsApp: {o.wa === "sent" ? "no reply" : o.wa}</span>}
-        {o.attempts > 0 && <span className="text-ink-faint">· {o.attempts} call{o.attempts === 1 ? "" : "s"}</span>}
         {o.shipped && <span className="rounded-md bg-[#e9eef5] px-1.5 py-px font-medium text-[#1c5cab]">Shipped · {o.shipped.awb}</span>}
         {due && <span className="font-medium text-[#5b6cf0]">· call at {at(o.followUpAt!)}</span>}
         {o.call === "confirmed" && <span className="ml-auto rounded-md bg-[#e3f1ea] px-1.5 py-px font-semibold text-[#1f6f4a]">Confirmed</span>}
@@ -332,10 +470,11 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res) => v
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold leading-tight">{c.firstName} {c.lastName}</p>
-            <p className="num mt-0.5 text-[13px] text-ink-soft">+91 {c.phone.replace(/(\d{5})(\d{5})/, "$1 $2")}</p>
+            {phone && <a href={`tel:+91${phone}`} className="num mt-0.5 block text-[13px] text-ink-soft">+91 {phone}</a>}
           </div>
-          <a href={`tel:${tel}`} className="flex h-10 items-center gap-1.5 rounded-xl bg-[#1f8f5f] px-3.5 text-[13px] font-semibold text-white shadow-sm active:scale-[.98]"><Icon name="phone" className="h-4 w-4" />Call</a>
-          <a href={`https://wa.me/91${c.phone}`} target="_blank" rel="noreferrer" aria-label="WhatsApp" className="flex h-10 w-10 items-center justify-center rounded-xl text-[#1f8f5f] shadow-[inset_0_0_0_1px_#cfe5da] active:scale-[.98]"><Icon name="chat" className="h-4 w-4" /></a>
+          <button type="button" disabled={dial.state !== "idle"} onClick={() => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" })} className="flex h-10 items-center gap-2 rounded-xl bg-[#1f8f5f] px-3 text-sm font-semibold text-white"><Icon name="phone" className="h-4 w-4" />{dial.state !== "idle" ? "Starting…" : d.providerLabel ? `Call via ${d.providerLabel}` : "Call"}</button>
+          {phone && <a href={`https://wa.me/91${phone}`} target="_blank" rel="noreferrer" aria-label="WhatsApp"><Icon name="chat" className="h-5 w-5" /></a>}
+          {dial.data?.error && <p role="alert" className="text-xs text-red-700">{dial.data.error}</p>}
         </div>
         <p className="text-[13px] leading-snug"><Icon name="route" className="mr-1 inline h-3.5 w-3.5 text-ink-faint" />{[c.address1, c.address2, c.city, c.state, c.pincode].filter(Boolean).join(", ")}
           {o.status !== "cancelled" && <button type="button" onClick={() => setPanel(panel === "address" ? null : "address")} className="ml-1.5 text-[12px] font-medium text-[#005bd3]">Edit</button>}</p>
@@ -402,7 +541,6 @@ function AddressForm({ o, f, onNext }: { o: O; f: ReturnType<typeof useFetcher<R
   return (
     <f.Form method="post" className="grid grid-cols-2 gap-2 rounded-xl bg-[#f6f6f7] p-3">
       <input type="hidden" name="intent" value="address" /><input type="hidden" name="orderId" value={o.id} />
-      <input type="hidden" name="phone" value={c.phone} /><input type="hidden" name="email" value={c.email ?? ""} />
       <input name="firstName" defaultValue={c.firstName} placeholder="First name" className="input h-9 text-[13px]" aria-label="First name" />
       <input name="lastName" defaultValue={c.lastName} placeholder="Last name" className="input h-9 text-[13px]" aria-label="Last name" />
       <input name="address1" defaultValue={c.address1} placeholder="House, street, area" className="input col-span-2 h-9 text-[13px]" aria-label="Address" />
