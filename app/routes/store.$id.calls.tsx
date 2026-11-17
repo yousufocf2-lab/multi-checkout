@@ -41,7 +41,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const manager = me === null && can(viewer, "orders");
   if (!manager && me === null) throw new Response("Not allowed", { status: 403 });
   const query = (sp.get("q") ?? "").trim().slice(0, 100);
-  const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until, query);
+  const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until, query, tab === "team" ? 1 : Number(sp.get("page") ?? 1));
   const showSkips = manager && sp.get("activity") === "skips";
   const activity = await callActivity(store.id, manager ? null : me, range.since, range.until, showSkips, board.orders.map((o) => o.id));
   const providerLabel = providerFor(store.id)?.label ?? null;
@@ -163,8 +163,16 @@ export default function Calls() {
     { id: "all", label: "All", n: c.all, tone: "" },
     ...(d.manager ? [{ id: "team" as const, label: "Team", n: null, tone: "" }] : []),
   ];
-  const tabLink = (t: string) => { const p = new URLSearchParams(params); p.set("tab", t); p.delete("member"); return `?${p}`; };
+  const tabLink = (t: string) => { const p = new URLSearchParams(params); p.set("tab", t); p.delete("member"); p.delete("page"); return `?${p}`; };
   const [openId, setOpenId] = useState<string | null>(null);
+  const { page, pages, total, offset } = d.board.pagination;
+  const pageLink = (next: number) => {
+    const p = new URLSearchParams(params);
+    if (next === 1) p.delete("page");
+    else p.set("page", String(next));
+    return `?${p}`;
+  };
+  useEffect(() => setOpenId(null), [page, d.tab, d.query, d.range.since, d.range.until]);
   const alerts = new URLSearchParams(params);
   if (d.showSkips) alerts.delete("activity"); else alerts.set("activity", "skips");
   const lastOrder = useRef<{ id: string; queue: string }>();
@@ -246,7 +254,7 @@ export default function Calls() {
         <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5">
           <RangePicker current={d.range} />
           <Form method="get" className="flex min-w-0 flex-1 gap-2">
-            {[...params].filter(([key]) => key !== "q" && key !== "tab").map(([key, value]) => <input key={key} name={key} type="hidden" value={value} />)}
+            {[...params].filter(([key]) => key !== "q" && key !== "tab" && key !== "page").map(([key, value]) => <input key={key} name={key} type="hidden" value={value} />)}
             <input name="tab" type="hidden" value={d.tab === "team" ? "all" : d.tab} />
             <input className="input min-w-0 flex-1" aria-label="Search orders" name="q" defaultValue={d.query} placeholder="Order number, name or mobile" />
             <button type="submit" className="btn-secondary">Search</button>
@@ -273,7 +281,17 @@ export default function Calls() {
           <p className="mt-1 max-w-xs text-[12.5px] text-ink-faint">{d.tab === "to_call" ? "New orders show up here on their own." : "Try another date range."}</p>
         </div>
       ) : (
-        <CallList d={d} onOpen={openFromList} />
+        <>
+          <CallList d={d} onOpen={openFromList} />
+          {pages > 1 && <nav aria-label="Order pages" className="panel flex items-center justify-between gap-3 px-4 py-2.5">
+            <p className="text-xs tabular-nums text-ink-soft">{offset + 1}–{offset + d.board.orders.length} of {total}</p>
+            <div className="flex items-center gap-2">
+              <PageArrow to={page > 1 ? pageLink(page - 1) : undefined} direction="previous" />
+              <span className="text-xs tabular-nums text-ink-soft">Page {page} of {pages}</span>
+              <PageArrow to={page < pages ? pageLink(page + 1) : undefined} direction="next" />
+            </div>
+          </nav>}
+        </>
       )}
 
       {openId && d.tab !== "team" && <Sheet key={openId} d={d} startId={openId} onClose={() => setOpenId(null)} onDone={setToast} onSkip={openFromList} />}
@@ -283,6 +301,15 @@ export default function Calls() {
       )}
     </div>
   );
+}
+
+function PageArrow({ to, direction }: { to?: string; direction: "previous" | "next" }) {
+  const label = direction === "previous" ? "Previous page" : "Next page";
+  const className = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rule";
+  const icon = <Icon name="chevron" className={`h-4 w-4 ${direction === "previous" ? "rotate-90" : "-rotate-90"}`} />;
+  return to
+    ? <Link to={to} rel={direction === "previous" ? "prev" : "next"} className={`${className} hover:bg-paper`} aria-label={label}>{icon}</Link>
+    : <button type="button" disabled className={`${className} opacity-30`} aria-label={label}>{icon}</button>;
 }
 
 const TAB_STYLE: Record<string, [string, string]> = {

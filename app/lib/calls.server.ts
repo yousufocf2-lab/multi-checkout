@@ -5,6 +5,7 @@ import { db, orderCallEvents, orders, stores, teamMembers, type Order, type Orde
 import { cancelOrders } from "./order-actions.server";
 
 export const CALL_PERM = "confirm";
+const CALL_PAGE_SIZE = 50;
 const WINDOW_DAYS = 14; // orders older than this aren't put in anyone's queue
 
 /** Active team members of this store's owner who have the calling permission (explicitly), oldest first. */
@@ -65,7 +66,7 @@ const bucket = sql<CallTab>`case
  * Everything the calling page shows. `me` = the caller's team member id (null for the owner / a manager, who see all,
  * phone numbers included). `since`/`until` are IST dates (YYYY-MM-DD) on when the order was placed.
  */
-export async function callBoard(store: Store, me: number | null, tab: CallTab, since: string, until: string, query = "") {
+export async function callBoard(store: Store, me: number | null, tab: CallTab, since: string, until: string, query = "", requestedPage = 1) {
   await assignCalls(store);
   const team = await callersFor(store);
   const dayStart = istStart().toISOString();
@@ -92,13 +93,22 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     mobile.length === 10 ? sql`${orders.customer}->>'phone' = ${mobile}` : undefined,
   ) : undefined;
   const shipped = sql`${orders.awb} is not null or ${orders.courierRef} is not null`;
-  const [list, counts, [ship]] = await Promise.all([
-    db.select({ ...cols, tab: bucket }).from(orders).where(and(match, tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`)))
-      .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last` : desc(orders.createdAt)).limit(300),
+  const tabScope = tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`);
+  const listScope = and(tabScope, match);
+  const [counts, [ship], searchCount] = await Promise.all([
     db.select({ tab: bucket, n: sql<number>`count(*)::int` }).from(orders).where(base).groupBy(bucket),
     db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(base, shipped)),
+    match ? db.select({ n: sql<number>`count(*)::int` }).from(orders).where(listScope) : null,
   ]);
-  const n = Object.fromEntries(counts.map((c) => [c.tab, Number(c.n)])) as Partial<Record<CallTab, number>>;
+  const n = Object.fromEntries(counts.map((c) => [c.tab, c.n])) as Partial<Record<CallTab, number>>;
+  const all = Object.values(n).reduce((total, count) => total + (count ?? 0), 0);
+  const total = searchCount?.[0]?.n ?? (tab === "all" ? all : tab === "shipped" ? ship.n : n[tab] ?? 0);
+  const pages = Math.max(1, Math.ceil(total / CALL_PAGE_SIZE));
+  const page = Number.isSafeInteger(requestedPage) ? Math.max(1, Math.min(requestedPage, pages)) : 1;
+  const offset = (page - 1) * CALL_PAGE_SIZE;
+  const list = await db.select({ ...cols, tab: bucket }).from(orders).where(listScope)
+    .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last` : desc(orders.createdAt), desc(orders.id))
+    .limit(CALL_PAGE_SIZE).offset(offset);
 
   // Team summary: per caller, open work now and what they did today
   const stats = await db.select({
@@ -124,8 +134,9 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   });
   return {
     me, team: team.map((t) => ({ ...t, ...(byM.get(t.id) ?? { waiting: 0, follow: 0, confirmed: 0, cancelled: 0 }), you: t.id === me })),
-    counts: { to_call: n.to_call ?? 0, follow_up: n.follow_up ?? 0, confirmed: n.confirmed ?? 0, cancelled: n.cancelled ?? 0, shipped: Number(ship?.n ?? 0), all: Object.values(n).reduce((a, b) => a + (b ?? 0), 0) },
+    counts: { to_call: n.to_call ?? 0, follow_up: n.follow_up ?? 0, confirmed: n.confirmed ?? 0, cancelled: n.cancelled ?? 0, shipped: ship.n, all },
     orders: list.map(full),
+    pagination: { page, pages, total, offset },
   };
 }
 
