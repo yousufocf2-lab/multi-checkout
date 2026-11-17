@@ -52,18 +52,20 @@ export default function StoreLayout() {
   const { store, canSettings } = useLoaderData<typeof loader>();
   const section = useLocation().pathname.split("/")[3] ?? "";
   const t = TITLES[section];
+  const isCalls = section === "calls";
   return (
     <>
       {t && (
-        <div className="mb-4 flex min-h-[32px] flex-wrap items-center gap-x-3 gap-y-2">
+        <div className={`mb-4 flex min-h-[32px] flex-wrap items-center gap-x-3 gap-y-2 ${isCalls ? "mx-auto mb-5 max-w-6xl border-b border-rule pb-5" : ""}`}>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {t.back
               ? <Link to={`${storePath(store.id)}/${t.back}`} className="-ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-ink-soft hover:bg-black/5 hover:text-ink" aria-label="Back"><Icon name="arrow" className="h-4 w-4 rotate-180" /></Link>
-              : <Icon name={t.icon} className="h-4 w-4 shrink-0" strokeWidth={1.9} />}
-            <h1 className="truncate text-[15px] font-semibold leading-tight tracking-tight">{t.title}</h1>
+              : isCalls ? <span className="mr-1.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-rule bg-pine-tint text-pine"><Icon name={t.icon} className="h-5 w-5" /></span>
+                : <Icon name={t.icon} className="h-4 w-4 shrink-0" strokeWidth={1.9} />}
+            <h1 className={`truncate font-semibold leading-tight tracking-tight ${isCalls ? "text-2xl sm:text-[28px]" : "text-[15px]"}`}>{t.title}</h1>
             {!store.active && <StatusBadge status="off" label="Checkout off" />}
             {!store.connected && store.platform !== "Growpefy" && <StatusBadge status="pending_payment" label={`${store.platform} not connected`} />}
-            {t.description && <span className="hidden min-w-0 truncate text-[12.5px] text-ink-faint lg:inline">{t.description}</span>}
+            {!isCalls && t.description && <span className="hidden min-w-0 truncate text-[12.5px] text-ink-faint lg:inline">{t.description}</span>}
           </div>
           <div className="flex items-center gap-2">
             {t.guide && <LearnMore topic={t.guide} />}

@@ -210,28 +210,22 @@ export default function Calls() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-3">
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-8">
       <style>{CSS}</style>
-      <header className="rounded-2xl bg-ink p-5 text-white">
-        <h1 className="text-xl font-semibold">Order confirmation</h1>
-        <p className="mt-1 text-sm text-white/70">{d.providerLabel ? `Calling via ${d.providerLabel}` : "Manual calling"}</p>
-      </header>
-      {!d.manager && d.activity.warnings > 0 && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+      {!d.manager && d.activity.warnings > 0 && <p role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+        <span aria-hidden="true" className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-red-100">!</span>
         You skipped {d.activity.warnings} order{d.activity.warnings === 1 ? "" : "s"}. Please complete them.
       </p>}
-      {d.manager && <section className="grid gap-3 sm:grid-cols-2">
-        <Link to={`?${alerts}`} className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800" aria-expanded={d.showSkips}>
-          <p className="text-sm font-semibold">Skipped orders</p>
-          <p className="text-2xl font-bold">{d.activity.skipped}</p>
-          <p className="text-xs">{d.activity.unresolved} unresolved · {d.showSkips ? "Hide details" : "View details"}</p>
+      {d.manager && <section aria-label="Queue overview" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <QueueMetric label="To call" value={c.to_call} />
+        <QueueMetric label="Follow-up" value={c.follow_up} />
+        <Link to={`?${alerts}`} className="group rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-pine" aria-expanded={d.showSkips}>
+          <QueueMetric label="Skipped orders" value={d.activity.skipped} note={`${d.activity.unresolved} unresolved · ${d.showSkips ? "Hide details" : "View details"}`} alert={d.activity.unresolved > 0} />
         </Link>
-        <div className="panel p-4"><p className="text-sm font-semibold">Manual dial requests</p>
-          <p className="text-2xl font-bold">{d.activity.daily.filter((point) => point != null).reduce((n, row) => n + (row.kind === "manual" ? row.count : 0), 0)}</p>
-          <p className="text-xs text-ink-soft">Tracked separately from verified calls</p>
-        </div>
+        <QueueMetric label="Manual dial requests" value={d.activity.daily.filter((point) => point != null).reduce((n, row) => n + (row.kind === "manual" ? row.count : 0), 0)} note={d.providerLabel ? `Provider: ${d.providerLabel}` : "Manual calling"} />
       </section>}
-      {d.manager && d.activity.daily.length > 0 && <details className="panel p-4">
-        <summary className="cursor-pointer font-semibold">Daily team activity</summary>
+      {d.manager && d.activity.daily.length > 0 && <details className="panel rounded-xl p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Daily team activity</summary>
         <div className="mt-3 max-h-64 space-y-2 overflow-auto">
           {d.activity.daily.filter((point) => point != null).map((row) => <div key={JSON.stringify([row.day, row.actor, row.kind])} className="grid grid-cols-[minmax(0,1fr)_5rem_2rem] items-center gap-3 text-xs">
             <span>{row.day} · {row.actor} · {row.kind === "skip" ? "Skipped" : row.kind === "manual" ? "Manual dial" : "Provider request"}</span>
@@ -240,7 +234,7 @@ export default function Calls() {
           </div>)}
         </div>
       </details>}
-      {d.showSkips && <section className="panel max-h-[32rem] overflow-auto p-4">
+      {d.showSkips && <section className="panel max-h-[32rem] overflow-auto rounded-xl p-5">
         <h2 className="font-semibold">Skipped orders by employee</h2>
         {!d.activity.skips.length && <p className="mt-2 text-sm">No skipped orders in this range.</p>}
         {d.activity.skips.filter((entry) => entry != null).map((entry) => <details key={entry.id} className="border-b border-rule py-2 text-sm">
@@ -250,23 +244,26 @@ export default function Calls() {
           <p>{entry.items.map((item) => `${item.title} ×${item.quantity}`).join(", ")}</p>
         </details>)}
       </section>}
-      <section className="panel relative z-20 p-0">
-        <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2.5">
+      <section className="panel relative z-20 rounded-xl p-0">
+        <div className="flex flex-wrap items-center gap-3 border-b border-rule p-3 sm:px-4">
           <RangePicker current={d.range} />
-          <Form method="get" className="flex min-w-0 flex-1 gap-2">
+          <Form method="get" className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1">
             {[...params].filter(([key]) => key !== "q" && key !== "tab" && key !== "page").map(([key, value]) => <input key={key} name={key} type="hidden" value={value} />)}
             <input name="tab" type="hidden" value={d.tab === "team" ? "all" : d.tab} />
-            <input className="input min-w-0 flex-1" aria-label="Search orders" name="q" defaultValue={d.query} placeholder="Order number, name or mobile" />
+            <div className="relative min-w-0 flex-1">
+              <Icon name="search" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+              <input className="input h-9 min-w-0 !pl-9" aria-label="Search orders" name="q" defaultValue={d.query} placeholder="Order number, name or mobile" />
+            </div>
             <button type="submit" className="btn-secondary">Search</button>
           </Form>
         </div>
         {/* status tabs with counts: every assigned order is in exactly one of them */}
-        <nav className="flex gap-1 overflow-x-auto px-2 py-2" aria-label="Order status">
+        <nav className="flex gap-1 overflow-x-auto px-3 pt-1 sm:px-4" aria-label="Order status">
           {tabs.map((t) => (
             <Link key={t.id} to={tabLink(t.id)} preventScrollReset aria-current={d.tab === t.id ? "page" : undefined}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-medium transition ${d.tab === t.id ? "bg-ink text-white" : "text-ink-soft hover:bg-black/[.04] hover:text-ink"}`}>
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-medium transition ${d.tab === t.id ? "border-pine font-semibold text-pine" : "border-transparent text-ink-soft hover:border-rule hover:text-ink"}`}>
               {t.label}
-              {t.n != null && <span className={`num rounded-md px-1.5 text-[11.5px] font-semibold ${d.tab === t.id ? "bg-white/20 text-white" : "bg-black/[.05]"}`} style={d.tab !== t.id && t.n && t.tone ? { color: t.tone } : undefined}>{t.n}</span>}
+              {t.n != null && <span className={`num rounded-md px-1.5 text-[11.5px] font-semibold ${d.tab === t.id ? "bg-pine-tint text-pine" : "bg-paper"}`} style={d.tab !== t.id && t.n && t.tone ? { color: t.tone } : undefined}>{t.n}</span>}
             </Link>
           ))}
         </nav>
@@ -283,7 +280,7 @@ export default function Calls() {
       ) : (
         <>
           <CallList d={d} onOpen={openFromList} />
-          {pages > 1 && <nav aria-label="Order pages" className="panel flex items-center justify-between gap-3 px-4 py-2.5">
+          {pages > 1 && <nav aria-label="Order pages" className="panel flex items-center justify-between gap-3 rounded-xl px-4 py-3">
             <p className="text-xs tabular-nums text-ink-soft">{offset + 1}–{offset + d.board.orders.length} of {total}</p>
             <div className="flex items-center gap-2">
               <PageArrow to={page > 1 ? pageLink(page - 1) : undefined} direction="previous" />
@@ -301,6 +298,14 @@ export default function Calls() {
       )}
     </div>
   );
+}
+
+function QueueMetric({ label, value, note, alert = false }: { label: string; value: number; note?: string; alert?: boolean }) {
+  return <div className={`h-full rounded-xl border bg-surface p-4 shadow-sm transition group-hover:border-ink/25 sm:p-5 ${alert ? "border-red-200" : "border-rule"}`}>
+    <p className={`text-xs font-medium sm:text-sm ${alert ? "text-red-700" : "text-ink-soft"}`}>{label}</p>
+    <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-ink sm:text-3xl">{value.toLocaleString("en-IN")}</p>
+    {note && <p className="mt-1.5 text-xs text-ink-soft">{note}</p>}
+  </div>;
 }
 
 function PageArrow({ to, direction }: { to?: string; direction: "previous" | "next" }) {
@@ -322,35 +327,52 @@ function via(o: O) {
   return o.callBy ? `by ${o.callBy}` : "";
 }
 
-/** The list: newest order first. Tap a row to open its card. */
+/** Each row opens the order's detail panel. */
 function CallList({ d, onOpen }: { d: D; onOpen: (id: string) => void }) {
   const now = Date.now();
-  return (
-    <ul className="panel divide-y divide-rule overflow-hidden p-0">
+  const columns = d.manager
+    ? "md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1.05fr)_1.75rem]"
+    : "md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_1.75rem]";
+  return <div className="panel overflow-hidden rounded-xl p-0">
+    <div aria-hidden="true" className={`hidden items-center gap-4 border-b border-rule bg-paper px-5 py-3 text-xs font-semibold text-ink-soft md:grid ${columns}`}>
+      <span>Customer / Order</span>
+      <span>Payment</span>
+      <span>Status</span>
+      {d.manager && <span>Assigned to</span>}
+    </div>
+    <ul className="divide-y divide-rule">
       {d.board.orders.map((o) => {
-        const due = o.tab === "follow_up" && o.followUpAt && new Date(o.followUpAt).getTime() <= now;
-        return (
-          <li key={o.id}>
-            <button type="button" onClick={() => onOpen(o.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-black/[.02] active:bg-black/[.04]">
-              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[.05] text-[12px] font-semibold text-ink-soft">
+        const due = o.tab === "follow_up" && o.followUpAt && Date.parse(o.followUpAt) <= now;
+        const status = TAB_STYLE[o.tab] ?? [o.tab, "bg-paper text-ink-soft"];
+        const meta = o.followUpAt && o.tab === "follow_up" ? (due ? "Call now" : at(o.followUpAt))
+          : o.tab === "to_call" ? `Placed ${ago(o.at)}` : via(o);
+        const payment = o.method === "prepaid" ? "Prepaid" : o.method === "partial" ? "Partial COD" : "COD";
+        return <li key={o.id}>
+          <button type="button" onClick={() => onOpen(o.id)} className={`group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 text-left transition hover:bg-paper focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-pine md:gap-4 md:px-5 ${columns}`}>
+            <span className="flex min-w-0 items-center gap-3">
+              <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-rule bg-paper text-xs font-semibold text-ink-soft">
                 {(o.customer.firstName[0] ?? "?").toUpperCase()}{(o.customer.lastName[0] ?? "").toUpperCase()}
-                {due && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#5b6cf0]" />}
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2"><b className="truncate text-[13.5px] font-semibold">{o.customer.firstName} {o.customer.lastName}</b><span className="num shrink-0 text-[11.5px] text-ink-faint">{o.name}</span></span>
-                <span className="block truncate text-[12px] text-ink-soft">{o.customer.city} · {o.method === "prepaid" ? "Prepaid" : o.method === "partial" ? "Partial COD" : "COD"} {inr(o.total)}{o.shipped ? " · Shipped" : ""}{d.manager && o.assignee ? ` · ${o.assignee}` : ""}</span>
-                <span className="block truncate text-[11.5px] text-ink-faint">
-                  {o.tab === "follow_up" && o.followUpAt ? (due ? "Call now" : `Call at ${at(o.followUpAt)}`) : o.tab === "to_call" ? `Placed ${ago(o.at)}` : `${TAB_STYLE[o.tab]?.[0] ?? ""} ${via(o)}`}
-                </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-ink">{o.customer.firstName} {o.customer.lastName}</span>
+                <span className="block truncate text-xs text-ink-soft">{[o.name, o.customer.city].filter(Boolean).join(" · ")}</span>
               </span>
-              {(d.tab === "all" || d.tab === "shipped") && <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${TAB_STYLE[o.tab]?.[1] ?? ""}`}>{TAB_STYLE[o.tab]?.[0]}</span>}
-              <Icon name="chevron" className="h-4 w-4 shrink-0 -rotate-90 text-ink-faint" />
-            </button>
-          </li>
-        );
+            </span>
+            <span className="text-right md:text-left">
+              <span className="block text-sm font-semibold tabular-nums">{inr(o.total)}</span>
+              <span className="block text-xs text-ink-soft">{payment}</span>
+            </span>
+            <span className="col-span-2 flex min-w-0 items-center gap-2 pl-12 md:col-span-1 md:block md:pl-0">
+              <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${status[1]}`}>{o.shipped ? "Shipped" : status[0]}</span>
+              {meta && <span className="block truncate text-xs text-ink-soft md:mt-1">{meta}</span>}
+            </span>
+            {d.manager && <span className="col-span-2 truncate pl-12 text-xs text-ink-soft md:col-span-1 md:pl-0 md:text-sm">{o.assignee ?? "Unassigned"}</span>}
+            <Icon name="chevron" className="ml-auto hidden h-4 w-4 shrink-0 -rotate-90 text-ink-faint group-hover:text-pine md:block" />
+          </button>
+        </li>;
       })}
     </ul>
-  );
+  </div>;
 }
 
 /**
@@ -404,9 +426,9 @@ function Sheet({ d, startId, onClose, onDone, onSkip }: { d: D; startId: string;
   };
   const onTouchEnd = () => { const s0 = start.current; start.current = null; if (s0?.lock === "x" && Math.abs(dx) > 70) go(dx < 0 ? 1 : -1); setDx(0); };
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-black/30" onClick={onClose}>
-      <aside className="cl-sheet flex h-full w-full flex-col bg-[#f3f4f6] sm:max-w-[480px] sm:shadow-2xl" onClick={(e) => e.stopPropagation()} aria-label="Order card">
-        <div className="flex items-center gap-2 border-b border-rule bg-white px-3 py-2.5">
+    <div className="fixed inset-0 z-[60] flex justify-end bg-slate-950/35" onClick={onClose}>
+      <aside className="cl-sheet flex h-full w-full flex-col border-l border-rule bg-paper sm:max-w-[34rem] sm:shadow-2xl" onClick={(e) => e.stopPropagation()} aria-label="Order card">
+        <div className="flex items-center gap-2 border-b border-rule bg-surface px-4 py-4">
           <button type="button" onClick={onClose} aria-label="Back to list" className="flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-ink-soft hover:bg-black/5"><Icon name="chevron" className="h-4 w-4 rotate-90" />List</button>
           <div className="min-w-0 flex-1">
             <p className="text-center text-[12.5px] font-medium"><span className="num">{i + 1}</span> of <span className="num">{list.length}</span></p>
@@ -415,7 +437,7 @@ function Sheet({ d, startId, onClose, onDone, onSkip }: { d: D; startId: string;
           <button type="button" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-90" /></button>
           <button type="button" onClick={() => go(1)} disabled={i >= list.length - 1} aria-label="Next order" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 -rotate-90" /></button>
         </div>
-        <div className="flex-1 touch-pan-y overflow-y-auto overflow-x-hidden p-3" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+        <div className="flex-1 touch-pan-y overflow-y-auto overflow-x-hidden p-4 sm:p-5" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
           <ul key={o.id} className={dir > 0 ? "cl-next" : "cl-prev"} style={dx ? { transform: `translateX(${dx}px) rotate(${dx / 60}deg)`, transition: "none" } : { transition: "transform .2s ease-out" }}>
             <OrderCall o={o} d={d} onDone={(r, outcome) => { if (r.ok && outcome) advanceFrom.current = o.id; onDone(r); }} onNext={i < list.length - 1 ? () => go(1) : undefined} />
           </ul>
@@ -470,12 +492,12 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
   const items = o.items.map((l) => `${l.title}${l.variant ? ` (${l.variant})` : ""} ×${l.qty}`).join(", ");
   const due = o.call === "follow_up" && o.followUpAt;
   return (
-    <li className={`panel cl-in overflow-hidden p-0 ${busy ? "opacity-60" : ""}`}>
-      {d.manager && <details className="px-4 py-2 text-sm">
+    <li className={`panel cl-in overflow-hidden rounded-xl p-0 ${busy ? "opacity-60" : ""}`}>
+      {d.manager && <details className="border-b border-rule bg-paper px-5 py-3 text-sm">
         <summary className="cursor-pointer font-medium">Call history · {d.activity.calls.filter((entry) => entry?.orderId === o.id && entry.verifiedAt).length} verified</summary>
         <ul>{d.activity.calls.filter((entry): entry is NonNullable<typeof entry> => entry != null && entry.orderId === o.id).map((entry) => <CallRecord key={entry.id} entry={entry} />)}</ul>
       </details>}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-rule px-4 py-2 text-[12px]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-rule px-5 py-3 text-[12px]">
         <b className="num text-[13px]">{o.name}</b>
         <span className="text-ink-faint">{ago(o.at)}</span>
         <span className={`rounded-md px-1.5 py-px font-semibold ${o.method === "prepaid" ? "bg-[#e9eef5] text-[#1c5cab]" : o.method === "partial" ? "bg-violet-50 text-violet-700" : "bg-[#fff1e3] text-[#8a4b00]"}`}>
@@ -493,13 +515,13 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
         )}
       </div>
 
-      <div className="space-y-2.5 px-4 py-3">
+      <div className="space-y-3 px-5 py-4">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold leading-tight">{c.firstName} {c.lastName}</p>
+            <p className="text-lg font-semibold leading-tight tracking-tight">{c.firstName} {c.lastName}</p>
             {phone && <a href={`tel:+91${phone}`} className="num mt-0.5 block text-[13px] text-ink-soft">+91 {phone}</a>}
           </div>
-          <button type="button" disabled={dial.state !== "idle"} onClick={() => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" })} className="flex h-10 items-center gap-2 rounded-xl bg-[#1f8f5f] px-3 text-sm font-semibold text-white"><Icon name="phone" className="h-4 w-4" />{dial.state !== "idle" ? "Starting…" : d.providerLabel ? `Call via ${d.providerLabel}` : "Call"}</button>
+          <button type="button" disabled={dial.state !== "idle"} onClick={() => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" })} className="flex h-10 items-center gap-2 rounded-lg bg-pine px-3.5 text-sm font-semibold text-white disabled:opacity-60"><Icon name="phone" className="h-4 w-4" />{dial.state !== "idle" ? "Starting…" : d.providerLabel ? `Call via ${d.providerLabel}` : "Call"}</button>
           {phone && <a href={`https://wa.me/91${phone}`} target="_blank" rel="noreferrer" aria-label="WhatsApp"><Icon name="chat" className="h-5 w-5" /></a>}
           {dial.data?.error && <p role="alert" className="text-xs text-red-700">{dial.data.error}</p>}
         </div>
