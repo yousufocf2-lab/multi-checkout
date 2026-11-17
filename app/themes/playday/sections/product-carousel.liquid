@@ -30,6 +30,7 @@
   { "id": "center", "type": "checkbox", "label": "Heading in the middle", "default": false },
   { "id": "label", "type": "text", "label": "Badge on every card in this row (empty = each product's own badge)", "default": "" },
   { "id": "collection", "type": "collection", "label": "Products from", "default": "" },
+  { "id": "sort", "type": "select", "label": "Order", "options": ["auto", "best_selling", "newest", "default"], "option_labels": ["Automatic (best selling for a Bestsellers row)", "Best selling first", "Newest first", "Store order / as picked"], "default": "auto" },
   { "id": "products", "type": "products", "label": "Or pick products (overrides the category)", "default": [] },
   { "id": "limit", "type": "range", "label": "Most products", "min": 2, "max": 24, "step": 1, "default": 12 },
   { "id": "layout", "type": "select", "label": "Layout", "options": ["carousel", "grid"], "option_labels": ["Sliding row", "Grid"], "default": "carousel" },

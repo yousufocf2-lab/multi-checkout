@@ -18,6 +18,7 @@
   "settings": [
     { "id": "heading", "type": "text", "label": "Heading", "default": "Bestsellers" },
     { "id": "collection", "type": "collection", "label": "Category (empty = all)", "default": "" },
+    { "id": "sort", "type": "select", "label": "Order", "options": ["auto", "best_selling", "newest", "default"], "option_labels": ["Automatic (best selling for a Bestsellers row)", "Best selling first", "Newest first", "Store order / as picked"], "default": "auto" },
     { "id": "limit", "type": "range", "label": "Products to show", "default": 8, "min": 2, "max": 24 }
   ]
 }

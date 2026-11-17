@@ -2,6 +2,7 @@
 // layout + JSON templates listing sections, each section a Liquid file with a {% schema %} of settings).
 // Themes ship in app/themes/<name>; later a store's own copy (edited in "Edit code") will live in the database.
 import { dishOf } from "./dish";
+import { byUnits, unitsSold } from "./sales-rank.server";
 import { openNow, resolveRestaurant } from "./restaurant";
 import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelToken } from "liquidjs";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -649,6 +650,22 @@ function restaurantScope(ctx: ShopContext) {
   };
 }
 
+/**
+ * Order of a product row: "best_selling" (most units sold lately first), "newest", or "default" (store order / as picked).
+ * "auto" (or not set) = best selling when the row's heading says Bestsellers / Best sellers / Best selling.
+ */
+type RowSort = "default" | "best_selling" | "newest";
+function rowSort(settings: Record<string, unknown>): RowSort {
+  const s = String(settings.sort ?? "auto");
+  if (s === "best_selling" || s === "newest" || s === "default") return s;
+  return /best\s*-?\s*sell/i.test(String(settings.heading ?? "")) ? "best_selling" : "default";
+}
+async function sortRow<T extends { id: number }>(ctx: ShopContext, list: T[], sort: RowSort) {
+  if (sort === "newest") return list.slice().sort((a, b) => b.id - a.id);
+  if (sort === "best_selling") return byUnits(list, await unitsSold(ctx.store.id));
+  return list;
+}
+
 /** Section data loader shared by every page: product grids get their products. */
 export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): SectionData {
   return async (type, settings) => {
@@ -669,9 +686,11 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     if (type === "product-carousel" || type === "product-tabs") {
       const limit = Math.min(24, Number(settings.limit) || 12);
       const category = String(settings.collection ?? "") || undefined;
-      const products = picked.length ? (await loadProductsByHandles(ctx, picked)).filter((p) => p.id !== opts.exclude)
+      const sort = rowSort(settings);
+      let products = picked.length ? (await loadProductsByHandles(ctx, picked)).filter((p) => p.id !== opts.exclude)
         : isDemo(ctx) ? demoProducts(ctx, category).filter((p) => p.id !== opts.exclude).slice(0, limit)
-        : await loadProducts(ctx, { category, limit, exclude: opts.exclude });
+        : await loadProducts(ctx, { category, limit: sort === "default" ? limit : 200, exclude: opts.exclude });
+      if (!isDemo(ctx)) products = (await sortRow(ctx, products, sort)).slice(0, picked.length ? 60 : limit);
       return { products, products_by_handle: byHandle, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
     }
     if (type === "restaurant-menu") {
@@ -685,9 +704,10 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
     }
     if (type !== "product-grid") return handles.length ? { products_by_handle: byHandle } : {};
     const category = String(settings.collection ?? "") || undefined;
+    const sort = rowSort(settings);
     const products = isDemo(ctx)
       ? demoProducts(ctx, category).slice(0, Number(settings.limit) || 8)
-      : await loadProducts(ctx, { category, limit: Number(settings.limit) || 8, exclude: opts.exclude });
+      : (await sortRow(ctx, await loadProducts(ctx, { category, limit: sort === "default" ? Number(settings.limit) || 8 : 200, exclude: opts.exclude }), sort)).slice(0, Number(settings.limit) || 8);
     return { products, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
   };
 }
