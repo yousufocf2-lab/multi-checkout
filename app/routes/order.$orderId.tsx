@@ -76,6 +76,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     hasBackup: activeGateways(store).length > 1,
     downloads: await orderDownloads(order),
     digitalOnly: order.items.some((l) => l.digital) && order.items.every((l) => l.digital || l.free),
+    // Restaurant takeaway / dine-in: show the order type instead of an address
+    orderType: order.fulfilment === "dine_in" ? `Dine-in${order.tableNo ? ` · Table ${order.tableNo}` : ""}` : order.fulfilment === "takeaway" ? "Takeaway (pickup)" : null,
   });
 }
 
@@ -124,7 +126,8 @@ export default function OrderStatus() {
                   <div className="flex justify-between"><dt className="text-ink-soft">{d.method === "cod" ? "Pay on delivery" : "Paid"}</dt><dd className="num font-semibold">{formatINR(d.total)}</dd></div>
                 )}
                 {d.savings > 0 && <div className="flex justify-between"><dt className="text-ink-soft">You saved</dt><dd className="num font-medium text-good">{formatINR(d.savings)}</dd></div>}
-                {!d.digitalOnly && <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>}
+                {d.orderType ? <div className="flex justify-between gap-4"><dt className="text-ink-soft">Order type</dt><dd className="text-right">{d.orderType}</dd></div>
+                  : !d.digitalOnly && <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>}
               </dl>
               <Downloads list={d.downloads.list} locked={d.downloads.locked} base={d.base} className="mt-4" />
               {d.note && (

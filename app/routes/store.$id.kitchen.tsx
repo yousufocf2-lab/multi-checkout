@@ -136,7 +136,7 @@ function Ticket({ o, now, prep }: { o: O; now: number; prep: number }) {
           <p className="num text-[15px] font-semibold">{o.name}</p>
           <p className="text-[11px] text-ink-faint">{clock(o.at)} · <span className={late ? "font-semibold text-[#b42318]" : ""}>{ago(o.at, now)} ago</span></p>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{o.fulfilmentLabel}{o.table ? ` · T${o.table}` : ""}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{o.fulfilmentLabel}{o.table ? ` · ${/^\d+$/.test(o.table) ? `Table ${o.table}` : o.table}` : ""}</span>
       </header>
       <ul className="mt-2 space-y-0.5 border-y border-dashed border-rule py-2 text-[13px]">
         {o.items.map((l, i) => <li key={i} className="flex gap-2"><b className="num w-6 shrink-0">{l.qty}×</b><span>{l.title}{l.variant ? <span className="text-ink-soft"> · {l.variant}</span> : null}</span></li>)}
