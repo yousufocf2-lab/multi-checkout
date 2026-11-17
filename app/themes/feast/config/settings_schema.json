@@ -1,0 +1,37 @@
+[
+ { "name": "Logo and favicon", "settings": [
+  { "id": "logo", "type": "image", "label": "Logo" },
+  { "id": "logo_width", "type": "range", "label": "Logo width (computer)", "min": 60, "max": 260, "step": 5, "unit": "px", "default": 120 },
+  { "id": "logo_width_mobile", "type": "range", "label": "Logo width (phone)", "min": 50, "max": 200, "step": 5, "unit": "px", "default": 96 },
+  { "id": "favicon", "type": "image", "label": "Favicon: the icon in the browser tab (square, 64×64 or bigger)" }
+ ] },
+ { "name": "Colors", "settings": [
+  { "id": "color_brand", "type": "color", "label": "Accent (buttons, prices, highlights)", "default": "#e4572e" },
+  { "id": "color_button_text", "type": "color", "label": "Button text", "default": "#ffffff" },
+  { "id": "color_bg", "type": "color", "label": "Background", "default": "#fbf7f2" },
+  { "id": "color_card", "type": "color", "label": "Cards", "default": "#ffffff" },
+  { "id": "color_text", "type": "color", "label": "Text", "default": "#1f1a17" },
+  { "id": "color_muted", "type": "color", "label": "Light text", "default": "#756c64" },
+  { "id": "color_line", "type": "color", "label": "Lines and borders", "default": "#ece4da" },
+  { "id": "color_hero_bg", "type": "color", "label": "Top banner background", "default": "#1f1a17" },
+  { "id": "color_hero_text", "type": "color", "label": "Top banner text", "default": "#fff7ee" }
+ ] },
+ { "name": "Typography", "settings": [
+  { "id": "font_heading", "type": "select", "label": "Headings", "options": ["Bricolage Grotesque", "Fraunces", "Outfit", "Poppins", "Playfair Display"], "default": "Bricolage Grotesque" },
+  { "id": "font_body", "type": "select", "label": "Body", "options": ["Inter", "DM Sans", "Nunito Sans", "Manrope"], "default": "Inter" },
+  { "id": "radius", "type": "range", "label": "Corner roundness", "min": 0, "max": 28, "step": 2, "unit": "px", "default": 16 }
+ ] },
+ { "name": "Ordering", "settings": [
+  { "id": "show_veg_toggle", "type": "checkbox", "label": "Show the \"Veg only\" switch on the menu", "default": true },
+  { "id": "cart_note", "type": "text", "label": "Note in the cart (optional)", "default": "" },
+  { "id": "whatsapp_number", "type": "text", "label": "WhatsApp number for the chat button (optional)", "default": "" }
+ ] },
+ { "name": "Search engines (SEO)", "settings": [
+  { "id": "seo_home_title", "type": "text", "label": "Home page title", "default": "" },
+  { "id": "seo_home_description", "type": "textarea", "label": "Home page description", "default": "" },
+  { "id": "google_verification", "type": "text", "label": "Google Search Console verification code", "default": "" }
+ ] },
+ { "name": "Custom CSS", "settings": [
+  { "id": "custom_css", "type": "textarea", "label": "Custom CSS", "default": "" }
+ ] }
+]

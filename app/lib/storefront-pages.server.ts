@@ -3,6 +3,9 @@ import crypto from "node:crypto";
 import { eq, or } from "drizzle-orm";
 import { checkoutSessions, db, stores } from "~/db.server";
 import { catalogLines, GP_PREFIX } from "./catalog.server";
+import { joinAddons, splitAddons } from "./dish";
+import { deliveryFee, distanceKm, FULFILMENT_LABEL, openNow, resolveRestaurant, type Fulfilment } from "./restaurant";
+import type { TrackingInfo } from "~/db/schema";
 import { clientIp } from "./orders.server";
 import { pageByHandle, publishedPage } from "./store-pages.server";
 import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
@@ -189,7 +192,7 @@ function metaCookies(request: Request) {
 
 export async function startCheckout(request: Request, ctx: ShopContext) {
   const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-  let body: { lines?: { variantId?: unknown; qty?: unknown }[]; src?: unknown; giftWrap?: unknown } = {};
+  let body: { lines?: { variantId?: unknown; qty?: unknown; addons?: unknown }[]; src?: unknown; giftWrap?: unknown; rest?: { mode?: unknown; table?: unknown; lat?: unknown; lng?: unknown } } = {};
   try { body = await request.json(); } catch { return reply({ error: "Your cart couldn't be read. Please try again." }, 400); }
 
   const merged = new Map<string, number>();
@@ -197,7 +200,9 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
     const id = Math.floor(Number(l.variantId));
     const q = Math.floor(Number(l.qty));
     if (!(id > 0) || !(q > 0)) continue;
-    const key = `${GP_PREFIX}${id}`;
+    // Restaurant add-ons: "0.1,1.0" (group.option); the same dish with other add-ons is its own line
+    const picks = typeof l.addons === "string" ? splitAddons(`x~a=${l.addons.slice(0, 200)}`).picks : [];
+    const key = joinAddons(`${GP_PREFIX}${id}`, picks);
     merged.set(key, Math.min(20, (merged.get(key) ?? 0) + q));
   }
   const items = [...merged].map(([variantId, quantity]) => ({ variantId, quantity }));
@@ -205,6 +210,39 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
 
   const lines = await catalogLines(ctx.store, items);
   if (!lines.length) return reply({ error: "These items are sold out or no longer available." }, 409);
+
+  // Restaurants: delivery / takeaway / dine-in, opening hours, minimum order and the delivery area
+  let rest: NonNullable<TrackingInfo["rest"]> | undefined;
+  if (ctx.store.businessType === "restaurant") {
+    const r = resolveRestaurant(ctx.store.restaurant);
+    const open = openNow(r);
+    if (!open.open) return reply({ error: open.reason === "paused" ? "We're not taking new orders for a little while. Please try again soon." : "We're closed right now. Please order during our opening hours." }, 409);
+    const m = String(body.rest?.mode ?? "");
+    const mode: Fulfilment = m === "takeaway" || m === "dine_in" ? m : "delivery";
+    const allowed = { delivery: r.modes.delivery, takeaway: r.modes.takeaway, dine_in: r.modes.dineIn }[mode];
+    if (!allowed) return reply({ error: `${FULFILMENT_LABEL[mode]} isn't available right now.` }, 409);
+    const value = lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0) / 100;
+    const min = mode === "delivery" ? r.delivery.minOrder : mode === "takeaway" ? r.takeawayMinOrder : 0;
+    if (min > 0 && value < min) return reply({ error: `The minimum order for ${FULFILMENT_LABEL[mode].toLowerCase()} is ₹${min}. Add ₹${Math.ceil(min - value)} more.` }, 409);
+    const table = mode === "dine_in" ? String(body.rest?.table ?? "").trim().slice(0, 20) : "";
+    if (mode === "dine_in" && !table) return reply({ error: "Scan the QR code on your table to order for dine-in." }, 409);
+    let km: number | null = null;
+    let fee = 0;
+    if (mode === "delivery") {
+      const lat = Number(body.rest?.lat), lng = Number(body.rest?.lng);
+      const has = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (lat !== 0 || lng !== 0);
+      if (r.location.lat != null && r.location.lng != null) {
+        if (!has) return reply({ error: "Share your delivery location so we can check that we deliver to you." }, 409);
+        km = Math.round(distanceKm({ lat: r.location.lat, lng: r.location.lng }, { lat, lng }) * 10) / 10;
+        const f = deliveryFee(r, km, value);
+        if (f == null) return reply({ error: `Sorry, you're ${km} km away. We deliver up to ${r.delivery.radiusKm} km.` }, 409);
+        fee = f;
+      } else {
+        fee = deliveryFee(r, 0, value) ?? 0; // no kitchen location yet: the first slab
+      }
+    }
+    rest = { mode, table: table || null, km, feePaise: fee * 100, freeAbove: mode === "delivery" ? r.delivery.freeAbove : null, eta: r.prepMinutes + (mode === "delivery" ? r.delivery.etaMinutes : 0) };
+  }
 
   const id = crypto.randomBytes(12).toString("base64url");
   await db.insert(checkoutSessions).values({
@@ -215,6 +253,7 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
       ...metaCookies(request),
       ...(typeof body.src === "string" && body.src ? { src: body.src.replace(/[^\w.\- ]/g, "").slice(0, 60) } : {}),
       ...(body.giftWrap === true ? { giftWrap: true } : {}),
+      ...(rest ? { rest } : {}),
     },
   });
   const sum = (xs: { quantity: number }[]) => xs.reduce((n, x) => n + x.quantity, 0);

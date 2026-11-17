@@ -188,9 +188,13 @@ export default function RestaurantSettingsPage() {
         )}
 
         {r.modes.dineIn && (
-          <Card title="Tables" hint="Each table gets its own QR code (coming in the next update). Separate with commas.">
+          <Card title="Tables" hint="Each table gets its own QR code. Customers scan it, see the menu and order for that table. Separate table names with commas.">
             <textarea value={tablesText} onChange={(e) => setTablesText(e.target.value)} rows={2} className="input w-full text-[13px]" placeholder="1, 2, 3, 4, Garden 1, Garden 2" />
-            <p className="mt-1 text-xs text-ink-faint">{tablesText.split(/[,\n]/).map((t) => t.trim()).filter(Boolean).length} tables</p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <span className="text-xs text-ink-faint">{tablesText.split(/[,\n]/).map((t) => t.trim()).filter(Boolean).length} tables</span>
+              {d.r.tables.length > 0 && <a href="restaurant/qr" target="_blank" rel="noopener" className="btn-secondary h-8 text-[12.5px]"><Icon name="external" className="h-3.5 w-3.5" />Print QR codes ({d.r.tables.length})</a>}
+              {dirty && d.r.tables.length > 0 && <span className="text-xs text-ink-faint">Save first to update the QR codes.</span>}
+            </div>
           </Card>
         )}
 

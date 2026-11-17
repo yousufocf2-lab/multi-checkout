@@ -71,6 +71,10 @@ const ALL_PRESETS: Preset[] = [
     index: sec([["hero", "hero", { eyebrow: "A STUDY IN SCENT", heading: "Leave a little of you behind.", text: "Considered fragrances for the moments that become memories.", button_label: "Explore the collection", slides: [{ image: "https://images.unsplash.com/photo-1594035910387-fea47794261f?auto=format&fit=crop&w=2000&q=85", alt: "Sculptural perfume bottles in warm light" }, { image: "https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=2000&q=85", alt: "A refined fragrance bottle" }, { image: "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=2000&q=85", alt: "Perfume arranged as an editorial still life" }] }], ["categories", "collection-list", { heading: "Find your fragrance", limit: 4 }], ["new", "product-grid", { heading: "The scent wardrobe", limit: 8 }], ["story", "image-with-text", { heading: "Made to linger", text: "<p>Meet expressive notes, thoughtful blends and beautiful bottles made to make getting ready feel like a ritual.</p>", button_label: "Discover the house" }], ["reviews", "testimonials"], ["trust", "trust-badges"], ["email", "newsletter"]]),
   },
   {
+    id: "feast", name: "Feast", theme: "feast", tagline: "A menu-first restaurant site: section tabs, veg-only switch, add-ons and a sticky cart", best: "Restaurants, cloud kitchens, cafés and bakeries", swatch: ["#fbf7f2", "#1f1a17", "#e4572e"],
+    settings: { preset: "feast" },
+  },
+  {
     id: "pulse", name: "Pulse", theme: "pulse", tagline: "A sharp electronics store: live deal ticker, split hero, shoppable videos and a feature-rich product page", best: "Earbuds, smartwatches, speakers and gadgets", swatch: ["#ffffff", "#0e0f12", "#5146ff"],
     settings: { preset: "pulse" },
   },
@@ -78,7 +82,7 @@ const ALL_PRESETS: Preset[] = [
 
 // The colour-only starter looks stay resolvable for previews and existing saved designs,
 // but only complete, distinct designs are offered in the theme library.
-export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread" || p.id === "stride" || p.id === "playday" || p.id === "scentelier" || p.id === "pulse");
+export const PRESETS: Preset[] = ALL_PRESETS.filter((p) => p.id === "mira" || p.id === "luma" || p.id === "thread" || p.id === "stride" || p.id === "playday" || p.id === "scentelier" || p.id === "pulse" || p.id === "feast");
 export const presetById = (id: string | null | undefined) => ALL_PRESETS.find((p) => p.id === id) ?? null;
 
 /** The store's design with a preset's look and home page; keeps logo, favicon, WhatsApp, social links and custom CSS. */

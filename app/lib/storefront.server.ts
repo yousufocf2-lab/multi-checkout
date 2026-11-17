@@ -1,6 +1,8 @@
 // Growpefy Store storefront: renders a store's website from a Liquid theme (Shopify OS 2.0 style:
 // layout + JSON templates listing sections, each section a Liquid file with a {% schema %} of settings).
 // Themes ship in app/themes/<name>; later a store's own copy (edited in "Edit code") will live in the database.
+import { dishOf } from "./dish";
+import { openNow, resolveRestaurant } from "./restaurant";
 import { Liquid, Tag, type Context, type Emitter, type TagToken, type TopLevelToken } from "liquidjs";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { coverOf } from "./catalog.server";
@@ -229,6 +231,11 @@ export type ShopContext = { store: Store; root: string; preview: boolean; look?:
 /** The store's saved design: live for shoppers, the draft for the editor. */
 export async function themeLook(storeId: number, mode: "live" | "draft" | "editor" = "live"): Promise<Look> {
   const [row] = await db.select({ live: storeThemes.live, draft: storeThemes.draft }).from(storeThemes).where(eq(storeThemes.storeId, storeId)).limit(1);
+  // A restaurant that hasn't designed its site yet gets the Feast menu theme instead of the shop theme
+  if (!row?.live && !row?.draft) {
+    const [st] = await db.select({ t: stores.businessType }).from(stores).where(eq(stores.id, storeId)).limit(1);
+    if (st?.t === "restaurant" && THEMES.feast) return { data: { ...defaultThemeData("feast"), settings: { ...defaultThemeData("feast").settings, preset: "feast" } }, editor: mode === "editor" };
+  }
   if (mode === "live") return { data: row?.live ?? null };
   return { data: row?.draft ?? row?.live ?? null, editor: mode === "editor" };
 }
@@ -303,9 +310,12 @@ function productDrop(ctx: ShopContext, item: CatalogItem, variants: CatalogVaria
       };
     })(),
   };
+  // Restaurant dishes: food type, spice, sold out today and add-on groups (for menu themes)
+  const d = dishOf(item.extra);
+  const dish = { diet: d.diet ?? "", spicy: d.spicy, bestseller: d.bestseller, serves: d.serves, sold_out: d.soldOut, addons: d.addons, has_addons: d.addons.length > 0 };
   // For the product page script (safe inside <script>)
-  const json = JSON.stringify({ id: drop.id, title: drop.title, url, image: cover ? imgUrl(cover, 300) : null, options: drop.options, variants: variantDrops }).replace(/</g, "\\u003c");
-  return { ...drop, json };
+  const json = JSON.stringify({ id: drop.id, title: drop.title, url, image: cover ? imgUrl(cover, 300) : null, options: drop.options, variants: variantDrops, addons: d.addons, diet: dish.diet }).replace(/</g, "\\u003c");
+  return { ...drop, ...(d.soldOut ? { available: false } : {}), dish, json };
 }
 
 /** Ready-made themes whose preview shows sample products, categories and pages. */
@@ -613,8 +623,29 @@ export async function baseScope(ctx: ShopContext) {
     collections, pages, preview: ctx.preview,
     ...nav, // menus (by handle), header_menu, footer_menu
     widgets: (() => { const r = widgetSettings(ctx.store.widgetSettings).reviews; return { reviews: { enabled: r.enabled, starLight: r.starLight, starDark: r.starDark, textLight: r.textLight, textDark: r.textDark, allow_photos: r.allowPhotos, allow_videos: r.allowVideos, max_video: r.maxVideoSeconds, max_media: r.maxMedia, show_verified: r.showVerified, show_date: r.showDate, show_breakdown: r.showBreakdown } }; })(),
+    restaurant: restaurantScope(ctx),
     demo_theme: ctx.owner ? ctx.demoPreset ?? "" : "",
     preview_draft: Boolean(ctx.demoPreset || ctx.ownerPreview),
+  };
+}
+
+/** Restaurant / cloud kitchen facts for menu themes (null for other stores). */
+function restaurantScope(ctx: ShopContext) {
+  if (ctx.store.businessType !== "restaurant") return null;
+  const r = resolveRestaurant(ctx.store.restaurant);
+  const open = openNow(r);
+  const fmt = (t: string) => { const [h, m] = t.split(":").map(Number); const ap = h >= 12 ? "PM" : "AM"; const hh = h % 12 || 12; return m ? `${hh}:${String(m).padStart(2, "0")} ${ap}` : `${hh} ${ap}`; };
+  const day = (new Date(Date.now() + 5.5 * 3600_000).getUTCDay() + 6) % 7;
+  const today = r.hours[day];
+  return {
+    open: open.open, paused: open.reason === "paused",
+    today: today.closed ? "Closed today" : today.slots.map((x) => `${fmt(x.open)} – ${fmt(x.close)}`).join(", "),
+    modes: { delivery: r.modes.delivery, takeaway: r.modes.takeaway, dine_in: r.modes.dineIn },
+    prep: r.prepMinutes, delivery_eta: r.prepMinutes + r.delivery.etaMinutes,
+    min_delivery: r.delivery.minOrder, min_takeaway: r.takeawayMinOrder, free_above: r.delivery.freeAbove ?? 0, radius: r.delivery.radiusKm,
+    needs_location: r.location.lat != null && r.location.lng != null,
+    address: r.location.address,
+    json: JSON.stringify({ open: open.open, modes: { delivery: r.modes.delivery, takeaway: r.modes.takeaway, dine_in: r.modes.dineIn }, minDelivery: r.delivery.minOrder, minTakeaway: r.takeawayMinOrder, needsLocation: r.location.lat != null && r.location.lng != null, tables: r.tables }).replace(/</g, "\\u003c"),
   };
 }
 
@@ -642,6 +673,15 @@ export function sectionData(ctx: ShopContext, opts: { exclude?: number } = {}): 
         : isDemo(ctx) ? demoProducts(ctx, category).filter((p) => p.id !== opts.exclude).slice(0, limit)
         : await loadProducts(ctx, { category, limit, exclude: opts.exclude });
       return { products, products_by_handle: byHandle, collection_url: category ? categoryPath(ctx.root, category) : allProductsPath(ctx.root) };
+    }
+    if (type === "restaurant-menu") {
+      // The whole menu, grouped by menu sections (categories) in their order; dishes in no section go under "More"
+      const all = await withCategories(ctx, await loadProducts(ctx, { limit: 400 }));
+      const cats = (await loadCategories(ctx)).filter((c) => all.some((p) => p.categories.includes(c.handle)));
+      const sections = cats.map((c) => ({ title: c.title, handle: c.handle, products: all.filter((p) => p.categories.includes(c.handle)) }));
+      const loose = all.filter((p) => !p.categories.length);
+      if (loose.length) sections.push({ title: sections.length ? "More" : "Menu", handle: "more", products: loose });
+      return { sections, count: all.length, bestsellers: all.filter((p) => p.dish?.bestseller && !p.dish?.sold_out).slice(0, 10) };
     }
     if (type !== "product-grid") return handles.length ? { products_by_handle: byHandle } : {};
     const category = String(settings.collection ?? "") || undefined;

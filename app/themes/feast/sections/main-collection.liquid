@@ -1,0 +1,12 @@
+{%- assign open = true -%}{%- if restaurant and restaurant.open == false -%}{%- assign open = false -%}{%- endif -%}
+<section class="coll">
+  <a href="{{ routes.root }}" class="pdp__back">{% render 'snippets/icon', name: 'back' %}Full menu</a>
+  <h1 class="coll__title">{{ collection.title }}</h1>
+  {%- if collection.description != blank -%}<p class="coll__desc">{{ collection.description | strip_html }}</p>{%- endif -%}
+  <div class="msec__list">
+    {%- for p in collection.products -%}{% render 'snippets/dish', product: p, rest_open: open %}{%- else -%}<p class="menu__none">Nothing here yet.</p>{%- endfor -%}
+  </div>
+</section>
+{% schema %}
+{ "name": "Menu section page", "settings": [] }
+{% endschema %}

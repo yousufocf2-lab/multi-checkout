@@ -1,0 +1,30 @@
+{%- assign d = product.dish -%}
+{%- assign open = true -%}{%- if restaurant and restaurant.open == false -%}{%- assign open = false -%}{%- endif -%}
+<section class="pdp">
+  <a href="{{ routes.root }}" class="pdp__back">{% render 'snippets/icon', name: 'back' %}Back to menu</a>
+  <div class="pdp__grid">
+    <div class="pdp__media">
+      {%- if product.featured_image -%}<img src="{{ product.featured_image | img_url: 1100 }}" alt="{{ product.title | escape }}" width="1100" height="1100">{%- else -%}<div class="pdp__ph">{% render 'snippets/veg', diet: d.diet %}</div>{%- endif -%}
+    </div>
+    <div class="pdp__info" data-dish data-diet="{{ d.diet | default: 'none' }}">
+      <div class="dish__tags">{% render 'snippets/veg', diet: d.diet %}{%- if d.bestseller -%}<span class="tag tag--best">{% render 'snippets/icon', name: 'star' %}Bestseller</span>{%- endif -%}{%- if d.spicy > 0 -%}<span class="tag">{% for i in (1..d.spicy) %}🌶{% endfor %}</span>{%- endif -%}</div>
+      <h1 class="pdp__title">{{ product.title }}</h1>
+      <p class="pdp__price"><b>{{ product.price | money }}</b>{%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s>{%- endif -%}{%- if product.variants.size > 1 -%}<small>onwards</small>{%- endif -%}</p>
+      {%- if d.serves != blank -%}<p class="pdp__serves">Serves {{ d.serves }}</p>{%- endif -%}
+      {%- if product.description != blank -%}<div class="pdp__desc rte">{{ product.description }}</div>{%- endif -%}
+      <div class="pdp__buy">
+        {%- if product.available == false or d.sold_out -%}
+          <span class="add add--out add--big">Sold out today</span>
+        {%- elsif open == false -%}
+          <span class="add add--out add--big">Ordering opens during our hours</span>
+        {%- else -%}
+          <button type="button" class="btn btn--block" data-add data-simple="false">Add to order</button>
+        {%- endif -%}
+      </div>
+      <script type="application/json" data-dish-json>{{ product.json }}</script>
+    </div>
+  </div>
+</section>
+{% schema %}
+{ "name": "Dish page", "settings": [] }
+{% endschema %}

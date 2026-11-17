@@ -8,6 +8,7 @@ import type { ItemImage } from "~/db.server";
 import { Notice } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { packOf } from "~/lib/business-types";
+import { dishOf, resolveAddons, type AddonGroup, type DishInfo } from "~/lib/dish";
 import { catalogAllowed, catalogFacets, deleteItem, getItem, listCategories, saveItem, type ItemStatus, type VariantInput } from "~/lib/catalog.server";
 import { formatINR, rupeesToPaise } from "~/lib/pricing";
 import { storePath } from "~/lib/store-code";
@@ -62,6 +63,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
       hsn: str(fd.get("hsn")) || null, origin: str(fd.get("origin")) || null, weightUnit: unit,
       dims: { l: num(fd.get("dimL")), w: num(fd.get("dimW")), h: num(fd.get("dimH")) },
       site: readSite(fd),
+      // Restaurant dishes: veg / non-veg, sold out today, spice, bestseller, serves and add-on groups
+      ...(store.businessType === "restaurant" ? (() => {
+        let addons: unknown = [];
+        try { addons = JSON.parse(str(fd.get("addons")) || "[]"); } catch { /* keep none */ }
+        const diet = str(fd.get("diet"));
+        return {
+          diet: diet === "veg" || diet === "nonveg" || diet === "egg" ? diet : null, soldOut: fd.get("soldOut") === "on",
+          spicy: Math.min(3, Math.max(0, Number(fd.get("spicy")) || 0)), bestseller: fd.get("bestseller") === "on",
+          serves: str(fd.get("serves")).slice(0, 30), addons: resolveAddons(addons),
+        };
+      })() : {}),
     };
     const newId = await saveItem(store, {
       title: str(fd.get("title")), handle: str(fd.get("handle")) || undefined, descriptionHtml: cleanHtml(str(fd.get("description"))), status,
@@ -378,6 +390,8 @@ export default function EditItem() {
               </div>
             )}
           </section>
+
+          {pack.id === "restaurant" && <DishPanel initial={dishOf(item?.extra)} onDirty={() => setDirty(true)} />}
 
           <BannerList initial={ex.site?.banners ?? []} onDirty={() => setDirty(true)} />
 
@@ -822,5 +836,74 @@ function MediaManager({ media, setMedia: set }: { media: ItemImage[]; setMedia: 
         <button type="button" onClick={addLink} className="btn-secondary">Add</button>
       </div>
     </div>
+  );
+}
+
+/** Restaurant dish details: food type, availability, spice, and add-on groups (extra cheese, dips…). */
+function DishPanel({ initial, onDirty }: { initial: DishInfo; onDirty: () => void }) {
+  const [diet, setDiet] = useState(initial.diet ?? "");
+  const [groups, setGroups] = useState<AddonGroup[]>(initial.addons);
+  const change = (g: AddonGroup[]) => { setGroups(g); onDirty(); };
+  const patch = (i: number, p: Partial<AddonGroup>) => change(groups.map((g, j) => (j === i ? { ...g, ...p } : g)));
+  const mark = (d: string) => (
+    <span className={`inline-flex h-4 w-4 items-center justify-center rounded-[3px] border-2 ${d === "veg" ? "border-[#0f8a3c]" : d === "egg" ? "border-[#d4a106]" : "border-[#b42318]"}`}>
+      <i className={`h-1.5 w-1.5 rounded-full ${d === "veg" ? "bg-[#0f8a3c]" : d === "egg" ? "bg-[#d4a106]" : "bg-[#b42318]"}`} />
+    </span>
+  );
+  return (
+    <section className="panel p-4">
+      <h2 className="text-[13.5px] font-semibold">Dish details</h2>
+      <p className="mt-0.5 text-[12px] text-ink-faint">Shown on your menu. Use options above for Half / Full or sizes.</p>
+      <input type="hidden" name="addons" value={JSON.stringify(groups)} />
+      <div className="mt-3 flex flex-wrap gap-2">
+        {([["veg", "Veg"], ["nonveg", "Non-veg"], ["egg", "Contains egg"]] as const).map(([d, l]) => (
+          <label key={d} className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-medium ${diet === d ? "border-ink bg-[#f7f8fa]" : "border-[#d1d5dc]"}`}>
+            <input type="radio" name="diet" value={d} checked={diet === d} onChange={() => { setDiet(d); onDirty(); }} className="sr-only" />{mark(d)}{l}
+          </label>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+        <label className="block"><span className="label">Spice level</span>
+          <select name="spicy" defaultValue={String(initial.spicy)} onChange={onDirty} className="input w-full"><option value="0">Not spicy</option><option value="1">Mild 🌶</option><option value="2">Medium 🌶🌶</option><option value="3">Hot 🌶🌶🌶</option></select>
+        </label>
+        <label className="block"><span className="label">Serves</span><input name="serves" defaultValue={initial.serves} onChange={onDirty} placeholder="1-2 people" maxLength={30} className="input w-full" /></label>
+        <div className="space-y-1.5 pt-5 text-[13px]">
+          <label className="flex items-center gap-2"><input type="checkbox" name="bestseller" defaultChecked={initial.bestseller} onChange={onDirty} className="h-4 w-4" />Bestseller tag</label>
+          <label className="flex items-center gap-2"><input type="checkbox" name="soldOut" defaultChecked={initial.soldOut} onChange={onDirty} className="h-4 w-4" />Sold out today</label>
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-[#ebebeb] pt-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[13px] font-semibold">Add-ons</p>
+          {groups.length < 8 && <button type="button" onClick={() => change([...groups, { name: groups.length ? "Extras" : "Add extra", min: 0, max: 3, options: [{ name: "", price: 0 }] }])} className="text-[13px] font-medium text-[#005bd3] hover:underline">+ Add a group</button>}
+        </div>
+        {!groups.length && <p className="mt-1 text-[12px] text-ink-faint">Like "Extra toppings" (cheese ₹30, olives ₹20) or "Choose a dip" (pick 1). Customers choose these when adding the dish.</p>}
+        <div className="mt-2 space-y-3">
+          {groups.map((g, i) => (
+            <div key={i} className="rounded-xl border border-[#e3e3e3] p-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="block min-w-[160px] flex-1"><span className="label">Group name</span><input value={g.name} onChange={(e) => patch(i, { name: e.target.value })} placeholder="Extra toppings" className="input w-full" /></label>
+                <label className="block w-24"><span className="label">Must pick</span><input type="number" min={0} max={g.options.length} value={g.min} onChange={(e) => patch(i, { min: Math.max(0, Number(e.target.value) || 0) })} className="input w-full" /></label>
+                <label className="block w-24"><span className="label">Up to</span><input type="number" min={1} max={20} value={g.max} onChange={(e) => patch(i, { max: Math.max(1, Number(e.target.value) || 1) })} className="input w-full" /></label>
+                <button type="button" onClick={() => change(groups.filter((_, j) => j !== i))} className="mb-1 rounded-lg p-1.5 text-ink-faint hover:bg-black/5 hover:text-[#b42318]" aria-label="Remove group"><Icon name="trash" className="h-4 w-4" /></button>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {g.options.map((o, k) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <input value={o.name} onChange={(e) => patch(i, { options: g.options.map((x, m) => (m === k ? { ...x, name: e.target.value } : x)) })} placeholder="Extra cheese" className="input h-8 flex-1 text-[13px]" aria-label="Add-on name" />
+                    <span className="flex h-8 items-center overflow-hidden rounded-[9px] border border-[#d1d5dc] bg-white"><span className="pl-2 text-[13px] text-ink-soft">₹</span>
+                      <input type="number" min={0} value={o.price} onChange={(e) => patch(i, { options: g.options.map((x, m) => (m === k ? { ...x, price: Math.max(0, Number(e.target.value) || 0) } : x)) })} className="h-full w-20 border-0 bg-transparent px-1.5 text-[13px] outline-none" aria-label="Price" /></span>
+                    <button type="button" onClick={() => patch(i, { options: g.options.filter((_, m) => m !== k) })} disabled={g.options.length < 2} className="rounded p-1 text-ink-faint hover:text-ink disabled:opacity-30" aria-label="Remove option"><Icon name="close" className="h-3.5 w-3.5" /></button>
+                  </div>
+                ))}
+                {g.options.length < 20 && <button type="button" onClick={() => patch(i, { options: [...g.options, { name: "", price: 0 }] })} className="text-[12.5px] font-medium text-ink-soft hover:text-ink">+ Add option</button>}
+              </div>
+              <p className="mt-1.5 text-[11.5px] text-ink-faint">{g.min > 0 ? `Customers must choose ${g.min}` : "Optional"}{`, up to ${Math.min(g.max, g.options.length)}`}. Price 0 means free.</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }

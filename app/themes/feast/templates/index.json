@@ -1,0 +1,1 @@
+{ "sections": { "menu": { "type": "restaurant-menu", "settings": {} } }, "order": ["menu"] }

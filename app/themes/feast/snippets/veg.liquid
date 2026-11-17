@@ -1,0 +1,2 @@
+{%- comment -%} Veg / non-veg / egg mark: {% render 'snippets/veg', diet: product.dish.diet %} {%- endcomment -%}
+{%- if diet != blank -%}<span class="veg veg--{{ diet }}" title="{% if diet == 'veg' %}Vegetarian{% elsif diet == 'egg' %}Contains egg{% else %}Non-vegetarian{% endif %}" aria-label="{% if diet == 'veg' %}Vegetarian{% elsif diet == 'egg' %}Contains egg{% else %}Non-vegetarian{% endif %}"><i></i></span>{%- endif -%}

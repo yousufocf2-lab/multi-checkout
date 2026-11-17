@@ -1,0 +1,20 @@
+{%- assign logo = settings.logo | default: shop.logo -%}
+<header class="hd">
+  <div class="hd__in">
+    <a class="hd__brand" href="{{ routes.root }}" aria-label="{{ shop.name | escape }} home">
+      {%- if logo -%}<img class="hd__logo" src="{{ logo | img_url: 400 }}" alt="{{ shop.name | escape }}">{%- else -%}<span class="hd__name">{{ shop.name }}</span>{%- endif -%}
+    </a>
+    {%- if restaurant -%}
+      <span class="hd__status {% if restaurant.open %}is-open{% else %}is-closed{% endif %}"><i></i>{% if restaurant.open %}Open now{% elsif restaurant.paused %}Busy, back soon{% else %}Closed{% endif %}</span>
+    {%- endif -%}
+    <nav class="hd__nav" aria-label="Main">
+      {%- if template != 'index' -%}<a href="{{ routes.root }}">Menu</a>{%- endif -%}
+      {%- for link in header_menu.links limit: 4 -%}<a href="{{ link.url }}">{{ link.title }}</a>{%- endfor -%}
+      {%- if routes.account -%}<a href="{{ routes.account }}">Account</a>{%- endif -%}
+    </nav>
+    <button type="button" class="hd__cart" data-open-cart aria-label="Open cart">{% render 'snippets/icon', name: 'bag' %}<b data-cart-count hidden>0</b></button>
+  </div>
+</header>
+{% schema %}
+{ "name": "Header", "settings": [] }
+{% endschema %}

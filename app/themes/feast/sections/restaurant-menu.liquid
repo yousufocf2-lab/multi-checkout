@@ -1,0 +1,82 @@
+{%- assign s = section.settings -%}
+{%- assign open = true -%}{%- if restaurant and restaurant.open == false -%}{%- assign open = false -%}{%- endif -%}
+<section class="hero" {% if s.image != blank %}style="--hero-img:url('{{ s.image | img_url: 1600 }}')"{% endif %}>
+  <div class="hero__in">
+    <div class="hero__copy">
+      {%- if s.eyebrow != blank -%}<p class="hero__eyebrow">{{ s.eyebrow }}</p>{%- endif -%}
+      <h1 class="hero__title">{{ s.heading | default: shop.name }}</h1>
+      {%- if s.text != blank -%}<p class="hero__text">{{ s.text }}</p>{%- endif -%}
+      {%- if restaurant -%}
+      <ul class="hero__facts">
+        <li class="{% if open %}is-open{% else %}is-closed{% endif %}">{% render 'snippets/icon', name: 'clock' %}<span><b>{% if open %}Open now{% elsif restaurant.paused %}Busy right now{% else %}Closed now{% endif %}</b> · {{ restaurant.today }}</span></li>
+        {%- if restaurant.modes.delivery -%}<li>{% render 'snippets/icon', name: 'pin' %}<span>Delivery in ~{{ restaurant.delivery_eta }} min{% if restaurant.radius %} · up to {{ restaurant.radius }} km{% endif %}</span></li>{%- endif -%}
+        {%- if restaurant.free_above > 0 -%}<li><span class="hero__free">Free delivery above ₹{{ restaurant.free_above }}</span></li>{%- endif -%}
+      </ul>
+      {%- endif -%}
+    </div>
+  </div>
+</section>
+
+{%- unless open -%}
+<div class="closed">
+  <b>{% if restaurant.paused %}We're very busy right now.{% else %}We're closed right now.{% endif %}</b>
+  <span>{% if restaurant.paused %}New orders open again shortly.{% else %}Today: {{ restaurant.today }}. Browse the menu and come back during our hours.{% endif %}</span>
+</div>
+{%- endunless -%}
+
+<div class="menu" data-menu>
+  <div class="menu__bar" data-menu-bar>
+    <div class="menu__tools">
+      <label class="search">{% render 'snippets/icon', name: 'search' %}<input type="search" placeholder="Search the menu" data-menu-search aria-label="Search the menu"></label>
+      {%- if settings.show_veg_toggle != false -%}
+      <label class="vegonly"><input type="checkbox" data-veg-only><span class="vegonly__track"><i></i></span>{% render 'snippets/veg', diet: 'veg' %}Veg only</label>
+      {%- endif -%}
+    </div>
+    {%- if section.sections.size > 1 -%}
+    <nav class="tabs" aria-label="Menu sections" data-tabs>
+      {%- for c in section.sections -%}<a href="#m-{{ c.handle }}" data-tab="m-{{ c.handle }}">{{ c.title }}<small>{{ c.products.size }}</small></a>{%- endfor -%}
+    </nav>
+    {%- endif -%}
+  </div>
+
+  <div class="menu__body">
+    {%- if section.count == 0 -%}
+      <div class="menu__empty"><h2>Your menu is on its way</h2><p>Add dishes in Products, put them in menu sections, and they'll show here.</p></div>
+    {%- endif -%}
+
+    {%- if s.show_bestsellers != false and section.bestsellers.size > 1 -%}
+    <section class="best">
+      <h2 class="best__title">{{ s.best_heading | default: 'Most loved' }}</h2>
+      <div class="best__row">
+        {%- for p in section.bestsellers -%}
+        <a class="best__card" href="{{ p.url }}">
+          <span class="best__img">{%- if p.featured_image -%}<img src="{{ p.featured_image | img_url: 400 }}" alt="" loading="lazy">{%- endif -%}</span>
+          <span class="best__name">{% render 'snippets/veg', diet: p.dish.diet %}{{ p.title }}</span>
+          <b>{{ p.price | money }}</b>
+        </a>
+        {%- endfor -%}
+      </div>
+    </section>
+    {%- endif -%}
+
+    {%- for c in section.sections -%}
+    <section class="msec" id="m-{{ c.handle }}" data-msec>
+      <h2 class="msec__title">{{ c.title }} <small>{{ c.products.size }}</small></h2>
+      <div class="msec__list">
+        {%- for p in c.products -%}{% render 'snippets/dish', product: p, rest_open: open %}{%- endfor -%}
+      </div>
+    </section>
+    {%- endfor -%}
+    <p class="menu__none" data-menu-none hidden>No dishes match. Try another word or turn off "Veg only".</p>
+  </div>
+</div>
+{% schema %}
+{ "name": "Menu", "category": "Restaurant", "description": "Your whole menu with section tabs, search, a veg-only switch and quick add", "settings": [
+  { "id": "image", "type": "image", "label": "Banner photo (optional)" },
+  { "id": "eyebrow", "type": "text", "label": "Small line above the name", "default": "Freshly made, delivered hot" },
+  { "id": "heading", "type": "text", "label": "Heading (empty = your store name)", "default": "" },
+  { "id": "text", "type": "textarea", "label": "Text under the heading", "default": "" },
+  { "id": "show_bestsellers", "type": "checkbox", "label": "Show a row of bestsellers", "default": true },
+  { "id": "best_heading", "type": "text", "label": "Bestsellers heading", "default": "Most loved" }
+] }
+{% endschema %}

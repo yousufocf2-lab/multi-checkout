@@ -1,4 +1,5 @@
 // Growpefy Store catalog: items (products / dishes / courses ...), their variants and categories.
+import { dishOf, pricedAddons, splitAddons } from "./dish";
 import { and, asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { nudgeCatalog } from "./meta-catalog.server";
 import { catalogCategories, catalogCategoryItems, catalogItems, catalogVariants, db, stores, type ItemImage, type ItemOption, type Store } from "~/db.server";
@@ -332,7 +333,8 @@ export async function importFromShopify(store: Store) {
 
 export const GP_PREFIX = "gp:";
 export const isCatalogVariant = (id: string) => id.startsWith(GP_PREFIX);
-const gpNum = (id: string) => Number(id.slice(GP_PREFIX.length)) || 0;
+// Restaurant add-ons ride inside the id ("gp:123~a=0.1"); the number is the part before "~"
+const gpNum = (id: string) => parseInt(id.slice(GP_PREFIX.length), 10) || 0;
 
 /** Live prices from the catalog (never from the browser). Sold-out or hidden items are left out. */
 export async function catalogLines(store: Store, items: { variantId: string; quantity: number }[]): Promise<PricedLine[]> {
@@ -349,11 +351,23 @@ export async function catalogLines(store: Store, items: { variantId: string; qua
     const keepSelling = Boolean((r.i.extra as { continueSelling?: boolean } | null)?.continueSelling);
     const qty = r.v.stock == null || keepSelling ? it.quantity : Math.min(it.quantity, Math.max(0, r.v.stock));
     if (qty <= 0) continue;
+    // Restaurant dishes: "sold out today" and add-ons (priced from the catalog, never the browser)
+    const dish = r.i.kind === "restaurant" || "diet" in (r.i.extra ?? {}) || "addons" in (r.i.extra ?? {}) ? dishOf(r.i.extra) : null;
+    if (dish?.soldOut) continue;
+    let addonPaise = 0;
+    let addonText = "";
+    if (dish && dish.addons.length) {
+      const a = pricedAddons(dish.addons, splitAddons(it.variantId).picks);
+      if (!a.ok) continue; // a required choice is missing: leave the line out (the menu always sends it)
+      addonPaise = a.chosen.reduce((n, c) => n + c.price * 100, 0);
+      addonText = a.chosen.map((c) => c.name).join(", ");
+    }
+    const vt = r.v.title === "Default" ? null : r.v.title;
     out.push({
       variantId: it.variantId, productId: `${GP_PREFIX}${r.i.id}`, title: r.i.title,
-      variantTitle: r.v.title === "Default" ? null : r.v.title,
+      variantTitle: addonText ? `${vt ? `${vt} · ` : ""}+ ${addonText}` : vt,
       image: r.v.imageUrl ?? coverOf(r.i.images), quantity: qty,
-      pricePaise: r.v.pricePaise, comparePaise: r.v.compareAtPaise && r.v.compareAtPaise > r.v.pricePaise ? r.v.compareAtPaise : null,
+      pricePaise: r.v.pricePaise + addonPaise, comparePaise: r.v.compareAtPaise && r.v.compareAtPaise > r.v.pricePaise ? r.v.compareAtPaise + addonPaise : null,
     });
   }
   return out;
@@ -364,7 +378,8 @@ export async function catalogSkus(store: Store, variantIds: string[]) {
   const out = new Map<string, string>();
   if (!ids.length) return out;
   const rows = await db.select({ id: catalogVariants.id, sku: catalogVariants.sku }).from(catalogVariants).where(and(eq(catalogVariants.storeId, store.id), inArray(catalogVariants.id, ids)));
-  for (const r of rows) out.set(`${GP_PREFIX}${r.id}`, r.sku ?? "");
+  const sku = new Map(rows.map((r) => [r.id, r.sku ?? ""]));
+  for (const id of variantIds) if (isCatalogVariant(id) && sku.has(gpNum(id))) out.set(id, sku.get(gpNum(id))!); // add-on lines keep their dish's SKU
   return out;
 }
 

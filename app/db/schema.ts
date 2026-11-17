@@ -826,6 +826,8 @@ export type TrackingInfo = {
   proxyOrigin?: string; // https://<store domain> when the checkout ran on the store's domain (Shopify App Proxy)
   src?: string; // where the website visit came from (utm_source / referrer), for Live view
   giftWrap?: boolean; // customer requested gift wrapping on the storefront
+  /** Restaurants: how the food reaches the customer, worked out when checkout started */
+  rest?: { mode: import("~/lib/restaurant").Fulfilment; table: string | null; km: number | null; feePaise: number; freeAbove: number | null; eta: number };
 };
 
 export type OrderCustomer = {

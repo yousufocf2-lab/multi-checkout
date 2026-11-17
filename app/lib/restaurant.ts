@@ -130,3 +130,13 @@ export const KITCHEN_COLUMNS: { id: string; label: string; statuses: KitchenStat
   { id: "ready", label: "Ready", statuses: ["ready"] },
   { id: "out", label: "Out for delivery", statuses: ["out"] },
 ];
+
+/** Checkout: the delivery charge worked out when checkout started, as shipping rules the checkout already understands. */
+export function restShipRules(rest: { mode: Fulfilment; km: number | null; feePaise: number; freeAbove: number | null }) {
+  if (rest.mode !== "delivery" || rest.feePaise <= 0) return [];
+  const base = { states: [] as string[], pincodePrefixes: [] as string[], paymentMethod: "any" };
+  const name = rest.km != null ? `Delivery · ${rest.km} km` : "Delivery";
+  return rest.freeAbove
+    ? [{ id: -1, name, pricePaise: rest.feePaise, minOrderRupees: 0, maxOrderRupees: rest.freeAbove - 1, ...base }, { id: -2, name: "Free delivery", pricePaise: 0, minOrderRupees: rest.freeAbove, maxOrderRupees: null, ...base }]
+    : [{ id: -1, name, pricePaise: rest.feePaise, minOrderRupees: 0, maxOrderRupees: null, ...base }];
+}

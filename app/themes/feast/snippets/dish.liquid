@@ -1,0 +1,37 @@
+{%- comment -%} One dish on the menu: {% render 'snippets/dish', product: p, rest_open: true %} {%- endcomment -%}
+{%- assign d = product.dish -%}
+{%- assign simple = true -%}
+{%- if product.variants.size > 1 or d.has_addons -%}{%- assign simple = false -%}{%- endif -%}
+{%- assign out = false -%}
+{%- if product.available == false or d.sold_out -%}{%- assign out = true -%}{%- endif -%}
+<article class="dish{% if out %} is-out{% endif %}" data-dish data-diet="{{ d.diet | default: 'none' }}" data-name="{{ product.title | downcase | escape }}">
+  <div class="dish__info">
+    <div class="dish__tags">
+      {%- render 'snippets/veg', diet: d.diet -%}
+      {%- if d.bestseller -%}<span class="tag tag--best">{% render 'snippets/icon', name: 'star' %}Bestseller</span>{%- endif -%}
+      {%- if product.badge != blank -%}<span class="tag">{{ product.badge }}</span>{%- endif -%}
+    </div>
+    <h3 class="dish__title"><a href="{{ product.url }}">{{ product.title }}</a></h3>
+    <p class="dish__price"><b>{{ product.price | money }}</b>{%- if product.compare_at_price > product.price -%}<s>{{ product.compare_at_price | money }}</s>{%- endif -%}{%- if product.variants.size > 1 -%}<small>onwards</small>{%- endif -%}</p>
+    {%- if product.description != blank -%}<p class="dish__desc">{{ product.description | strip_html | truncate: 140 }}</p>{%- endif -%}
+    <p class="dish__meta">
+      {%- if d.spicy > 0 -%}<span>{% for i in (1..d.spicy) %}🌶{% endfor %}</span>{%- endif -%}
+      {%- if d.serves != blank -%}<span>Serves {{ d.serves }}</span>{%- endif -%}
+    </p>
+  </div>
+  <div class="dish__side">
+    {%- if product.featured_image -%}
+      <a href="{{ product.url }}" class="dish__img" tabindex="-1"><img src="{{ product.featured_image | img_url: 360 }}" alt="{{ product.title | escape }}" loading="lazy" width="180" height="180"></a>
+    {%- endif -%}
+    <div class="dish__add{% unless product.featured_image %} dish__add--flat{% endunless %}">
+      {%- if out -%}
+        <span class="add add--out">Sold out</span>
+      {%- else -%}
+        <button type="button" class="add" data-add data-simple="{{ simple }}" {% unless rest_open %}disabled{% endunless %}>ADD<i>+</i></button>
+        <div class="stepper" data-stepper hidden><button type="button" data-step="-1" aria-label="Remove one">−</button><b data-step-n>1</b><button type="button" data-step="1" aria-label="Add one">+</button></div>
+        {%- unless simple -%}<small class="dish__custom">Customisable</small>{%- endunless -%}
+      {%- endif -%}
+    </div>
+  </div>
+  <script type="application/json" data-dish-json>{{ product.json }}</script>
+</article>

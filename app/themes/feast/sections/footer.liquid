@@ -1,0 +1,19 @@
+{%- assign s = section.settings -%}
+<footer class="ft">
+  <div class="ft__in">
+    <div class="ft__brand">
+      <p class="ft__name">{{ shop.name }}</p>
+      {%- if restaurant and restaurant.address != blank -%}<p class="ft__line">{% render 'snippets/icon', name: 'pin' %}{{ restaurant.address }}</p>{%- endif -%}
+      {%- if restaurant -%}<p class="ft__line">{% render 'snippets/icon', name: 'clock' %}Today: {{ restaurant.today }}</p>{%- endif -%}
+      {%- if shop.phone -%}<p class="ft__line">{% render 'snippets/icon', name: 'phone' %}<a href="tel:{{ shop.phone }}">{{ shop.phone }}</a></p>{%- endif -%}
+    </div>
+    <nav class="ft__links" aria-label="Footer">
+      {%- if footer_menu -%}{%- for l in footer_menu.links -%}<a href="{{ l.url }}">{{ l.title }}</a>{%- endfor -%}{%- endif -%}
+      {%- for p in pages -%}<a href="{{ p.url }}">{{ p.title }}</a>{%- endfor -%}
+    </nav>
+  </div>
+  <p class="ft__copy">© {{ 'now' | date: '%Y' }} {{ shop.name }}{% if s.note != blank %} · {{ s.note }}{% endif %}</p>
+</footer>
+{% schema %}
+{ "name": "Footer", "settings": [ { "id": "note", "type": "text", "label": "Small line at the bottom (for example FSSAI licence number)", "default": "" } ] }
+{% endschema %}

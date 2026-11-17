@@ -38,6 +38,7 @@ import { smartView } from "~/lib/smart.server";
 import { shippingRulesFor, storeRuleFor } from "~/lib/checkout-rules.server";
 import { maxTipPaise, resolveRules, resolveTipping } from "~/lib/smart-checkout";
 import { billingBlocked } from "~/lib/subscription-billing.server";
+import { FULFILMENT_LABEL, openNow, restShipRules, resolveRestaurant } from "~/lib/restaurant";
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_QTY = 9999;
@@ -92,7 +93,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     db.select().from(bankOffers).where(and(eq(bankOffers.storeId, store.id), eq(bankOffers.active, true))).orderBy(asc(bankOffers.sort)),
     storeRuleFor(store),
   ]);
-  const [shipping, gifts, otpPrepaid, otpCod] = await Promise.all([shippingRulesFor(store.id, store.smartCheckout), freeGiftsFor(store, lines), otpRequired(store, "prepaid"), otpRequired(store, "cod")]);
+  const [storeShipping, gifts, otpPrepaid, otpCod] = await Promise.all([shippingRulesFor(store.id, store.smartCheckout), freeGiftsFor(store, lines), otpRequired(store, "prepaid"), otpRequired(store, "cod")]);
+  // Restaurants: the delivery charge was worked out from the distance when checkout started
+  const restInfo = store.businessType === "restaurant" ? session.tracking?.rest ?? null : null;
+  const shipping = restInfo ? restShipRules(restInfo) : storeShipping;
+  const rest = restInfo ? { ...restInfo, label: FULFILMENT_LABEL[restInfo.mode], kitchen: resolveRestaurant(store.restaurant).location.address } : null;
   const pm = resolvePaymentMethods(store.paymentMethods, store);
   const payuReady = onlineReady(store);
   const slim = (m: PaymentMethodsSettings["prepaid"]) => ({ on: m.on, rules: m.rules.map((r) => ({ ...r, products: r.products.map((x) => ({ id: x.id, title: x.title })) })) });
@@ -148,6 +153,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     otpWidget: widgetPublic(await messaging()),
     rule,
     shipping,
+    rest,
     gifts,
     draft: session.customer ?? null,
     lines,
@@ -269,17 +275,30 @@ export async function action({ request, params }: ActionFunctionArgs) {
     Object.assign(customer, { firstName: a.firstName, lastName: a.lastName, email: customer.email || a.email, address1: a.address1, address2: a.address2, city: a.city, state: a.state, pincode: a.pincode });
   }
 
+  // Restaurants: takeaway and dine-in need no address; delivery uses the area checked when checkout started
+  const restInfo = store.businessType === "restaurant" ? session.tracking?.rest ?? null : null;
+  const noAddress = Boolean(restInfo && restInfo.mode !== "delivery");
+  if (restInfo && noAddress) {
+    Object.assign(customer, {
+      address1: restInfo.mode === "dine_in" ? `Dine-in, table ${restInfo.table ?? ""}`.trim() : "Takeaway (pickup)",
+      address2: resolveRestaurant(store.restaurant).location.address.slice(0, 200), city: customer.city || "", state: customer.state || "", pincode: customer.pincode || "",
+    });
+  }
+
   const errors: FieldErrors = {};
+  if (restInfo && !openNow(resolveRestaurant(store.restaurant)).open) errors.form = "We've just stopped taking orders. Please try again during our opening hours.";
   if (!customer.firstName) errors.firstName = "Enter your full name";
   if (!/^[6-9]\d{9}$/.test(customer.phone)) errors.phone = "Enter a valid 10-digit mobile number";
   if (customer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) errors.email = "Enter a valid email address";
   const fieldRules = resolveRules(store.checkoutRules, resolveTheme(store.theme).showEmail);
   if (fieldRules.email === "required" && !customer.email) errors.email = "Enter your email";
   if (fieldRules.landmark === "required" && !customer.address2) errors.address2 = "Enter the area or a landmark";
-  if (customer.address1.length < 5) errors.address1 = "Enter your house number and street";
-  if (!customer.city) errors.city = "Enter your city";
-  if (!INDIAN_STATES.some((s) => s.code === customer.state)) errors.state = "Select your state";
-  if (!/^\d{6}$/.test(customer.pincode)) errors.pincode = "Enter a 6-digit pincode";
+  if (!noAddress) {
+    if (customer.address1.length < 5) errors.address1 = "Enter your house number and street";
+    if (!customer.city) errors.city = "Enter your city";
+    if (!INDIAN_STATES.some((s) => s.code === customer.state)) errors.state = "Select your state";
+    if (!/^\d{6}$/.test(customer.pincode)) errors.pincode = "Enter a 6-digit pincode";
+  }
   if (method !== "cod" && !onlineReady(store)) errors.form = "Online payment isn't available right now. Choose Cash on Delivery.";
   if (!pm[method].on) errors.form = "This payment method isn't available. Choose another one.";
   if (method !== "prepaid" && !errors.phone && !errors.form) {
@@ -299,7 +318,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ errors: { form: "Verify your mobile number with the OTP to continue." } as FieldErrors, needOtp: true }, { status: 400 });
   }
 
-  const [lines, rule, shipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id, store.smartCheckout)]);
+  const [lines, rule, storeShipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id, store.smartCheckout)]);
+  const shipRules = restInfo ? restShipRules(restInfo) : storeShipRules;
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
   const freeLines = (await freeGiftsFor(store, lines))[legacyMethod(method)];
   const cartInfo = { value: lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0), productIds: lines.map((l) => l.productId) };
@@ -339,6 +359,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       shipping: p.shipping, shippingTitle: p.shippingName, total: p.total, paymentFee: p.paymentFee, tip, advance,
       saveAddress: savedId > 0 || fd.get("saveAddress") === "on",
       customerNote: session.tracking?.giftWrap ? "Gift wrap + card requested." : null,
+      ...(restInfo ? {
+        fulfilment: restInfo.mode, tableNo: restInfo.table,
+        kitchenStatus: resolveRestaurant(store.restaurant).kitchen.autoAccept ? "preparing" as const : "new" as const, kitchenAt: new Date(),
+      } : {}),
       tracking: {
         ...(session.tracking ?? {}),
         ...(proxyOrigin ? { proxyOrigin } : {}),
@@ -465,7 +489,8 @@ type Eligibility = { cod: CodStatus; block: "cod" | "all" | null; message: strin
 type OtpPurpose = "order" | "start" | "start_next" | { reveal: number };
 
 export default function Checkout() {
-  const { store, theme, otp, otpWidget, pay, rule, shipping, gifts, draft, lines, coupons, upsell, bankOffers: offers, base, cx: cxCfg, fields, tipping } = useLoaderData<typeof loader>();
+  const { store, theme, otp, otpWidget, pay, rule, shipping, rest, gifts, draft, lines, coupons, upsell, bankOffers: offers, base, cx: cxCfg, fields, tipping } = useLoaderData<typeof loader>();
+  const noAddress = Boolean(rest && rest.mode !== "delivery"); // restaurant takeaway / dine-in
   // Tip: a preset % of the items, a custom ₹ amount, or none
   const [tipPick, setTipPick] = useState<number | "custom" | null>(null);
   const [tipCustom, setTipCustom] = useState("");
@@ -676,7 +701,8 @@ export default function Checkout() {
 
   const priced = (m: PaymentMethod) => {
     const base = computePricing(lines, rule, m, coupon);
-    const x = withShipping(base, quoteShipping(shipping, { state: c.state, pincode: c.pincode, method: legacyMethod(m), value: base.total }));
+    const q = quoteShipping(shipping, { state: c.state, pincode: c.pincode, method: legacyMethod(m), value: base.total });
+    const x = withShipping(base, noAddress && rest ? { ...q, name: rest.label } : q);
     return { ...x, tip, total: x.total + tip };
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -780,10 +806,12 @@ export default function Checkout() {
     if (!phoneOk) e.phone = "Enter a valid 10-digit mobile number";
     if (c.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) e.email = "Enter a valid email address";
     if (!c.firstName.trim()) e.firstName = "Enter your full name";
-    if (!/^\d{6}$/.test(c.pincode)) e.pincode = "Enter a 6-digit pincode";
-    if (!c.city.trim()) e.city = "Enter your city";
-    if (c.address1.trim().length < 5) e.address1 = "Enter your house number and street";
-    if (!INDIAN_STATES.some((s) => s.code === c.state)) e.state = "Select your state";
+    if (!noAddress) {
+      if (!/^\d{6}$/.test(c.pincode)) e.pincode = "Enter a 6-digit pincode";
+      if (!c.city.trim()) e.city = "Enter your city";
+      if (c.address1.trim().length < 5) e.address1 = "Enter your house number and street";
+      if (!INDIAN_STATES.some((s) => s.code === c.state)) e.state = "Select your state";
+    }
     setStepError(e);
     if (!Object.keys(e).length) { setStep(3); window.scrollTo({ top: 0, behavior: "smooth" }); }
   };
@@ -887,7 +915,27 @@ export default function Checkout() {
       </div>
     </Field>
   );
-  const addressFields = (email: React.ReactNode) => usingSaved ? (
+  // Restaurant takeaway / dine-in: just who's ordering, no address
+  const restBanner = rest ? (
+    <div className="col-span-2 flex items-start gap-3 rounded-xl border border-line bg-paper-sunk px-3.5 py-3 text-sm">
+      <span className="mt-0.5 text-lg" aria-hidden>{rest.mode === "delivery" ? "🛵" : rest.mode === "takeaway" ? "🥡" : "🍽️"}</span>
+      <span className="min-w-0">
+        <b>{rest.label}{rest.mode === "dine_in" && rest.table ? ` · Table ${rest.table}` : ""}{rest.mode === "delivery" && rest.km != null ? ` · ${rest.km} km away` : ""}</b>
+        <span className="block text-xs text-ink-soft">
+          {rest.mode === "delivery" ? `Usually arrives in about ${rest.eta} min.` : rest.mode === "takeaway" ? `Ready in about ${rest.eta} min.${rest.kitchen ? ` Pick up from ${rest.kitchen}.` : ""}` : `We'll bring it to your table in about ${rest.eta} min.`}
+        </span>
+      </span>
+    </div>
+  ) : null;
+  const addressFields = (email: React.ReactNode) => noAddress ? (
+    <>
+      {restBanner}
+      <p className="col-span-2 -mb-1 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Your details</p>
+      {!steps && phoneField}
+      {nameField}
+      {email}
+    </>
+  ) : usingSaved ? (
     <>{!steps && phoneField}<SavedAddresses className="col-span-2" list={saved} selected={savedId!} showAll={showAll} setShowAll={setShowAll}
       onPick={pickSaved} onEdit={editSaved} onAddNew={addNew} revealing={revealFetcher.state !== "idle"} requireOtp={otp[method]} />{email}</>
   ) : (
@@ -897,6 +945,7 @@ export default function Checkout() {
       {nameField}
       {email}
       <p className="col-span-2 -mb-1 mt-2 text-[13px] font-semibold uppercase tracking-wide text-ink-faint">Delivery address</p>
+      {restBanner}
       {pinField}
       <Field label="House number, building, street" error={fieldError("address1")} className="col-span-2"><input name={nm("address1")} autoComplete="address-line1" required className="input" value={c.address1} onChange={set("address1")} /></Field>
       {fields.landmark !== "hidden" && <Field label={fields.landmark === "required" ? "Area, landmark" : "Area, landmark (optional)"} error={fieldError("address2")} className="col-span-2"><input name={nm("address2")} autoComplete="address-line2" className="input" value={c.address2} onChange={set("address2")} required={fields.landmark === "required"} /></Field>}
@@ -1517,7 +1566,9 @@ function PriceDetails({ p, method, coupon, hasOffers, giftWorth = 0, advance }: 
       {p.couponApplied && coupon && <Row label={`Coupon ${coupon.code}`} value={`−${formatINR(p.couponDiscount)}`} green />}
       {p.paymentFee > 0 && <Row label={`${methodName} charges`} value={formatINR(p.paymentFee)} />}
       {(p.tip ?? 0) > 0 && <Row label="Tip" value={formatINR(p.tip ?? 0)} />}
-      <Row label={p.shipping > 0 ? p.shippingName : "Delivery"} value={p.shipping > 0 ? formatINR(p.shipping) : "Free"} green={p.shipping === 0} />
+      {p.shippingName === "Takeaway" || p.shippingName === "Dine-in"
+        ? <Row label={p.shippingName} value="No delivery charge" />
+        : <Row label={p.shipping > 0 ? p.shippingName : "Delivery"} value={p.shipping > 0 ? formatINR(p.shipping) : "Free"} green={p.shipping === 0} />}
       {p.shipping > 0 && p.freeAbove && <p className="text-xs font-medium text-good">Free delivery on orders above {formatINR(p.freeAbove)}</p>}
       <div className="flex items-baseline justify-between border-t border-rule pt-3">
         <dt className="font-semibold">To pay</dt>
