@@ -20,6 +20,8 @@ const EXT_MIME: Record<string, string> = Object.fromEntries([...Object.entries(I
 export const MAX_DOC_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 export const MAX_VIDEO_BYTES = 150 * 1024 * 1024;
+/** Digital product files (ebooks, courses, audio, zips): kept private, only paid customers can download them. */
+export const MAX_DIGITAL_BYTES = 300 * 1024 * 1024;
 
 const cfg = () => ({
   endpoint: process.env.MEDIA_S3_ENDPOINT ?? "",
@@ -40,17 +42,20 @@ function s3() {
 }
 
 /** Streams an upload (the request body) into the bucket. Returns the public Growpefy URL. */
-export async function uploadMedia(storeId: number, contentType: string, body: ReadableStream<Uint8Array>, size: number, opts: { documents?: boolean } = {}) {
-  const ext = IMAGE_TYPES[contentType] ?? VIDEO_TYPES[contentType] ?? (opts.documents ? DOC_TYPES[contentType] : undefined);
+export async function uploadMedia(storeId: number, contentType: string, body: ReadableStream<Uint8Array>, size: number, opts: { documents?: boolean; private?: boolean } = {}) {
+  if (opts.private) opts = { ...opts, documents: true };
+  // Digital product files can be any type (ebook, course zip, audio, software); they are only ever downloaded
+  const ext = IMAGE_TYPES[contentType] ?? VIDEO_TYPES[contentType] ?? (opts.documents ? DOC_TYPES[contentType] : undefined) ?? (opts.private ? "bin" : undefined);
+  if (opts.private && ext === "bin") contentType = "application/octet-stream";
   if (!ext) throw new Error(opts.documents
     ? "This file type can't be uploaded. Use photos, videos, PDF, Word, Excel, CSV, ZIP or fonts."
     : "Only photos (JPG, PNG, WebP, GIF) and videos (MP4, WebM, MOV) can be uploaded.");
   const isVideo = contentType in VIDEO_TYPES;
   const kind = isVideo ? ("video" as const) : contentType in IMAGE_TYPES ? ("image" as const) : ("document" as const);
-  const max = isVideo ? MAX_VIDEO_BYTES : kind === "image" ? MAX_IMAGE_BYTES : MAX_DOC_BYTES;
-  if (size > max) throw new Error(`That file is too big. ${isVideo ? "Videos" : kind === "image" ? "Photos" : "Documents"} can be up to ${Math.round(max / 1024 / 1024)} MB.`);
+  const max = opts.private ? MAX_DIGITAL_BYTES : isVideo ? MAX_VIDEO_BYTES : kind === "image" ? MAX_IMAGE_BYTES : MAX_DOC_BYTES;
+  if (size > max) throw new Error(`That file is too big. ${opts.private ? "Download files" : isVideo ? "Videos" : kind === "image" ? "Photos" : "Documents"} can be up to ${Math.round(max / 1024 / 1024)} MB.`);
   const now = new Date();
-  const key = `stores/${storeId}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${crypto.randomBytes(10).toString("hex")}.${ext}`;
+  const key = `${opts.private ? "private" : "stores"}/${storeId}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${crypto.randomBytes(10).toString("hex")}.${ext}`;
 
   // Count bytes as they pass, and stop a body that is bigger than it said
   let seen = 0;
@@ -60,10 +65,10 @@ export async function uploadMedia(storeId: number, contentType: string, body: Re
   });
   await new Upload({
     client: s3(),
-    params: { Bucket: cfg().bucket, Key: key, Body: counted, ContentType: contentType, CacheControl: "public, max-age=31536000, immutable" },
+    params: { Bucket: cfg().bucket, Key: key, Body: counted, ContentType: contentType, CacheControl: opts.private ? "private, no-store" : "public, max-age=31536000, immutable" },
     queueSize: 3, partSize: 8 * 1024 * 1024,
   }).done();
-  return { url: `${env.appUrl}/media/${key}`, key, kind, type: isVideo ? ("video" as const) : ("image" as const), bytes: seen };
+  return { url: opts.private ? "" : `${env.appUrl}/media/${key}`, key, kind, type: isVideo ? ("video" as const) : ("image" as const), bytes: seen };
 }
 
 export async function deleteMedia(key: string) {
@@ -117,5 +122,26 @@ export async function serveMedia(key: string, range: string | null) {
     if (name === "InvalidRange") return new Response("Range not satisfiable", { status: 416 });
     console.error("[media]", key, e instanceof Error ? e.message : e);
     return new Response("Media unavailable", { status: 502 });
+  }
+}
+
+/** A private digital-product file, as a download (only after the caller checked the order). */
+export async function streamPrivate(key: string, filename: string) {
+  if (!/^private\/\d+\/[\w/.-]+$/.test(key) || key.includes("..")) return new Response("Not found", { status: 404 });
+  try {
+    const r = await s3().send(new GetObjectCommand({ Bucket: cfg().bucket, Key: key }));
+    const safe = filename.replace(/[^\w .()-]+/g, "_").slice(0, 120) || "download";
+    const headers = new Headers({
+      "Content-Type": r.ContentType ?? "application/octet-stream",
+      "Content-Disposition": `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(filename.slice(0, 120))}`,
+      "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox",
+    });
+    if (r.ContentLength != null) headers.set("Content-Length", String(r.ContentLength));
+    return new Response(r.Body?.transformToWebStream() ?? null, { headers });
+  } catch (e) {
+    const name = (e as { name?: string }).name;
+    if (name === "NoSuchKey" || name === "NotFound") return new Response("This file is no longer available. Please contact the store.", { status: 404 });
+    console.error("[digital]", key, e instanceof Error ? e.message : e);
+    return new Response("Download unavailable right now. Please try again.", { status: 502 });
   }
 }

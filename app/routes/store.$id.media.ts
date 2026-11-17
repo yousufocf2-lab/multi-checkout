@@ -21,6 +21,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   let name = "";
   try { name = decodeURIComponent(request.headers.get("x-file-name") ?? ""); } catch { /* keep empty */ }
   try {
+    // Digital product files go to private storage and aren't listed in Files
+    if (request.headers.get("x-digital") === "1") {
+      const r = await uploadMedia(store.id, type, request.body, size, { private: true });
+      console.log(`[media] store=${store.id} digital ${Math.round(r.bytes / 1024)}KB`);
+      return json({ key: r.key, bytes: r.bytes, mime: type, name: name.slice(0, 160) || "download" });
+    }
     const r = await uploadMedia(store.id, type, request.body, size, { documents: request.headers.get("x-library") === "1" });
     console.log(`[media] store=${store.id} ${r.kind} ${Math.round(r.bytes / 1024)}KB`);
     const file = await recordFile({

@@ -82,6 +82,9 @@ export const headers: HeadersFunction = ({ loaderHeaders }) => {
   return h;
 };
 
+/** Digital-only carts: nothing ships, so no delivery charge */
+const DIGITAL_SHIP = { pricePaise: 0, name: "Digital delivery", ruleId: null, freeAbove: null };
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session, store } = await loadSession(params.sessionId!);
   // On the store's domain (Shopify App Proxy) the page stays there; otherwise it moves to the store's Growpefy address
@@ -277,7 +280,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
 
   // Restaurants: takeaway and dine-in need no address; delivery uses the area checked when checkout started
   const restInfo = store.businessType === "restaurant" ? session.tracking?.rest ?? null : null;
-  const noAddress = Boolean(restInfo && restInfo.mode !== "delivery");
+  const lines = await fetchLines(store, session.items);
+  // Only digital products in the cart: nothing to ship, so no address
+  const digitalOnly = lines.length > 0 && lines.every((l) => l.digital);
+  const noAddress = Boolean(restInfo && restInfo.mode !== "delivery") || digitalOnly;
+  if (digitalOnly && !restInfo) {
+    Object.assign(customer, { address1: "Digital delivery (download)", address2: "", city: customer.city || "", state: customer.state || "", pincode: customer.pincode || "" });
+  }
   if (restInfo && noAddress) {
     Object.assign(customer, {
       address1: restInfo.mode === "dine_in" ? `Dine-in, table ${restInfo.table ?? ""}`.trim() : "Takeaway (pickup)",
@@ -318,8 +327,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ errors: { form: "Verify your mobile number with the OTP to continue." } as FieldErrors, needOtp: true }, { status: 400 });
   }
 
-  const [lines, rule, storeShipRules] = await Promise.all([fetchLines(store, session.items), storeRuleFor(store), shippingRulesFor(store.id, store.smartCheckout)]);
-  const shipRules = restInfo ? restShipRules(restInfo) : storeShipRules;
+  const [rule, storeShipRules] = await Promise.all([storeRuleFor(store), shippingRulesFor(store.id, store.smartCheckout)]);
+  const shipRules = restInfo ? restShipRules(restInfo) : digitalOnly ? [] : storeShipRules;
   if (!lines.length) return json({ errors: { form: "Your cart is empty. Go back to the store to add items." } as FieldErrors }, { status: 400 });
   const freeLines = (await freeGiftsFor(store, lines))[legacyMethod(method)];
   const cartInfo = { value: lines.reduce((n, l) => n + l.pricePaise * l.quantity, 0), productIds: lines.map((l) => l.productId) };
@@ -335,7 +344,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     coupon = r.coupon;
   }
   const base = computePricing(lines, rule, method, coupon);
-  const shipped = withShipping(base, quoteShipping(shipRules, { state: customer.state, pincode: customer.pincode, method: legacyMethod(method), value: base.total }));
+  const shipped = withShipping(base, digitalOnly ? DIGITAL_SHIP : quoteShipping(shipRules, { state: customer.state, pincode: customer.pincode, method: legacyMethod(method), value: base.total }));
   // Tip (when the store turned tipping on): never more than half the items or ₹10,000
   const tip = resolveTipping(store.tipping).on ? Math.min(maxTipPaise(base.subtotal), Math.max(0, Math.round(Number(str("tip")) || 0))) : 0;
   const p = { ...shipped, total: shipped.total + tip };
@@ -490,7 +499,8 @@ type OtpPurpose = "order" | "start" | "start_next" | { reveal: number };
 
 export default function Checkout() {
   const { store, theme, otp, otpWidget, pay, rule, shipping, rest, gifts, draft, lines, coupons, upsell, bankOffers: offers, base, cx: cxCfg, fields, tipping } = useLoaderData<typeof loader>();
-  const noAddress = Boolean(rest && rest.mode !== "delivery"); // restaurant takeaway / dine-in
+  const digitalOnly = lines.length > 0 && lines.every((l) => l.digital); // only downloads: nothing to ship
+  const noAddress = Boolean(rest && rest.mode !== "delivery") || digitalOnly; // restaurant takeaway / dine-in, or digital
   // Tip: a preset % of the items, a custom ₹ amount, or none
   const [tipPick, setTipPick] = useState<number | "custom" | null>(null);
   const [tipCustom, setTipCustom] = useState("");
@@ -702,7 +712,7 @@ export default function Checkout() {
   const priced = (m: PaymentMethod) => {
     const base = computePricing(lines, rule, m, coupon);
     const q = quoteShipping(shipping, { state: c.state, pincode: c.pincode, method: legacyMethod(m), value: base.total });
-    const x = withShipping(base, noAddress && rest ? { ...q, name: rest.label } : q);
+    const x = withShipping(base, digitalOnly ? DIGITAL_SHIP : noAddress && rest ? { ...q, name: rest.label } : q);
     return { ...x, tip, total: x.total + tip };
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -916,7 +926,14 @@ export default function Checkout() {
     </Field>
   );
   // Restaurant takeaway / dine-in: just who's ordering, no address
-  const restBanner = rest ? (
+  const restBanner = digitalOnly && !rest ? (
+    <div className="col-span-2 flex items-start gap-3 rounded-xl border border-line bg-paper-sunk px-3.5 py-3 text-sm">
+      <span className="mt-0.5 text-lg" aria-hidden>⬇️</span>
+      <span className="leading-snug"><b>Digital delivery</b>
+        <span className="block text-ink-soft">Your download unlocks on the order page right after payment. Nothing is shipped.</span>
+      </span>
+    </div>
+  ) : rest ? (
     <div className="col-span-2 flex items-start gap-3 rounded-xl border border-line bg-paper-sunk px-3.5 py-3 text-sm">
       <span className="mt-0.5 text-lg" aria-hidden>{rest.mode === "delivery" ? "🛵" : rest.mode === "takeaway" ? "🥡" : "🍽️"}</span>
       <span className="min-w-0">
@@ -1566,7 +1583,7 @@ function PriceDetails({ p, method, coupon, hasOffers, giftWorth = 0, advance }: 
       {p.couponApplied && coupon && <Row label={`Coupon ${coupon.code}`} value={`−${formatINR(p.couponDiscount)}`} green />}
       {p.paymentFee > 0 && <Row label={`${methodName} charges`} value={formatINR(p.paymentFee)} />}
       {(p.tip ?? 0) > 0 && <Row label="Tip" value={formatINR(p.tip ?? 0)} />}
-      {p.shippingName === "Takeaway" || p.shippingName === "Dine-in"
+      {p.shippingName === "Takeaway" || p.shippingName === "Dine-in" || p.shippingName === DIGITAL_SHIP.name
         ? <Row label={p.shippingName} value="No delivery charge" />
         : <Row label={p.shipping > 0 ? p.shippingName : "Delivery"} value={p.shipping > 0 ? formatINR(p.shipping) : "Free"} green={p.shipping === 0} />}
       {p.shipping > 0 && p.freeAbove && <p className="text-xs font-medium text-good">Free delivery on orders above {formatINR(p.freeAbove)}</p>}

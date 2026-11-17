@@ -182,12 +182,16 @@ export function teamLogin(raw: string) {
   return /^[6-9]\d{9}$/.test(phone) ? phone : null;
 }
 
+/** Demo stores log in with a plain username (demo, demofood…), kept as <username>@demo.growpefy.com */
+export const DEMO_DOMAIN = "@demo.growpefy.com";
+
 export async function login(email: string, password: string): Promise<LoginResult | null> {
   const e = email.trim().toLowerCase();
   if (e === adminEmail() && safeEqual(password, env.adminPassword)) return { admin: true };
   // Owners can use their email or mobile number with a password
   const phone = e.replace(/\D/g, "").replace(/^(91|0)(?=\d{10}$)/, "");
-  const [u] = await db.select().from(users).where(e.includes("@") ? eq(users.email, e) : eq(users.phone, phone)).limit(1);
+  const demo = /^[a-z][a-z0-9_]{2,29}$/.test(e) ? `${e}${DEMO_DOMAIN}` : null;
+  const [u] = await db.select().from(users).where(e.includes("@") ? eq(users.email, e) : demo ? eq(users.email, demo) : eq(users.phone, phone)).limit(1);
   if (u && u.active && u.passwordHash && (await verifyPassword(password, u.passwordHash))) return { user: u };
   // Team members (Growpefy staff or a store's employees)
   const key = teamLogin(email);

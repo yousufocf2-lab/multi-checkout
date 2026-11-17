@@ -332,6 +332,12 @@ export async function importFromShopify(store: Store) {
 // can price them from our own catalog and keep the order in Growpefy instead of creating it on Shopify.
 
 export const GP_PREFIX = "gp:";
+export type DigitalFile = { name: string; key: string; bytes: number; mime?: string };
+/** A digital product: the Physical switch is off (no shipping, no COD, files after payment). */
+export const isDigitalExtra = (extra: unknown) => (extra as { physical?: boolean } | null)?.physical === false;
+export const digitalFiles = (extra: unknown): DigitalFile[] =>
+  (((extra as { files?: DigitalFile[] } | null)?.files) ?? []).filter((f) => f && typeof f.key === "string" && /^private\/\d+\//.test(f.key)).slice(0, 20);
+
 export const isCatalogVariant = (id: string) => id.startsWith(GP_PREFIX);
 // Restaurant add-ons ride inside the id ("gp:123~a=0.1"); the number is the part before "~"
 const gpNum = (id: string) => parseInt(id.slice(GP_PREFIX.length), 10) || 0;
@@ -368,6 +374,7 @@ export async function catalogLines(store: Store, items: { variantId: string; qua
       variantTitle: addonText ? `${vt ? `${vt} · ` : ""}+ ${addonText}` : vt,
       image: r.v.imageUrl ?? coverOf(r.i.images), quantity: qty,
       pricePaise: r.v.pricePaise + addonPaise, comparePaise: r.v.compareAtPaise && r.v.compareAtPaise > r.v.pricePaise ? r.v.compareAtPaise + addonPaise : null,
+      ...(store.businessType !== "restaurant" && isDigitalExtra(r.i.extra) ? { digital: true } : {}),
     });
   }
   return out;

@@ -1,3 +1,5 @@
+import { Downloads } from "~/components/Downloads";
+import { orderDownloads } from "~/lib/digital.server";
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
 import { json } from "@remix-run/node";
@@ -72,6 +74,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       : null,
     base: proxied ? PROXY_PATH : "",
     hasBackup: activeGateways(store).length > 1,
+    downloads: await orderDownloads(order),
+    digitalOnly: order.items.some((l) => l.digital) && order.items.every((l) => l.digital || l.free),
   });
 }
 
@@ -120,8 +124,9 @@ export default function OrderStatus() {
                   <div className="flex justify-between"><dt className="text-ink-soft">{d.method === "cod" ? "Pay on delivery" : "Paid"}</dt><dd className="num font-semibold">{formatINR(d.total)}</dd></div>
                 )}
                 {d.savings > 0 && <div className="flex justify-between"><dt className="text-ink-soft">You saved</dt><dd className="num font-medium text-good">{formatINR(d.savings)}</dd></div>}
-                <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>
+                {!d.digitalOnly && <div className="flex justify-between gap-4"><dt className="text-ink-soft">Delivering to</dt><dd className="text-right">{d.address}</dd></div>}
               </dl>
+              <Downloads list={d.downloads.list} locked={d.downloads.locked} base={d.base} className="mt-4" />
               {d.note && (
                 <div className="mt-4 rounded-xl border border-[rgb(var(--brand)/.25)] bg-[rgb(var(--brand)/.06)] p-4 text-sm">
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Note from {d.store.name}</p>

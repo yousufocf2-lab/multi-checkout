@@ -856,6 +856,7 @@ export type OrderLine = {
   pricePaise: number;
   comparePaise: number | null;
   free?: boolean; // free gift from an offer (price 0)
+  digital?: boolean; // digital product: no shipping, no COD, file downloads after payment
   offer?: string; // offer name, for free gifts
 };
 

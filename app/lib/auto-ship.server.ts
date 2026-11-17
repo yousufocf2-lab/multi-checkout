@@ -19,7 +19,11 @@ const DEFAULT_WEIGHT_G = 500;
 const BOOKS = ["delhivery", "shiprocket"]; // couriers we can send orders to
 
 /** Should this order be booked now? The store's shipping rule decides (all orders, or only confirmed ones). */
+/** Orders a courier never carries: digital downloads and restaurant orders (own riders / pickup / dine-in). */
+export const shipsNothing = (o: Pick<Order, "items" | "fulfilment">) => Boolean(o.fulfilment) || (o.items.some((l) => l.digital) && o.items.every((l) => l.digital || l.free));
+
 function readyToBook(store: Store, o: Order) {
+  if (shipsNothing(o)) return false;
   if (Date.now() - o.createdAt.getTime() < WAIT_MS) return false;
   return ruleAllows(shipRuleOf(store), o);
 }
@@ -198,7 +202,7 @@ export async function reshipOrders(store: Store, ids: string[]) {
     or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
   )) : [];
   const results: { id: string; name: string; ok: boolean; message: string }[] = [];
-  for (const o of list) {
+  for (const o of list.filter((x) => !shipsNothing(x))) {
     const name = o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`;
     const errors: string[] = [];
     let done: { ok: boolean; awb?: string; courier?: string } = { ok: false };

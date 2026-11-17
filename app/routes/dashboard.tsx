@@ -217,6 +217,7 @@ export default function DashboardLayout() {
     { label: "Owner accounts", to: "/dashboard/owners", icon: "lock", show: may("clients") },
     { label: "Store domains", to: "/dashboard/cloudflare", icon: "globe", show: !viewer.isTeam },
     { label: "Special logic", to: "/dashboard/special-logic", icon: "sparkle", show: !viewer.isTeam }, // super admin only, never shown to stores or team
+    { label: "Demo stores", to: "/dashboard/demo-stores", icon: "stores", show: !viewer.isTeam },
     { label: "Login & security", to: "/dashboard/security", icon: "shield", show: true },
     { label: "My account", to: "/dashboard/account", icon: "user", show: viewer.isTeam },
   ];

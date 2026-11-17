@@ -12,6 +12,7 @@ import { dishOf, resolveAddons, type AddonGroup, type DishInfo } from "~/lib/dis
 import { catalogAllowed, catalogFacets, deleteItem, getItem, listCategories, saveItem, type ItemStatus, type VariantInput } from "~/lib/catalog.server";
 import { formatINR, rupeesToPaise } from "~/lib/pricing";
 import { storePath } from "~/lib/store-code";
+import type { DigitalFile } from "~/lib/catalog.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -31,6 +32,18 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
 const str = (v: FormDataEntryValue | null) => String(v ?? "").trim();
 const num = (v: FormDataEntryValue | null) => { const n = Number(str(v)); return str(v) === "" || !Number.isFinite(n) ? null : n; };
+
+/** Digital product files from the editor: only keys in this store's private folder are kept */
+function readFiles(raw: string, storeId: number) {
+  let list: unknown = [];
+  try { list = JSON.parse(raw || "[]"); } catch { /* none */ }
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((f) => {
+    const x = f as { name?: unknown; key?: unknown; bytes?: unknown; mime?: unknown };
+    if (typeof x.key !== "string" || !x.key.startsWith(`private/${storeId}/`)) return [];
+    return [{ name: String(x.name ?? "download").slice(0, 160), key: x.key, bytes: Math.max(0, Number(x.bytes) || 0), mime: String(x.mime ?? "").slice(0, 100) }];
+  }).slice(0, 20);
+}
 
 export async function action({ request, params }: ActionFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -60,6 +73,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const extra = {
       costPaise: rupeesToPaise(str(fd.get("cost"))), chargeTax: fd.get("chargeTax") === "on", gstRate: num(fd.get("gstRate")),
       barcode: str(fd.get("barcode")) || null, continueSelling: fd.get("continueSelling") === "on", physical: fd.get("physical") === "on",
+      files: readFiles(str(fd.get("files")), store.id),
       hsn: str(fd.get("hsn")) || null, origin: str(fd.get("origin")) || null, weightUnit: unit,
       dims: { l: num(fd.get("dimL")), w: num(fd.get("dimW")), h: num(fd.get("dimH")) },
       site: readSite(fd),
@@ -164,7 +178,7 @@ function combine(options: { name: string; values: string[] }[], old: Row[]): Row
 }
 
 type SiteDetails = { banners?: Banner[]; badge?: string; subtitle?: string; feature?: string; chips?: string[]; usp?: string[]; specs?: { label: string; value: string }[]; faqs?: { q: string; a: string }[] };
-type Extra = { site?: SiteDetails; costPaise?: number | null; chargeTax?: boolean; gstRate?: number | null; barcode?: string | null; continueSelling?: boolean; physical?: boolean; hsn?: string | null; origin?: string | null; weightUnit?: "kg" | "g"; dims?: { l: number | null; w: number | null; h: number | null } };
+type Extra = { site?: SiteDetails; costPaise?: number | null; chargeTax?: boolean; gstRate?: number | null; barcode?: string | null; continueSelling?: boolean; physical?: boolean; files?: DigitalFile[]; hsn?: string | null; origin?: string | null; weightUnit?: "kg" | "g"; dims?: { l: number | null; w: number | null; h: number | null } };
 const plain = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 
 export default function EditItem() {
@@ -193,6 +207,7 @@ export default function EditItem() {
   const [media, setMedia] = useState<ItemImage[]>(((item?.images ?? []) as ItemImage[]).map((m) => ({ ...m, type: m.type ?? "image" })));
   const [track, setTrack] = useState(item ? vs.some((v) => v.stock != null) : true);
   const [physical, setPhysical] = useState(ex.physical ?? true);
+  const [files, setFiles] = useState<DigitalFile[]>(ex.files ?? []);
   const [cost, setCost] = useState(rupees(ex.costPaise));
   const [show, setShow] = useState<Record<string, boolean>>({ compare: Boolean(vs[0]?.compareAtPaise), cost: ex.costPaise != null, tax: Boolean(ex.chargeTax), sku: Boolean(vs[0]?.sku), barcode: Boolean(ex.barcode), customs: Boolean(ex.hsn || ex.origin) });
   const [seoOpen, setSeoOpen] = useState(false);
@@ -347,7 +362,13 @@ export default function EditItem() {
                   </div>
                   <p className="text-[12px] text-ink-faint sm:col-span-2">Used to book couriers and work out shipping charges.</p>
                 </div>
-              ) : <p className="text-[12.5px] text-ink-soft">Customers won't enter a shipping address for this {pack.item}.</p>}
+              ) : (
+                <>
+                  <p className="text-[12.5px] text-ink-soft">Digital {pack.item}: nothing is shipped, customers don't enter an address and Cash on Delivery is turned off. Paid customers get these files on their order page.</p>
+                  <DigitalFiles files={files} setFiles={(f) => { setFiles(f); setDirty(true); }} />
+                </>
+              )}
+              <input type="hidden" name="files" value={JSON.stringify(physical ? (ex.files ?? []) : files)} />
               {show.customs && physical && (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block"><span className="label">Country of origin</span><input name="origin" defaultValue={ex.origin ?? "India"} className="input w-full" /></label>
@@ -758,6 +779,67 @@ function sendFile(url: string, blob: Blob, onPct: (n: number) => void) {
     x.onerror = () => reject(new Error("No internet. Please try again."));
     x.send(blob);
   });
+}
+
+function DigitalFiles({ files, setFiles }: { files: DigitalFile[]; setFiles: (f: DigitalFile[]) => void }) {
+  const { id: storeId } = useParams();
+  const [busy, setBusy] = useState<{ name: string; pct: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const add = async (list: FileList | null) => {
+    setErr(null);
+    for (const f of Array.from(list ?? [])) {
+      if (filesRef.current.length >= 20) { setErr("Up to 20 files per product."); break; }
+      if (f.size > 300 * 1024 * 1024) { setErr(`${f.name} is bigger than 300 MB.`); continue; }
+      setBusy({ name: f.name, pct: 0 });
+      try {
+        const r = await new Promise<DigitalFile>((resolve, reject) => {
+          const x = new XMLHttpRequest();
+          x.open("POST", `${storePath(storeId!)}/media`);
+          x.setRequestHeader("Content-Type", f.type || "application/octet-stream");
+          x.setRequestHeader("X-File-Name", encodeURIComponent(f.name));
+          x.setRequestHeader("X-Digital", "1");
+          x.upload.onprogress = (e) => e.lengthComputable && setBusy({ name: f.name, pct: Math.round((e.loaded / e.total) * 100) });
+          x.onload = () => {
+            let d: { key?: string; bytes?: number; mime?: string; name?: string; error?: string } = {};
+            try { d = JSON.parse(x.responseText); } catch { /* not json */ }
+            if (x.status < 300 && d.key) resolve({ key: d.key, bytes: d.bytes ?? f.size, mime: d.mime, name: d.name || f.name });
+            else reject(new Error(d.error ?? `Upload failed (${x.status})`));
+          };
+          x.onerror = () => reject(new Error("No internet. Please try again."));
+          x.send(f);
+        });
+        setFiles([...filesRef.current, r]);
+      } catch (e) { setErr(e instanceof Error ? e.message : "Upload failed"); }
+    }
+    setBusy(null);
+    if (input.current) input.current.value = "";
+  };
+  const size = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+  return (
+    <div className="rounded-lg border border-rule">
+      <div className="flex items-center gap-2 border-b border-rule px-3 py-2">
+        <p className="flex-1 text-[13px] font-semibold">Download files</p>
+        <button type="button" className="btn-secondary px-2.5 py-1 text-[12.5px]" disabled={Boolean(busy)} onClick={() => input.current?.click()}>Add file</button>
+        <input ref={input} type="file" multiple className="hidden" onChange={(e) => add(e.target.files)} />
+      </div>
+      {files.length === 0 && !busy && <p className="px-3 py-3 text-[12.5px] text-ink-faint">No files yet. Add the PDF, ZIP, audio or other file customers get after paying (up to 300 MB each).</p>}
+      <ul className="divide-y divide-rule">
+        {files.map((f, i) => (
+          <li key={f.key} className="flex items-center gap-2 px-3 py-2 text-[13px]">
+            <span aria-hidden>📄</span>
+            <input value={f.name} onChange={(e) => setFiles(files.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} className="input min-w-0 flex-1 py-1" aria-label="File name customers see" />
+            <span className="shrink-0 text-[12px] text-ink-faint">{size(f.bytes)}</span>
+            <button type="button" className="shrink-0 rounded px-1.5 text-ink-faint hover:text-bad" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>✕</button>
+          </li>
+        ))}
+        {busy && <li className="px-3 py-2 text-[12.5px] text-ink-soft">Uploading {busy.name}… {busy.pct}%</li>}
+      </ul>
+      {err && <p className="border-t border-rule px-3 py-2 text-[12.5px] text-bad">{err}</p>}
+    </div>
+  );
 }
 
 function MediaManager({ media, setMedia: set }: { media: ItemImage[]; setMedia: (m: ItemImage[]) => void }) {

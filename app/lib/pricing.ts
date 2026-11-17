@@ -4,6 +4,7 @@ import { legacyMethod, type MethodAdjust, type PayMethod } from "./payment-metho
 export type PaymentMethod = PayMethod;
 
 export interface PricedLine {
+  digital?: boolean; // digital product: no COD, downloads after payment
   variantId: string;
   productId: string;
   title: string;

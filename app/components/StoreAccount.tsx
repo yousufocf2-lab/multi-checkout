@@ -1,4 +1,5 @@
 // Shopper account pages on a store's website: log in / create account, profile, orders and order tracking.
+import { Downloads } from "./Downloads";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { OtpStep } from "./OtpAuth";
@@ -284,7 +285,8 @@ function ProfileForm({ d, onCancel }: { d: LoaderData; onCancel?: () => void }) 
 type OrderData = {
   store: StoreInfo;
   order: { name: string; at: string; total: number; items: { title: string; variant: string | null; image: string | null; qty: number; price: number; free: boolean }[]; headline: string; tone: string; steps: TrackStep[];
-    method: string; toCollect: number; shipping: number; subtotal: number; address: string; courier: string | null; awb: string | null; track: string | null; live: string | null; note: string | null };
+    method: string; toCollect: number; shipping: number; subtotal: number; address: string; courier: string | null; awb: string | null; track: string | null; live: string | null; note: string | null;
+    downloads: { locked: boolean; list: { itemId: number; title: string; files: { name: string; bytes: number; url: string }[] }[] }; digitalOnly: boolean };
 };
 
 export function AccountOrderPage() {
@@ -319,6 +321,8 @@ export function AccountOrderPage() {
         )}
       </Card>
 
+      <Downloads list={o.downloads.list} locked={o.downloads.locked} className="mt-4" />
+
       {o.note && (
         <div className="mt-4 rounded-2xl bg-[rgb(var(--brand)/.06)] p-5 ring-1 ring-[rgb(var(--brand)/.2)]">
           <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-soft">Note from {store.name}</p>
@@ -344,7 +348,7 @@ export function AccountOrderPage() {
         </dl>
       </Card>
 
-      <Card className="mt-4"><p className="text-[12px] font-semibold uppercase tracking-wide text-ink-soft">Delivery address</p><p className="mt-1.5 whitespace-pre-line text-[14px]">{o.address}</p></Card>
+      {!o.digitalOnly && <Card className="mt-4"><p className="text-[12px] font-semibold uppercase tracking-wide text-ink-soft">Delivery address</p><p className="mt-1.5 whitespace-pre-line text-[14px]">{o.address}</p></Card>}
     </AccountShell>
   );
 }

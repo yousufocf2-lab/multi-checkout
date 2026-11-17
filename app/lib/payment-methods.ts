@@ -89,8 +89,10 @@ export function resolvePaymentMethods(
 }
 
 /** Return the first matching checkout restriction. Partial COD uses COD limits. */
-export function paymentLimitReason(settings: Pick<PaymentMethodsSettings, "quantityLimits" | "cartValueLimits">, method: PayMethod, lines: { productId: string; quantity: number }[], valuePaise: number): string | null {
+export function paymentLimitReason(settings: Pick<PaymentMethodsSettings, "quantityLimits" | "cartValueLimits">, method: PayMethod, lines: { productId: string; quantity: number; digital?: boolean }[], valuePaise: number): string | null {
   const channel = method === "prepaid" ? "prepaid" : "cod";
+  // Digital products are paid online only: the download unlocks after payment
+  if (channel === "cod" && lines.some((l) => l.digital)) return "Cash on Delivery isn't available for digital products. Pay online to get your download.";
   for (const r of settings.quantityLimits) {
     if (!r.on || !r.methods.includes(channel)) continue;
     const items = r.productMode === "selected" ? lines.filter((l) => r.products.some((p) => p.id === l.productId)) : lines;

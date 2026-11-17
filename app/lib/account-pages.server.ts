@@ -1,4 +1,5 @@
 // Loaders and actions for the shopper account pages (/account, /account/orders/<id>) on growpefy.com/s/<store> and own domains.
+import { orderDownloads } from "./digital.server";
 import { json, redirect } from "@remix-run/node";
 import { eq } from "drizzle-orm";
 import { db, storeCustomers, type Order, type Store, type StoreCustomer } from "~/db.server";
@@ -183,6 +184,8 @@ export async function accountOrderLoader(ctx: ShopContext, request: Request, ord
       address: `${a.firstName} ${a.lastName}`.trim() + `\n${a.address1}${a.address2 ? ", " + a.address2 : ""}\n${a.city}, ${a.state} ${a.pincode}\n+91 ${a.phone}`,
       courier: o.courier ? courierById(o.courier)?.name ?? null : null, awb: o.awb, track: trackingUrl(o.courier, o.awb),
       live: o.shipStatusRaw, note: o.customerNote,
+      downloads: await orderDownloads(o),
+      digitalOnly: o.items.some((l) => l.digital) && o.items.every((l) => l.digital || l.free),
     },
   });
 }
