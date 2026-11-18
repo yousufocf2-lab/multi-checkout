@@ -133,14 +133,14 @@ function History({ bills, selected }: { bills: Bill[]; selected: number }) {
           const on = b.id === selected;
           return (
             <Link key={b.id} to={`?bill=${b.id}`} preventScrollReset onMouseEnter={() => setHover(b.id)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(b.id)} onBlur={() => setHover(null)}
-              className="group flex h-full min-w-0 flex-1 flex-col justify-end" aria-label={`${range(b)}: ${formatINR(b.totals.total)}`}>
+              className="group flex h-full min-w-0 max-w-[56px] flex-1 flex-col justify-end" aria-label={`${range(b)}: ${formatINR(b.totals.total)}`}>
               <span className="w-full rounded-t-[4px] transition-opacity" style={{ height: `${h}%`, background: BRAND, opacity: on || hover === b.id ? 1 : 0.35 }} />
             </Link>
           );
         })}
       </div>
       <div className="mt-2 flex gap-2">
-        {list.map((b) => <span key={b.id} className="min-w-0 flex-1 truncate text-center text-[11px] text-ink-faint">{fmt(b.start, { month: "short" })}</span>)}
+        {list.map((b) => <span key={b.id} className="min-w-0 max-w-[56px] flex-1 truncate text-center text-[11px] text-ink-faint">{fmt(b.start, { month: "short" })}</span>)}
       </div>
     </section>
   );
