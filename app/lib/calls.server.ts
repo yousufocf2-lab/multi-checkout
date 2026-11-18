@@ -1,5 +1,6 @@
 // Calling team: employees who phone customers to confirm orders. New orders are shared out round-robin;
 // each caller sees full details (with the mobile number) only for their own orders, and a summary of teammates' work.
+import { OUTSOURCE_TAG } from "./order-route";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, orderCallEvents, orders, stores, teamMembers, type Order, type OrderEvent, type Store } from "~/db.server";
 import { cancelOrders } from "./order-actions.server";
@@ -46,7 +47,7 @@ export async function assignCalls(store: Store) {
 
 const istStart = () => { const d = new Date(Date.now() + 5.5 * 3600_000); d.setUTCHours(0, 0, 0, 0); return new Date(d.getTime() - 5.5 * 3600_000); };
 
-type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier">;
+type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier" | "manualTags">;
 
 export const CALL_TABS = ["to_call", "follow_up", "confirmed", "cancelled", "shipped", "all"] as const;
 export type CallTab = (typeof CALL_TABS)[number];
@@ -79,7 +80,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     gte(orders.createdAt, from), lt(orders.createdAt, to),
   );
   const cols = {
-    id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status,
+    id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status, manualTags: orders.manualTags,
     total: orders.total, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
     callStatus: orders.callStatus, followUpAt: orders.followUpAt, staffNote: orders.staffNote, customerNote: orders.customerNote,
     callAt: orders.callAt, callBy: orders.callBy, assignedTo: orders.assignedTo, timeline: orders.timeline, awb: orders.awb, courier: orders.courier,
@@ -124,6 +125,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   const nameOf = new Map(team.map((t) => [t.id, t.name]));
   const full = (o: Mine & { tab: CallTab }) => ({
     id: o.id, name: o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`, at: o.createdAt.toISOString(), method: o.paymentMethod, status: o.status,
+    outsource: (o.manualTags ?? []).includes(OUTSOURCE_TAG),
     total: o.total, toCollect: o.paymentMethod === "cod" ? o.total : o.paymentMethod === "partial" ? o.total - (o.amountPaid ?? o.advance ?? 0) : 0,
     items: o.items.map((l) => ({ title: l.title, variant: l.variantTitle, qty: l.quantity })),
     customer: { ...o.customer, phone: "" }, wa: o.confirmStatus, call: o.callStatus, tab: o.tab, followUpAt: o.followUpAt?.toISOString() ?? null,

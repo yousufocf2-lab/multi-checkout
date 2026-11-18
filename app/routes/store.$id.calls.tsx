@@ -354,7 +354,7 @@ function CallList({ d, onOpen }: { d: D; onOpen: (id: string) => void }) {
                 {(o.customer.firstName[0] ?? "?").toUpperCase()}{(o.customer.lastName[0] ?? "").toUpperCase()}
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-ink">{o.customer.firstName} {o.customer.lastName}</span>
+                <span className="block truncate text-sm font-semibold text-ink">{o.customer.firstName} {o.customer.lastName}{o.outsource && <span className="ml-1 rounded bg-[#7c3aed] px-1.5 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-white">Outsource</span>}</span>
                 <span className="block truncate text-xs text-ink-soft">{[o.name, o.customer.city].filter(Boolean).join(" · ")}</span>
               </span>
             </span>
@@ -499,6 +499,7 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
       </details>}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-rule px-5 py-3 text-[12px]">
         <b className="num text-[13px]">{o.name}</b>
+        {o.outsource && <span className="rounded bg-[#7c3aed] px-1.5 py-px align-middle text-[10px] font-bold uppercase tracking-wide text-white">Outsource</span>}
         <span className="text-ink-faint">{ago(o.at)}</span>
         <span className={`rounded-md px-1.5 py-px font-semibold ${o.method === "prepaid" ? "bg-[#e9eef5] text-[#1c5cab]" : o.method === "partial" ? "bg-violet-50 text-violet-700" : "bg-[#fff1e3] text-[#8a4b00]"}`}>
           {o.method === "prepaid" ? `Paid ${inr(o.total)}` : `${o.method === "partial" ? "Partial COD · " : "COD · "}collect ${inr(o.toCollect)}`}
