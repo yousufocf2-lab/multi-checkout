@@ -52,8 +52,11 @@ export function RangePicker({ current, align = "left" }: { current: RangeLike; a
         <span className="hidden text-xs text-ink-faint sm:inline">{dates}</span>
         <Icon name="chevron" className={`h-3.5 w-3.5 text-ink-faint transition ${open ? "rotate-180" : ""}`} />
       </button>
+      {/* Phone: a sheet at the bottom of the screen, so it never runs off the edge; computer: a dropdown under the button */}
+      {open && <div className="fixed inset-0 z-40 bg-slate-950/30 sm:hidden" aria-hidden="true" />}
       {open && (
-        <div className={`absolute z-40 mt-1.5 w-[260px] animate-fadein rounded-xl border border-rule bg-surface p-1.5 shadow-lift ${align === "right" ? "right-0" : "left-0"}`} role="dialog" aria-label="Date range">
+        <div className={`fixed inset-x-3 bottom-3 z-50 max-h-[80vh] overflow-y-auto animate-fadein rounded-2xl border border-rule bg-surface p-2 shadow-lift sm:absolute sm:inset-x-auto sm:bottom-auto sm:z-40 sm:mt-1.5 sm:max-h-none sm:w-[260px] sm:overflow-visible sm:rounded-xl sm:p-1.5 ${align === "right" ? "sm:right-0" : "sm:left-0"}`} role="dialog" aria-label="Date range">
+          <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-faint sm:hidden">Date range</p>
           {PRESETS.map((p) => {
             const on = current.preset === p.id && !custom;
             return (

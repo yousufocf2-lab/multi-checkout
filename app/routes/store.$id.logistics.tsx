@@ -136,13 +136,13 @@ export default function Logistics() {
 
   return (
     <div className="space-y-5">
-      <Hero connected={mine.length} total={total} />
+      <Overview connected={mine.length} total={total} summary={d.summary} couriers={mine} />
 
       {justConnected && (
         <div className="panel flex flex-wrap items-center gap-4 border-emerald-200 bg-gradient-to-r from-emerald-50 to-sky-50 p-4">
           <CourierLogo c={justConnected} size={40} />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">{justConnected.name} connected. RTO Shield is unlocked 🛡️</p>
+            <p className="text-sm font-semibold">{justConnected.name} connected. RTO Shield is unlocked.</p>
             <p className="text-xs text-ink-soft">{justConnected.kind === "push" ? "Share the webhook link below with Shipnex." : `We pick up AWBs from your ${d.platform} orders and refresh them every hour.`}</p>
           </div>
           <Link to={`${storePath(d.storeId)}/rto-shield`} className="btn-primary text-sm">Set up RTO Shield →</Link>
@@ -156,18 +156,24 @@ export default function Logistics() {
         <section className="panel p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-[15px] font-semibold">Shipments · last 90 days</h2>
-              <p className="text-xs text-ink-soft">{total ? `${total} checkout orders tracked across ${mine.length} courier${mine.length === 1 ? "" : "s"}` : "Shipments show up once orders are fulfilled in Shopify with an AWB."}</p>
+              <h2 className="text-[15px] font-semibold text-ink">Shipment status · last 90 days</h2>
+              <p className="text-[13px] text-ink-soft">{total ? `${total} checkout orders tracked across ${mine.length} courier${mine.length === 1 ? "" : "s"}` : "Shipments show up once orders are fulfilled in Shopify with an AWB."}</p>
             </div>
             <Form method="post"><SubmitButton intent="sync" className="btn-secondary h-9 px-3 text-sm" busyText="Syncing"><Icon name="trend" className="h-4 w-4" />Sync now</SubmitButton></Form>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {TILES.map((t) => {
+          {/* Where every shipment stands: one bar, then the numbers */}
+          {total > 0 && (
+            <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-paper-sunk" role="img" aria-label="Shipments by status">
+              {TILES.map((t) => { const n = d.summary[t.s] ?? 0; return n ? <span key={t.s} className={t.dot} style={{ width: `${(n / total) * 100}%` }} title={`${SHIP_STATUS_LABELS[t.s]}: ${n}`} /> : null; })}
+            </div>
+          )}
+          <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-xl border border-rule sm:grid-cols-5">
+            {TILES.map((t, i) => {
               const n = d.summary[t.s] ?? 0;
               return (
-                <div key={t.s} className="rounded-xl border border-rule px-3 py-2.5">
-                  <p className="flex items-center gap-1.5 text-[11px] font-medium text-ink-soft"><span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />{SHIP_STATUS_LABELS[t.s]}</p>
-                  <p className="num mt-0.5 text-xl font-semibold">{n}{total > 0 && n > 0 && <span className="ml-1 text-[11px] font-normal text-ink-faint">{Math.round((n / total) * 100)}%</span>}</p>
+                <div key={t.s} className={`bg-white px-4 py-3 ${i > 0 ? "border-rule sm:border-l" : ""} ${i % 2 === 1 ? "border-l" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""}`}>
+                  <p className="flex items-center gap-2 text-[12.5px] font-medium text-ink-soft"><span className={`h-2 w-2 rounded-full ${t.dot}`} />{SHIP_STATUS_LABELS[t.s]}</p>
+                  <p className="mt-1 flex items-baseline gap-1.5"><span className="num text-[22px] font-semibold leading-none text-ink">{n.toLocaleString("en-IN")}</span>{total > 0 && <span className="num text-[12px] text-ink-faint">{Math.round((n / total) * 100)}%</span>}</p>
                 </div>
               );
             })}
@@ -208,25 +214,42 @@ export default function Logistics() {
   );
 }
 
-function Hero({ connected, total }: { connected: number; total: number }) {
-  const logos = COURIERS.filter((c) => c.logo);
+/** Top of the page: the numbers that matter, in plain dark text on white. */
+function Overview({ connected, total, summary, couriers }: { connected: number; total: number; summary: Partial<Record<ShipStatus, number>>; couriers: CourierInfo[] }) {
+  const delivered = summary.delivered ?? 0;
+  const rto = (summary.rto ?? 0) + (summary.rto_transit ?? 0) + (summary.returned ?? 0);
+  const done = delivered + rto;
+  const rate = (n: number) => (done ? `${Math.round((n / done) * 100)}%` : "–");
+  const cells: { label: string; value: string; sub: string; tone?: string }[] = [
+    { label: "Shipments", value: total.toLocaleString("en-IN"), sub: "last 90 days" },
+    { label: "Delivery rate", value: rate(delivered), sub: done ? `${delivered.toLocaleString("en-IN")} delivered` : "No results yet", tone: done ? "text-[#067647]" : "" },
+    { label: "RTO rate", value: rate(rto), sub: done ? `${rto.toLocaleString("en-IN")} returned or returning` : "No results yet", tone: done && rto / done > 0.2 ? "text-[#b42318]" : "" },
+    { label: "In transit", value: (summary.in_transit ?? 0).toLocaleString("en-IN"), sub: "on the way to customers" },
+  ];
   return (
-    <section className="panel relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-pine px-5 py-6 text-white sm:px-7">
-      <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl" />
-      <div className="relative flex flex-wrap items-center gap-6">
-        <div className="min-w-0 flex-1 basis-72">
-          <p className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200"><Icon name="shield" className="h-3 w-3" />Logistics · optional</p>
-          <h2 className="mt-3 text-lg font-semibold sm:text-xl">Your couriers, one RTO brain</h2>
-          <p className="mt-1 max-w-lg text-xs leading-relaxed text-white/70 sm:text-[13px]">Connect the couriers you already ship with. We track every AWB, learn which customers refuse deliveries, and RTO Shield stops their next risky COD order at checkout.</p>
-          <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
-            <span className="rounded-lg bg-white/10 px-2.5 py-1.5"><b className="num text-sm">{connected}</b> connected</span>
-            <span className="rounded-lg bg-white/10 px-2.5 py-1.5"><b className="num text-sm">{total}</b> shipments tracked</span>
-            <span className="rounded-lg bg-white/10 px-2.5 py-1.5"><b className="num text-sm">{COURIERS.length}</b> couriers supported</span>
+    <section className="panel overflow-hidden p-0">
+      <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-4">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eef4f1] text-pine"><Icon name="shipping" className="h-5 w-5" /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-semibold text-ink">Shipping overview</h2>
+          <p className="text-[13px] text-ink-soft">
+            {connected ? `${connected} courier${connected === 1 ? "" : "s"} connected. Every AWB is tracked and feeds RTO Shield.` : "Connect the couriers you ship with to track every AWB and turn on RTO Shield."}
+          </p>
+        </div>
+        {couriers.length > 0 && (
+          <div className="flex items-center -space-x-2" aria-label="Connected couriers">
+            {couriers.slice(0, 5).map((c) => <CourierLogo key={c.id} c={c} size={32} className="ring-2 ring-white" />)}
           </div>
-        </div>
-        <div className="flex -space-x-3" aria-hidden>
-          {logos.map((c, i) => <CourierLogo key={c.id} c={c} size={52} className="ring-2 ring-slate-800 transition hover:-translate-y-1" />)}
-        </div>
+        )}
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4">
+        {cells.map((c, i) => (
+          <div key={c.label} className={`px-5 py-4 ${i % 2 === 1 ? "border-l border-rule" : ""} ${i >= 2 ? "border-t border-rule lg:border-t-0" : ""} ${i === 2 ? "lg:border-l" : ""}`}>
+            <p className="text-[12.5px] font-medium text-ink-soft">{c.label}</p>
+            <p className={`num mt-1 text-[26px] font-semibold leading-none tracking-tight ${c.tone || "text-ink"}`}>{c.value}</p>
+            <p className="mt-1.5 text-[12px] text-ink-faint">{c.sub}</p>
+          </div>
+        ))}
       </div>
     </section>
   );

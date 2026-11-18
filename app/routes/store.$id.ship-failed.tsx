@@ -3,7 +3,7 @@
 // Filters: order date, states (untick the states you don't want to ship to) and the reason.
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useLocation, useNavigation, useSearchParams } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useLocation, useNavigation, useSearchParams, useSubmit } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
@@ -14,6 +14,7 @@ import { addDays, rangeLabel, resolveRange } from "~/lib/dates";
 import { formatINR } from "~/lib/pricing";
 import { INDIAN_STATES, stateCodeFromName, stateName } from "~/lib/states";
 import { codAmount } from "~/lib/store-fulfil.server";
+import { cancelOrders } from "~/lib/order-actions.server";
 
 const isPin = (e: string) => /non[-\s]?serviceable|not serviceable|doesn't deliver to pincode/i.test(e);
 const stateCode = (s: string) => { const t = (s ?? "").trim(); return t.length <= 3 ? t.toUpperCase() : stateCodeFromName(t) ?? t; };
@@ -64,9 +65,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const store = await requireStore(viewer, params.id);
   const fd = await request.formData();
   const ids = fd.getAll("id").map(String).filter(Boolean);
-  if (!ids.length) return json({ error: "Select at least one order.", results: [] }, { status: 400 });
+  if (!ids.length) return json({ error: "Select at least one order.", results: [] as { id: string; name: string; ok: boolean; message: string }[], removed: null }, { status: 400 });
+  if (fd.get("intent") === "remove") {
+    // Remove = cancel for good (never shipped, stock back). Only Cash on Delivery: paid orders need a refund from Orders.
+    const list = (await failedShipments(store.id)).filter((o) => ids.includes(o.id));
+    const cod = list.filter((o) => o.paymentMethod === "cod").map((o) => o.id);
+    const paid = list.length - cod.length;
+    const by = viewer.role === "admin" ? viewer.staff?.name ?? "Growpefy" : viewer.member?.name ?? viewer.name;
+    const r = cod.length ? await cancelOrders(store, cod, { refund: false, reason: "Removed from Failed shipping", by }) : { done: [] as string[], failed: [] as { name: string; error: string }[] };
+    return json({
+      error: !cod.length && paid ? "Paid orders can't be removed here. Cancel and refund them from Orders." : null,
+      results: [] as { id: string; name: string; ok: boolean; message: string }[], removed: { count: r.done.length, paid, failed: r.failed.map((f) => `${f.name}: ${f.error}`) },
+    });
+  }
   const r = await reshipOrders(store, ids);
-  return json(r, { status: r.error ? 400 : 200 });
+  return json({ ...r, removed: null }, { status: r.error ? 400 : 200 });
 }
 
 const date = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
@@ -78,6 +91,13 @@ export default function FailedShipping() {
   const nav = useNavigation();
   const [params] = useSearchParams();
   const busy = nav.state === "submitting";
+  const busyIntent = busy ? String(nav.formData?.get("intent") ?? "reship") : "";
+  const submit = useSubmit();
+  const [confirm, setConfirm] = useState<string[] | null>(null); // orders waiting for "Remove" to be confirmed
+  const run = (intent: "reship" | "remove", ids: string[]) => {
+    const fd = new FormData(); fd.set("intent", intent); ids.forEach((id) => fd.append("id", id));
+    submit(fd, { method: "post" });
+  };
   const [sel, setSel] = useState<Set<string>>(new Set());
   // Filters changed or orders got booked: keep only selections still on screen
   useEffect(() => setSel((s) => new Set([...s].filter((id) => d.orders.some((o) => o.id === id)))), [d.orders]);
@@ -121,6 +141,9 @@ export default function FailedShipping() {
       )}
 
       {a?.error && <Notice tone="error">{a.error}</Notice>}
+      {a?.removed && a.removed.count > 0 && <Notice tone="success"><b>{a.removed.count} order{a.removed.count === 1 ? "" : "s"} removed.</b> They're cancelled and won't be shipped.</Notice>}
+      {a?.removed && a.removed.paid > 0 && a.removed.count > 0 && <Notice tone="warning">{a.removed.paid} paid order{a.removed.paid === 1 ? " was" : "s were"} kept: cancel and refund paid orders from Orders.</Notice>}
+      {a?.removed && a.removed.failed.length > 0 && <Notice tone="warning">{a.removed.failed.join(" · ")}</Notice>}
       {ok.length > 0 && <Notice tone="success"><b>{ok.length} booked.</b> {ok.map((r) => `${r.name}: ${r.message}`).join(" · ")}</Notice>}
       {bad.length > 0 && <Notice tone="warning"><b>{bad.length} still failed.</b> {bad.map((r) => `${r.name}: ${r.message}`).join(" · ")}</Notice>}
 
@@ -131,15 +154,17 @@ export default function FailedShipping() {
           <p className="mt-1 text-sm text-ink-soft">{filtered ? "Change the date, states or reason to see more." : "Every order reached the courier."}</p>
         </section>
       ) : (
-        <Form method="post" className="panel overflow-hidden">
+        <div className="panel overflow-hidden">
           <div className={`flex min-h-[52px] flex-wrap items-center gap-3 border-b px-4 py-2 transition ${sel.size ? "border-[#cfe5da] bg-[#f1f8f4]" : "border-rule bg-surface"}`}>
             {sel.size ? (
               <>
                 <span className="text-sm font-semibold">{sel.size} selected</span>
                 <span className="num text-xs text-ink-soft">{formatINR(selValue)}</span>
-                {[...sel].map((id) => <input key={id} type="hidden" name="id" value={id} />)}
-                <button type="submit" disabled={busy} className="btn-primary ml-auto h-9">
-                  {busy ? <><Spinner /> Reshipping…</> : <><Icon name="refresh" className="h-4 w-4" /> Reship {sel.size}</>}
+                <button type="button" disabled={busy} onClick={() => run("reship", [...sel])} className="btn-primary ml-auto h-9">
+                  {busyIntent === "reship" ? <><Spinner /> Reshipping…</> : <><Icon name="refresh" className="h-4 w-4" /> Reship {sel.size}</>}
+                </button>
+                <button type="button" disabled={busy} onClick={() => setConfirm([...sel])} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#f3c7c2] bg-white px-3 text-[13px] font-semibold text-[#b42318] hover:bg-[#fff5f4] disabled:opacity-50">
+                  {busyIntent === "remove" ? <><Spinner /> Removing…</> : <><Icon name="trash" className="h-4 w-4" /> Remove {sel.size}</>}
                 </button>
                 <button type="button" onClick={() => setSel(new Set())} className="btn-secondary h-9">Clear</button>
               </>
@@ -164,7 +189,8 @@ export default function FailedShipping() {
                   <th className="px-3 py-2.5 font-semibold">Customer</th>
                   <th className="px-3 py-2.5 font-semibold">Ship to</th>
                   <th className="px-3 py-2.5 text-right font-semibold">Amount</th>
-                  <th className="px-3 py-2.5 pr-4 font-semibold">Reason</th>
+                  <th className="px-3 py-2.5 font-semibold">Reason</th>
+                  <th className="px-3 py-2.5 pr-4 text-right font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-rule">
@@ -205,14 +231,69 @@ export default function FailedShipping() {
                         <p className="mt-1 line-clamp-2 text-xs text-ink-soft" title={o.error}>{o.error}</p>
                         {o.tried && <p className="mt-0.5 text-[11px] text-ink-faint">Last tried {date(o.tried)}, {time(o.tried)}</p>}
                       </td>
+                      <td className="whitespace-nowrap px-3 py-3 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex gap-1.5">
+                          <button type="button" disabled={busy} onClick={() => run("reship", [o.id])} className="inline-flex h-8 items-center gap-1 rounded-lg border border-rule-strong bg-white px-2.5 text-[12.5px] font-semibold hover:bg-paper disabled:opacity-50">
+                            <Icon name="refresh" className="h-3.5 w-3.5" />Reship
+                          </button>
+                          <button type="button" disabled={busy} onClick={() => setConfirm([o.id])} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#f3c7c2] bg-white px-2.5 text-[12.5px] font-semibold text-[#b42318] hover:bg-[#fff5f4] disabled:opacity-50">
+                            <Icon name="trash" className="h-3.5 w-3.5" />Remove
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </Form>
+        </div>
       )}
+
+      {confirm && (
+        <RemoveDialog
+          orders={d.orders.filter((o) => confirm.includes(o.id))}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => { run("remove", confirm); setConfirm(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** "Are you sure?" before removing failed orders for good. */
+function RemoveDialog({ orders, onCancel, onConfirm }: { orders: { id: string; name: string; customer: string; method: string }[]; onCancel: () => void; onConfirm: () => void }) {
+  const n = orders.length;
+  const paid = orders.filter((o) => o.method !== "cod").length;
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onCancel]);
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-4" onClick={onCancel}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="rm-title" className="w-full max-w-md rounded-t-2xl bg-surface p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fdeceb] text-[#b42318]"><Icon name="trash" className="h-5 w-5" /></span>
+          <div className="min-w-0">
+            <h2 id="rm-title" className="text-[16px] font-semibold">Remove {n === 1 ? orders[0]?.name ?? "this order" : `${n} orders`}?</h2>
+            <p className="mt-1 text-[13px] text-ink-soft">
+              {n === 1 ? `${orders[0]?.customer || "This customer"}'s order` : "These orders"} will be cancelled and taken off Failed shipping.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-[#f3c7c2] bg-[#fff5f4] px-3.5 py-3 text-[13px] text-[#8e1f0b]">
+          <p className="font-semibold">This can't be undone.</p>
+          <p className="mt-0.5">You won't be able to ship {n === 1 ? "this order" : "these orders"} again. {n === 1 ? "It" : "They"} will be removed permanently.</p>
+          {paid > 0 && <p className="mt-1.5 text-[12.5px]">{paid} paid order{paid === 1 ? "" : "s"} will be kept: cancel and refund paid orders from Orders.</p>}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" autoFocus onClick={onCancel} className="btn-secondary h-10 px-4">Keep {n === 1 ? "order" : "orders"}</button>
+          <button type="button" onClick={onConfirm} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#c5280c] px-4 text-[13.5px] font-semibold text-white hover:bg-[#a8220a]">
+            <Icon name="trash" className="h-4 w-4" />Remove {n === 1 ? "order" : `${n} orders`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -271,7 +352,7 @@ function StateFilter({ excluded, perState }: { excluded: string[]; perState: Rec
         <Icon name="chevron" className={`h-3.5 w-3.5 text-ink-faint transition ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <Form method="get" preventScrollReset className="absolute left-0 z-40 mt-1.5 w-[300px] animate-fadein rounded-xl border border-rule bg-surface shadow-lift" role="dialog" aria-label="States">
+        <Form method="get" preventScrollReset className="fixed inset-x-3 bottom-3 z-50 max-h-[80vh] overflow-y-auto animate-fadein rounded-2xl border border-rule bg-surface shadow-lift sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:z-40 sm:mt-1.5 sm:max-h-none sm:w-[300px] sm:overflow-visible sm:rounded-xl" role="dialog" aria-label="States">
           {keep.map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
           {off.size > 0 && <input type="hidden" name="xs" value={[...off].join(",")} />}
           <div className="border-b border-rule p-2">
