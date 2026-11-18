@@ -78,7 +78,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const count = ids.length ? await skipOrders(store.id, me, by, ids) : 0;
     return json({ ok: count ? `You skipped ${count} order${count === 1 ? "" : "s"}. Please complete them.` : "Moved to the next order.", error: null });
   }
-  if (intent === "dial" || (intent === "call-info" && manager)) {
+  if (intent === "dial" || intent === "copy-number" || (intent === "call-info" && manager)) {
     try {
       if (intent === "call-info") {
         const info = await providerCallInfo(store.id, Number(fd.get("eventId")));
@@ -86,8 +86,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
       const order = await mine();
       if (!order) return json({ ok: null, error: "Order not found." }, { status: 404 });
-      const call = await startOrderCall(store.id, order.id, order.customer.phone, me, by, callerProvider(store.id));
-      return json({ ok: call.dial ? "Opening dialler." : "Call sent to the provider.", error: null, ...call });
+      const phone = order.customer.phone;
+      if (!/^\d{10}$/.test(phone)) return json({ ok: null, error: "No valid customer number." }, { status: 400 });
+      if (intent === "copy-number") return json({ ok: null, error: null, phone });
+      const provider = callerProvider(store.id);
+      if (!provider) return json({ ok: null, error: "Use Copy number to call manually." }, { status: 400 });
+      const call = await startOrderCall(store.id, order.id, phone, me, by, provider);
+      return json({ ok: "Call sent to the provider.", error: null, ...call });
     } catch (error) {
       return json({ ok: null, error: error instanceof Error ? error.message : "Could not load call data." }, { status: 400 });
     }
@@ -132,7 +137,7 @@ function tomorrow10() {
 
 type D = ReturnType<typeof useLoaderData<typeof loader>>;
 type O = D["board"]["orders"][number];
-type Res = { ok: string | null; error: string | null; phone?: string; dial?: boolean;
+type Res = { ok: string | null; error: string | null; phone?: string;
   info?: { status: string; seconds: number | null; recording: string | null } };
 
 const ago = (iso: string) => {
@@ -483,11 +488,41 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
   };
   const dial = useFetcher<Res>();
   const phone = dial.data?.phone;
-  const consumed = useRef<Res>();
+  const copyPending = useRef<((value: string | null) => void) | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState("");
+  const copyText = (value: string) => {
+    void navigator.clipboard.writeText(value).then(
+      () => setCopyFeedback("Number copied"),
+      () => setCopyFeedback("Couldn’t copy. Select the number to copy it."),
+    );
+  };
+  const copyNumber = () => {
+    setCopyFeedback("");
+    if (phone && typeof navigator.clipboard?.writeText === "function") { copyText(`+91${phone}`); return; }
+    if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard?.write === "function") {
+      // Start the clipboard write during the tap, then supply the authorized number from the server.
+      const text = new Promise<Blob>((resolve, reject) => {
+        copyPending.current = (value) => value
+          ? resolve(new Blob([value], { type: "text/plain" }))
+          : reject(new Error("Customer number unavailable"));
+      });
+      void navigator.clipboard.write([new ClipboardItem({ "text/plain": text })]).then(
+        () => setCopyFeedback("Number copied"),
+        () => setCopyFeedback("Couldn’t copy. Try Copy number again or select the number."),
+      );
+    } else {
+      copyPending.current = (value) => {
+        if (value && typeof navigator.clipboard?.writeText === "function") copyText(value);
+        else if (value) setCopyFeedback("Select the number to copy it.");
+      };
+    }
+    dial.submit({ intent: "copy-number", orderId: o.id }, { method: "post" });
+  };
   useEffect(() => {
-    if (dial.state !== "idle" || !dial.data || consumed.current === dial.data) return;
-    consumed.current = dial.data;
-    if (dial.data.dial && dial.data.phone) window.location.href = `tel:+91${dial.data.phone}`;
+    if (dial.state !== "idle" || !dial.data || !copyPending.current) return;
+    const finish = copyPending.current;
+    copyPending.current = null;
+    finish(dial.data.phone ? `+91${dial.data.phone}` : null);
   }, [dial.state, dial.data]);
   const items = o.items.map((l) => `${l.title}${l.variant ? ` (${l.variant})` : ""} ×${l.qty}`).join(", ");
   const due = o.call === "follow_up" && o.followUpAt;
@@ -520,9 +555,10 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold leading-tight tracking-tight">{c.firstName} {c.lastName}</p>
-            {phone && <a href={`tel:+91${phone}`} className="num mt-0.5 block text-[13px] text-ink-soft">+91 {phone}</a>}
+            {phone && <p className="num mt-0.5 select-all text-[13px] text-ink-soft">+91 {phone}</p>}
+            {copyFeedback && <p role="status" className="mt-1 text-xs text-ink-soft">{copyFeedback}</p>}
           </div>
-          <button type="button" disabled={dial.state !== "idle"} onClick={() => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" })} className="flex h-10 items-center gap-2 rounded-lg bg-pine px-3.5 text-sm font-semibold text-white disabled:opacity-60"><Icon name="phone" className="h-4 w-4" />{dial.state !== "idle" ? "Starting…" : d.providerLabel ? `Call via ${d.providerLabel}` : "Call"}</button>
+          <button type="button" disabled={dial.state !== "idle"} onClick={d.providerLabel ? () => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" }) : copyNumber} className="flex h-10 items-center gap-2 rounded-lg bg-pine px-3.5 text-sm font-semibold text-white disabled:opacity-60">{d.providerLabel && <Icon name="phone" className="h-4 w-4" />}{dial.state !== "idle" ? (d.providerLabel ? "Starting…" : "Copying…") : d.providerLabel ? `Call via ${d.providerLabel}` : "Copy number"}</button>
           {phone && <a href={`https://wa.me/91${phone}`} target="_blank" rel="noreferrer" aria-label="WhatsApp"><Icon name="chat" className="h-5 w-5" /></a>}
           {dial.data?.error && <p role="alert" className="text-xs text-red-700">{dial.data.error}</p>}
         </div>

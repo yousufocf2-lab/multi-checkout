@@ -49,17 +49,13 @@ export async function callActivity(storeId: number, memberId: number | null, sin
   return { warnings: 0, ...counts[0], skips, calls, daily };
 }
 
-export async function startOrderCall(storeId: number, orderId: string, phone: string, memberId: number | null, actor: string, provider: CallerProvider | null) {
+export async function startOrderCall(storeId: number, orderId: string, phone: string, memberId: number | null, actor: string, provider: CallerProvider) {
   if (!/^\d{10}$/.test(phone)) throw new Error("No valid customer number.");
-  if (!provider) {
-    await db.insert(orderCallEvents).values({ storeId, orderId, memberId, actor, kind: "manual" });
-    return { phone, dial: true };
-  }
   const [event] = await db.insert(orderCallEvents).values({ storeId, orderId, memberId, actor, kind: "provider", provider: provider.id })
     .returning({ id: orderCallEvents.id });
   const ref = await provider.start(phone, memberId);
   await db.update(orderCallEvents).set({ providerRef: ref }).where(eq(orderCallEvents.id, event.id));
-  return { phone, dial: false };
+  return { phone };
 }
 
 export async function providerCallInfo(storeId: number, eventId: number) {
