@@ -14,7 +14,7 @@ import { CALL_TABS, callBoard, callersFor, reassign, recordCall, teammateOrders,
 import { resolveRange } from "~/lib/dates";
 import { RangePicker } from "~/components/Overview";
 import { readAddress, updateOrderAddress, updateOrderNotes } from "~/lib/order-edit.server";
-import { callActivity, providerCallInfo, skipOrders, startOrderCall } from "~/lib/order-call-events.server";
+import { attemptCounts, callActivity, providerCallInfo, recordAttempt, skipOrders, startOrderCall } from "~/lib/order-call-events.server";
 import { callerProvider } from "~/lib/calling-providers.server";
 import { CANCEL_REASONS } from "~/lib/order-actions.server";
 import { shipRuleOf } from "~/lib/ship-rule";
@@ -44,12 +44,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until, query, tab === "team" ? 1 : Number(sp.get("page") ?? 1));
   const showSkips = manager && sp.get("activity") === "skips";
   const activity = await callActivity(store.id, manager ? null : me, range.since, range.until, showSkips, board.orders.map((o) => o.id));
+  const attempts = await attemptCounts(store.id, board.orders.map((o) => o.id));
   const providerLabel = providerFor(store.id)?.label ?? null;
   const member = Number(sp.get("member")) || null;
   const rule = shipRuleOf(store);
   return json({
-    base: storePath(store.id), tab, me, manager, rule, range, query, activity, showSkips, providerLabel,
-    board: tab === "team" ? { ...board, orders: [] } : board,
+    base: storePath(store.id), tab, me, manager, rule, range, query, activity: manager ? activity : { ...activity, warnings: 0 }, showSkips, providerLabel,
+    board: tab === "team" ? { ...board, orders: [] } : { ...board, orders: board.orders.map((o) => ({ ...o, attempts: attempts[o.id] ?? 0 })) },
     teammate: manager && tab === "team" && member && board.team.some((t) => t.id === member)
       ? { id: member, orders: await teammateOrders(store, member, me != null && member !== me) } : null,
     reasons: [...CANCEL_REASONS].filter((r) => r !== "Duplicate order"),
@@ -76,7 +77,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (intent === "skip" && me !== null) {
     const ids = [...new Set(fd.getAll("skipId").map(String))].slice(0, 300);
     const count = ids.length ? await skipOrders(store.id, me, by, ids) : 0;
-    return json({ ok: count ? `You skipped ${count} order${count === 1 ? "" : "s"}. Please complete them.` : "Moved to the next order.", error: null });
+    void count; // recorded for the owner only; the caller just moves on
+    return json({ ok: null, error: null });
   }
   if (intent === "dial" || intent === "copy-number" || (intent === "call-info" && manager)) {
     try {
@@ -88,7 +90,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (!order) return json({ ok: null, error: "Order not found." }, { status: 404 });
       const phone = order.customer.phone;
       if (!/^\d{10}$/.test(phone)) return json({ ok: null, error: "No valid customer number." }, { status: 400 });
-      if (intent === "copy-number") return json({ ok: null, error: null, phone });
+      if (intent === "copy-number") {
+        await recordAttempt(store.id, order.id, me, by); // every copy of the number is one call attempt
+        return json({ ok: null, error: null, phone });
+      }
       const provider = callerProvider(store.id);
       if (!provider) return json({ ok: null, error: "Use Copy number to call manually." }, { status: 400 });
       const call = await startOrderCall(store.id, order.id, phone, me, by, provider);
@@ -188,8 +193,8 @@ export default function Calls() {
     if (skip.state !== "idle" || !pendingJump.current || !skip.data) return;
     const next = pendingJump.current;
     pendingJump.current = null;
-    setToast(skip.data);
-    if (skip.data.ok) { lastOrder.current = { id: next, queue }; setOpenId(next); }
+    if (skip.data.error) { setToast(skip.data); return; }
+    lastOrder.current = { id: next, queue }; setOpenId(next);
   }, [skip.state, skip.data, queue]);
   const openFromList = (id: string, current = openId ?? (lastOrder.current?.queue === queue ? lastOrder.current.id : null)) => {
     const list = d.board.orders;
@@ -217,23 +222,18 @@ export default function Calls() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 pb-8">
       <style>{CSS}</style>
-      {!d.manager && d.activity.warnings > 0 && <p role="alert" className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
-        <span aria-hidden="true" className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-red-100">!</span>
-        You skipped {d.activity.warnings} order{d.activity.warnings === 1 ? "" : "s"}. Please complete them.
-      </p>}
-      {d.manager && <section aria-label="Queue overview" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <QueueMetric label="To call" value={c.to_call} />
-        <QueueMetric label="Follow-up" value={c.follow_up} />
+      {/* Owner / managers only: the calling team never sees these */}
+      {d.manager && <section aria-label="Calling activity" className="grid grid-cols-2 gap-3">
+        <QueueMetric label="Call attempts" value={d.activity.attempts} note="Each copy of a customer's number counts as one attempt" />
         <Link to={`?${alerts}`} className="group rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-pine" aria-expanded={d.showSkips}>
-          <QueueMetric label="Skipped orders" value={d.activity.skipped} note={`${d.activity.unresolved} unresolved · ${d.showSkips ? "Hide details" : "View details"}`} alert={d.activity.unresolved > 0} />
+          <QueueMetric label="Skipped orders" value={d.activity.unresolved} note={`Moved past without confirming, follow-up or cancelling · ${d.showSkips ? "Hide list" : "See who skipped"}`} alert={d.activity.unresolved > 0} />
         </Link>
-        <QueueMetric label="Manual dial requests" value={d.activity.daily.filter((point) => point != null).reduce((n, row) => n + (row.kind === "manual" ? row.count : 0), 0)} note={d.providerLabel ? `Provider: ${d.providerLabel}` : "Manual calling"} />
       </section>}
       {d.manager && d.activity.daily.length > 0 && <details className="panel rounded-xl p-4">
         <summary className="cursor-pointer text-sm font-semibold">Daily team activity</summary>
         <div className="mt-3 max-h-64 space-y-2 overflow-auto">
           {d.activity.daily.filter((point) => point != null).map((row) => <div key={JSON.stringify([row.day, row.actor, row.kind])} className="grid grid-cols-[minmax(0,1fr)_5rem_2rem] items-center gap-3 text-xs">
-            <span>{row.day} · {row.actor} · {row.kind === "skip" ? "Skipped" : row.kind === "manual" ? "Manual dial" : "Provider request"}</span>
+            <span>{row.day} · {row.actor} · {row.kind === "skip" ? "Skipped" : row.kind === "manual" ? "Call attempts (number copied)" : "Provider calls"}</span>
             <meter className="w-full" min={0} max={Math.max(1, ...d.activity.daily.map((point) => point?.count ?? 0))} value={row.count} aria-label="Activity count" />
             <span className="text-right">{row.count}</span>
           </div>)}
@@ -241,6 +241,7 @@ export default function Calls() {
       </details>}
       {d.showSkips && <section className="panel max-h-[32rem] overflow-auto rounded-xl p-5">
         <h2 className="font-semibold">Skipped orders by employee</h2>
+        <p className="mt-1 text-xs text-ink-soft">Open = still not confirmed, followed up or cancelled. When the caller acts on it later it turns Resolved and leaves the count.</p>
         {!d.activity.skips.length && <p className="mt-2 text-sm">No skipped orders in this range.</p>}
         {d.activity.skips.filter((entry) => entry != null).map((entry) => <details key={entry.id} className="border-b border-rule py-2 text-sm">
           <summary className="cursor-pointer">{entry.name ?? `#${entry.orderId.slice(-6).toUpperCase()}`} · {entry.actor} · {at(entry.at)} · {entry.resolvedAt ? "Resolved" : "Open"}</summary>
@@ -328,7 +329,7 @@ const TAB_STYLE: Record<string, [string, string]> = {
 };
 /** Why an order is in its tab when it wasn't the call that put it there. */
 function via(o: O) {
-  if (o.tab === "cancelled" && o.call !== "cancelled") return o.wa === "cancelled" ? "on WhatsApp" : o.status === "cancelled" ? "by the store" : "";
+  if (o.tab === "cancelled" && o.call !== "cancelled") return o.status === "cancelled" ? "by the store" : "";
   return o.callBy ? `by ${o.callBy}` : "";
 }
 
@@ -370,6 +371,11 @@ function CallList({ d, onOpen }: { d: D; onOpen: (id: string) => void }) {
             <span className="col-span-2 flex min-w-0 items-center gap-2 pl-12 md:col-span-1 md:block md:pl-0">
               <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${status[1]}`}>{o.shipped ? "Shipped" : status[0]}</span>
               {meta && <span className="block truncate text-xs text-ink-soft md:mt-1">{meta}</span>}
+              <span className="flex flex-wrap gap-x-2 text-[11px] md:mt-0.5">
+                <span className={o.attempts ? "font-medium text-ink" : "text-ink-faint"}>{o.attempts ? `${o.attempts} attempt${o.attempts === 1 ? "" : "s"}` : "Not tried"}</span>
+                {o.wa === "confirmed" && <span className="font-medium text-[#1f6f4a]">WA confirmed</span>}
+                {o.wa === "cancelled" && <span className="font-medium text-[#b42318]">WA cancelled</span>}
+              </span>
             </span>
             {d.manager && <span className="col-span-2 truncate pl-12 text-xs text-ink-soft md:col-span-1 md:pl-0 md:text-sm">{o.assignee ?? "Unassigned"}</span>}
             <Icon name="chevron" className="ml-auto hidden h-4 w-4 shrink-0 -rotate-90 text-ink-faint group-hover:text-pine md:block" />
@@ -444,9 +450,12 @@ function Sheet({ d, startId, onClose, onDone, onSkip }: { d: D; startId: string;
         </div>
         <div className="flex-1 touch-pan-y overflow-y-auto overflow-x-hidden p-4 sm:p-5" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
           <ul key={o.id} className={dir > 0 ? "cl-next" : "cl-prev"} style={dx ? { transform: `translateX(${dx}px) rotate(${dx / 60}deg)`, transition: "none" } : { transition: "transform .2s ease-out" }}>
-            <OrderCall o={o} d={d} onDone={(r, outcome) => { if (r.ok && outcome) advanceFrom.current = o.id; onDone(r); }} onNext={i < list.length - 1 ? () => go(1) : undefined} />
+            <OrderCall o={o} d={d} onDone={(r, outcome) => {
+              // Confirmed / Follow-up / Cancelled: straight to the next order (not counted as a skip)
+              if (r.ok && outcome) { if (i < list.length - 1) { setDir(1); setCurId(list[i + 1].id); } else advanceFrom.current = o.id; }
+              onDone(r);
+            }} onNext={i < list.length - 1 ? () => go(1) : undefined} />
           </ul>
-          {!d.manager && i < list.length - 1 && <button type="button" onClick={() => go(1)} className="btn-secondary mt-3 w-full">Skip &amp; next</button>}
           <p className="mt-2 text-center text-[11.5px] text-ink-faint sm:hidden">Swipe left for the next order</p>
         </div>
       </aside>
@@ -458,7 +467,7 @@ function CallRecord({ entry }: { entry: NonNullable<D["activity"]["calls"][numbe
   const info = useFetcher<Res>();
   const data = info.data?.info;
   return <li className="border-t border-rule py-2 text-xs">
-    {at(entry.at)} · {entry.actor} · {entry.kind === "manual" ? "Manual dial request" : entry.linked ? "Provider request" : "No provider reference"}
+    {at(entry.at)} · {entry.actor} · {entry.kind === "manual" ? "Copied the number (call attempt)" : entry.linked ? "Provider request" : "No provider reference"}
     {entry.linked && <button type="button" className="ml-2 underline" disabled={info.state !== "idle"}
       onClick={() => info.submit({ intent: "call-info", eventId: String(entry.id) }, { method: "post" })}>Load call details</button>}
     {data && <p>{data.status}{data.seconds != null ? ` · ${Math.floor(data.seconds / 60)}m ${data.seconds % 60}s talk time` : ""}
@@ -498,7 +507,11 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
   };
   const copyNumber = () => {
     setCopyFeedback("");
-    if (phone && typeof navigator.clipboard?.writeText === "function") { copyText(`+91${phone}`); return; }
+    if (phone && typeof navigator.clipboard?.writeText === "function") {
+      copyText(`+91${phone}`);
+      dial.submit({ intent: "copy-number", orderId: o.id }, { method: "post" }); // still counts as another attempt
+      return;
+    }
     if (typeof ClipboardItem !== "undefined" && typeof navigator.clipboard?.write === "function") {
       // Start the clipboard write during the tap, then supply the authorized number from the server.
       const text = new Promise<Blob>((resolve, reject) => {
@@ -539,7 +552,7 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
         <span className={`rounded-md px-1.5 py-px font-semibold ${o.method === "prepaid" ? "bg-[#e9eef5] text-[#1c5cab]" : o.method === "partial" ? "bg-violet-50 text-violet-700" : "bg-[#fff1e3] text-[#8a4b00]"}`}>
           {o.method === "prepaid" ? `Paid ${inr(o.total)}` : `${o.method === "partial" ? "Partial COD · " : "COD · "}collect ${inr(o.toCollect)}`}
         </span>
-        {o.wa && <span title={o.wa === "confirmed" ? "The customer confirmed on WhatsApp. Still call to confirm." : undefined} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium ${o.wa === "confirmed" ? "bg-[#e3f1ea] text-[#1f6f4a]" : o.wa === "cancelled" ? "bg-[#fdeceb] text-[#b42318]" : "bg-black/[.05] text-ink-soft"}`}>{o.wa === "confirmed" && <svg viewBox="0 0 18 12" className="h-2.5 w-[15px]" fill="none" stroke="#1d9bf0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 6.5 4 9.5 10.5 2.5M7.5 9.5 14 2.5"/></svg>}WhatsApp: {o.wa === "sent" ? "no reply" : o.wa}</span>}
+        {o.wa && <span title={o.wa === "confirmed" ? "The customer confirmed on WhatsApp. Still call to confirm." : o.wa === "cancelled" ? "The customer cancelled on WhatsApp. Call to check: if they still want it, mark Confirmed." : undefined} className={`inline-flex items-center gap-1 rounded-md px-1.5 py-px font-medium ${o.wa === "confirmed" ? "bg-[#e3f1ea] text-[#1f6f4a]" : o.wa === "cancelled" ? "bg-[#fdeceb] text-[#b42318]" : "bg-black/[.05] text-ink-soft"}`}>{o.wa === "confirmed" && <svg viewBox="0 0 18 12" className="h-2.5 w-[15px]" fill="none" stroke="#1d9bf0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 6.5 4 9.5 10.5 2.5M7.5 9.5 14 2.5"/></svg>}{o.wa === "sent" ? "WhatsApp: no reply yet" : o.wa === "confirmed" ? "Customer confirmed on WhatsApp" : o.wa === "cancelled" ? "Customer cancelled on WhatsApp" : `WhatsApp: ${o.wa}`}</span>}
         {o.shipped && <span className="rounded-md bg-[#e9eef5] px-1.5 py-px font-medium text-[#1c5cab]">Shipped · {o.shipped.awb}</span>}
         {due && <span className="font-medium text-[#5b6cf0]">· call at {at(o.followUpAt!)}</span>}
         {o.call === "confirmed" && <span className="ml-auto rounded-md bg-[#e3f1ea] px-1.5 py-px font-semibold text-[#1f6f4a]">Confirmed</span>}
@@ -555,10 +568,10 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold leading-tight tracking-tight">{c.firstName} {c.lastName}</p>
-            {phone && <p className="num mt-0.5 select-all text-[13px] text-ink-soft">+91 {phone}</p>}
             {copyFeedback && <p role="status" className="mt-1 text-xs text-ink-soft">{copyFeedback}</p>}
+            <p className="mt-0.5 text-[12px] text-ink-faint">{o.attempts ? `${o.attempts} call attempt${o.attempts === 1 ? "" : "s"}` : "Not called yet"}</p>
           </div>
-          <button type="button" disabled={dial.state !== "idle"} onClick={d.providerLabel ? () => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" }) : copyNumber} className="flex h-10 items-center gap-2 rounded-lg bg-pine px-3.5 text-sm font-semibold text-white disabled:opacity-60">{d.providerLabel && <Icon name="phone" className="h-4 w-4" />}{dial.state !== "idle" ? (d.providerLabel ? "Starting…" : "Copying…") : d.providerLabel ? `Call via ${d.providerLabel}` : "Copy number"}</button>
+          <button type="button" disabled={dial.state !== "idle" && !phone} onClick={d.providerLabel ? () => dial.submit({ intent: "dial", orderId: o.id }, { method: "post" }) : copyNumber} className="flex h-10 items-center gap-2 rounded-lg bg-pine px-3.5 text-sm font-semibold text-white disabled:opacity-60">{d.providerLabel && <Icon name="phone" className="h-4 w-4" />}{dial.state !== "idle" && !phone ? (d.providerLabel ? "Starting…" : "Copying…") : d.providerLabel ? `Call via ${d.providerLabel}` : "Copy number"}</button>
           {phone && <a href={`https://wa.me/91${phone}`} target="_blank" rel="noreferrer" aria-label="WhatsApp"><Icon name="chat" className="h-5 w-5" /></a>}
           {dial.data?.error && <p role="alert" className="text-xs text-red-700">{dial.data.error}</p>}
         </div>
@@ -614,9 +627,6 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
           <button type="button" disabled={busy} onClick={() => setPanel(panel === "cancel" ? null : "cancel")} aria-expanded={panel === "cancel"} className={`flex h-10 items-center justify-center gap-1 rounded-xl text-[13px] font-semibold ${panel === "cancel" ? "bg-[#c5280c] text-white" : "bg-white text-[#b42318] shadow-[inset_0_0_0_1px_#f3c7c2]"}`}><Icon name="close" className="h-4 w-4" />Cancel</button>
           <button type="button" onClick={() => setPanel(panel === "notes" ? null : "notes")} aria-label="Notes" className={`flex h-10 w-10 items-center justify-center rounded-xl ${panel === "notes" ? "bg-ink text-white" : "bg-white text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3]"}`}><Icon name="book" className="h-4 w-4" /></button>
         </div>
-      )}
-      {onNext && (
-        <button type="button" onClick={onNext} className="flex w-full items-center justify-center gap-1 border-t border-rule py-2 text-[12.5px] font-medium text-ink-soft hover:bg-black/[.02]">Skip for now<Icon name="chevron" className="h-3.5 w-3.5 -rotate-90" /></button>
       )}
     </li>
   );

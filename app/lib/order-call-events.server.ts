@@ -9,7 +9,6 @@ export async function skipOrders(storeId: number, memberId: number, actor: strin
     const eligible = await tx.select({ id: orders.id }).from(orders).where(and(
       eq(orders.storeId, storeId), eq(orders.assignedTo, memberId), inArray(orders.id, ids),
       inArray(orders.status, ["paid", "cod_placed"]), pending, isNull(orders.awb), isNull(orders.courierRef),
-      sql`${orders.confirmStatus} is distinct from 'cancelled'`,
     )).orderBy(orders.id).for("update");
     if (!eligible.length) return 0;
     const inserted = await tx.insert(orderCallEvents).values(eligible.map(({ id }) => ({
@@ -26,13 +25,14 @@ export async function callActivity(storeId: number, memberId: number | null, sin
   if (memberId !== null) {
     const [count] = await db.select({ n: sql<number>`count(*)::int` }).from(orderCallEvents)
       .where(and(scope, skip, unresolved, eq(orderCallEvents.memberId, memberId)));
-    return { warnings: count.n, skipped: 0, unresolved: 0, skips: [], calls: [], daily: [] };
+    return { warnings: count.n, skipped: 0, unresolved: 0, attempts: 0, skips: [], calls: [], daily: [] };
   }
   const range = and(gte(orderCallEvents.createdAt, new Date(`${since}T00:00:00+05:30`)),
     lt(orderCallEvents.createdAt, new Date(new Date(`${until}T00:00:00+05:30`).getTime() + 86400000)));
   const [counts, skips, calls, daily] = await Promise.all([
-    db.select({ skipped: sql<number>`count(*)::int`, unresolved: sql<number>`count(*) filter (where ${unresolved})::int` })
-      .from(orderCallEvents).where(and(scope, skip, range)),
+    db.select({ skipped: sql<number>`count(*) filter (where ${skip})::int`, unresolved: sql<number>`count(*) filter (where ${skip} and ${unresolved})::int`,
+      attempts: sql<number>`count(*) filter (where ${orderCallEvents.kind} in ('manual', 'provider'))::int` })
+      .from(orderCallEvents).where(and(scope, range)),
     showSkips ? db.select({ id: orderCallEvents.id, orderId: orders.id, name: orders.shopifyOrderName, customer: orders.customer,
       items: orders.items, total: orders.total, status: orders.status, actor: orderCallEvents.actor,
       at: orderCallEvents.createdAt, resolvedAt: orderCallEvents.resolvedAt,
@@ -70,4 +70,18 @@ export async function providerCallInfo(storeId: number, eventId: number) {
     ));
   }
   return { status: info.status, seconds: info.seconds, recording: info.recording };
+}
+
+/** A call attempt: the caller copied the customer's number (to dial it on the office phone). Every copy counts. */
+export async function recordAttempt(storeId: number, orderId: string, memberId: number | null, actor: string) {
+  await db.insert(orderCallEvents).values({ storeId, orderId, memberId, actor, kind: "manual" });
+}
+
+/** Call attempts per order (copies of the number and provider calls). */
+export async function attemptCounts(storeId: number, orderIds: string[]) {
+  if (!orderIds.length) return {} as Record<string, number>;
+  const rows = await db.select({ orderId: orderCallEvents.orderId, n: sql<number>`count(*)::int` }).from(orderCallEvents)
+    .where(and(eq(orderCallEvents.storeId, storeId), inArray(orderCallEvents.orderId, orderIds), inArray(orderCallEvents.kind, ["manual", "provider"])))
+    .groupBy(orderCallEvents.orderId);
+  return Object.fromEntries(rows.map((r) => [r.orderId, r.n])) as Record<string, number>;
 }

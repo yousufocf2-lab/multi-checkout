@@ -25,7 +25,8 @@ export function cleanShipRule(v: Partial<ShipRule>): ShipRule {
 
 /** Is this order cleared to ship by the rule (ignoring the 10-minute wait)? */
 export function ruleAllows(rule: ShipRule, o: Pick<Order, "paymentMethod" | "confirmStatus" | "callStatus">) {
-  if (o.confirmStatus === "cancelled" || o.callStatus === "cancelled") return false; // cancelled on WhatsApp or on a call: never
+  if (o.callStatus === "cancelled") return false; // cancelled on a call: never
+  if (o.confirmStatus === "cancelled" && o.callStatus !== "confirmed") return false; // cancelled on WhatsApp, unless the team confirmed it on a call later
   if (rule.mode === "off") return false;
   if (rule.mode === "all") return true;
   if (o.paymentMethod === "prepaid" && rule.prepaidNow) return true;

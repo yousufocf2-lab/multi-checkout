@@ -92,7 +92,7 @@ export async function runAutoShip() {
     if (!store || shipRuleOf(store).mode === "off") continue; // the store ships by hand from the Orders page
     const list = await db.select().from(orders).where(and(
       eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), like(orders.shopifyOrderId, "gp:%"), isNull(orders.awb), isNull(orders.courierRef),
-      or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
+      or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled"), eq(orders.callStatus, "confirmed")),
       or(isNull(orders.shipBookAt), lt(orders.shipBookAt, new Date(Date.now() - RETRY_MS))),
     )).limit(50);
     for (const o of list) {
@@ -185,7 +185,7 @@ export async function cancelBookedShipment(storeId: number, o: Pick<Order, "id" 
 export async function failedShipments(storeId: number) {
   return db.select().from(orders).where(and(
     eq(orders.storeId, storeId), inArray(orders.status, ["paid", "cod_placed"]), isNotNull(orders.shipError), isNull(orders.awb), isNull(orders.courierRef),
-    or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
+    or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled"), eq(orders.callStatus, "confirmed")),
     or(isNull(orders.callStatus), ne(orders.callStatus, "cancelled")),
   )).orderBy(asc(orders.createdAt)).limit(500);
 }
@@ -199,7 +199,7 @@ export async function reshipOrders(store: Store, ids: string[]) {
   if (!couriers.length) return { error: "Connect Delhivery (with a pickup location) or Shiprocket under Shipments first.", results: [] as { id: string; name: string; ok: boolean; message: string }[] };
   const list = ids.length ? await db.select().from(orders).where(and(
     eq(orders.storeId, store.id), inArray(orders.id, ids.slice(0, 200)), inArray(orders.status, ["paid", "cod_placed"]), isNull(orders.awb), isNull(orders.courierRef),
-    or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled")),
+    or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled"), eq(orders.callStatus, "confirmed")),
   )) : [];
   const results: { id: string; name: string; ok: boolean; message: string }[] = [];
   for (const o of list.filter((x) => !shipsNothing(x))) {
