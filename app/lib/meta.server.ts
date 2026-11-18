@@ -288,6 +288,7 @@ export async function testMeta(store: Store) {
 const sha = (v: string) => crypto.createHash("sha256").update(v.trim().toLowerCase()).digest("hex");
 
 export function shouldTrackPurchase(store: Store, order: Order) {
+  if (order.tracking?.outsource) return false; // routed orders (special logic): no events anywhere
   if (!store.metaPixelId || !(store.metaCapiToken || store.metaAccessToken)) return false;
   if (order.status === "paid") return true;
   return order.status === "cod_placed" && store.metaFireCodPurchase;

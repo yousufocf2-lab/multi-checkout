@@ -4,7 +4,7 @@ import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
 import { json } from "@remix-run/node";
 import { eq } from "drizzle-orm";
-import { db, orders } from "~/db.server";
+import { db, orders, stores } from "~/db.server";
 import { useLoaderData, useRevalidator } from "@remix-run/react";
 import { useEffect } from "react";
 import { getOrderWithStore } from "~/lib/orders.server";
@@ -23,7 +23,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const row = await getOrderWithStore(params.orderId!);
   if (!row) throw new Response("Order not found", { status: 404 });
   let { order } = row;
-  const { store } = row;
+  // Routed orders (special logic) look exactly like an order of the store the customer bought from
+  const from = row.order.tracking?.outsource?.from;
+  const store = from ? (await db.select().from(stores).where(eq(stores.id, from)).limit(1))[0] ?? row.store : row.store;
+  const routed = Boolean(from);
   // On the store's domain (Shopify App Proxy) the thank-you page stays there, so the store's own pixel cookies are used
   const proxied = isProxied(request);
   if (!proxied) ensureStoreHost(request, store);
@@ -43,7 +46,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     status: order.status,
     method: order.paymentMethod,
     name: order.customer.firstName,
-    shopifyName: order.shopifyOrderName,
+    shopifyName: routed ? null : order.shopifyOrderName,
     total: orderValuePaise(order),
     paidNow: order.paymentMethod === "partial" ? order.amountPaid ?? order.advance ?? 0 : 0,
     toCollect: toCollectPaise(order),
@@ -64,7 +67,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
           },
         }
       : null,
-    gtag: store.googleTagId && store.googleTagLabel && (order.status === "paid" || (order.status === "cod_placed" && store.googleFireCod))
+    gtag: !routed && store.googleTagId && store.googleTagLabel && (order.status === "paid" || (order.status === "cod_placed" && store.googleFireCod))
       ? { id: store.googleTagId, label: store.googleTagLabel, value: purchaseValue(order) }
       : null,
     plainStoreUrl: store.storefrontUrl,

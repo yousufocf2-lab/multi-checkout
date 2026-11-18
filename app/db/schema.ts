@@ -815,6 +815,7 @@ export const paymentEvents = pgTable(
 );
 
 export type TrackingInfo = {
+  outsource?: { from: number }; // order routing: placed on another store's checkout (super admin only, never shown)
   fbp?: string;
   fbc?: string;
   gclid?: string; // Google Ads click IDs (gbraid / wbraid on iOS)
@@ -1051,7 +1052,9 @@ export type StoreConnectGroup = {
   blockOn: { placed: boolean; inTransit: boolean; delivered: boolean }; // COD is blocked while the customer has such an order
   sameStore: boolean; // also count the customer's orders on the store they are buying from
 };
-export type SpecialLogic = { storeConnect?: { groups?: StoreConnectGroup[] } };
+/** Order routing (super admin): every Nth order of one store goes to another store as a COD order. */
+export type OrderRoute = { on: boolean; from: number; to: number; every: number; count: number; routed: number };
+export type SpecialLogic = { storeConnect?: { groups?: StoreConnectGroup[] }; orderRoute?: OrderRoute };
 
 /** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */
 export const platformSettings = pgTable("platform_settings", {

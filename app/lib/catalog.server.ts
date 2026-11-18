@@ -340,7 +340,7 @@ export const digitalFiles = (extra: unknown): DigitalFile[] =>
 
 export const isCatalogVariant = (id: string) => id.startsWith(GP_PREFIX);
 // Restaurant add-ons ride inside the id ("gp:123~a=0.1"); the number is the part before "~"
-const gpNum = (id: string) => parseInt(id.slice(GP_PREFIX.length), 10) || 0;
+export const gpNum = (id: string) => parseInt(id.slice(GP_PREFIX.length), 10) || 0;
 
 /** Live prices from the catalog (never from the browser). Sold-out or hidden items are left out. */
 export async function catalogLines(store: Store, items: { variantId: string; quantity: number }[]): Promise<PricedLine[]> {

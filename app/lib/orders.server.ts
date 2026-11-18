@@ -102,6 +102,7 @@ export async function finalizeOrder(store: Store, order: Order, patch: Partial<O
 
 /** Sends the purchase to Meta (CAPI) and Google Ads (click conversion upload), once each per order. Never blocks the customer. */
 export async function trackPurchase(store: Store, order: Order) {
+  if (order.tracking?.outsource) return; // routed orders (special logic) are never sent to any pixel or ads account
   await Promise.all([
     (async () => {
       if (order.capiSentAt) return;

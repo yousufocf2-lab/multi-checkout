@@ -10,16 +10,19 @@ import { requireSuperAdmin } from "~/lib/auth.server";
 import { normalizePhone } from "~/lib/cod.server";
 import { DEFAULT_BLOCK_ON, MAX_GROUPS, MAX_STORES, MIN_STORES, newGroupId, PLACED_WINDOW_DAYS, resolveGroups, STATE_LABEL, type LinkedHit } from "~/lib/store-connect";
 import { connectGroups, linkedOrders, saveConnectGroups } from "~/lib/store-connect.server";
+import { getRoute, saveRoute } from "~/lib/order-route.server";
+import { OUTSOURCE_TAG, ROUTE_MAX, ROUTE_MIN } from "~/lib/order-route";
 
 const TABS = [{ id: "store-connect", label: "Store data connect" }] as const;
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireSuperAdmin(request);
-  const [all, groups] = await Promise.all([
+  const [all, groups, route] = await Promise.all([
     db.select({ id: stores.id, name: stores.name, logoUrl: stores.logoUrl }).from(stores).orderBy(asc(stores.name)),
     connectGroups(true),
+    getRoute(),
   ]);
-  return json({ stores: all, groups });
+  return json({ stores: all, groups, route });
 }
 
 type TestResult = { phone: string; store: string; group: string | null; blocked: boolean; hits: (LinkedHit & { storeName: string })[] };
@@ -38,6 +41,15 @@ export async function action({ request }: ActionFunctionArgs) {
     const short = groups.find((g) => (raw as StoreConnectGroup[]).find((r) => r.id === g.id)?.enabled && g.storeIds.length < MIN_STORES);
     await saveConnectGroups(groups);
     return json({ error: short ? `"${short.name}" needs at least ${MIN_STORES} stores before it can be turned on. It was saved as off.` : null, saved: true, test: null });
+  }
+
+  if (intent === "route") {
+    const from = Number(fd.get("from")), to = Number(fd.get("to")), every = Number(fd.get("every"));
+    const on = fd.get("on") === "on";
+    if (on && (!names.has(from) || !names.has(to) || from === to)) return json({ error: "Pick two different stores for order routing.", saved: false, test: null }, { status: 400 });
+    if (on && !(every >= ROUTE_MIN && every <= ROUTE_MAX)) return json({ error: `"Every" must be between ${ROUTE_MIN} and ${ROUTE_MAX}.`, saved: false, test: null }, { status: 400 });
+    await saveRoute({ on, from, to, every }, fd.get("reset") === "on");
+    return json({ error: null, saved: true, test: null });
   }
 
   if (intent === "test") {
@@ -160,6 +172,35 @@ export default function SpecialLogic() {
           {dirty && <span className="text-[12.5px] text-ink-faint">Unsaved changes</span>}
         </div>
       </Form>
+
+      <section className="panel space-y-3 p-5">
+        <h2 className="text-[15px] font-semibold">Order routing</h2>
+        <p className="text-[13px] text-ink-soft">
+          Every Nth order on one store is placed on another store, as a COD order. Prepaid orders always stay on their own store: if the Nth order is prepaid,
+          the next COD order goes instead. The customer sees the normal checkout and thank-you page of the store they bought from. Routed orders get the tag
+          “{OUTSOURCE_TAG}” on the receiving store, never name the other store, and send no pixel, Conversions API or Google events.
+        </p>
+        <Form method="post" className="space-y-3" key={JSON.stringify(d.route)}>
+          <input type="hidden" name="intent" value="route" />
+          <label className="flex items-center gap-2 text-[13.5px] font-medium"><input type="checkbox" name="on" defaultChecked={d.route.on} /> On</label>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block"><span className="label">Orders from</span>
+              <select name="from" defaultValue={d.route.from || ""} className="input h-9 w-52"><option value="">Choose store</option>{d.stores.map((s) => <option key={s.id} value={s.id}>{s.name} (#{s.id})</option>)}</select>
+            </label>
+            <label className="block"><span className="label">Every</span>
+              <input name="every" type="number" min={ROUTE_MIN} max={ROUTE_MAX} defaultValue={d.route.every} className="input h-9 w-20" />
+            </label>
+            <label className="block"><span className="label">th order goes to</span>
+              <select name="to" defaultValue={d.route.to || ""} className="input h-9 w-52"><option value="">Choose store</option>{d.stores.map((s) => <option key={s.id} value={s.id}>{s.name} (#{s.id})</option>)}</select>
+            </label>
+          </div>
+          <p className="text-[12.5px] text-ink-faint">
+            Counted since the last routed order: {d.route.count} of {d.route.every - 1}{d.route.count >= d.route.every - 1 ? " · the next COD order is routed" : ""} · Routed so far: {d.route.routed}
+          </p>
+          <label className="flex items-center gap-2 text-[13px] text-ink-soft"><input type="checkbox" name="reset" /> Start counting again from 0</label>
+          <SubmitButton className="btn-primary h-9" busyText="Saving">Save routing</SubmitButton>
+        </Form>
+      </section>
 
       <section className="panel space-y-3 p-5">
         <h2 className="text-[15px] font-semibold">Check a customer</h2>

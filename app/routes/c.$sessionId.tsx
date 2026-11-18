@@ -20,6 +20,7 @@ import type { SavedAddressPreview } from "~/lib/addresses";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
+import { OUTSOURCE_TAG, routeTarget, takeSourceStock } from "~/lib/order-route.server";
 import { dropshipBlock } from "~/lib/dropship.server";
 import {
   bankOfferEstimate, computePricing, formatINR, lineOff, mixBlocksPayment, mixTitle,
@@ -358,10 +359,13 @@ export async function action({ request, params }: ActionFunctionArgs) {
   // Checkout on the store's domain: payment and the thank-you page stay there too
   const proxyOrigin = isProxied(request) ? cleanProxyOrigin(store, fd.get("origin")) ?? new URL(store.storefrontUrl).origin : null;
 
+  // Special logic (super admin): this COD order may be placed on another store; nothing changes for the customer
+  const routedTo = !proxyOrigin && !restInfo && !digitalOnly && store.businessType !== "restaurant" ? await routeTarget(store, method) : null;
+
   const [order] = await db
     .insert(orders)
     .values({
-      id: newOrderId(), storeId: store.id, sessionId: session.id, checkoutChannel: store.smartCheckout ? "premium_checkout" : "native",
+      id: newOrderId(), storeId: routedTo?.id ?? store.id, sessionId: session.id, checkoutChannel: store.smartCheckout ? "premium_checkout" : "native",
       status: method === "cod" ? "cod_placing" : "pending_payment", paymentMethod: method,
       customer, items: [...lines, ...freeLines], subtotal: p.subtotal, paymentDiscount: p.paymentDiscount,
       couponCode: p.couponApplied ? coupon!.code : null, couponDiscount: p.couponDiscount, offerDiscount: p.mixDiscount,
@@ -377,9 +381,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
         ...(proxyOrigin ? { proxyOrigin } : {}),
         ip: clientIp(request) ?? session.tracking?.ip,
         ua: request.headers.get("user-agent")?.slice(0, 500) ?? session.tracking?.ua,
+        ...(routedTo ? { outsource: { from: store.id } } : {}),
       },
+      ...(routedTo ? { manualTags: [OUTSOURCE_TAG] } : {}),
     })
     .returning();
+  if (routedTo) {
+    console.log(`[route] order ${order.id} → store ${routedTo.id}`);
+    await takeSourceStock(store.id, order.items);
+    await finalizeOrder(routedTo, order, { status: "cod_placed" });
+    return fd.get("embed") === "1" ? json({ top: `${storeBaseUrl(store)}/order/${order.id}` }) : redirect(`/order/${order.id}`);
+  }
 
   await db.update(checkoutSessions).set({ customer, paymentAttempted: true, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
   // In the popup, payment and the thank-you page open on the full page (the store's tab), not inside the popup
