@@ -133,10 +133,12 @@ export default function Logistics() {
   const total = Object.values(d.summary).reduce((a, b) => a + (b ?? 0), 0);
   const openInfo = COURIERS.find((c) => c.id === open) ?? null;
   const justConnected = r?.ok === "connected" ? COURIERS.find((c) => c.id === r.courier) : null;
+  const [rules, setRules] = useState(false); // auto-shipping settings live behind the gear button
 
   return (
     <div className="space-y-5">
-      <Overview connected={mine.length} total={total} summary={d.summary} couriers={mine} />
+      <Overview connected={mine.length} total={total} summary={d.summary} couriers={mine}
+        ruleLabel={d.canBook ? MODES.find((m) => m.id === d.rule.mode)?.title ?? null : null} onRules={d.canBook ? () => setRules(true) : undefined} />
 
       {justConnected && (
         <div className="panel flex flex-wrap items-center gap-4 border-emerald-200 bg-gradient-to-r from-emerald-50 to-sky-50 p-4">
@@ -185,7 +187,14 @@ export default function Logistics() {
         </section>
       )}
 
-      {d.canBook && <ShipRules d={d} />}
+      {rules && d.canBook && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/45 p-0 sm:items-center sm:p-4" onClick={() => setRules(false)} role="dialog" aria-modal aria-label="Auto-shipping settings">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-end px-3 pt-3"><button type="button" onClick={() => setRules(false)} className="rounded-lg p-2 text-ink-faint hover:bg-paper hover:text-ink" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button></div>
+            <div className="-mt-6"><ShipRules d={d} /></div>
+          </div>
+        </div>
+      )}
 
       {mine.length > 0 && <Performance d={d} />}
       {mine.length > 0 && <Shipments d={d} />}
@@ -215,7 +224,7 @@ export default function Logistics() {
 }
 
 /** Top of the page: the numbers that matter, in plain dark text on white. */
-function Overview({ connected, total, summary, couriers }: { connected: number; total: number; summary: Partial<Record<ShipStatus, number>>; couriers: CourierInfo[] }) {
+function Overview({ connected, total, summary, couriers, ruleLabel, onRules }: { connected: number; total: number; summary: Partial<Record<ShipStatus, number>>; couriers: CourierInfo[]; ruleLabel: string | null; onRules?: () => void }) {
   const delivered = summary.delivered ?? 0;
   const rto = (summary.rto ?? 0) + (summary.rto_transit ?? 0) + (summary.returned ?? 0);
   const done = delivered + rto;
@@ -240,6 +249,12 @@ function Overview({ connected, total, summary, couriers }: { connected: number; 
           <div className="flex items-center -space-x-2" aria-label="Connected couriers">
             {couriers.slice(0, 5).map((c) => <CourierLogo key={c.id} c={c} size={32} className="ring-2 ring-white" />)}
           </div>
+        )}
+        {onRules && (
+          <button type="button" onClick={onRules} title="Auto-shipping settings"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-rule-strong bg-white px-3 text-[13px] font-medium text-ink hover:bg-paper">
+            <Icon name="settings" className="h-4 w-4 text-ink-soft" /><span className="hidden sm:inline">Auto-shipping:</span><span className="text-ink-soft">{ruleLabel}</span>
+          </button>
         )}
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4">

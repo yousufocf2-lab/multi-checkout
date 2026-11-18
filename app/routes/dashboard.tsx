@@ -87,7 +87,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isTeam: Boolean(team),
     },
     idleMs: IDLE_MS,
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType, live: isLive(s) })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType, usageBilling: s.usageBilling, live: isLive(s) })),
     selected,
   }, { headers });
 }
@@ -160,6 +160,7 @@ export default function DashboardLayout() {
       { label: "RTO Shield", to: storeHref("rto-shield"), match: /\/rto-shield$|next=rto-shield/, show: true },
       { label: "RTO Suite", to: storeHref("rto"), match: /\/rto$|next=rto\b/, show: true },
     ] },
+    { label: "Railway Usage", to: storeHref("railway-usage"), icon: "layers", match: /\/railway-usage$|next=railway-usage\b/, show: Boolean(focus?.usageBilling) && may("billing") },
     { label: "Analytics", to: storeHref("live"), icon: "chart", match: /\/(live|funnel|diagnostics)$|next=(live|funnel|diagnostics)\b/, show: may("analytics"), children: [
       { label: "Live view", to: storeHref("live"), match: /\/live$|next=live\b/, show: true },
       { label: "Checkout funnel", to: storeHref("funnel"), match: /\/funnel$|next=funnel/, show: true },
@@ -218,6 +219,7 @@ export default function DashboardLayout() {
     { label: "Store domains", to: "/dashboard/cloudflare", icon: "globe", show: !viewer.isTeam },
     { label: "Special logic", to: "/dashboard/special-logic", icon: "sparkle", show: !viewer.isTeam }, // super admin only, never shown to stores or team
     { label: "Demo stores", to: "/dashboard/demo-stores", icon: "stores", show: !viewer.isTeam },
+    { label: "Railway Usage", to: "/dashboard/railway-usage", icon: "layers", show: !viewer.isTeam },
     { label: "Login & security", to: "/dashboard/security", icon: "shield", show: true },
     { label: "My account", to: "/dashboard/account", icon: "user", show: viewer.isTeam },
   ];

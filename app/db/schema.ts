@@ -2,6 +2,7 @@ import type { PaymentMethodsSettings } from "~/lib/payment-methods";
 import {
   customType,
   bigint,
+  date,
   boolean,
   integer,
   jsonb,
@@ -340,6 +341,7 @@ export const stores = pgTable("stores", {
   profitSettledFrom: text("profit_settled_from"), // PayU settlements are fetched for every day from this date (YYYY-MM-DD)
   // Growpefy Store (own storefront platform): what the business sells and where
   businessType: text("business_type").$type<BusinessType>().notNull().default("store"),
+  usageBilling: boolean("usage_billing").notNull().default(false), // super admin: show "Railway Usage" (hosting bill) to this store
   restaurant: jsonb("restaurant").$type<import("~/lib/restaurant").RestaurantSettings>().notNull().default({}), // restaurant / cloud kitchen settings (businessType = restaurant)
   storefrontEnabled: boolean("storefront_enabled").notNull().default(false),
   // Own website domain (www.brand.com) and the DNS target Railway gave for it (CNAME); status: pending | live
@@ -1715,3 +1717,20 @@ export const storeSubscribers = pgTable(
   },
   (t) => [uniqueIndex("store_subscribers_email_idx").on(t.storeId, t.email)],
 );
+
+/** Hosting usage bill for one store and one billing period (super admin fills it; the store sees it under Railway Usage). */
+export type UsageLine = { key: string; label: string; unit: string; qty: number; ratePaise: number; amountPaise: number };
+export const usageBills = pgTable("usage_bills", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  periodStart: date("period_start", { mode: "string" }).notNull(),
+  periodEnd: date("period_end", { mode: "string" }).notNull(),
+  lines: jsonb("lines").$type<UsageLine[]>().notNull().default([]),
+  status: text("status").$type<"draft" | "due" | "paid">().notNull().default("draft"),
+  dueDate: date("due_date", { mode: "string" }),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("usage_bills_store_idx").on(t.storeId, t.periodStart)]);
+export type UsageBill = typeof usageBills.$inferSelect;
