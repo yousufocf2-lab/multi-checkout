@@ -186,35 +186,37 @@ function BillEditor({ d, storeId }: { d: D; storeId: number }) {
           </label>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-[13px]">
-            <thead>
-              <tr className="border-b border-rule bg-paper text-left text-[11.5px] uppercase tracking-wide text-ink-faint">
-                <th className="px-4 py-2.5 font-semibold">Resource</th>
-                <th className="px-3 py-2.5 font-semibold">Unit</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Used</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Price / unit (₹)</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Amount</th>
-                <th className="w-10 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-rule">
-              {rows.map((r, i) => (
-                <tr key={i}>
-                  <td className="px-4 py-2"><input value={r.label} onChange={(e) => set(i, { label: e.target.value })} className="input h-8 text-[13px]" aria-label="Resource name" />
-                    <p className="mt-0.5 text-[11px] text-ink-faint">{resourceOf(r.key).hint}</p></td>
-                  <td className="px-3 py-2"><input value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} className="input h-8 w-32 text-[13px]" aria-label="Unit" /></td>
-                  <td className="px-3 py-2"><input value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} inputMode="decimal" placeholder="0" className="input num h-8 w-28 text-right text-[13px]" aria-label="Quantity used" /></td>
-                  <td className="px-3 py-2"><input value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} inputMode="decimal" placeholder="0.00" className="input num h-8 w-28 text-right text-[13px]" aria-label="Price per unit" /></td>
-                  <td className="num px-3 py-2 text-right text-[14px] font-semibold text-ink" aria-live="polite">
-                    {(() => { const a = amountOf(r); return a < 0 ? `− ${formatINR(-a)}` : formatINR(a); })()}
-                  </td>
-                  <td className="px-3 py-2 text-right"><button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="rounded p-1 text-ink-faint hover:text-bad" aria-label="Remove row"><Icon name="close" className="h-4 w-4" /></button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Rows: a table on a computer, a card per resource on a phone. The amount is worked out as you type. */}
+        <div className="hidden grid-cols-[minmax(0,1.6fr)_130px_110px_120px_110px_32px] gap-3 border-b border-rule bg-paper px-4 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint md:grid">
+          <span>Resource</span><span>Unit</span><span className="text-right">Used</span><span className="text-right">Price / unit (₹)</span><span className="text-right">Amount</span><span />
         </div>
+        <ul className="divide-y divide-rule">
+          {rows.map((r, i) => {
+            const amt = amountOf(r);
+            return (
+              <li key={i} className="grid grid-cols-2 gap-x-3 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1.6fr)_130px_110px_120px_110px_32px] md:items-start md:py-2">
+                <div className="col-span-2 flex items-start gap-2 md:col-span-1">
+                  <div className="min-w-0 flex-1">
+                    <input value={r.label} onChange={(e) => set(i, { label: e.target.value })} className="input h-9 text-[13px]" aria-label="Resource name" />
+                    <p className="mt-0.5 text-[11px] text-ink-faint">{resourceOf(r.key).hint}</p>
+                  </div>
+                  <button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="mt-1.5 rounded p-1 text-ink-faint hover:text-bad md:hidden" aria-label="Remove row"><Icon name="close" className="h-4 w-4" /></button>
+                </div>
+                <label className="col-span-2 md:col-span-1"><span className="mb-1 block text-[11px] font-medium text-ink-faint md:hidden">Unit</span>
+                  <input value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} className="input h-9 text-[13px]" aria-label="Unit" /></label>
+                <label><span className="mb-1 block text-[11px] font-medium text-ink-faint md:hidden">Used</span>
+                  <input value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} inputMode="decimal" placeholder="0" className="input num h-9 text-right text-[13px]" aria-label="Quantity used" /></label>
+                <label><span className="mb-1 block text-[11px] font-medium text-ink-faint md:hidden">Price / unit (₹)</span>
+                  <input value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} inputMode="decimal" placeholder="0.00" className="input num h-9 text-right text-[13px]" aria-label="Price per unit" /></label>
+                <p className="col-span-2 flex items-center justify-between rounded-lg bg-paper px-3 py-2 md:col-span-1 md:block md:bg-transparent md:px-0 md:py-2 md:text-right" aria-live="polite">
+                  <span className="text-[12px] text-ink-soft md:hidden">Amount</span>
+                  <span className={`num text-[14px] font-semibold ${amt < 0 ? "text-[#067647]" : "text-ink"}`}>{amt < 0 ? `− ${formatINR(-amt)}` : formatINR(amt)}</span>
+                </p>
+                <button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="mt-1.5 hidden rounded p-1 text-ink-faint hover:text-bad md:block" aria-label="Remove row"><Icon name="close" className="h-4 w-4" /></button>
+              </li>
+            );
+          })}
+        </ul>
         <div className="flex flex-wrap items-center gap-3 border-t border-rule px-4 py-3">
           <select value={pick} onChange={(e) => setPick(e.target.value)} className="input h-9 w-56 text-[13px]" aria-label="Add a resource">
             <option value="">+ Add a resource</option>
