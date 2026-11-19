@@ -36,7 +36,7 @@ function metrics(d: Data): Metric[] {
       total: t.sessions, before: p?.sessions ?? null, point: (b) => b.sessions, prevPoint: (b) => b.prev?.sessions ?? null },
     { id: "sales", label: "Total sales", tip: "Order value after refunds, all payment methods", fmt: (v) => inr(v), axis: axisInr,
       total: t.revenue, before: p?.revenue ?? null, point: (b) => b.prepaid + b.cod, prevPoint: (b) => b.prev?.revenue ?? null },
-    { id: "orders", label: "Orders", tip: "Paid and COD orders placed", fmt: (v) => (v == null ? "—" : num(v)), axis: axisNum,
+    { id: "orders", label: "Orders", tip: "Paid and COD orders placed, including ones cancelled later", fmt: (v) => (v == null ? "—" : num(v)), axis: axisNum,
       total: t.orders, before: p?.orders ?? null, point: (b) => b.orders, prevPoint: (b) => b.prev?.orders ?? null },
     { id: "conversion", label: "Conversion rate", tip: "Orders ÷ checkout sessions", fmt: pct, axis: (v) => `${Math.round(v * 100)}%`,
       total: t.conversion, before: p ? ratio(p.orders, p.sessions) : null,
@@ -395,6 +395,7 @@ export function HomeView({ data, tasks, setup, leaders, single, showStoreColumn 
               <Row label="Discounts" value={t.discounts ? `−${inr(t.discounts)}` : inr(0)} sub />
               <Row label="Refunds" value={t.refunded ? `−${inr(t.refunded)}` : inr(0)} sub />
               <Row label="Orders" value={num(t.orders)} sub />
+              <Row label="Cancelled orders" value={num(t.cancelledOrders ?? 0)} sub />
               <Row label="Failed payments" value={num(t.failedPayments)} sub />
             </dl>
             <div className="border-t border-rule px-4 py-3">

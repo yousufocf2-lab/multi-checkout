@@ -7,6 +7,10 @@ import { clickOrders, compare, metaReady, spendFor, totalOf } from "./ads.server
 import { googleReady } from "./google-ads.server";
 
 const OK = ["paid", "cod_placed"];
+// Orders placed in a period: live ones plus those cancelled later, so a day's order count never shrinks after cancels.
+// Sales (revenue) still comes from live orders only.
+const PLACED = ["paid", "cod_placed", "cancelled"];
+const LIVE_REV = sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}) filter (where ${orders.status} <> 'cancelled'), 0)`;
 
 export type Bucket = {
   key: string; label: string; longLabel: string; prepaid: number; cod: number; orders: number; sessions: number;
@@ -20,7 +24,8 @@ export type Overview = {
   granularity: Granularity;
   totals: {
     revenue: number; // rupees
-    orders: number;
+    orders: number; // placed in the period, including ones cancelled later
+    cancelledOrders: number;
     prepaidOrders: number;
     codOrders: number;
     prepaidRevenue: number;
@@ -94,11 +99,12 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
         bucket: bucketExpr,
         method: orders.paymentMethod,
         count: sql<number>`count(*)::int`,
-        revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)`,
-        discounts: sql<string>`coalesce(sum(${orders.paymentDiscount} + ${orders.couponDiscount} + ${orders.bankDiscount} + ${orders.offerDiscount}), 0)`,
+        cancelled: sql<number>`count(*) filter (where ${orders.status} = 'cancelled')::int`,
+        revenue: LIVE_REV,
+        discounts: sql<string>`coalesce(sum(${orders.paymentDiscount} + ${orders.couponDiscount} + ${orders.bankDiscount} + ${orders.offerDiscount}) filter (where ${orders.status} <> 'cancelled'), 0)`,
       })
       .from(orders)
-      .where(and(idsFilter, inArray(orders.status, OK), inRange(orders.createdAt)))
+      .where(and(idsFilter, inArray(orders.status, PLACED), inRange(orders.createdAt)))
       .groupBy(bucketExpr, orders.paymentMethod),
     db
       .select({ n: sql<number>`count(*)::int` })
@@ -114,10 +120,10 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       : db
           .select({
             n: sql<number>`count(*)::int`,
-            revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)`,
+            revenue: LIVE_REV,
           })
           .from(orders)
-          .where(and(idsFilter, inArray(orders.status, OK), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from))),
+          .where(and(idsFilter, inArray(orders.status, PLACED), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from))),
     db.execute<{ title: string; image: string | null; quantity: number; revenue: string }>(sql`
       select li->>'title' as title, max(li->>'image') as image,
              sum((li->>'quantity')::int)::int as quantity,
@@ -150,9 +156,9 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
   // Previous period, bucket by bucket (sales, orders, sessions), lined up with this period by position
   const prevKeys = range.preset === "max" ? [] : bucketKeys({ ...range, preset: "custom", since: addDays(range.since, -days), until: addDays(range.since, -1) }, granularity);
   const [prevOrderRows, prevSessionRows] = range.preset === "max" ? [[], []] : await Promise.all([
-    db.select({ bucket: bucketExpr, count: sql<number>`count(*)::int`, revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)` })
+    db.select({ bucket: bucketExpr, count: sql<number>`count(*)::int`, revenue: LIVE_REV })
       .from(orders)
-      .where(and(idsFilter, inArray(orders.status, OK), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from)))
+      .where(and(idsFilter, inArray(orders.status, PLACED), gte(orders.createdAt, prevFrom), lt(orders.createdAt, from)))
       .groupBy(bucketExpr),
     db.select({ bucket: sessionBucket, n: sql<number>`count(*)::int` })
       .from(checkoutSessions)
@@ -194,12 +200,13 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
       googleSpend: googleSpend != null && granularity !== "hour" ? 0 : null }]),
   );
 
-  const totals = { revenue: 0, orders: 0, prepaidOrders: 0, codOrders: 0, prepaidRevenue: 0, codRevenue: 0, discounts: 0, nativeOrders: 0, nativeRevenue: 0 };
+  const totals = { revenue: 0, orders: 0, cancelledOrders: 0, prepaidOrders: 0, codOrders: 0, prepaidRevenue: 0, codRevenue: 0, discounts: 0, nativeOrders: 0, nativeRevenue: 0 };
   for (const r of rows) {
     const rev = Number(r.revenue) / 100;
     const b = map.get(r.bucket);
     totals.revenue += rev;
     totals.orders += r.count;
+    totals.cancelledOrders += r.cancelled;
     totals.discounts += Number(r.discounts) / 100;
     if (r.method !== "prepaid") { totals.codOrders += r.count; totals.codRevenue += rev; if (b) b.cod += rev; }
     else { totals.prepaidOrders += r.count; totals.prepaidRevenue += rev; if (b) b.prepaid += rev; }
@@ -257,7 +264,7 @@ export async function loadOverview(storeList: Store[], range: Range): Promise<Ov
     granularity,
     totals: {
       ...totals,
-      aov: totals.orders ? totals.revenue / totals.orders : 0,
+      aov: totals.orders - totals.cancelledOrders > 0 ? totals.revenue / (totals.orders - totals.cancelledOrders) : 0,
       failedPayments: failed[0]?.n ?? 0,
       sessions: sessionCount,
       abandoned: Number(abandonedRows[0]?.n ?? 0),
@@ -299,10 +306,10 @@ export async function loadLeaderboard(storeList: Store[], range: Range) {
       storeId: orders.storeId,
       n: sql<number>`count(*)::int`,
       prepaid: sql<number>`count(*) filter (where ${orders.paymentMethod} <> 'cod')::int`,
-      revenue: sql<string>`coalesce(sum(${orderValueSql} - ${orders.refunded}), 0)`,
+      revenue: LIVE_REV,
     })
     .from(orders)
-    .where(and(inArray(orders.storeId, storeList.map((s) => s.id)), inArray(orders.status, OK), gte(orders.createdAt, from), lt(orders.createdAt, to)))
+    .where(and(inArray(orders.storeId, storeList.map((s) => s.id)), inArray(orders.status, PLACED), gte(orders.createdAt, from), lt(orders.createdAt, to)))
     .groupBy(orders.storeId);
   const by = new Map(rows.map((r) => [r.storeId, r]));
   const g = granularityFor(range);
