@@ -160,7 +160,6 @@ export default function DashboardLayout() {
       { label: "RTO Shield", to: storeHref("rto-shield"), match: /\/rto-shield$|next=rto-shield/, show: true },
       { label: "RTO Suite", to: storeHref("rto"), match: /\/rto$|next=rto\b/, show: true },
     ] },
-    { label: "Railway Usage", to: storeHref("railway-usage"), icon: "layers", match: /\/railway-usage$|next=railway-usage\b/, show: Boolean(focus?.usageBilling) && may("billing") },
     { label: "Analytics", to: storeHref("live"), icon: "chart", match: /\/(live|funnel|diagnostics)$|next=(live|funnel|diagnostics)\b/, show: may("analytics"), children: [
       { label: "Live view", to: storeHref("live"), match: /\/live$|next=live\b/, show: true },
       { label: "Checkout funnel", to: storeHref("funnel"), match: /\/funnel$|next=funnel/, show: true },
@@ -184,6 +183,7 @@ export default function DashboardLayout() {
     { label: "Customer accounts", to: storeHref("customer-accounts"), icon: "user", match: /\/customer-accounts$|next=customer-accounts/, show: may("settings") },
     { label: "Widgets", to: storeHref("widgets"), icon: "sparkle", match: /\/widgets$|next=widgets\b/, show: storefront && may("settings") },
     { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing") },
+    { label: "Railway Usage", to: storeHref("railway-usage"), icon: "layers", match: /\/railway-usage$|next=railway-usage\b/, show: Boolean(focus?.usageBilling) && may("billing") },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
     { label: "Checkout experience", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },

@@ -156,10 +156,10 @@ function BillEditor({ d, storeId }: { d: D; storeId: number }) {
   const def = monthRange();
   const [rows, setRows] = useState<Row[]>(() => bill
     ? bill.lines.map((l) => ({ key: l.key, label: l.label, unit: l.unit, qty: String(l.qty), rate: String(l.ratePaise / 100),
-        amount: l.amountPaise !== lineAmount(l.qty, l.ratePaise) ? String(l.amountPaise / 100) : "" }))
+        amount: "" }))
     : ["vcpu", "memory", "egress", "volume", "bucket"].map(toRow));
   const [pick, setPick] = useState("");
-  const amountOf = (r: Row) => { const t = num(r.amount); if (Number.isFinite(t)) return Math.round(t * 100); return lineAmount(num(r.qty) || 0, Math.round((num(r.rate) || 0) * 100)); };
+  const amountOf = (r: Row) => lineAmount(num(r.qty) || 0, Math.round((num(r.rate) || 0) * 100)); // used × price, always
   const total = rows.reduce((s, r) => s + amountOf(r), 0);
   const set = (i: number, patch: Partial<Row>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const unused = useMemo(() => USAGE_RESOURCES.filter((r) => !rows.some((x) => x.key === r.key)), [rows]);
@@ -194,7 +194,7 @@ function BillEditor({ d, storeId }: { d: D; storeId: number }) {
                 <th className="px-3 py-2.5 font-semibold">Unit</th>
                 <th className="px-3 py-2.5 text-right font-semibold">Used</th>
                 <th className="px-3 py-2.5 text-right font-semibold">Price / unit (₹)</th>
-                <th className="px-3 py-2.5 text-right font-semibold">Amount (₹)</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Amount</th>
                 <th className="w-10 px-3 py-2.5" />
               </tr>
             </thead>
@@ -206,8 +206,8 @@ function BillEditor({ d, storeId }: { d: D; storeId: number }) {
                   <td className="px-3 py-2"><input value={r.unit} onChange={(e) => set(i, { unit: e.target.value })} className="input h-8 w-32 text-[13px]" aria-label="Unit" /></td>
                   <td className="px-3 py-2"><input value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} inputMode="decimal" placeholder="0" className="input num h-8 w-28 text-right text-[13px]" aria-label="Quantity used" /></td>
                   <td className="px-3 py-2"><input value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} inputMode="decimal" placeholder="0.00" className="input num h-8 w-28 text-right text-[13px]" aria-label="Price per unit" /></td>
-                  <td className="px-3 py-2 text-right">
-                    <input value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} inputMode="decimal" placeholder={(amountOf({ ...r, amount: "" }) / 100).toFixed(2)} className="input num h-8 w-28 text-right text-[13px]" aria-label="Amount (leave empty to calculate)" />
+                  <td className="num px-3 py-2 text-right text-[14px] font-semibold text-ink" aria-live="polite">
+                    {(() => { const a = amountOf(r); return a < 0 ? `− ${formatINR(-a)}` : formatINR(a); })()}
                   </td>
                   <td className="px-3 py-2 text-right"><button type="button" onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="rounded p-1 text-ink-faint hover:text-bad" aria-label="Remove row"><Icon name="close" className="h-4 w-4" /></button></td>
                 </tr>
@@ -221,7 +221,7 @@ function BillEditor({ d, storeId }: { d: D; storeId: number }) {
             {unused.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
             <option value={`custom-${rows.length}`}>Other (type your own)</option>
           </select>
-          <p className="text-[12px] text-ink-faint">Amount = used × price. Type an amount only to override it. Credits: use a minus price.</p>
+          <p className="text-[12px] text-ink-faint">Amount = used × price, worked out as you type. For credits use a minus price.</p>
           <div className="ml-auto text-right">
             <p className="text-[12px] text-ink-soft">Total</p>
             <p className="num text-[22px] font-semibold leading-none">{formatINR(Math.max(0, total))}</p>
