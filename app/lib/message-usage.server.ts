@@ -3,9 +3,8 @@
 import { sql } from "drizzle-orm";
 import { db } from "~/db.server";
 import { addDays, type Range } from "./dates";
-import { MSG_KINDS, type MsgFilter } from "./message-usage";
+import { MSG_KINDS, PAGE_SIZE, type MsgFilter } from "./message-usage";
 
-export const PAGE_SIZE = 50;
 
 const typesFor = (f: MsgFilter) =>
   f === "all" ? MSG_KINDS.map((k) => k.id)

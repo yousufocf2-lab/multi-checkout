@@ -23,3 +23,5 @@ export const kindOf = (type: string) => MSG_KINDS.find((k) => k.id === type) ?? 
 export const FILTERS = ["all", "otp", "whatsapp", "transactional", "service", "promotional"] as const;
 export type MsgFilter = (typeof FILTERS)[number];
 export const FILTER_LABEL: Record<MsgFilter, string> = { all: "All", otp: "OTP", whatsapp: "All WhatsApp", transactional: "Transactional", service: "Service", promotional: "Promotional" };
+
+export const PAGE_SIZE = 50;
