@@ -240,6 +240,77 @@ export async function verifyWidgetOtp(store: Store, sessionId: string, phone: st
   return { ok: true };
 }
 
+// ---- Server relay: MSG91 sometimes refuses the widget OTP for the customer's network ("IPBlocked", shared
+// mobile IPs). Then our server asks MSG91 with the same widget, so the OTP still reaches the customer. ----
+
+/** Marks an OTP check that was skipped because MSG91 couldn't send to this customer at all (order gets tagged). */
+export const OTP_SKIPPED_HASH = "msg91-unreachable";
+export const OTP_SKIPPED_TAG = "OTP skipped";
+
+async function widgetApi(path: "sendOtpMobile" | "retryOtp" | "verifyOtp", body: Record<string, unknown>): Promise<{ ok: boolean; message: string }> {
+  const m = await messaging();
+  if (otpMode(m) !== "widget") return { ok: false, message: "OTP service isn't available right now" };
+  try {
+    const res = await fetch(`https://control.msg91.com/api/v5/widget/${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ widgetId: m.msg91WidgetId, tokenAuth: m.msg91TokenAuth, ...body }), signal: AbortSignal.timeout(10_000),
+    });
+    const r = (await res.json().catch(() => ({}))) as { type?: string; message?: unknown };
+    const message = String(r.message ?? "");
+    if (!res.ok || String(r.type ?? "").toLowerCase() !== "success") {
+      console.error(`[otp] relay ${path}:`, res.status, message.slice(0, 120));
+      return { ok: false, message };
+    }
+    return { ok: true, message };
+  } catch (e) {
+    console.error(`[otp] relay ${path}:`, e instanceof Error ? e.message : e);
+    return { ok: false, message: "" };
+  }
+}
+
+/**
+ * Sends (or re-sends, with reqId) the widget OTP from our server. If MSG91 can't send it from here either,
+ * the number is let through without OTP for this checkout, and the order is tagged "OTP skipped" for the calling team.
+ */
+export async function relaySendOtp(store: Store, sessionId: string, phone: string, reqId: string | null):
+  Promise<{ ok: true; reqId: string; left?: number } | { ok: true; skipped: true } | { ok: false; error: string; left?: number }> {
+  if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: "Enter a valid 10-digit mobile number" };
+  if (otpMode(await messaging()) !== "widget") return { ok: false, error: "Please refresh the page and try again" };
+  const left = await otpSendsLeft(store, phone);
+  if (left <= 0) return { ok: false, error: OTP_LIMIT_MSG, left: 0 };
+  let r = reqId ? await widgetApi("retryOtp", { reqId, retryChannel: 11 }) : { ok: false, message: "" };
+  let id = reqId ?? "";
+  if (!r.ok) { r = await widgetApi("sendOtpMobile", { identifier: `91${phone}` }); id = r.message; }
+  if (r.ok && id) {
+    const rec = await recordWidgetSend(store, sessionId, phone);
+    console.log(`[otp] relay sent for store ${store.id}`);
+    return { ok: true, reqId: id, left: rec.left };
+  }
+  // MSG91 refused from our server too: don't lose the order; the calling team confirms it
+  const id2 = crypto.randomUUID();
+  await db.insert(checkoutOtps).values({ id: id2, storeId: store.id, sessionId, phone, codeHash: OTP_SKIPPED_HASH, expiresAt: new Date(Date.now() + OTP_TTL_MS), verifiedAt: new Date() });
+  console.warn(`[otp] relay failed for store ${store.id} (${r.message.slice(0, 60)}): OTP skipped for this checkout`);
+  return { ok: true, skipped: true };
+}
+
+/** Checks the code for a relayed OTP with MSG91, then confirms the access token like a normal widget OTP. */
+export async function relayVerifyOtp(store: Store, sessionId: string, phone: string, reqId: string, otp: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!reqId || !/^\d{4,6}$/.test(otp)) return { ok: false, error: "That OTP isn't right. Check and try again." };
+  const r = await widgetApi("verifyOtp", { reqId, otp });
+  if (!r.ok) {
+    if (/already verif/i.test(r.message)) return { ok: false, error: "Please tap Resend OTP and enter the new code." };
+    return { ok: false, error: /invalid|incorrect|wrong/i.test(r.message) ? "That OTP isn't right. Check and try again." : r.message && r.message.length < 80 && !/^[a-f0-9-]{20,}$/i.test(r.message) ? r.message : "Couldn't confirm the OTP. Please try again." };
+  }
+  return verifyWidgetOtp(store, sessionId, phone, r.message);
+}
+
+/** True when this checkout's number was let through without OTP (MSG91 couldn't reach it). */
+export async function otpWasSkipped(sessionId: string, phone: string) {
+  const [row] = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
+    .where(and(eq(checkoutOtps.sessionId, sessionId), eq(checkoutOtps.phone, phone), eq(checkoutOtps.codeHash, OTP_SKIPPED_HASH))).limit(1);
+  return Boolean(row);
+}
+
 export async function verifyOtp(sessionId: string, phone: string, code: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const [row] = await db.select().from(checkoutOtps)
     .where(and(eq(checkoutOtps.sessionId, sessionId), eq(checkoutOtps.phone, phone)))

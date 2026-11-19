@@ -3,7 +3,7 @@ import { startAutoShip } from "~/lib/auto-ship.server";
 import { startCatalogWatcher } from "~/lib/meta-catalog.server";
 import { ensureFallback, syncWorker } from "~/lib/cloudflare.server";
 import { logFunnelAudit } from "~/lib/diagnostics.server";
-import { recoverOtpStuck } from "~/lib/recover-otp.server";
+import { recoverIpBlocked, recoverOtpStuck } from "~/lib/recover-otp.server";
 import { logOtpBlockAudit } from "~/lib/otp-block-audit.server";
 
 // Railway's health check (and the server itself) hits this right after every deploy: a good moment to start
@@ -16,5 +16,6 @@ export const loader = () => {
   setTimeout(() => void logFunnelAudit(), 45_000).unref?.();
   setTimeout(() => void recoverOtpStuck(), 60_000).unref?.();
   setTimeout(() => void logOtpBlockAudit(), 75_000).unref?.();
+  setTimeout(() => void recoverIpBlocked(), 90_000).unref?.();
   return new Response("ok");
 };
