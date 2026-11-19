@@ -1055,7 +1055,7 @@ export type StoreConnectGroup = {
   sameStore: boolean; // also count the customer's orders on the store they are buying from
 };
 /** Order routing (super admin): every Nth order of one store goes to another store as a COD order. */
-export type OrderRoute = { on: boolean; from: number; to: number; every: number; count: number; routed: number };
+export type OrderRoute = { on: boolean; from: number; to: number; every: number; count: number; routed: number; onlyMeta: boolean };
 export type SpecialLogic = { storeConnect?: { groups?: StoreConnectGroup[] }; orderRoute?: OrderRoute };
 
 /** One row (id = 1): default rate card, our business details for invoices, our PayU account for recharges. */

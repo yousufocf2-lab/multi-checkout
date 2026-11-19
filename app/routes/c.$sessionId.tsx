@@ -20,7 +20,7 @@ import type { SavedAddressPreview } from "~/lib/addresses";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
-import { OUTSOURCE_TAG, routeTarget, takeSourceStock } from "~/lib/order-route.server";
+import { fromMetaAd, OUTSOURCE_TAG, routeTarget, takeSourceStock } from "~/lib/order-route.server";
 import { dropshipBlock } from "~/lib/dropship.server";
 import {
   bankOfferEstimate, computePricing, formatINR, lineOff, mixBlocksPayment, mixTitle,
@@ -360,7 +360,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const proxyOrigin = isProxied(request) ? cleanProxyOrigin(store, fd.get("origin")) ?? new URL(store.storefrontUrl).origin : null;
 
   // Special logic (super admin): this COD order may be placed on another store; nothing changes for the customer
-  const routedTo = !proxyOrigin && !restInfo && !digitalOnly && store.businessType !== "restaurant" ? await routeTarget(store, method) : null;
+  const routedTo = !proxyOrigin && !restInfo && !digitalOnly && store.businessType !== "restaurant" ? await routeTarget(store, method, fromMetaAd(session.tracking)) : null;
 
   const [order] = await db
     .insert(orders)

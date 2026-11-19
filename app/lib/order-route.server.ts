@@ -20,6 +20,7 @@ export function resolveRoute(raw: unknown): OrderRoute {
     every: Math.min(ROUTE_MAX, Math.max(ROUTE_MIN, n(r.every, 9))),
     count: Math.max(0, n(r.count)),
     routed: Math.max(0, n(r.routed)),
+    onlyMeta: r.onlyMeta !== false, // default: only orders that came from a Meta ad
   };
 }
 
@@ -28,7 +29,7 @@ export async function getRoute() {
   return resolveRoute(row?.s?.orderRoute);
 }
 
-export async function saveRoute(next: Pick<OrderRoute, "on" | "from" | "to" | "every">, resetCount: boolean) {
+export async function saveRoute(next: Pick<OrderRoute, "on" | "from" | "to" | "every" | "onlyMeta">, resetCount: boolean) {
   await db.transaction(async (tx) => {
     const [row] = await tx.select({ s: platformSettings.specialLogic }).from(platformSettings).where(eq(platformSettings.id, 1)).for("update");
     const cur = resolveRoute(row?.s?.orderRoute);
@@ -42,12 +43,18 @@ export async function saveRoute(next: Pick<OrderRoute, "on" | "from" | "to" | "e
  * Called once per order about to be placed on `store`. Counts it and says where it goes.
  * Returns the store to place it on, or null to keep it on its own store.
  */
-export async function routeTarget(store: Store, method: string): Promise<Store | null> {
+/** The visitor came from a Meta ad (Facebook / Instagram): Meta's click cookie, or a Meta utm_source. */
+export function fromMetaAd(t: { fbc?: string; src?: string } | null | undefined) {
+  return Boolean(t?.fbc) || /^(facebook|fb|instagram|ig|meta|an|msg)\b/i.test(t?.src ?? "");
+}
+
+export async function routeTarget(store: Store, method: string, metaAd = false): Promise<Store | null> {
   try {
     const to = await db.transaction(async (tx) => {
       const [row] = await tx.select({ s: platformSettings.specialLogic }).from(platformSettings).where(eq(platformSettings.id, 1)).for("update");
       const r = resolveRoute(row?.s?.orderRoute);
       if (!r.on || r.from !== store.id) return null;
+      if (r.onlyMeta && !metaAd) return null; // direct / other visitors: never routed and not counted
       const due = r.count >= r.every - 1;
       const go = due && method === "cod";
       const orderRoute: OrderRoute = go ? { ...r, count: 0, routed: r.routed + 1 } : { ...r, count: Math.min(r.count + 1, r.every - 1) };

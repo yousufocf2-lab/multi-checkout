@@ -48,7 +48,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const on = fd.get("on") === "on";
     if (on && (!names.has(from) || !names.has(to) || from === to)) return json({ error: "Pick two different stores for order routing.", saved: false, test: null }, { status: 400 });
     if (on && !(every >= ROUTE_MIN && every <= ROUTE_MAX)) return json({ error: `"Every" must be between ${ROUTE_MIN} and ${ROUTE_MAX}.`, saved: false, test: null }, { status: 400 });
-    await saveRoute({ on, from, to, every }, fd.get("reset") === "on");
+    await saveRoute({ on, from, to, every, onlyMeta: fd.get("onlyMeta") === "on" }, fd.get("reset") === "on");
     return json({ error: null, saved: true, test: null });
   }
 
@@ -178,11 +178,14 @@ export default function SpecialLogic() {
         <p className="text-[13px] text-ink-soft">
           Every Nth order on one store is placed on another store, as a COD order. Prepaid orders always stay on their own store: if the Nth order is prepaid,
           the next COD order goes instead. The customer sees the normal checkout and thank-you page of the store they bought from. Routed orders get the tag
-          “{OUTSOURCE_TAG}” on the receiving store, never name the other store, and send no pixel, Conversions API or Google events.
+          “{OUTSOURCE_TAG}” on the receiving store and never name the other store. The Purchase event goes only to the original store's Meta pixel and
+          Conversions API (its ads keep learning); the receiving store and Google get nothing.
         </p>
         <Form method="post" className="space-y-3" key={JSON.stringify(d.route)}>
           <input type="hidden" name="intent" value="route" />
           <label className="flex items-center gap-2 text-[13.5px] font-medium"><input type="checkbox" name="on" defaultChecked={d.route.on} /> On</label>
+          <label className="flex items-start gap-2 text-[13.5px]"><input type="checkbox" name="onlyMeta" defaultChecked={d.route.onlyMeta} className="mt-0.5" />
+            <span><b className="font-medium">Only orders from Meta ads</b><span className="block text-[12.5px] text-ink-soft">Visitors who came from a Facebook / Instagram ad. People who come to the website directly (or from Google, WhatsApp…) are never routed and don't count.</span></span></label>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block"><span className="label">Orders from</span>
               <select name="from" defaultValue={d.route.from || ""} className="input h-9 w-52"><option value="">Choose store</option>{d.stores.map((s) => <option key={s.id} value={s.id}>{s.name} (#{s.id})</option>)}</select>
@@ -195,7 +198,7 @@ export default function SpecialLogic() {
             </label>
           </div>
           <p className="text-[12.5px] text-ink-faint">
-            Counted since the last routed order: {d.route.count} of {d.route.every - 1}{d.route.count >= d.route.every - 1 ? " · the next COD order is routed" : ""} · Routed so far: {d.route.routed}
+            Counted since the last routed order{d.route.onlyMeta ? " (Meta ad orders)" : ""}: {d.route.count} of {d.route.every - 1}{d.route.count >= d.route.every - 1 ? " · the next COD order is routed" : ""} · Routed so far: {d.route.routed}
           </p>
           <label className="flex items-center gap-2 text-[13px] text-ink-soft"><input type="checkbox" name="reset" /> Start counting again from 0</label>
           <SubmitButton className="btn-primary h-9" busyText="Saving">Save routing</SubmitButton>
