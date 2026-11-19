@@ -108,7 +108,12 @@ export async function checkCode(store: Store, channel: Channel, target: string, 
     if (!widgetToken) return { ok: false, error: "Enter the code we sent you" };
     const phone = await verifyWidgetToken(widgetToken);
     if (!phone) return { ok: false, error: "Couldn't confirm the code. Please try again." };
-    return phone === target ? { ok: true } : { ok: false, error: "The code was for a different number." };
+    if (phone !== target) return { ok: false, error: "The code was for a different number." };
+    // Mark the latest code to this number as used (Settings → Messages & OTP shows it as verified)
+    const [last] = await db.select({ id: customerOtps.id }).from(customerOtps)
+      .where(and(eq(customerOtps.storeId, store.id), eq(customerOtps.target, target))).orderBy(desc(customerOtps.createdAt)).limit(1);
+    if (last) await db.update(customerOtps).set({ verifiedAt: new Date() }).where(eq(customerOtps.id, last.id)).catch(() => {});
+    return { ok: true };
   }
   const [row] = await db.select().from(customerOtps).where(and(eq(customerOtps.storeId, store.id), eq(customerOtps.target, target))).orderBy(desc(customerOtps.createdAt)).limit(1);
   if (!row) return { ok: false, error: "Ask for a code first" };
