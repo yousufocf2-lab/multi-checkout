@@ -156,6 +156,7 @@ export default function MessageUsage() {
                     <div className="min-w-0 flex-1">
                       <p className="flex justify-between gap-2 text-[13.5px]"><span className="font-medium text-ink">{k.label}</span><span className="num font-semibold">{inr(r.paise)}</span></p>
                       <p className="truncate text-[12px] text-ink-soft">{r.note ?? r.ref}</p>
+                      {(r.resent > 0 || r.verified != null) && <p className="mt-1 flex flex-wrap items-center gap-2"><Resent r={r} /><Verified v={r.verified} /></p>}
                       <p className="text-[11.5px] text-ink-faint">{new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</p>
                     </div>
                   </li>
@@ -169,6 +170,8 @@ export default function MessageUsage() {
                     <th className="px-5 py-2.5 font-semibold">Date</th>
                     <th className="px-3 py-2.5 font-semibold">Type</th>
                     <th className="px-3 py-2.5 font-semibold">Details</th>
+                    <th className="px-3 py-2.5 text-center font-semibold">Resent</th>
+                    <th className="px-3 py-2.5 font-semibold">Verification</th>
                     <th className="px-5 py-2.5 text-right font-semibold">Amount</th>
                   </tr>
                 </thead>
@@ -182,7 +185,9 @@ export default function MessageUsage() {
                           <span className="flex items-center gap-2 font-medium text-ink"><span className="h-2 w-2 rounded-full" style={{ background: DOT[k.group] }} />{k.label}</span>
                           <span className="ml-4 block text-[11.5px] text-ink-faint">{GROUP_INFO[k.group].label}</span>
                         </td>
-                        <td className="max-w-[360px] truncate px-3 py-2.5 text-ink-soft">{r.note ?? r.ref}</td>
+                        <td className="max-w-[320px] truncate px-3 py-2.5 text-ink-soft">{r.note ?? r.ref}</td>
+                        <td className="px-3 py-2.5 text-center"><Resent r={r} /></td>
+                        <td className="px-3 py-2.5"><Verified v={r.verified} /></td>
                         <td className="num px-5 py-2.5 text-right font-semibold text-ink">{inr(r.paise)}</td>
                       </tr>
                     );
@@ -204,4 +209,23 @@ export default function MessageUsage() {
       </section>
     </div>
   );
+}
+
+/** How many times the same code request was sent again (the row's amount covers every send). */
+function Resent({ r }: { r: { resent: number; at: string; lastAt: string } }) {
+  if (!r.resent) return <span className="text-[12px] text-ink-faint">0</span>;
+  const last = new Date(r.lastAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" });
+  return (
+    <span title={`Sent ${r.resent + 1} times · last at ${last}`} className="inline-flex items-center gap-1 rounded-full bg-[#eef2ff] px-2 py-0.5 text-[11.5px] font-semibold text-[#3730a3]">
+      <Icon name="refresh" className="h-3 w-3" />{r.resent} resent
+    </span>
+  );
+}
+
+/** OTP only: did the customer enter the code? */
+function Verified({ v }: { v: boolean | null }) {
+  if (v == null) return <span className="text-[12px] text-ink-faint">—</span>;
+  return v
+    ? <span className="inline-flex items-center gap-1 rounded-full bg-[#e3f1ea] px-2 py-0.5 text-[11.5px] font-semibold text-[#1f6f4a]"><Icon name="check" className="h-3 w-3" />Verified</span>
+    : <span className="inline-flex items-center gap-1 rounded-full bg-[#fdeceb] px-2 py-0.5 text-[11.5px] font-semibold text-[#b42318]"><Icon name="close" className="h-3 w-3" />Not verified</span>;
 }

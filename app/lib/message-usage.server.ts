@@ -35,16 +35,45 @@ export async function messageUsage(storeId: number, range: Range, filter: MsgFil
 
   const types = typesFor(filter);
   const offset = (Math.max(1, page) - 1) * PAGE_SIZE;
+  // OTPs to the same number within 15 minutes are one request: the first send plus resends (like the MSG91 log).
+  // Every send is still charged; the row shows how many went and the total.
   const rows = (await db.execute(sql`
-    select x.id, x.type, x.amount, x.note, x.ref_id, x.created_at
-    from ${source(storeId)} x where x.type in (${inList(types)}) and ${when}
-    order by x.created_at desc, x.id desc limit ${PAGE_SIZE + 1} offset ${offset}`)) as unknown as { id: string; type: string; amount: string | number; note: string | null; ref_id: string; created_at: string | Date }[];
+    with x as (
+      select x.*, o.phone_key, o.verified
+      from ${source(storeId)} x
+      left join lateral (
+        select coalesce(co.phone, cu.target) as phone_key, coalesce(co.verified_at, cu.verified_at) is not null as verified
+        from (select 1) one
+        left join checkout_otps co on co.id = x.ref_id
+        left join customer_otps cu on cu.id = x.ref_id
+      ) o on x.type = 'otp'
+      where x.type in (${inList(types)}) and ${when}
+    ),
+    k as (
+      select x.*, case when x.type = 'otp' then x.type || ':' || coalesce(x.phone_key, x.note, x.id) || ':' || coalesce(split_part(x.note, ' ', 1), '') else x.id end as gkey
+      from x
+    ),
+    b as (
+      select k.*, case when k.type = 'otp' and k.created_at - lag(k.created_at) over (partition by k.gkey order by k.created_at) <= interval '15 minutes' then 0 else 1 end as brk
+      from k
+    ),
+    g as (
+      select b.*, sum(b.brk) over (partition by b.gkey order by b.created_at, b.id rows unbounded preceding) as grp from b
+    )
+    select min(g.id) as id, min(g.type) as type, min(g.note) as note, min(g.ref_id) as ref_id,
+      min(g.created_at) as created_at, max(g.created_at) as last_at, count(*)::int as sends,
+      sum(g.amount)::bigint as amount, bool_or(coalesce(g.verified, false)) as verified, bool_or(g.type = 'otp' and g.phone_key is not null) as known
+    from g group by g.gkey, g.grp
+    order by min(g.created_at) desc, min(g.id) desc limit ${PAGE_SIZE + 1} offset ${offset}`)) as unknown as {
+      id: string; type: string; amount: string | number; note: string | null; ref_id: string; created_at: string | Date; last_at: string | Date; sends: number; verified: boolean; known: boolean;
+    }[];
 
   return {
     totals: byType.map((r) => ({ type: r.type, count: Number(r.n), paise: Number(r.paise) })),
     rows: rows.slice(0, PAGE_SIZE).map((r) => ({
       id: r.id, type: r.type, paise: Number(r.amount), note: r.note, ref: r.ref_id,
-      at: new Date(r.created_at).toISOString(),
+      at: new Date(r.created_at).toISOString(), lastAt: new Date(r.last_at).toISOString(),
+      resent: Math.max(0, Number(r.sends) - 1), verified: r.type === "otp" && r.known ? Boolean(r.verified) : null,
     })),
     hasMore: rows.length > PAGE_SIZE,
     page: Math.max(1, page),
