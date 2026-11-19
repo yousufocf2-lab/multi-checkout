@@ -61,8 +61,10 @@ export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel, w
       .then((token) => { setW((x) => ({ ...x, token, busy: false })); setTimeout(() => formRef.current?.requestSubmit(formRef.current.querySelector<HTMLButtonElement>("[data-verify]") ?? undefined), 0); })
       .catch((e: Error) => setW((x) => ({ ...x, busy: false, error: e.message })));
   };
+  const [resends, setResends] = useState(0); // SMS cost control: 2 resends per code request
   const resendWidget = () => {
-    if (!w.reqId) return;
+    if (!w.reqId || resends >= 2) return;
+    setResends((n) => n + 1);
     setW((x) => ({ ...x, busy: true, error: null }));
     widgetRetry(widget!, w.reqId).then(() => { setW((x) => ({ ...x, busy: false })); setWait(30); }).catch((e: Error) => setW((x) => ({ ...x, busy: false, error: e.message })));
   };
@@ -93,9 +95,11 @@ export function OtpStep({ hidden, error, resendIn = 30, onChange, submitLabel, w
       </button>
       <div className="flex items-center justify-between text-sm">
         <button type="button" onClick={onChange} className="text-ink-soft hover:text-ink">← Change details</button>
-        <button type={useWidget ? "button" : "submit"} name="intent" value="send" formNoValidate disabled={wait > 0 || resending || w.busy} onClick={useWidget ? resendWidget : undefined} className="font-medium text-brand disabled:text-ink-faint">
-          {resending ? "Sending…" : wait > 0 ? `Resend in ${wait}s` : "Resend code"}
-        </button>
+        {useWidget && resends >= 2 ? <span className="text-[13px] text-ink-faint">No more resends</span> : (
+          <button type={useWidget ? "button" : "submit"} name="intent" value="send" formNoValidate disabled={wait > 0 || resending || w.busy} onClick={useWidget ? resendWidget : undefined} className="font-medium text-brand disabled:text-ink-faint">
+            {resending ? "Sending…" : wait > 0 ? `Resend in ${wait}s` : useWidget ? `Resend code (${2 - resends} left)` : "Resend code"}
+          </button>
+        )}
       </div>
     </Form>
   );

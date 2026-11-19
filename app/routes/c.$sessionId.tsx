@@ -11,7 +11,7 @@ import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates,
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
-import { BLOCK_MESSAGE, blockFor, messaging, otpReady, otpRequired, otpVerified, recordWidgetSend, sendOtp, verifyOtp, verifyWidgetOtp, widgetPublic } from "~/lib/rto.server";
+import { BLOCK_MESSAGE, blockFor, messaging, OTP_LIMIT_MSG, otpReady, otpRequired, otpSendsLeft, otpVerified, recordWidgetSend, sendOtp, verifyOtp, verifyWidgetOtp, widgetPublic } from "~/lib/rto.server";
 import { codeLength, widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "~/components/msg91-widget";
 import { shieldFor } from "~/lib/rto-shield.server";
 import { SHIELD_MESSAGE } from "~/lib/rto-shield";
@@ -228,6 +228,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ otp: "sent" as const, ...r });
   }
   if (intent === "otp_widget_sent") return json(await recordWidgetSend(store, session.id, normalizePhone(String(fd.get("phone") ?? ""))));
+  // Widget mode: ask before the browser sends (1 OTP + 2 resends per number)
+  if (intent === "otp_widget_allow") {
+    const left = await otpSendsLeft(store, normalizePhone(String(fd.get("phone") ?? "")));
+    return json({ ok: left > 0, left, error: left > 0 ? null : OTP_LIMIT_MSG });
+  }
   if (intent === "otp_widget") {
     const r = await verifyWidgetOtp(store, session.id, normalizePhone(String(fd.get("phone") ?? "")), String(fd.get("token") ?? ""));
     return json({ otp: "verify" as const, ...r });
@@ -1673,9 +1678,10 @@ function Trust({ phone, text, className = "" }: { phone: string | null; text: st
 }
 
 function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widget: WidgetConfig | null; onClose: () => void; onVerified: () => void }) {
-  const send = useFetcher<{ ok: boolean; error?: string; resendIn?: number }>();
+  const send = useFetcher<{ ok: boolean; error?: string; resendIn?: number; left?: number }>();
   const verify = useFetcher<{ ok: boolean; error?: string }>();
-  const sent = useFetcher();
+  const sent = useFetcher<{ ok: boolean; left?: number }>();
+  const [left, setLeft] = useState<number | null>(null); // OTPs this number can still get (1 + 2 resends)
   const [code, setCode] = useState("");
   const [wait, setWait] = useState(0);
   // MSG91 widget mode: the browser sends and checks the OTP, our server confirms the token
@@ -1689,10 +1695,19 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   const sendOtp = () => {
     if (!widget) { send.submit({ intent: "otp_send", phone }, { method: "post" }); return; }
     setW((x) => ({ ...x, busy: "send", error: null }));
-    (w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!, () => widgetSend(widget, phone)) : widgetSend(widget, phone))
+    const ask = new FormData(); ask.set("intent", "otp_widget_allow"); ask.set("phone", phone);
+    fetch(`${location.pathname}?_data=${encodeURIComponent("routes/c.$sessionId")}`, { method: "POST", body: ask })
+      .then((r) => r.json() as Promise<{ ok: boolean; left: number; error: string | null }>)
+      .catch(() => ({ ok: true, left: 1, error: null })) // never block the customer on a network hiccup
+      .then((a) => {
+        if (!a.ok) { setLeft(0); setW((x) => ({ ...x, busy: null, error: a.error ?? "OTP limit reached." })); return Promise.reject(null); }
+        return w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!, () => widgetSend(widget, phone)) : widgetSend(widget, phone);
+      })
       .then((reqId) => { token.current = null; setW({ reqId, busy: null, error: null }); setWait(30); track("otp_sent", { widget: true }); sent.submit({ intent: "otp_widget_sent", phone }, { method: "post" }); })
-      .catch((e: Error) => { track("otp_error", { stage: "send", m: e.message.slice(0, 120) }); setW((x) => ({ ...x, busy: null, error: e.message })); });
+      .catch((e: Error | null) => { if (!e) return; track("otp_error", { stage: "send", m: e.message.slice(0, 120) }); setW((x) => ({ ...x, busy: null, error: e.message })); });
   };
+  useEffect(() => { if (typeof sent.data?.left === "number") setLeft(sent.data.left); }, [sent.data]);
+  useEffect(() => { if (send.data && typeof send.data.left === "number") setLeft(send.data.left); }, [send.data]);
   useEffect(() => { sendOtp(); input.current?.focus(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => { if (send.data?.resendIn) setWait(send.data.resendIn); }, [send.data]);
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((x) => x - 1), 1000); return () => clearTimeout(t); }, [wait]);
@@ -1741,9 +1756,13 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
         </button>
         <div className="mt-4 flex items-center justify-between text-sm">
           <button type="button" onClick={onClose} className="text-ink-soft hover:text-ink">Change number</button>
-          <button type="button" disabled={wait > 0 || sending} onClick={() => { setCode(""); sendOtp(); }} className="font-medium text-brand disabled:text-ink-faint">
-            {wait > 0 ? `Resend in ${wait}s` : "Resend OTP"}
-          </button>
+          {left === 0 ? (
+            <span className="text-[13px] text-ink-faint">No more resends</span>
+          ) : (
+            <button type="button" disabled={wait > 0 || sending} onClick={() => { setCode(""); sendOtp(); }} className="font-medium text-brand disabled:text-ink-faint">
+              {wait > 0 ? `Resend in ${wait}s` : `Resend OTP${left != null ? ` (${left} left)` : ""}`}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, inArray, isNotNull, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import crypto from "node:crypto";
 import { blockedCustomers, checkoutOtps, db, orders, stores, walletTransactions, type MessagingSettings, type Order, type Store } from "~/db.server";
 import { BLOCK_KINDS, normValue, type BlockKind } from "./blocklist";
@@ -128,6 +128,23 @@ const OTP_TTL_MS = 10 * 60_000;
 const OTP_VALID_FOR_ORDER_MS = 30 * 60_000;
 const RESEND_AFTER_MS = 30_000;
 const MAX_SENDS_PER_HOUR = 5;
+/** Cost control: one OTP + 2 resends per number, then wait (counted per store and phone, any checkout). */
+export const OTP_MAX_SENDS = 3;
+const OTP_WINDOW_MS = 30 * 60_000;
+export const OTP_LIMIT_MSG = "You've asked for the OTP 3 times. Use the last code we sent, or try again in 30 minutes.";
+
+async function phoneSends(storeId: number, phone: string) {
+  const rows = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
+    .where(and(eq(checkoutOtps.storeId, storeId), eq(checkoutOtps.phone, phone), isNull(checkoutOtps.verifiedAt), gt(checkoutOtps.createdAt, new Date(Date.now() - OTP_WINDOW_MS))))
+    .limit(OTP_MAX_SENDS + 1);
+  return rows.length;
+}
+
+/** How many more OTPs this number can get right now (widget mode asks before sending). */
+export async function otpSendsLeft(store: Store, phone: string) {
+  if (!/^[6-9]\d{9}$/.test(phone)) return 0;
+  return Math.max(0, OTP_MAX_SENDS - (await phoneSends(store.id, phone)));
+}
 const MAX_ATTEMPTS = 5;
 
 const hashCode = (id: string, code: string) => crypto.createHmac("sha256", env.sessionSecret).update(`${id}:${code}`).digest("hex");
@@ -149,6 +166,8 @@ export async function sendOtp(store: Store, sessionId: string, phone: string): P
   const m = await messaging();
   if (!otpReady(m)) return { ok: false, error: "OTP service isn't available right now" };
   if (otpMode(m) === "widget") return { ok: false, error: "Please refresh the page and try again" }; // the browser sends widget OTPs
+  const used = await phoneSends(store.id, phone);
+  if (used >= OTP_MAX_SENDS) return { ok: false, error: OTP_LIMIT_MSG, left: 0 } as { ok: false; error: string };
 
   const recent = await db.select({ createdAt: checkoutOtps.createdAt }).from(checkoutOtps)
     .where(and(eq(checkoutOtps.sessionId, sessionId), gt(checkoutOtps.createdAt, new Date(Date.now() - 3600_000))))
@@ -180,7 +199,7 @@ export async function sendOtp(store: Store, sessionId: string, phone: string): P
   await db.insert(checkoutOtps).values({ id, storeId: store.id, sessionId, phone, codeHash: hashCode(id, code), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
   // ₹ per OTP from the store's wallet, only after the provider accepted it
   await chargeUsage(store.id, "otp", id, `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.slice(-2)}`).catch((e) => console.error("[otp] charge:", e));
-  return { ok: true, resendIn: RESEND_AFTER_MS / 1000 };
+  return { ok: true, resendIn: RESEND_AFTER_MS / 1000, left: Math.max(0, OTP_MAX_SENDS - used - 1) } as { ok: true; resendIn: number };
 }
 
 const masked = (phone: string) => `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.slice(-2)}`;
@@ -189,15 +208,16 @@ const masked = (phone: string) => `OTP to +91 ${phone.slice(0, 2)}xxxxxx${phone.
  * Widget mode: the browser tells us each time MSG91 sent (or re-sent) an OTP, so it's counted and charged
  * from the store's wallet like a normal OTP. Rate-limited per checkout session.
  */
-export async function recordWidgetSend(store: Store, sessionId: string, phone: string): Promise<{ ok: boolean }> {
+export async function recordWidgetSend(store: Store, sessionId: string, phone: string): Promise<{ ok: boolean; left?: number }> {
   if (!/^[6-9]\d{9}$/.test(phone) || otpMode(await messaging()) !== "widget") return { ok: false };
+  const used = await phoneSends(store.id, phone);
   const recent = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
     .where(and(eq(checkoutOtps.sessionId, sessionId), gt(checkoutOtps.createdAt, new Date(Date.now() - 3600_000)))).limit(MAX_SENDS_PER_HOUR + 1);
   if (recent.length >= MAX_SENDS_PER_HOUR + 1) return { ok: false };
   const id = crypto.randomUUID();
   await db.insert(checkoutOtps).values({ id, storeId: store.id, sessionId, phone, codeHash: hashCode(id, crypto.randomUUID()), expiresAt: new Date(Date.now() + OTP_TTL_MS) });
   await chargeUsage(store.id, "otp", id, masked(phone)).catch((e) => console.error("[otp] charge:", e));
-  return { ok: true };
+  return { ok: true, left: Math.max(0, OTP_MAX_SENDS - used - 1) };
 }
 
 /** Widget mode: the browser verified the OTP with MSG91; we confirm the token and mark this session's phone verified. */

@@ -81,6 +81,9 @@ export async function sendCode(store: Store, channel: Channel, target: string, i
   const recent = await db.select({ createdAt: customerOtps.createdAt }).from(customerOtps)
     .where(and(eq(customerOtps.storeId, store.id), eq(customerOtps.target, target), gt(customerOtps.createdAt, hourAgo))).orderBy(desc(customerOtps.createdAt));
   if (recent.length >= MAX_SENDS_HOUR) return { ok: false, error: "Too many codes requested. Try again in an hour." };
+  // Cost control for SMS: 1 code + 2 resends per number in 30 minutes
+  if (channel === "phone" && recent.filter((r) => r.createdAt.getTime() > Date.now() - 30 * 60_000).length >= 3)
+    return { ok: false, error: "You've asked for the code 3 times. Use the last code we sent, or try again in 30 minutes." };
   const wait = recent[0] ? RESEND_MS - (Date.now() - recent[0].createdAt.getTime()) : 0;
   if (wait > 0) return { ok: false, error: "Please wait before asking for a new code", resendIn: Math.ceil(wait / 1000) };
   if (ip) {
