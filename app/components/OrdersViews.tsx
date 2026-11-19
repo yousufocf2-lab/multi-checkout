@@ -50,7 +50,7 @@ export function PaymentTag({ method, status }: { method: string; status: string 
 }
 
 export type OrdersFilterState = { status: string; method: string; tag: string; product: string; state: string; q: string; min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; range: { preset: string; since: string; until: string } };
-export type OrdersSummary = { count: number; value: number; prepaid: number; cod: number; aov: number; items: number; fulfilled: number; delivered: number; returned: number };
+export type OrdersSummary = { count: number; cancelled?: number; value: number; prepaid: number; cod: number; aov: number; items: number; fulfilled: number; delivered: number; returned: number };
 
 const rupee = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
 
@@ -128,7 +128,7 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
             {views.map((v) => <option key={v.label}>{v.label}</option>)}
           </select>
           <OrdersSearchFilter filters={f} products={products} tags={tagOptions} deliveryOptions={deliveryOptions} clearAll={clearAll} activeCount={extra} />
-          <span className="num ml-auto hidden text-[12px] text-ink-faint sm:inline">{n(summary.prepaid)} prepaid · {n(summary.cod)} COD{summary.count > 0 && ` · avg ${rupee(summary.aov)}`}</span>
+          <span className="num ml-auto hidden text-[12px] text-ink-faint sm:inline">{n(summary.prepaid)} prepaid · {n(summary.cod)} COD{summary.cancelled ? <span className="text-bad"> · {n(summary.cancelled)} cancelled</span> : null}{summary.count > 0 && ` · avg ${rupee(summary.aov)}`}</span>
         </div>
 
         {orders.length === 0 ? (

@@ -8,6 +8,7 @@ import { liveSessions } from "./live.server";
 export const PAGE = 50;
 
 const OK = sql`('paid','cod_placed')`;
+const OK_OR_CANCELLED = sql`('paid','cod_placed','cancelled')`;
 const amountCol = orderValueSql;
 
 export type OrderFilters = {
@@ -34,7 +35,8 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
 
   const where: SQL[] = [inArray(orders.storeId, ids.length ? ids : [-1])];
   const push = (key: string, condition: SQL) => where.push(params.get(`${key}_not`) === "1" ? negate(condition) : condition);
-  // Status: completed (paid online + COD placed) unless asked otherwise
+  // Status: completed (paid online + COD placed) and cancelled unless asked otherwise.
+  // Cancelled orders stay in the default list (with a Cancelled badge) so a day's count never shrinks after cancels.
   if (f.status === "failed") push("status", eq(orders.status, "failed"));
   else if (f.status === "cancelled") push("status", eq(orders.status, "cancelled"));
   else if (f.status === "pending") push("status", sql`${orders.status} in ('pending_payment','cod_placing')`);
@@ -42,7 +44,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   else if (f.status === "open") push("status", sql`${orders.status} in ('paid','cod_placed','pending_payment','cod_placing')`);
   else if (f.status === "any") { /* All statuses */ }
   else if (f.status) push("status", sql`${orders.status} in ${OK}`);
-  else where.push(sql`${orders.status} in ${OK}`);
+  else where.push(sql`${orders.status} in ${OK_OR_CANCELLED}`);
 
   if (f.method === "prepaid" || f.method === "cod" || f.method === "partial") push("method", eq(orders.paymentMethod, f.method));
   if (f.paymentStatus === "paid") push("payment_status", sql`${orders.status} = 'paid'`);
@@ -98,7 +100,8 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
       .innerJoin(stores, eq(stores.id, orders.storeId)).where(where).orderBy(desc(orders.createdAt)).limit(PAGE + 1).offset((page - 1) * PAGE),
     db.select({
       n: sql<number>`count(*)::int`,
-      value: sql<string>`coalesce(sum(${amountCol} - ${orders.refunded}), 0)`,
+      value: sql<string>`coalesce(sum(${amountCol} - ${orders.refunded}) filter (where ${orders.status} <> 'cancelled'), 0)`,
+      cancelled: sql<number>`count(*) filter (where ${orders.status} = 'cancelled')::int`,
       prepaid: sql<number>`count(*) filter (where ${orders.paymentMethod} <> 'cod')::int`,
       cod: sql<number>`count(*) filter (where ${orders.paymentMethod} = 'cod')::int`,
       items: sql<number>`coalesce(sum((select coalesce(sum((li->>'quantity')::int), 0) from jsonb_array_elements(${orders.items}) li)), 0)::int`,
@@ -114,6 +117,8 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
   ]);
   const names = new Map(scope.map((s) => [s.id, s.name]));
   const n = sum?.n ?? 0;
+  const cancelled = sum?.cancelled ?? 0;
+  const live = n - cancelled;
   const value = Number(sum?.value ?? 0) / 100;
   return {
     orders: rows.slice(0, PAGE).map(({ order: o, store }) => {
@@ -124,7 +129,7 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
     hasMore: rows.length > PAGE,
     page,
     filters,
-    summary: { count: n, value, prepaid: sum?.prepaid ?? 0, cod: sum?.cod ?? 0, aov: n ? value / n : 0, items: sum?.items ?? 0, fulfilled: sum?.fulfilled ?? 0, delivered: sum?.delivered ?? 0, returned: sum?.returned ?? 0 },
+    summary: { count: n, cancelled, value, prepaid: sum?.prepaid ?? 0, cod: sum?.cod ?? 0, aov: live > 0 ? value / live : 0, items: sum?.items ?? 0, fulfilled: sum?.fulfilled ?? 0, delivered: sum?.delivered ?? 0, returned: sum?.returned ?? 0 },
     products: (products as unknown as { title: string }[]).map((r) => r.title).filter(Boolean).sort((a, b) => a.localeCompare(b)),
     tagOptions: [...new Set(tagRows.flatMap((r) => r.manualTags ?? []).concat("Smart Checkout", "WhatsApp"))].sort((a, b) => a.localeCompare(b)),
     deliveryOptions: [...new Set(rows.map(({ order }) => order.shippingTitle).filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b)),
