@@ -323,7 +323,8 @@ export async function sendCapiPurchase(store: Store, order: Order) {
     data: [
       {
         event_name: "Purchase",
-        event_time: Math.floor(Date.now() / 1000),
+        // When the order was placed (Meta takes events up to 7 days old; late sends keep the real time)
+        event_time: Math.floor(Math.max(new Date(order.createdAt).getTime(), Date.now() - 6.9 * 86_400_000) / 1000),
         event_id: order.id,
         action_source: "website",
         event_source_url: t.sourceUrl,

@@ -10,7 +10,7 @@ import { requireSuperAdmin } from "~/lib/auth.server";
 import { normalizePhone } from "~/lib/cod.server";
 import { DEFAULT_BLOCK_ON, MAX_GROUPS, MAX_STORES, MIN_STORES, newGroupId, PLACED_WINDOW_DAYS, resolveGroups, STATE_LABEL, type LinkedHit } from "~/lib/store-connect";
 import { connectGroups, linkedOrders, saveConnectGroups } from "~/lib/store-connect.server";
-import { getRoute, saveRoute } from "~/lib/order-route.server";
+import { getRoute, saveRoute, sendMissedRoutedEvents } from "~/lib/order-route.server";
 import { OUTSOURCE_TAG, ROUTE_MAX, ROUTE_MIN } from "~/lib/order-route";
 
 const TABS = [{ id: "store-connect", label: "Store data connect" }] as const;
@@ -43,6 +43,10 @@ export async function action({ request }: ActionFunctionArgs) {
     return json({ error: short ? `"${short.name}" needs at least ${MIN_STORES} stores before it can be turned on. It was saved as off.` : null, saved: true, test: null });
   }
 
+  if (intent === "route-events") {
+    const r = await sendMissedRoutedEvents();
+    return json({ error: null, saved: false, test: null, events: r });
+  }
   if (intent === "route") {
     const from = Number(fd.get("from")), to = Number(fd.get("to")), every = Number(fd.get("every"));
     const on = fd.get("on") === "on";
@@ -67,6 +71,7 @@ export async function action({ request }: ActionFunctionArgs) {
 export default function SpecialLogic() {
   const d = useLoaderData<typeof loader>();
   const a = useActionData<typeof action>();
+  const ev = (a as { events?: { found: number; sent: number; skipped: string[] } } | undefined)?.events;
   const [groups, setGroups] = useState<StoreConnectGroup[]>(d.groups);
   useEffect(() => setGroups(d.groups), [d.groups]);
   const dirty = JSON.stringify(groups) !== JSON.stringify(d.groups);
@@ -202,6 +207,17 @@ export default function SpecialLogic() {
           </p>
           <label className="flex items-center gap-2 text-[13px] text-ink-soft"><input type="checkbox" name="reset" /> Start counting again from 0</label>
           <SubmitButton className="btn-primary h-9" busyText="Saving">Save routing</SubmitButton>
+        </Form>
+        <Form method="post" className="flex flex-wrap items-center gap-3 border-t border-rule pt-3">
+          <input type="hidden" name="intent" value="route-events" />
+          <SubmitButton className="btn-secondary h-9" busyText="Sending">Send missed Purchase events</SubmitButton>
+          <span className="text-[12.5px] text-ink-soft">Routed orders from the last 7 days whose Purchase hasn't reached the original store's Meta pixel yet.</span>
+          {ev && (
+            <p className="w-full text-[13px]">
+              {ev.found === 0 ? "Nothing missed." : `${ev.sent} of ${ev.found} sent to Meta.`}
+              {ev.skipped.length > 0 && <span className="block text-[12.5px] text-ink-soft">Not sent (cancelled, or COD Purchase is off for that store): {ev.skipped.join(", ")}</span>}
+            </p>
+          )}
         </Form>
       </section>
 

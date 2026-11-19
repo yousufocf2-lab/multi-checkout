@@ -79,3 +79,26 @@ export async function takeSourceStock(fromStoreId: number, items: { variantId: s
       .where(sql`${catalogVariants.id} = ${gpNum(l.variantId)} and ${catalogVariants.storeId} = ${fromStoreId} and ${catalogVariants.stock} is not null`);
   }
 }
+
+/**
+ * Routed orders placed before their Purchase went to the original store's Meta pixel: send it now.
+ * Meta accepts Conversions API events up to 7 days old; same event id as the browser, so nothing is counted twice.
+ */
+export async function sendMissedRoutedEvents() {
+  const { orders } = await import("~/db.server");
+  const { trackPurchase } = await import("./orders.server");
+  const { and, gt, isNull, sql: q } = await import("drizzle-orm");
+  const list = await db.select().from(orders).where(and(
+    q`${orders.tracking}->'outsource'->>'from' is not null`, isNull(orders.capiSentAt),
+    gt(orders.createdAt, new Date(Date.now() - 6.9 * 86_400_000)),
+  ));
+  let sent = 0;
+  const skipped: string[] = [];
+  for (const o of list) {
+    await trackPurchase(null as unknown as Store, o); // routed: it looks up the original store itself
+    const [after] = await db.select({ at: orders.capiSentAt, status: orders.status }).from(orders).where(eq(orders.id, o.id)).limit(1);
+    if (after?.at) sent++; else skipped.push(`${o.shopifyOrderName ?? o.id} (${after?.status ?? o.status})`);
+  }
+  console.log(`[route] missed events: ${sent} sent, ${skipped.length} not sent of ${list.length}`);
+  return { found: list.length, sent, skipped };
+}
