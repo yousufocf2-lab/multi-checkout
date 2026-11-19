@@ -369,6 +369,8 @@ export async function handleWhatsappReply(msg: WaMessage) {
   }
 
   await db.update(orders).set({ confirmStatus: status, confirmAt: new Date(), updatedAt: new Date() }).where(eq(orders.id, row.id));
+  // Confirmed on WhatsApp: book it now if the store ships WhatsApp-confirmed orders (the shipping rule decides)
+  if (status === "confirmed") void import("./auto-ship.server").then((m) => m.shipNowIfReady(row.storeId, row.id)).catch((e) => console.error("[auto-ship] now", e));
   // Website order already booked with Delhivery: cancel that shipment too
   if (action === "cancel" && row.paymentMethod === "cod" && row.awb) {
     const { cancelBookedShipment } = await import("./auto-ship.server");

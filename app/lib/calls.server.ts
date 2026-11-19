@@ -190,6 +190,8 @@ export async function recordCall(store: Store, orderId: string, me: number | nul
   if (act.kind === "cancelled" && o.paymentMethod === "cod") {
     await cancelOrders(store, [o.id], { refund: false, reason: `Cancelled on call${act.reason ? `: ${act.reason}` : ""}`, by });
   }
+  // Confirmed on the call: send it to the courier straight away (the store's shipping rule still decides)
+  if (act.kind === "confirmed") void import("./auto-ship.server").then((m) => m.shipNowIfReady(store.id, o.id)).catch((e) => console.error("[auto-ship] now", e));
   return { ok: act.kind === "confirmed" ? "Order confirmed." : act.kind === "follow_up" ? "Moved to follow-up." : o.paymentMethod === "cod" ? "Order cancelled." : "Marked cancelled. The owner will cancel and refund this paid order." };
 }
 

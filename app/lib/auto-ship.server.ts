@@ -2,14 +2,14 @@
 //   Delhivery  – the shipment is booked and the AWB saved on the order
 //   Shiprocket – the order is created in the Shiprocket panel; AWB, status and cancellations made there come back
 // Live status then comes from the normal tracking sync (and Shiprocket's webhook when it's set up).
-import { and, asc, eq, gt, inArray, isNotNull, isNull, like, lt, ne, notInArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, like, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { catalogVariants, courierAccounts, db, orders, stores, type CourierAccount, type Order, type Store } from "~/db.server";
 import { createDelhiveryShipment } from "./couriers/delhivery.server";
 import { cancelShiprocketOrder, createShiprocketOrder, shiprocketOrderState } from "./couriers/shiprocket-orders.server";
 import { mapStatusText } from "./couriers/common.server";
 import { stateName } from "./states";
 import { codAmount } from "./store-fulfil.server";
-import { ruleAllows, shipRuleOf } from "./ship-rule";
+import { ruleAllows, shipRuleOf, type ShipRule } from "./ship-rule";
 
 const RETRY_MS = 30 * 60_000; // a failed booking is tried again after 30 minutes
 const RETRY_PIN_MS = 24 * 3600_000; // the courier doesn't deliver to that pincode: try again next day, not every 30 minutes
@@ -90,31 +90,74 @@ export async function runAutoShip() {
   for (const [storeId, couriers] of perStore) {
     const [store] = await db.select().from(stores).where(and(eq(stores.id, storeId), eq(stores.active, true))).limit(1);
     if (!store || shipRuleOf(store).mode === "off") continue; // the store ships by hand from the Orders page
+    // Only orders the rule already clears, oldest first. (Before, the first 50 open orders were read in no order:
+    // a store with many orders still waiting for a call could leave confirmed orders outside those 50 for hours.)
     const list = await db.select().from(orders).where(and(
       eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), like(orders.shopifyOrderId, "gp:%"), isNull(orders.awb), isNull(orders.courierRef),
       or(isNull(orders.confirmStatus), ne(orders.confirmStatus, "cancelled"), eq(orders.callStatus, "confirmed")),
       or(isNull(orders.shipBookAt), lt(orders.shipBookAt, new Date(Date.now() - RETRY_MS))),
-    )).limit(50);
+      lt(orders.createdAt, new Date(Date.now() - WAIT_MS)),
+      cleared(shipRuleOf(store)),
+    )).orderBy(asc(orders.createdAt)).limit(50);
     for (const o of list) {
       if (!readyToBook(store, o)) continue;
-      let r: { ok: boolean; error?: string } = { ok: false };
-      const errors: string[] = [];
-      for (const acc of couriers) {
-        r = await bookOrder(store, o, acc);
-        if (r.ok) break;
-        errors.push(r.error ?? "");
-        if (!isPinError(r.error ?? "")) break; // only a pincode problem moves on to the next courier
-      }
-      if (!r.ok && errors.length && errors.every(isPinError)) {
-        // Wait a day before trying again (shipBookAt in the future = skipped until then)
-        await db.update(orders).set({
-          shipError: errors.length > 1 ? `None of your couriers deliver to pincode ${o.customer.pincode}. Book it by hand.` : errors[0],
-          shipBookAt: new Date(Date.now() + RETRY_PIN_MS - RETRY_MS),
-        }).where(eq(orders.id, o.id));
-      }
+      await bookWithCouriers(store, o, couriers);
     }
   }
   await pullShiprocketChanges().catch((e) => console.error("[auto-ship] shiprocket pull", e));
+}
+
+/** SQL version of ruleAllows: which open orders the shipping rule lets through. */
+function cleared(rule: ShipRule): SQL | undefined {
+  const notCallCancelled = sql`${orders.callStatus} is distinct from 'cancelled'`;
+  if (rule.mode === "all") return notCallCancelled;
+  const wa = eq(orders.confirmStatus, "confirmed"), team = eq(orders.callStatus, "confirmed");
+  const confirmed = rule.by === "whatsapp" ? wa : rule.by === "team" ? team : or(wa, team);
+  return and(notCallCancelled, rule.prepaidNow ? or(confirmed, eq(orders.paymentMethod, "prepaid")) : confirmed);
+}
+
+/** Books one order with the store's couriers: the next courier only takes it when the first can't deliver to the pincode. */
+async function bookWithCouriers(store: Store, o: Order, couriers: CourierAccount[]) {
+  // Claim the order first, so the timer and an instant booking can never both send it (no double AWB)
+  const claimed = await db.update(orders).set({ shipBookAt: new Date() }).where(and(
+    eq(orders.id, o.id), isNull(orders.awb), isNull(orders.courierRef),
+    or(isNull(orders.shipBookAt), lt(orders.shipBookAt, new Date(Date.now() - RETRY_MS))),
+  )).returning({ id: orders.id });
+  if (!claimed.length) return { ok: false, error: "already being booked" };
+  let r: { ok: boolean; error?: string } = { ok: false };
+  const errors: string[] = [];
+  for (const acc of couriers) {
+    r = await bookOrder(store, o, acc);
+    if (r.ok) break;
+    errors.push(r.error ?? "");
+    if (!isPinError(r.error ?? "")) break; // only a pincode problem moves on to the next courier
+  }
+  if (!r.ok && errors.length && errors.every(isPinError)) {
+    // Wait a day before trying again (shipBookAt in the future = skipped until then)
+    await db.update(orders).set({
+      shipError: errors.length > 1 ? `None of your couriers deliver to pincode ${o.customer.pincode}. Book it by hand.` : errors[0],
+      shipBookAt: new Date(Date.now() + RETRY_PIN_MS - RETRY_MS),
+    }).where(eq(orders.id, o.id));
+  }
+  return r;
+}
+
+/**
+ * Right after a confirmation (call or WhatsApp): book this order now instead of waiting for the 5-minute run.
+ * Same checks as the timer: the rule must allow it, and it isn't booked twice.
+ */
+export async function shipNowIfReady(storeId: number, orderId: string) {
+  const [store] = await db.select().from(stores).where(and(eq(stores.id, storeId), eq(stores.active, true))).limit(1);
+  if (!store || shipRuleOf(store).mode === "off") return;
+  const [o] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.storeId, store.id))).limit(1);
+  if (!o || !["paid", "cod_placed"].includes(o.status) || !o.shopifyOrderId?.startsWith("gp:") || o.awb || o.courierRef) return;
+  if (o.shipBookAt && o.shipBookAt.getTime() > Date.now() - RETRY_MS) return; // being booked or waiting to retry
+  if (shipsNothing(o) || !ruleAllows(shipRuleOf(store), o)) return; // confirmed orders don't wait the 10 minutes
+  const couriers = (await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), inArray(courierAccounts.courier, BOOKS), eq(courierAccounts.status, "connected"))).orderBy(asc(courierAccounts.createdAt)))
+    .filter(bookable);
+  if (!couriers.length) return;
+  console.log(`[auto-ship] ${store.name} ${o.id} confirmed → booking now`);
+  await bookWithCouriers(store, o, couriers);
 }
 
 /** Not-yet-shipped Shiprocket statuses: shown as they are, without counting as "in transit". */
