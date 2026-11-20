@@ -8,6 +8,7 @@ import {
   type CallCartLine, type CheckoutSession, type OrderCustomer, type OrderEvent, type OrderLine, type Store,
 } from "~/db.server";
 import { normPhone } from "./blocklist";
+import { OUTSOURCE_TAG } from "./order-route";
 import { hasCourier } from "./logistics.server";
 import { finalizeOrder, newOrderId } from "./orders.server";
 import { decideShield, resolveShield, type ShipCounts, type ShipStatus } from "./rto-shield";
@@ -15,7 +16,10 @@ import { INDIAN_STATES } from "./states";
 import { linkedCodBlocked } from "./store-connect.server";
 
 export const ABANDON_PERM = "abandoned_calls";
-export const ABANDON_TAG = "Abandoned call";
+export const ABANDON_TAG = "Abandoned Recovered";
+// Zavli's orders recovered on a call are marked OUTSOURCE (Zavli never routes its own orders out, so it can't be confused)
+const OUTSOURCE_TAG_STORES = new Set([3]);
+const tagFor = (storeId: number) => (OUTSOURCE_TAG_STORES.has(storeId) ? OUTSOURCE_TAG : ABANDON_TAG);
 const WINDOW_DAYS = 7; // checkouts older than this aren't given to callers
 const IDLE_MIN = 15; // give the customer this long to come back by themselves before a caller gets it
 const LIVE: string[] = ["paid", "cod_placed", "cod_placing", "pending_payment", "cancelled"];
@@ -329,7 +333,7 @@ export async function convertAbandoned(store: Store, id: string, me: number | nu
       status: "cod_placing", paymentMethod: "cod", customer, items,
       subtotal, paymentDiscount: 0, couponCode: null, couponDiscount: 0, offerDiscount: 0,
       shipping: d.shippingPaise, shippingTitle: d.shippingPaise ? "Delivery" : null, total, paymentFee: 0, tip: 0, advance: null,
-      tracking: s.tracking ?? {}, manualTags: [ABANDON_TAG],
+      tracking: s.tracking ?? {}, manualTags: [tagFor(store.id)],
       staffNote: `Abandoned checkout recovered on call by ${by}.${d.note ? ` ${d.note}` : ""}`,
       callStatus: "confirmed", callAt: now, callBy: by.slice(0, 120), assignedTo: s.callAssignedTo, assignedAt: now,
       timeline: [stamp],
