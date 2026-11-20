@@ -200,6 +200,7 @@ export function startAutoShip() {
     void runAutoShip().catch((e) => console.error("[auto-ship]", e));
     // New orders reach the calling team even when nobody has the page open
     void import("./calls.server").then((m) => m.assignAllCalls()).catch((e) => console.error("[calls]", e));
+    void import("./abandoned-calls.server").then((m) => m.assignAllAbandoned()).catch((e) => console.error("[abandoned-calls]", e));
   }, 5 * 60_000);
   globalThis.__autoShip.unref?.();
 }

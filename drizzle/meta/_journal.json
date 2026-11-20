@@ -533,6 +533,13 @@
       "when": 1795497600000,
       "tag": "0075_usage_bills",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795584000000,
+      "tag": "0076_abandoned_calls",
+      "breakpoints": true
     }
   ]
 }

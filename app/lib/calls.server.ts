@@ -30,10 +30,11 @@ export async function assignCalls(store: Store) {
   if (!team.length) return 0;
   const ids = team.map((m) => m.id);
   // Every order of the last 14 days gets a caller, also ones already shipped or prepaid, so the team sees all of them
-  const waiting = (await db.select({ id: orders.id, assignedTo: orders.assignedTo }).from(orders)
+  const waiting = (await db.select({ id: orders.id, assignedTo: orders.assignedTo, callStatus: orders.callStatus }).from(orders)
     .where(and(eq(orders.storeId, store.id), inArray(orders.status, ["paid", "cod_placed"]), gte(orders.createdAt, new Date(Date.now() - WINDOW_DAYS * 86400_000))))
     .orderBy(asc(orders.createdAt)).limit(1000))
-    .filter((o) => o.assignedTo == null || !ids.includes(o.assignedTo));
+    // An order already confirmed on a call stays with whoever confirmed it (e.g. the abandoned-checkout caller who placed it)
+    .filter((o) => o.assignedTo == null || (!ids.includes(o.assignedTo) && o.callStatus !== "confirmed"));
   if (!waiting.length) return 0;
   let rr = store.callRr ?? 0;
   for (const o of waiting) {

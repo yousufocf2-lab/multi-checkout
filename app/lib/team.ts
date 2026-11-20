@@ -23,6 +23,7 @@ export const OWNER_PERMS: (Perm & { group: "Sell" | "Grow" | "Manage" })[] = [
   { id: "products", label: "Products", description: "Products, collections, inventory and media.", group: "Sell" },
   { id: "inbox", label: "WhatsApp inbox", description: "Read and reply to customers on WhatsApp.", group: "Sell" },
   { id: "confirm", label: "Order confirmation (calling)", description: "Gets new orders in turn to call the customer: confirm, follow up or cancel, fix the address and add notes. Sees mobile numbers only of their own orders.", group: "Sell" },
+  { id: "abandoned_calls", label: "Abandoned checkout calling", description: "Gets abandoned checkouts in turn to call the customer: fill in missing details, change the cart and price, and place the order. Sees only real abandoned checkouts, and mobile numbers only of their own.", group: "Sell" },
   { id: "rto", label: "Shipping", description: "Shipping rates, couriers, shipments, failed shipping, remittance, RTO Shield and RTO suite.", group: "Sell" },
   { id: "ads", label: "Marketing & ads", description: "Meta and Google ad reports, profit share.", group: "Grow" },
   { id: "offers", label: "Discounts & offers", description: "Discounts, coupons, bank offers and free gifts.", group: "Grow" },
@@ -57,6 +58,7 @@ export const OWNER_ROLES: OwnerRole[] = [
   { id: "manager", label: "Store manager", group: "Store", description: "Runs the store day to day. No billing or team changes.", perms: ["orders", "products", "inbox", "rto", "ads", "offers", "analytics", "online_store", "settings"] },
   { id: "orders", label: "Order & fulfilment", group: "Store", description: "Confirms, packs and ships orders, handles RTO.", perms: ["orders", "inbox", "rto"] },
   { id: "caller", label: "Order confirmation (calling)", group: "Store", description: "Calls customers to confirm new orders. Orders are shared out in turn between everyone with this role.", perms: ["confirm"] },
+  { id: "abandoned", label: "Abandoned checkout calling", group: "Store", description: "Calls customers who left the checkout, fixes the cart and places their order. Checkouts are shared out in turn.", perms: ["abandoned_calls"] },
   { id: "support", label: "Customer support", group: "Store", description: "Answers customers and looks up their orders.", perms: ["orders", "inbox"] },
   { id: "marketing", label: "Marketer", group: "Store", description: "Ads, discounts and the numbers behind them.", perms: ["ads", "offers", "analytics", "orders"] },
   { id: "merchandiser", label: "Merchandiser", group: "Store", description: "Adds products, prices and stock, runs product offers.", perms: ["products", "offers"] },
@@ -81,7 +83,7 @@ const STORE_SECTION: Record<string, string> = {
   products: "open",
   promotions: "offers", "to-ship": "orders", profit: "ads",
   catalog: "products", collections: "products", inventory: "products", media: "products", themes: "online_store", editor: "online_store",
-  pages: "online_store", website: "settings", integrations: "developer", drafts: "orders", calls: "confirm",
+  pages: "online_store", website: "settings", integrations: "developer", drafts: "orders", calls: "confirm|abandoned_calls",
   live: "analytics", files: "products", menus: "online_store",
 };
 
@@ -114,6 +116,9 @@ function needFor(scope: Scope, path: string): Need {
 /** Whether a team member with these permissions may open this dashboard path. */
 export function memberMayOpen(scope: Scope, perms: string[], path: string) {
   const need = needFor(scope, path);
-  return need === "open" || (need != null && effectivePerms(scope, perms).includes(need));
+  if (need === "open") return true;
+  if (need == null) return false;
+  const have = effectivePerms(scope, perms);
+  return need.split("|").some((p) => have.includes(p)); // "a|b" = either permission
 }
 

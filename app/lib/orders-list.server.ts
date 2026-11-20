@@ -139,14 +139,20 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
 }
 
 /** Checkouts with no successful order, idle for 30+ minutes. */
-export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
+/**
+ * Abandoned checkouts. view: "true" = true abandoned (mobile number, didn't order later, not blocked; newest per
+ * customer), "phone" = any with a mobile number, "all". Team members only ever get "true".
+ */
+export async function loadAbandoned(scope: Store[], params: URLSearchParams, onlyTrue = false) {
   const ids = scope.map((s) => s.id);
   const p = new URLSearchParams(params);
   if (!p.get("range")) p.set("range", "7d");
   const range = resolveRange(p);
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);
-  const withPhone = params.get("all") !== "1";
+  const asked = params.get("view") ?? (params.get("all") === "1" ? "all" : "true");
+  const view: "true" | "phone" | "all" = onlyTrue ? "true" : asked === "all" ? "all" : asked === "phone" ? "phone" : "true";
+  const withPhone = view !== "all";
   const page = Math.max(1, Number(params.get("page")) || 1);
 
   const where: SQL[] = [
@@ -162,28 +168,53 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
   if (stillOpen.length) where.push(notInArray(checkoutSessions.id, stillOpen));
   if (withPhone) where.push(sql`length(coalesce(${checkoutSessions.customer}->>'phone', '')) = 10`);
 
-  const rows = await db
-    .select({ s: checkoutSessions, store: { id: stores.id, name: stores.name, slug: stores.slug, checkoutDomain: stores.checkoutDomain } })
-    .from(checkoutSessions)
-    .innerJoin(stores, eq(checkoutSessions.storeId, stores.id))
-    .where(and(...where))
-    .orderBy(desc(checkoutSessions.updatedAt))
-    .limit(PAGE + 1)
-    .offset((page - 1) * PAGE);
-
-  const [totals] = await db
-    .select({ n: sql<number>`count(*)::int`, value: sql<string>`coalesce(sum(${checkoutSessions.cartValue}), 0)` })
-    .from(checkoutSessions)
-    .where(and(...where));
+  let rowsAll: { s: typeof checkoutSessions.$inferSelect; store: { id: number; name: string; slug: string; checkoutDomain: string | null } }[];
+  let count: number, value: number, hasMore: boolean;
+  if (view === "true") {
+    // Filter the whole range (block list, RTO Shield, ordered later), then page in memory
+    const { filterTrueAbandoned } = await import("./abandoned-calls.server");
+    const cands = await db.select({ id: checkoutSessions.id, storeId: checkoutSessions.storeId, customer: checkoutSessions.customer, createdAt: checkoutSessions.createdAt, updatedAt: checkoutSessions.updatedAt, cartValue: checkoutSessions.cartValue })
+      .from(checkoutSessions).where(and(...where)).orderBy(desc(checkoutSessions.updatedAt)).limit(5000);
+    const real = await filterTrueAbandoned(cands);
+    count = real.length;
+    value = real.reduce((sum, r) => sum + (r.cartValue ?? 0), 0) / 100;
+    const slice = real.slice((page - 1) * PAGE, page * PAGE);
+    hasMore = real.length > page * PAGE;
+    const got = slice.length ? await db
+      .select({ s: checkoutSessions, store: { id: stores.id, name: stores.name, slug: stores.slug, checkoutDomain: stores.checkoutDomain } })
+      .from(checkoutSessions).innerJoin(stores, eq(checkoutSessions.storeId, stores.id))
+      .where(inArray(checkoutSessions.id, slice.map((r) => r.id))) : [];
+    const order = new Map(slice.map((r, i) => [r.id, i]));
+    rowsAll = got.sort((a, b) => (order.get(a.s.id) ?? 0) - (order.get(b.s.id) ?? 0));
+  } else {
+    const rows = await db
+      .select({ s: checkoutSessions, store: { id: stores.id, name: stores.name, slug: stores.slug, checkoutDomain: stores.checkoutDomain } })
+      .from(checkoutSessions)
+      .innerJoin(stores, eq(checkoutSessions.storeId, stores.id))
+      .where(and(...where))
+      .orderBy(desc(checkoutSessions.updatedAt))
+      .limit(PAGE + 1)
+      .offset((page - 1) * PAGE);
+    const [totals] = await db
+      .select({ n: sql<number>`count(*)::int`, value: sql<string>`coalesce(sum(${checkoutSessions.cartValue}), 0)` })
+      .from(checkoutSessions)
+      .where(and(...where));
+    count = totals?.n ?? 0;
+    value = Number(totals?.value ?? 0) / 100;
+    hasMore = rows.length > PAGE;
+    rowsAll = rows.slice(0, PAGE);
+  }
 
   return {
     range,
     withPhone,
+    view,
+    onlyTrue,
     page,
-    hasMore: rows.length > PAGE,
-    count: totals?.n ?? 0,
-    value: Number(totals?.value ?? 0) / 100,
-    items: rows.slice(0, PAGE).map(({ s, store }) => {
+    hasMore,
+    count,
+    value,
+    items: rowsAll.map(({ s, store }) => {
       const c = s.customer ?? {};
       const link = `${storeBaseUrl(store)}/c/${s.id}`;
       const expired = Date.now() - s.createdAt.getTime() > 7 * 86400_000;
@@ -198,6 +229,7 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams) {
         stage: s.paymentAttempted ? "Payment not completed" : c.address1 ? "Left after address" : c.phone ? "Left after contact details" : "Left at cart",
         lastActive: s.updatedAt.toISOString(),
         link: expired ? null : link,
+        called: s.callStatus === "converted" ? "Ordered on call" : s.callStatus === "not_interested" ? "Not interested" : s.callStatus === "follow_up" ? "Follow-up" : null,
       };
     }),
   };

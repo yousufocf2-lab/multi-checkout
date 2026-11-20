@@ -364,6 +364,7 @@ export const stores = pgTable("stores", {
   orderSuffix: text("order_suffix").notNull().default(""),
   orderStart: integer("order_start").notNull().default(1001),
   orderSeq: integer("order_seq"),
+  abandonRr: integer("abandon_rr").notNull().default(0), // round-robin pointer for abandoned checkout calls
   // Collaborators: people outside the business ask for access with this code (regenerate to stop old requests)
   collabCode: text("collab_code"),
   collabOpen: boolean("collab_open").notNull().default(true),
@@ -761,9 +762,23 @@ export const checkoutSessions = pgTable("checkout_sessions", {
   addrLookups: integer("addr_lookups").notNull().default(0), // saved-address lookups (rate limit)
   recoverySent: integer("recovery_sent").notNull().default(0), // abandoned-cart WhatsApp messages sent
   recoveryAt: timestamp("recovery_at", { withTimezone: true }),
+  // Abandoned checkout calling: a team member calls the customer, edits the cart and places the order
+  callAssignedTo: integer("call_assigned_to"),
+  callAssignedAt: timestamp("call_assigned_at", { withTimezone: true }),
+  callStatus: text("call_status").$type<"follow_up" | "not_interested" | "converted">(),
+  callAt: timestamp("call_at", { withTimezone: true }),
+  callBy: text("call_by"),
+  callFollowUpAt: timestamp("call_follow_up_at", { withTimezone: true }),
+  callNote: text("call_note"),
+  callAttempts: integer("call_attempts").notNull().default(0),
+  callCart: jsonb("call_cart").$type<CallCartLine[]>(),
+  callOrderId: text("call_order_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** A line of an abandoned checkout's cart as the calling team edits it (price per unit, paise). */
+export type CallCartLine = { variantId: string | null; productId?: string; title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number; listPaise: number };
 
 /**
  * What happened inside one checkout, from the customer's browser: page opened, step reached, errors shown,
@@ -1352,6 +1367,7 @@ export type ShippingRate = typeof shippingRates.$inferSelect;
 export type Coupon = typeof coupons.$inferSelect;
 export type BankOffer = typeof bankOffers.$inferSelect;
 export type Order = typeof orders.$inferSelect;
+export type CheckoutSession = typeof checkoutSessions.$inferSelect;
 export type DropshipOrder = typeof dropshipOrders.$inferSelect;
 export type DropshipSku = typeof dropshipSkus.$inferSelect;
 export type StoreDocument = typeof storeDocuments.$inferSelect;

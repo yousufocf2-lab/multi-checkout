@@ -142,7 +142,7 @@ export default function DashboardLayout() {
       { label: "Ship queue", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: storefront },
     ] },
     { label: "Kitchen", to: storeHref("kitchen"), icon: "bell", match: /\/kitchen$|next=kitchen\b/, show: focus?.businessType === "restaurant" && may("orders") },
-    { label: "Order confirmation", to: storeHref("calls"), icon: "phone", match: /\/calls$|next=calls\b/, show: may("confirm") },
+    { label: "Order confirmation", to: storeHref("calls"), icon: "phone", match: /\/calls$|next=calls\b/, show: may("confirm") || may("abandoned_calls") },
     { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/(catalog|collections|inventory)(\/|$)|next=(catalog|collections|inventory)\b/, show: storefront && may("products"), children: [
       { label: "Product groups", to: storeHref("collections"), match: /\/collections$|next=collections/, show: true },
       { label: "Stock", to: storeHref("inventory"), match: /\/inventory$|next=inventory/, show: true },

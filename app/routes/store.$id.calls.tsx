@@ -21,11 +21,22 @@ import { shipRuleOf } from "~/lib/ship-rule";
 import { storePath } from "~/lib/store-code";
 import { INDIAN_STATES } from "~/lib/states";
 import { formatINR as inr } from "~/lib/pricing";
+import { AbandonedCalls } from "~/components/AbandonedCalls";
+import {
+  ABANDON_TABS, abandonBoard, abandonCallersFor, abandonOutcome, abandonPhone, convertAbandoned, reassignAbandoned, saveAbandonEdit, type AbandonTab,
+} from "~/lib/abandoned-calls.server";
+import { searchDraftProducts } from "~/lib/drafts.server";
 
 /** The caller's own team-member id, or null for the owner / managers (they see everything). */
 async function whoAmI(viewer: Viewer, store: Parameters<typeof callersFor>[0]) {
   if (viewer.role !== "owner" || !viewer.member) return null;
   const team = await callersFor(store);
+  return team.some((t) => t.id === viewer.member!.id) ? viewer.member.id : null;
+}
+/** The caller's id on the abandoned-checkout calling team, or null. */
+async function whoAmIAbandoned(viewer: Viewer, store: Parameters<typeof abandonCallersFor>[0]) {
+  if (viewer.role !== "owner" || !viewer.member) return null;
+  const team = await abandonCallersFor(store);
   return team.some((t) => t.id === viewer.member!.id) ? viewer.member.id : null;
 }
 const byName = (v: Viewer) => (v.role === "admin" ? v.staff?.name ?? "Growpefy" : v.member?.name ?? v.name);
@@ -34,13 +45,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const sp = new URL(request.url).searchParams;
-  const tab = [...CALL_TABS, "team"].includes(sp.get("tab") as CallTab) ? (sp.get("tab") as CallTab | "team") : "to_call";
   const me = await whoAmI(viewer, store);
+  const abMe = await whoAmIAbandoned(viewer, store);
+  const manager = me === null && abMe === null && can(viewer, "orders");
+  const modes = { orders: manager || me !== null, abandoned: manager || abMe !== null };
+  if (!modes.orders && !modes.abandoned) throw new Response("Not allowed", { status: 403 });
+  const query = (sp.get("q") ?? "").trim().slice(0, 100);
+  // Abandoned checkout calling: its own tabs and cards
+  if ((sp.get("mode") === "abandoned" && modes.abandoned) || !modes.orders) {
+    const abTab = [...ABANDON_TABS, "team"].includes(sp.get("tab") as AbandonTab) ? (sp.get("tab") as AbandonTab | "team") : "to_call";
+    const ab = await abandonBoard(store, abMe, abTab === "team" ? "all" : abTab, query);
+    return json({ mode: "abandoned" as const, modes, manager, abTab, query, ab: abTab === "team" ? { ...ab, items: [] } : ab });
+  }
+  const tab = [...CALL_TABS, "team"].includes(sp.get("tab") as CallTab) ? (sp.get("tab") as CallTab | "team") : "to_call";
   if (!sp.get("range")) sp.set("range", "max"); // nothing hidden by default
   const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
-  const manager = me === null && can(viewer, "orders");
-  if (!manager && me === null) throw new Response("Not allowed", { status: 403 });
-  const query = (sp.get("q") ?? "").trim().slice(0, 100);
   const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until, query, tab === "team" ? 1 : Number(sp.get("page") ?? 1));
   const showSkips = manager && sp.get("activity") === "skips";
   const activity = await callActivity(store.id, manager ? null : me, range.since, range.until, showSkips, board.orders.map((o) => o.id));
@@ -49,6 +68,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const member = Number(sp.get("member")) || null;
   const rule = shipRuleOf(store);
   return json({
+    mode: "orders" as const, modes,
     base: storePath(store.id), tab, me, manager, rule, range, query, activity: manager ? activity : { ...activity, warnings: 0 }, showSkips, providerLabel,
     board: tab === "team" ? { ...board, orders: [] } : { ...board, orders: board.orders.map((o) => ({ ...o, attempts: attempts[o.id] ?? 0 })) },
     teammate: manager && tab === "team" && member && board.team.some((t) => t.id === member)
@@ -60,14 +80,44 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export async function action({ request, params }: ActionFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
-  if (!can(viewer, "confirm") && !can(viewer, "orders")) return json({ ok: null, error: "Not allowed" }, { status: 403 });
+  if (!can(viewer, "confirm") && !can(viewer, "orders") && !can(viewer, "abandoned_calls")) return json({ ok: null, error: "Not allowed" }, { status: 403 });
   const fd = await request.formData();
   const intent = String(fd.get("intent") ?? "");
   const id = String(fd.get("orderId") ?? "");
-  const me = await whoAmI(viewer, store);
-  const manager = me === null && can(viewer, "orders");
-  if (me === null && !manager) return json({ ok: null, error: "Not allowed" }, { status: 403 });
   const by = byName(viewer);
+  if (intent.startsWith("ab-")) {
+    const abMe = await whoAmIAbandoned(viewer, store);
+    const abManager = abMe === null && (await whoAmI(viewer, store)) === null && can(viewer, "orders");
+    if (abMe === null && !abManager) return json({ ok: null, error: "Not allowed" }, { status: 403 });
+    const sid = String(fd.get("sessionId") ?? "");
+    const read = () => { try { return JSON.parse(String(fd.get("data") ?? "{}")); } catch { return {}; } };
+    const out = (r: { ok?: string; error?: string } & Record<string, unknown>) => json(r.error ? { ok: null, error: r.error } : { error: null, ...r });
+    if (intent === "ab-search") {
+      try { return json({ ok: null, error: null, products: await searchDraftProducts(store, String(fd.get("q") ?? "").slice(0, 80)) }); }
+      catch (e) { return json({ ok: null, error: e instanceof Error ? e.message : "Search failed", products: [] }); }
+    }
+    if (intent === "ab-phone") return out(await abandonPhone(store, sid, abMe));
+    if (intent === "ab-save") return out(await saveAbandonEdit(store, sid, abMe, read()));
+    if (intent === "ab-convert") return out(await convertAbandoned(store, sid, abMe, by, read()));
+    if (intent === "ab-follow") {
+      const mins = Number(fd.get("in")) || 60;
+      await saveAbandonEdit(store, sid, abMe, read()); // keep what they changed on the call
+      return out(await abandonOutcome(store, sid, abMe, by, "follow_up", mins === -1 ? tomorrow10() : new Date(Date.now() + Math.min(mins, 7 * 1440) * 60_000), String(fd.get("note") ?? "")));
+    }
+    if (intent === "ab-lost") {
+      const reason = String(fd.get("reason") ?? "").slice(0, 80);
+      const note = String(fd.get("note") ?? "");
+      return out(await abandonOutcome(store, sid, abMe, by, "not_interested", null, [reason, note].filter(Boolean).join(": ")));
+    }
+    if (intent === "ab-reassign") {
+      if (!abManager) return json({ ok: null, error: "Only the owner or a manager can reassign." });
+      return out(await reassignAbandoned(store, sid, Number(fd.get("member"))));
+    }
+    return json({ ok: null, error: "Unknown action" }, { status: 400 });
+  }
+  const me = await whoAmI(viewer, store);
+  const manager = me === null && (await whoAmIAbandoned(viewer, store)) === null && can(viewer, "orders");
+  if (me === null && !manager) return json({ ok: null, error: "Not allowed" }, { status: 403 });
   const mine = async () => {
     const [o] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.storeId, store.id))).limit(1);
     if (!o) return null;
@@ -140,7 +190,7 @@ function tomorrow10() {
   return new Date(ist.getTime() - 5.5 * 3600_000);
 }
 
-type D = ReturnType<typeof useLoaderData<typeof loader>>;
+type D = Extract<ReturnType<typeof useLoaderData<typeof loader>>, { mode: "orders" }>;
 type O = D["board"]["orders"][number];
 type Res = { ok: string | null; error: string | null; phone?: string;
   info?: { status: string; seconds: number | null; recording: string | null } };
@@ -151,8 +201,43 @@ const ago = (iso: string) => {
 };
 const at = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
+/** Orders / Abandoned checkouts switch, for people on both calling teams (and the owner). */
+function ModeSwitch({ mode, modes }: { mode: "orders" | "abandoned"; modes: { orders: boolean; abandoned: boolean } }) {
+  if (!modes.orders || !modes.abandoned) return null;
+  return <nav aria-label="Calling" className="inline-flex rounded-xl bg-black/[.05] p-1">
+    {([["orders", "Orders", "?"], ["abandoned", "Abandoned checkouts", "?mode=abandoned"]] as const).map(([id, label, to]) => (
+      <Link key={id} to={to} aria-current={mode === id ? "page" : undefined} className={`rounded-lg px-3.5 py-1.5 text-[13px] font-semibold ${mode === id ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"}`}>{label}</Link>
+    ))}
+  </nav>;
+}
+
 export default function Calls() {
-  const d = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
+  if (data.mode === "abandoned") return <AbandonedPage d={data} />;
+  return <OrdersPage d={data} />;
+}
+
+function AbandonedPage({ d }: { d: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { mode: "abandoned" }> }) {
+  const revalidator = useRevalidator();
+  const [toast, setToast] = useState<{ ok?: string | null; error?: string | null } | null>(null);
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === "visible" && revalidator.state === "idle" && !document.querySelector("[aria-label='Abandoned checkout']")) revalidator.revalidate(); }, 30_000);
+    return () => clearInterval(t);
+  }, [revalidator]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); }, [toast]);
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-8">
+      <style>{CSS}</style>
+      <ModeSwitch mode="abandoned" modes={d.modes} />
+      <AbandonedCalls data={d.ab} tab={d.abTab} manager={d.manager} query={d.query} onToast={setToast} />
+      {toast && (toast.ok || toast.error) && (
+        <div className={`cl-pop fixed bottom-5 left-1/2 z-[80] max-w-[90vw] -translate-x-1/2 rounded-lg px-3.5 py-2 text-[13px] font-medium text-white shadow-lg ${toast.error ? "bg-[#b42318]" : "bg-[#1a1a1a]"}`} role="status">{toast.error ?? toast.ok}</div>
+      )}
+    </div>
+  );
+}
+
+function OrdersPage({ d }: { d: D }) {
   const [params] = useSearchParams();
   const revalidator = useRevalidator();
   const [toast, setToast] = useState<Res | null>(null);
@@ -214,14 +299,18 @@ export default function Calls() {
   };
 
   if (!d.board.team.length && d.manager) {
-    return <EmptyState title="Add your calling team" action={<Link to="/dashboard/team" className="btn-primary">Add a team member</Link>}>
-      Give team members the "Order confirmation (calling)" role. New orders are then shared out between them in turn, and they call customers to confirm, follow up or cancel.
-    </EmptyState>;
+    return <div className="mx-auto w-full max-w-6xl space-y-5 pb-8">
+      <ModeSwitch mode="orders" modes={d.modes} />
+      <EmptyState title="Add your calling team" action={<Link to="/dashboard/team" className="btn-primary">Add a team member</Link>}>
+        Give team members the "Order confirmation (calling)" role. New orders are then shared out between them in turn, and they call customers to confirm, follow up or cancel.
+      </EmptyState>
+    </div>;
   }
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 pb-8">
       <style>{CSS}</style>
+      <ModeSwitch mode="orders" modes={d.modes} />
       {/* Owner / managers only: the calling team never sees these */}
       {d.manager && <section aria-label="Calling activity" className="grid grid-cols-2 gap-3">
         <QueueMetric label="Call attempts" value={d.activity.attempts} note="Each copy of a customer's number counts as one attempt" />

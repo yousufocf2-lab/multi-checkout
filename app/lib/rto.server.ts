@@ -333,6 +333,7 @@ export async function sendOrderConfirmation(store: Store, order: Order) {
     if (!waApproved(store)) return; // Growpefy's WhatsApp only for verified stores
     if (!(order.paymentMethod === "prepaid" ? store.confirmWaPrepaid : store.confirmWaCod)) return;
     if (order.status !== "paid" && order.status !== "cod_placed") return;
+    if (order.callStatus === "confirmed") return; // placed and confirmed on a call (abandoned checkout): nothing to ask
     const phone = order.customer.phone;
     if (!/^[6-9]\d{9}$/.test(phone)) return;
     const m = await messaging();

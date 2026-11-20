@@ -494,9 +494,9 @@ function OrderDetailsGrid({ o }: { o: OrderRow }) {
   );
 }
 
-export type AbandonedItem = { id: string; storeName: string; name: string; phone: string; city: string; cart: { title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number }[]; value: number; stage: string; lastActive: string; link: string | null };
+export type AbandonedItem = { id: string; storeName: string; name: string; phone: string; city: string; cart: { title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number }[]; value: number; stage: string; lastActive: string; link: string | null; called?: string | null };
 
-export function AbandonedView({ data, showStore }: { data: { items: AbandonedItem[]; count: number; value: number; withPhone: boolean; hasMore: boolean; page: number; range: { preset: string; since: string; until: string } }; showStore: boolean }) {
+export function AbandonedView({ data, showStore }: { data: { items: AbandonedItem[]; count: number; value: number; withPhone: boolean; view?: "true" | "phone" | "all"; onlyTrue?: boolean; hasMore: boolean; page: number; range: { preset: string; since: string; until: string } }; showStore: boolean }) {
   const link = useLink();
   return (
     <div className="space-y-3">
@@ -508,8 +508,14 @@ export function AbandonedView({ data, showStore }: { data: { items: AbandonedIte
 
       <section className="panel overflow-hidden">
         <div className="flex items-center gap-0.5 border-b border-rule px-2 py-1.5" role="tablist">
-          {[{ l: "With phone number", on: data.withPhone, to: link({ all: "", page: "" }) }, { l: "All", on: !data.withPhone, to: link({ all: "1", page: "" }) }].map((t) => (
-            <Link key={t.l} to={t.to} preventScrollReset role="tab" aria-selected={t.on} className={`h-7 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium leading-7 ${t.on ? "bg-paper-sunk text-ink" : "text-ink-soft hover:bg-paper hover:text-ink"}`}>{t.l}</Link>
+          {[
+            { l: "True abandoned", on: data.view === "true", to: link({ view: "", all: "", page: "" }), hint: "Has a mobile number, didn't order later, and isn't blocked (block list or RTO Shield). One per customer." },
+            ...(data.onlyTrue ? [] : [
+              { l: "With phone number", on: data.view === "phone", to: link({ view: "phone", all: "", page: "" }), hint: "" },
+              { l: "All", on: data.view === "all", to: link({ view: "all", all: "", page: "" }), hint: "" },
+            ]),
+          ].map((t) => (
+            <Link key={t.l} to={t.to} title={t.hint || undefined} preventScrollReset role="tab" aria-selected={t.on} className={`h-7 whitespace-nowrap rounded-lg px-2.5 text-[12.5px] font-medium leading-7 ${t.on ? "bg-paper-sunk text-ink" : "text-ink-soft hover:bg-paper hover:text-ink"}`}>{t.l}</Link>
           ))}
         </div>
         {data.items.length === 0 ? (
@@ -536,7 +542,7 @@ export function AbandonedView({ data, showStore }: { data: { items: AbandonedIte
                       {showStore && <td className="max-w-[140px] truncate">{a.storeName}</td>}
                       <td>{a.city || "India"}</td>
                       <td className="text-ink-soft">{a.stage}</td>
-                      <td><Pill tone="orange">Not recovered</Pill></td>
+                      <td>{a.called ? <Pill tone={a.called === "Not interested" ? "gray" : "blue"}>{a.called}</Pill> : <Pill tone="orange">Not recovered</Pill>}</td>
                       <td className="num whitespace-nowrap text-right">{rupee(a.value)}</td>
                       <td>
                         <div className="flex justify-end gap-1">

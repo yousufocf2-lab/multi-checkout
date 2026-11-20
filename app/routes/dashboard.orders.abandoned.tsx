@@ -10,9 +10,12 @@ import { dashboardScope } from "~/lib/selection.server";
 import { useOrdersScope } from "./dashboard.orders";
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const all = await viewerStores(await requireViewer(request));
+  const viewer = await requireViewer(request);
+  const all = await viewerStores(viewer);
   const { scope } = await dashboardScope(request, all);
-  return json({ data: await loadAbandoned(scope, new URL(request.url).searchParams), showStore: all.length > 1 && scope.length !== 1 });
+  // Employees only ever see true abandoned checkouts (with a number, not ordered later, not blocked)
+  const onlyTrue = viewer.role === "owner" && Boolean(viewer.member);
+  return json({ data: await loadAbandoned(scope, new URL(request.url).searchParams, onlyTrue), showStore: all.length > 1 && scope.length !== 1 });
 }
 
 export default function Abandoned() {
