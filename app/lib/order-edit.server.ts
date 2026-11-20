@@ -1,6 +1,6 @@
-// Changes to an order after it was placed: delivery address (also sent to the courier) and notes.
-import { and, eq } from "drizzle-orm";
-import { courierAccounts, db, orders, type Order, type OrderCustomer, type OrderEvent, type Store } from "~/db.server";
+// Changes to an order after it was placed: delivery address (also sent to the courier), items / prices and notes.
+import { and, eq, sql } from "drizzle-orm";
+import { courierAccounts, db, orders, type Order, type OrderCustomer, type OrderEvent, type OrderLine, type Store } from "~/db.server";
 import { editDelhiveryAddress } from "./couriers/delhivery.server";
 import { updateShiprocketAddress } from "./couriers/shiprocket-orders.server";
 import { stateName } from "./states";
@@ -70,4 +70,56 @@ export async function updateOrderNotes(o: Order, notes: { staff: string; custome
   const e = event(by, `Updated the ${changes.join(" and ")}.`);
   await db.update(orders).set({ staffNote: staff, customerNote, timeline: withEvent(o, e), updatedAt: new Date() }).where(eq(orders.id, o.id));
   return { ok: "Notes saved." };
+}
+
+export type ItemEdit = { variantId: string; productId?: string; title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number; comparePaise?: number | null };
+
+/** Reads the items editor's JSON ("lines") and delivery charge from a form. */
+export function readItems(fd: FormData): { lines: ItemEdit[]; shippingPaise: number } | null {
+  try {
+    const raw = JSON.parse(String(fd.get("lines") ?? "[]")) as ItemEdit[];
+    if (!Array.isArray(raw)) return null;
+    const lines = raw.slice(0, 50).map((l) => ({
+      variantId: String(l.variantId ?? "").slice(0, 120), productId: l.productId ? String(l.productId).slice(0, 120) : undefined,
+      title: clean(l.title, 200) || "Item", variantTitle: clean(l.variantTitle, 120) || null,
+      image: typeof l.image === "string" && /^https?:\/\//.test(l.image) ? l.image : null,
+      quantity: Math.max(1, Math.min(99, Math.round(Number(l.quantity) || 1))),
+      pricePaise: Math.max(0, Math.min(10_000_000, Math.round(Number(l.pricePaise) || 0))),
+      comparePaise: l.comparePaise != null ? Math.max(0, Math.round(Number(l.comparePaise) || 0)) : null,
+    }));
+    return { lines, shippingPaise: Math.max(0, Math.min(100_000, Math.round(Number(fd.get("shippingPaise")) || 0))) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Changes the products, quantities and prices of a cash-on-delivery order before it's booked with the courier.
+ * The amount to collect moves by the same amount as the items and delivery charge; discounts and fees stay.
+ */
+export async function updateOrderItems(o: Order, edit: { lines: ItemEdit[]; shippingPaise: number }, by: string): Promise<{ ok: string } | { error: string }> {
+  if (o.status === "cancelled" || o.cancelledAt) return { error: "This order is cancelled." };
+  if (o.paymentMethod !== "cod" || o.status !== "cod_placed") return { error: "Only cash on delivery orders can be changed here (the payment is already fixed for paid orders)." };
+  if (o.awb) return { error: `Already booked with the courier (AWB ${o.awb}), so the amount to collect can't change now.` };
+  if (!edit.lines.length) return { error: "Keep at least one product." };
+  if (edit.lines.some((l) => !l.variantId)) return { error: "A product is missing. Remove it and add it again from the search." };
+  const before = new Map(o.items.map((l) => [l.variantId, l]));
+  const items: OrderLine[] = edit.lines.map((l) => {
+    const old = before.get(l.variantId);
+    return {
+      ...(old ?? {}),
+      variantId: l.variantId, productId: l.productId ?? old?.productId, title: l.title, variantTitle: l.variantTitle, image: l.image ?? old?.image ?? null,
+      quantity: l.quantity, pricePaise: l.pricePaise, comparePaise: l.comparePaise ?? old?.comparePaise ?? null,
+      free: l.pricePaise === 0 ? old?.free : undefined,
+    };
+  });
+  const subtotal = items.reduce((s, l) => s + l.pricePaise * l.quantity, 0);
+  const total = Math.max(0, o.total - o.subtotal - o.shipping + subtotal + edit.shippingPaise);
+  const desc = (l: Pick<OrderLine, "title" | "variantTitle" | "quantity" | "pricePaise">) => `${l.title}${l.variantTitle ? ` (${l.variantTitle})` : ""} ×${l.quantity} @ ₹${(l.pricePaise / 100).toLocaleString("en-IN")}`;
+  const same = JSON.stringify(o.items.map(desc)) === JSON.stringify(items.map(desc)) && o.shipping === edit.shippingPaise;
+  if (same) return { ok: "Nothing changed." };
+  const onShopify = Boolean(o.shopifyOrderId && !o.shopifyOrderId.startsWith("gp:"));
+  const e = event(by, `Items changed: ${o.items.map(desc).join(", ")} → ${items.map(desc).join(", ")}. ${o.shipping !== edit.shippingPaise ? `Delivery ₹${o.shipping / 100} → ₹${edit.shippingPaise / 100}. ` : ""}To collect ₹${(o.total / 100).toLocaleString("en-IN")} → ₹${(total / 100).toLocaleString("en-IN")}.`);
+  await db.update(orders).set({ items, subtotal, shipping: edit.shippingPaise, total, timeline: withEvent(o, e), updatedAt: new Date() }).where(and(eq(orders.id, o.id), sql`${orders.awb} is null`));
+  return { ok: `Items saved. Collect ₹${(total / 100).toLocaleString("en-IN")} on delivery.${onShopify ? " Change the order in Shopify too." : ""}` };
 }

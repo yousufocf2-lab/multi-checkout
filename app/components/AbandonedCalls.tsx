@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { formatINR as inr } from "~/lib/pricing";
 import { INDIAN_STATES } from "~/lib/states";
+import { lookupPincode } from "~/components/pincode-fill";
 
 export type AbLine = { variantId: string | null; productId?: string; title: string; variantTitle: string | null; image: string | null; quantity: number; pricePaise: number; listPaise: number };
 export type AbItem = {
@@ -218,6 +219,19 @@ function AbCard({ a, team, manager, onDone }: { a: AbItem; team: AbTeam[]; manag
     return () => clearTimeout(t);
   }, [q, showSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Pincode typed: fill city and state
+  const firstPin = useRef(a.customer.pincode);
+  useEffect(() => {
+    const pin = c.pincode;
+    if (!/^\d{6}$/.test(pin)) return;
+    if (pin === firstPin.current && c.city.trim() && INDIAN_STATES.some((x) => x.code === c.state)) return; // customer's own, already complete
+    let live = true;
+    void lookupPincode(pin).then(({ city, state }) => {
+      if (!live) return;
+      setC((x) => (x.pincode !== pin ? x : { ...x, ...(city ? { city } : {}), ...(state ? { state } : {}) }));
+    });
+    return () => { live = false; };
+  }, [c.pincode]); // eslint-disable-line react-hooks/exhaustive-deps
   const missing = useMemo(() => {
     const m: string[] = [];
     if (!c.firstName.trim()) m.push("firstName");

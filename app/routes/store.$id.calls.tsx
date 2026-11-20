@@ -13,7 +13,7 @@ import { can, requireStore, requireViewer, type Viewer } from "~/lib/auth.server
 import { CALL_TABS, callBoard, callersFor, reassign, recordCall, teammateOrders, type CallTab } from "~/lib/calls.server";
 import { resolveRange } from "~/lib/dates";
 import { RangePicker } from "~/components/Overview";
-import { readAddress, updateOrderAddress, updateOrderNotes } from "~/lib/order-edit.server";
+import { readAddress, readItems, updateOrderAddress, updateOrderItems, updateOrderNotes } from "~/lib/order-edit.server";
 import { attemptCounts, callActivity, providerCallInfo, recordAttempt, skipOrders, startOrderCall } from "~/lib/order-call-events.server";
 import { callerProvider } from "~/lib/calling-providers.server";
 import { CANCEL_REASONS } from "~/lib/order-actions.server";
@@ -22,6 +22,8 @@ import { storePath } from "~/lib/store-code";
 import { INDIAN_STATES } from "~/lib/states";
 import { formatINR as inr } from "~/lib/pricing";
 import { AbandonedCalls } from "~/components/AbandonedCalls";
+import { ItemsEditor } from "~/components/ItemsEditor";
+import { usePincodeFormFill } from "~/components/pincode-fill";
 import {
   ABANDON_TABS, abandonBoard, abandonCallersFor, abandonOutcome, abandonPhone, convertAbandoned, reassignAbandoned, saveAbandonEdit, type AbandonTab,
 } from "~/lib/abandoned-calls.server";
@@ -164,6 +166,18 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const o = await mine();
     if (!o) return json({ ok: null, error: "This order is assigned to someone else." });
     const r = await updateOrderAddress(store, o, { ...readAddress(fd), phone: o.customer.phone, email: o.customer.email }, by);
+    return json("error" in r ? { ok: null, error: r.error } : { ok: r.ok, error: null });
+  }
+  if (intent === "product-search") {
+    try { return json({ ok: null, error: null, products: await searchDraftProducts(store, String(fd.get("q") ?? "").slice(0, 80)) }); }
+    catch (e) { return json({ ok: null, error: e instanceof Error ? e.message : "Search failed", products: [] }); }
+  }
+  if (intent === "items") {
+    const o = await mine();
+    if (!o) return json({ ok: null, error: "This order is assigned to someone else." });
+    const edit = readItems(fd);
+    if (!edit) return json({ ok: null, error: "Couldn't read the items." });
+    const r = await updateOrderItems(o, edit, by);
     return json("error" in r ? { ok: null, error: r.error } : { ok: r.ok, error: null });
   }
   if (intent === "notes") {
@@ -667,6 +681,12 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
         <p className="text-[13px] leading-snug"><Icon name="route" className="mr-1 inline h-3.5 w-3.5 text-ink-faint" />{[c.address1, c.address2, c.city, c.state, c.pincode].filter(Boolean).join(", ")}
           {o.status !== "cancelled" && <button type="button" onClick={() => setPanel(panel === "address" ? null : "address")} className="ml-1.5 text-[12px] font-medium text-[#005bd3]">Edit</button>}</p>
         <p className="text-[12.5px] text-ink-soft"><Icon name="bag" className="mr-1 inline h-3.5 w-3.5 text-ink-faint" />{items}</p>
+        {o.status !== "cancelled" && o.call !== "cancelled" && (
+          <ItemsEditor lines={o.items.map((l) => ({ variantId: l.variantId, productId: l.productId, title: l.title, variantTitle: l.variant, image: l.image, quantity: l.qty, pricePaise: l.pricePaise, comparePaise: l.comparePaise }))}
+            total={o.total} subtotal={o.subtotal} shipping={o.shippingPaise} hidden={{ orderId: o.id }} compact
+            blocked={o.method !== "cod" ? "Only cash on delivery orders can be changed (a paid order's amount is fixed)." : o.shipped ? `Already booked with the courier (AWB ${o.shipped.awb}), so the amount to collect can't change now.` : null}
+            onSaved={(r) => onDone({ ok: r.ok ?? null, error: r.error ?? null }, false)} />
+        )}
         {(o.staffNote || o.customerNote) && panel !== "notes" && (
           <div className="rounded-lg bg-[#fffbeb] px-3 py-2 text-[12.5px] text-[#6b5a27]">
             {o.staffNote && <p className="whitespace-pre-line"><b className="font-medium">Staff note:</b> {o.staffNote}</p>}
@@ -723,8 +743,10 @@ function OrderCall({ o, d, onDone, onNext }: { o: O; d: D; onDone: (r: Res, outc
 
 function AddressForm({ o, f, onNext }: { o: O; f: ReturnType<typeof useFetcher<Res>>; onNext?: () => void }) {
   const c = o.customer;
+  const formRef = useRef<HTMLFormElement>(null);
+  usePincodeFormFill(formRef);
   return (
-    <f.Form method="post" className="grid grid-cols-2 gap-2 rounded-xl bg-[#f6f6f7] p-3">
+    <f.Form ref={formRef} method="post" className="grid grid-cols-2 gap-2 rounded-xl bg-[#f6f6f7] p-3">
       <input type="hidden" name="intent" value="address" /><input type="hidden" name="orderId" value={o.id} />
       <input name="firstName" defaultValue={c.firstName} placeholder="First name" className="input h-9 text-[13px]" aria-label="First name" />
       <input name="lastName" defaultValue={c.lastName} placeholder="Last name" className="input h-9 text-[13px]" aria-label="Last name" />

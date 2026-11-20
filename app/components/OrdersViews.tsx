@@ -1,4 +1,6 @@
 import { OUTSOURCE_TAG } from "~/lib/order-route";
+import { ItemsEditor } from "~/components/ItemsEditor";
+import { usePincodeFormFill } from "~/components/pincode-fill";
 import { gatewayName } from "~/lib/gateways/catalog";
 import { courierById } from "~/lib/courier-catalog";
 import { SHIP_STATUS_LABELS } from "~/lib/rto-shield";
@@ -448,6 +450,8 @@ function OrderDetailsGrid({ o }: { o: OrderRow }) {
         <ul className="space-y-1.5 text-sm">
           {o.items.map((l, i) => <li key={i} className="flex justify-between gap-3"><span className="line-clamp-2 min-w-0 break-words sm:truncate">{l.title}{l.variantTitle ? `, ${l.variantTitle}` : ""} ×{l.quantity}</span><span className="num">{l.free ? <b className="text-good">FREE</b> : inr(l.pricePaise * l.quantity)}</span></li>)}
         </ul>
+        {o.status !== "cancelled" && <div className="mt-2"><ItemsEditor lines={o.items} total={o.total} subtotal={o.subtotal} shipping={o.shipping} hidden={{ orderId: o.id, storeId: String(o.storeId) }}
+          blocked={o.paymentMethod !== "cod" || o.status !== "cod_placed" ? "Only cash on delivery orders can be changed (a paid order's amount is fixed)." : o.awb ? `Already booked with the courier (AWB ${o.awb}), so the amount to collect can't change now.` : null} compact /></div>}
       </div>
       <dl className="num space-y-1 text-sm">
         <p className="mb-2 text-xs font-medium text-ink-soft">Payment</p>
@@ -581,6 +585,8 @@ function CopyLink({ url }: { url: string }) {
 
 function AddressBlock({ o }: { o: OrderRow }) {
   const [edit, setEdit] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  usePincodeFormFill(formRef);
   const c = o.customer;
   const nav = useNavigation();
   const saving = nav.state !== "idle" && nav.formData?.get("intent") === "address" && nav.formData?.get("orderId") === o.id;
@@ -598,7 +604,7 @@ function AddressBlock({ o }: { o: OrderRow }) {
     );
   }
   return (
-    <Form method="post" className="space-y-2 rounded-xl bg-white p-3 shadow-[0_0_0_1px_rgba(0,0,0,.08)]">
+    <Form ref={formRef} method="post" className="space-y-2 rounded-xl bg-white p-3 shadow-[0_0_0_1px_rgba(0,0,0,.08)]">
       <input type="hidden" name="intent" value="address" /><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
       <p className="text-[12.5px] font-semibold">Edit delivery address</p>
       <div className="grid grid-cols-2 gap-2">

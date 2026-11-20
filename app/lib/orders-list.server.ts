@@ -242,7 +242,8 @@ import { pushToShopify } from "./orders.server";
 import { syncOrderPayment } from "./gateways/index.server";
 import { gatewayName } from "./gateways/catalog";
 import { importShopifyOrdersCsv } from "./shopify-order-import.server";
-import { readAddress, updateOrderAddress, updateOrderNotes } from "./order-edit.server";
+import { readAddress, readItems, updateOrderAddress, updateOrderItems, updateOrderNotes } from "./order-edit.server";
+import { searchDraftProducts } from "./drafts.server";
 
 /** Row actions on the orders list: send to Shopify, check payment with the gateway. */
 export async function handleOrderAction(viewer: Viewer, fd: FormData) {
@@ -299,6 +300,17 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
     const next = intent === "tagAdd" ? [...new Set([...tags, tag])].slice(0, 12) : tags.filter((t) => t !== tag);
     await db.update(orders).set({ manualTags: next, updatedAt: new Date() }).where(eq(orders.id, o.id));
     return json({ ok: intent === "tagAdd" ? "Tag added." : "Tag removed.", error: null });
+  }
+  if (intent === "product-search") {
+    try { return json({ ok: null, error: null, products: await searchDraftProducts(store, String(fd.get("q") ?? "").slice(0, 80)) }); }
+    catch (e) { return json({ ok: null, error: e instanceof Error ? e.message : "Search failed", products: [] }); }
+  }
+  if (intent === "items") {
+    if (!can(viewer, "orders")) return json({ ok: null, error: "You don't have permission to change orders." });
+    const edit = readItems(fd);
+    if (!edit) return json({ ok: null, error: "Couldn't read the items." });
+    const r = await updateOrderItems(o, edit, by);
+    return "error" in r ? json({ ok: null, error: r.error }) : json({ ok: r.ok, error: null });
   }
   if (intent === "address") {
     const r = await updateOrderAddress(store, o, readAddress(fd), by);

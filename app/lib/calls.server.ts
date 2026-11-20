@@ -48,7 +48,7 @@ export async function assignCalls(store: Store) {
 
 const istStart = () => { const d = new Date(Date.now() + 5.5 * 3600_000); d.setUTCHours(0, 0, 0, 0); return new Date(d.getTime() - 5.5 * 3600_000); };
 
-type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier" | "manualTags">;
+type Mine = Pick<Order, "id" | "shopifyOrderName" | "createdAt" | "paymentMethod" | "status" | "total" | "subtotal" | "shipping" | "advance" | "amountPaid" | "items" | "customer" | "confirmStatus" | "callStatus" | "followUpAt" | "staffNote" | "customerNote" | "callAt" | "callBy" | "assignedTo" | "timeline" | "awb" | "courier" | "manualTags">;
 
 export const CALL_TABS = ["to_call", "follow_up", "confirmed", "cancelled", "shipped", "all"] as const;
 export type CallTab = (typeof CALL_TABS)[number];
@@ -82,7 +82,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   );
   const cols = {
     id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status, manualTags: orders.manualTags,
-    total: orders.total, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
+    total: orders.total, subtotal: orders.subtotal, shipping: orders.shipping, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
     callStatus: orders.callStatus, followUpAt: orders.followUpAt, staffNote: orders.staffNote, customerNote: orders.customerNote,
     callAt: orders.callAt, callBy: orders.callBy, assignedTo: orders.assignedTo, timeline: orders.timeline, awb: orders.awb, courier: orders.courier,
   };
@@ -128,7 +128,8 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     id: o.id, name: o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`, at: o.createdAt.toISOString(), method: o.paymentMethod, status: o.status,
     outsource: (o.manualTags ?? []).includes(OUTSOURCE_TAG),
     total: o.total, toCollect: o.paymentMethod === "cod" ? o.total : o.paymentMethod === "partial" ? o.total - (o.amountPaid ?? o.advance ?? 0) : 0,
-    items: o.items.map((l) => ({ title: l.title, variant: l.variantTitle, qty: l.quantity })),
+    items: o.items.map((l) => ({ title: l.title, variant: l.variantTitle, qty: l.quantity, variantId: l.variantId, productId: l.productId, image: l.image, pricePaise: l.pricePaise, comparePaise: l.comparePaise })),
+    subtotal: o.subtotal, shippingPaise: o.shipping,
     customer: { ...o.customer, phone: "" }, wa: o.confirmStatus, call: o.callStatus, tab: o.tab, followUpAt: o.followUpAt?.toISOString() ?? null,
     staffNote: o.staffNote ?? "", customerNote: o.customerNote ?? "", callAt: o.callAt?.toISOString() ?? null, callBy: o.callBy,
     shipped: o.awb ? { awb: o.awb, courier: o.courier } : null,
