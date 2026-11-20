@@ -230,7 +230,7 @@ function SettingsForm({ d }: { d: D }) {
 }
 
 function Counts({ c }: { c: ShipCounts }) {
-  const keys = (["delivered", "in_transit", "rto_transit", "rto", "returned"] as const).filter((k) => (c[k] ?? 0) > 0);
+  const keys = (["delivered", "pickup_pending", "in_transit", "rto_transit", "rto", "returned"] as const).filter((k) => (c[k] ?? 0) > 0);
   return <span className="flex flex-wrap gap-1">{keys.map((k) => <span key={k} className="rounded bg-paper-sunk px-1.5 py-0.5 text-[11px] text-ink-soft">{SHIP_STATUS_LABELS[k]} {c[k]}</span>)}</span>;
 }
 

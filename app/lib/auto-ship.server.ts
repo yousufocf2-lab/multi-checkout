@@ -71,7 +71,7 @@ export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount
     quantity: o.items.reduce((n, l) => n + l.quantity, 0), weightGrams: weight,
   });
   if (r.ok) {
-    await db.update(orders).set({ awb: r.awb, courier: "delhivery", shipStatus: "in_transit", shipStatusRaw: "Manifested", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
+    await db.update(orders).set({ awb: r.awb, courier: "delhivery", shipStatus: "pickup_pending", shipStatusRaw: "Manifested", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
     console.log(`[auto-ship] ${store.name} ${o.id} -> Delhivery ${r.awb}`);
   } else {
     await db.update(orders).set({ shipError: r.error, shipBookAt: new Date() }).where(eq(orders.id, o.id));

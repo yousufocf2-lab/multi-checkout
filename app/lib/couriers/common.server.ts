@@ -22,6 +22,8 @@ export function mapStatusText(text: string | null | undefined): ShipStatus | nul
     return null;
   }
   if (/\blost\b|damage|destroy|dispos/.test(s)) return null;
+  // Booked, waiting for the courier to pick it up
+  if (/^(new|awb assigned|label generated|manifest(ed)?|ready to ship|pickup (scheduled|generated|pending|queued|rescheduled|error|exception)|not picked|out for pickup|pending pickup)\b/.test(s)) return "pickup_pending";
   if (/undeliver|not deliver|fail|\bndr\b|attempt|out for delivery|\bofd\b/.test(s)) return "in_transit";
   if (/deliver/.test(s)) return "delivered";
   return "in_transit";

@@ -33,7 +33,9 @@ export function mapDelhivery(status: string, type: string): ShipStatus | null {
   if (t === "PU") return null;
   if (s === "delivered") return "delivered";
   if (s.includes("rto")) return "rto_transit";
-  return "in_transit"; // UD: manifested, pending, in transit, dispatched…
+  // Booked but the courier hasn't picked the parcel up yet
+  if (/manifest|not picked|pickup|ready to ship|^open$/.test(s)) return "pickup_pending";
+  return "in_transit"; // UD: in transit, pending, dispatched…
 }
 
 /** Tracks up to 50 AWBs in one call. */

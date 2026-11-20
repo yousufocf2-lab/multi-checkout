@@ -101,6 +101,7 @@ const ago = (iso: string | null) => {
 };
 
 const TILES: { s: ShipStatus; dot: string }[] = [
+  { s: "pickup_pending", dot: "bg-slate-400" },
   { s: "in_transit", dot: "bg-sky-500" },
   { s: "delivered", dot: "bg-emerald-500" },
   { s: "rto_transit", dot: "bg-amber-500" },
@@ -233,7 +234,7 @@ function Overview({ connected, total, summary, couriers, ruleLabel, onRules }: {
     { label: "Shipments", value: total.toLocaleString("en-IN"), sub: "last 90 days" },
     { label: "Delivery rate", value: rate(delivered), sub: done ? `${delivered.toLocaleString("en-IN")} delivered` : "No results yet", tone: done ? "text-[#067647]" : "" },
     { label: "RTO rate", value: rate(rto), sub: done ? `${rto.toLocaleString("en-IN")} returned or returning` : "No results yet", tone: done && rto / done > 0.2 ? "text-[#b42318]" : "" },
-    { label: "In transit", value: (summary.in_transit ?? 0).toLocaleString("en-IN"), sub: "on the way to customers" },
+    { label: "In transit", value: (summary.in_transit ?? 0).toLocaleString("en-IN"), sub: summary.pickup_pending ? `${summary.pickup_pending.toLocaleString("en-IN")} more waiting for pickup` : "on the way to customers" },
   ];
   return (
     <section className="panel overflow-hidden p-0">
@@ -428,7 +429,7 @@ function PwOrText({ type, ...rest }: React.InputHTMLAttributes<HTMLInputElement>
   return type === "password" ? <PasswordInput {...rest} /> : <input type={type} {...rest} />;
 }
 
-const STATUS_DOT: Record<string, string> = { in_transit: "bg-sky-500", delivered: "bg-emerald-500", rto_transit: "bg-amber-500", rto: "bg-red-500", returned: "bg-fuchsia-500", cancelled: "bg-slate-400" };
+const STATUS_DOT: Record<string, string> = { pickup_pending: "bg-slate-400", in_transit: "bg-sky-500", delivered: "bg-emerald-500", rto_transit: "bg-amber-500", rto: "bg-red-500", returned: "bg-fuchsia-500", cancelled: "bg-slate-400" };
 const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
 
 function Performance({ d }: { d: D }) {
@@ -498,7 +499,7 @@ function Kpi({ label, value, sub, tone = "" }: { label: string; value: string; s
   );
 }
 
-const FILTER_LABEL: Record<string, string> = { all: "All", in_transit: "In transit", delivered: "Delivered", rto_transit: "RTO in transit", rto: "RTO", returned: "Returned" };
+const FILTER_LABEL: Record<string, string> = { all: "All", pickup_pending: "Ready for pickup", in_transit: "In transit", delivered: "Delivered", rto_transit: "RTO in transit", rto: "RTO", returned: "Returned" };
 
 function Shipments({ d }: { d: D }) {
   const [sp, setSp] = useSearchParams();

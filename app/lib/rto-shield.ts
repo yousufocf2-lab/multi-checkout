@@ -1,9 +1,10 @@
 // RTO Shield: block COD or all orders from a customer based on their shipment history with this store.
 // Shared by server and browser.
 
-export type ShipStatus = "in_transit" | "delivered" | "rto_transit" | "rto" | "returned" | "cancelled";
+export type ShipStatus = "pickup_pending" | "in_transit" | "delivered" | "rto_transit" | "rto" | "returned" | "cancelled";
 
 export const SHIP_STATUS_LABELS: Record<ShipStatus, string> = {
+  pickup_pending: "Ready for pickup",
   in_transit: "In transit",
   delivered: "Delivered",
   rto_transit: "RTO in transit",
@@ -78,7 +79,8 @@ export type ShieldHit = { scope: ShieldAction; reason: string };
 export function decideShield(s: RtoShieldSettings, c: ShipCounts): ShieldHit | null {
   if (!s.enabled) return null;
   const hits: ShieldHit[] = [];
-  if (s.inTransit.on && (c.in_transit ?? 0) > 0) hits.push({ scope: s.inTransit.action, reason: "in_transit" });
+  // A parcel waiting for pickup is already on its way as far as the customer is concerned
+  if (s.inTransit.on && (c.in_transit ?? 0) + (c.pickup_pending ?? 0) > 0) hits.push({ scope: s.inTransit.action, reason: "in_transit" });
   if (s.rtoTransit.on && (c.rto_transit ?? 0) > 0) hits.push({ scope: s.rtoTransit.action, reason: "rto_transit" });
   if (s.delivered.on && (c.delivered ?? 0) > 0) hits.push({ scope: s.delivered.action, reason: "delivered" });
   if (s.history.on) {
@@ -107,5 +109,5 @@ export function reasonText(reason: string) {
 }
 
 /** Filter tabs on the logistics page. */
-export const SHIP_FILTERS = ["all", "in_transit", "delivered", "rto_transit", "rto", "returned"] as const;
+export const SHIP_FILTERS = ["all", "pickup_pending", "in_transit", "delivered", "rto_transit", "rto", "returned"] as const;
 export type ShipFilter = (typeof SHIP_FILTERS)[number];

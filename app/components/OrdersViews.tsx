@@ -186,7 +186,7 @@ function OrdersSearchFilter({ filters, products, tags, deliveryOptions, clearAll
     { key: "status", label: "Order status", options: [["open", "Open"], ["pending", "Awaiting payment"], ["failed", "Failed"], ["refunded", "Refunded"]] },
     { key: "payment_status", label: "Payment status", options: [["paid", "Paid"], ["pending", "Payment pending"], ["partially_refunded", "Partially refunded"], ["refunded", "Refunded"], ["failed", "Failed"]] },
     { key: "fulfillment", label: "Fulfillment status", options: [["fulfilled", "Fulfilled"], ["unfulfilled", "Unfulfilled"]] },
-    { key: "delivery_status", label: "Delivery status", options: [["in_transit", "In transit"], ["delivered", "Delivered"], ["rto_transit", "RTO in transit"], ["rto", "Returned to origin"], ["returned", "Returned"], ["cancelled", "Cancelled"]] },
+    { key: "delivery_status", label: "Delivery status", options: [["pickup_pending", "Ready for pickup"], ["in_transit", "In transit"], ["delivered", "Delivered"], ["rto_transit", "RTO in transit"], ["rto", "Returned to origin"], ["returned", "Returned"], ["cancelled", "Cancelled"]] },
     { key: "return_status", label: "Return status", options: [["returned", "Returned"], ["not_returned", "Not returned"]] },
     { key: "label_status", label: "Shipping label status", options: [["added", "Label added"], ["not_added", "No label"]] },
     { key: "total", label: "Order total", options: [] as string[][] },

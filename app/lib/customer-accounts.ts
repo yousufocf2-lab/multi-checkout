@@ -62,7 +62,7 @@ export function orderSteps(o: { status: string; createdAt: string; confirmStatus
   if (o.shipStatus === "rto" || o.shipStatus === "rto_transit") {
     return { headline: o.shipStatus === "rto" ? "Returned to the store" : "Being returned to the store", tone: "bad", steps: [{ key: "placed", label: "Order placed", done: true, at: o.createdAt }, { key: "shipped", label: "Shipped", done: true }, { key: "rto", label: "Returning", done: true }] };
   }
-  const shipped = Boolean(o.awb) && !/^(new|awb assigned|pickup|ready to ship|manifest|label)/.test(raw);
+  const shipped = Boolean(o.awb) && o.shipStatus !== "pickup_pending" && !/^(new|awb assigned|pickup|ready to ship|manifest|label)/.test(raw);
   const out = /out for delivery|\bofd\b/.test(raw);
   const delivered = o.shipStatus === "delivered";
   const steps: TrackStep[] = [
