@@ -18,14 +18,15 @@ import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { catalogAllowed, catalogStats } from "~/lib/catalog.server";
 import { env } from "~/lib/env.server";
 import { DomainGuide } from "~/components/DomainGuide";
+import { domainParts } from "~/lib/domain-parts";
 import { addHostname, cfConfigured, CONNECT_HOST, hostnameState, removeHostname } from "~/lib/cloudflare.server";
 
-/** "https://Brand.com/" -> "www.brand.com"; "shop.brand.com" stays as it is. Null when it isn't a domain. */
+/** "https://Brand.com/" -> "www.brand.com" (also brand.co.in -> www.brand.co.in); "shop.brand.com" stays as it is. Null when it isn't a domain. */
 function cleanDomain(raw: string) {
   const h = raw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/?#].*$/, "").replace(/\.$/, "");
   if (!/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(h)) return null;
   if (/(^|\.)growpefy\.com$|\.railway\.app$|myshopify\.com$/.test(h)) return null;
-  return h.split(".").length === 2 ? `www.${h}` : h;
+  return domainParts(h).isApex ? `www.${h}` : h;
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -198,7 +199,7 @@ export default function Website() {
             <div className="space-y-3">
               <div className="grid gap-2 sm:grid-cols-3">
                 <CopyField label="Type" value="CNAME" />
-                <CopyField label="Name / Host" value={domain.split(".").length > 2 ? domain.split(".").slice(0, -2).join(".") : "@"} />
+                <CopyField label="Name / Host" value={domainParts(domain).host} />
                 <CopyField label="Value / Points to" value={target} />
               </div>
               <div className="border-t border-rule pt-4"><DomainGuide domain={domain} target={target} coming={detail} /></div>

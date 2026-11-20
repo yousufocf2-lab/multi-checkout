@@ -1,5 +1,6 @@
 // Step-by-step help for connecting a store's own domain, per domain provider.
 import { useState } from "react";
+import { domainParts } from "~/lib/domain-parts";
 
 type Provider = { id: string; name: string; cname: string[]; forward: string[]; note?: string };
 
@@ -83,7 +84,7 @@ const PROVIDERS = (host: string, target: string, bare: string, www: string): Pro
 export function DomainGuide({ domain, target, coming }: { domain: string; target: string; coming?: string | null }) {
   const bare = domain.replace(/^www\./, "");
   const www = domain.startsWith("www.") ? domain : `www.${bare}`;
-  const host = domain.split(".").length > 2 ? domain.split(".").slice(0, -2).join(".") : "@";
+  const host = domainParts(domain).host;
   const list = PROVIDERS(host, target, bare, www);
   const [tab, setTab] = useState(list[0].id);
   const p = list.find((x) => x.id === tab)!;
