@@ -32,62 +32,14 @@ export async function accountFor(storeId: number) {
   return (await db.select().from(billingAccounts).where(eq(billingAccounts.storeId, storeId)).limit(1))[0] ?? null;
 }
 
-/** Explicit plan selection starts a subscription. Existing non-fulfilment wallet funds become invoice credit. */
+/** Picks a plan. The plan fee and its % fee are charged from the wallet (wallet-billing.server.ts). */
 export async function startSubscription(storeId: number, planId: string) {
   if (!planById(planId)) throw new Error("Choose one of the available Growpefy plans.");
   const now = new Date();
-  await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(billingAccounts).where(eq(billingAccounts.storeId, storeId)).for("update");
-    if (existing) throw new Error("A billing plan is already active for this store. Contact Growpefy to change it.");
-    const [store] = await tx.select().from(stores).where(eq(stores.id, storeId)).limit(1);
-    if (!store) throw new Error("Store not found.");
-    const [wallet] = await tx.select().from(wallets).where(eq(wallets.storeId, storeId)).for("update");
-    let creditPaise = 0, creditGstPaise = 0, legacyDebtPaise = 0;
-    // Fulfilment balances remain available to the dropshipping service; they are not subscription credits.
-    if (wallet && !store.dropshipEnabled && wallet.balancePaise !== 0) {
-      if (wallet.balancePaise > 0) {
-        creditPaise = wallet.balancePaise;
-        // Preserve only GST actually paid on the unused prepaid amount. Free/admin credits carry no GST credit.
-        const ledger = await tx.select().from(walletTransactions).where(eq(walletTransactions.walletId, wallet.id)).orderBy(asc(walletTransactions.createdAt), asc(walletTransactions.id));
-        const rechargeRows = await tx.select({ txnid: walletRecharges.txnid, creditPaise: walletRecharges.creditPaise, gstPaise: walletRecharges.gstPaise })
-          .from(walletRecharges).where(and(eq(walletRecharges.walletId, wallet.id), eq(walletRecharges.status, "paid")));
-        const taxByTxn = new Map(rechargeRows.map((r) => [r.txnid, { credit: r.creditPaise, gst: r.gstPaise }]));
-        const buckets: { principal: number; gst: number }[] = [];
-        const consume = (amount: number) => {
-          for (const bucket of buckets) {
-            if (amount <= 0) break;
-            const take = Math.min(amount, bucket.principal);
-            const tax = bucket.principal ? Math.min(bucket.gst, Math.round(bucket.gst * take / bucket.principal)) : 0;
-            bucket.principal -= take; bucket.gst -= tax; amount -= take;
-          }
-        };
-        for (const entry of ledger) {
-          if (entry.amountPaise > 0) {
-            const paid = entry.type === "recharge" ? taxByTxn.get(entry.refId) : null;
-            const principal = Math.min(entry.amountPaise, paid?.credit ?? 0);
-            const gst = principal && paid ? Math.round(paid.gst * principal / paid.credit) : 0;
-            buckets.push({ principal: entry.amountPaise, gst });
-          } else if (entry.amountPaise < 0) consume(-entry.amountPaise);
-        }
-        const tracked = buckets.reduce((n, b) => n + b.principal, 0);
-        if (tracked > creditPaise) consume(tracked - creditPaise);
-        else if (tracked < creditPaise) buckets.push({ principal: creditPaise - tracked, gst: 0 });
-        creditGstPaise = buckets.reduce((n, b) => n + b.gst, 0);
-      } else legacyDebtPaise = -wallet.balancePaise;
-      const amountPaise = -wallet.balancePaise;
-      const type = amountPaise > 0 ? "manual_credit" : "manual_debit";
-      await tx.insert(walletTransactions).values({
-        walletId: wallet.id, type, amountPaise, balanceAfterPaise: 0,
-        refType: "billing_migration", refId: `plan-start-${storeId}`,
-        note: "Transferred to the monthly billing account", createdBy: "Growpefy billing",
-      }).onConflictDoNothing();
-      await tx.update(wallets).set({ balancePaise: 0, updatedAt: now }).where(eq(wallets.id, wallet.id));
-    }
-    await tx.insert(billingAccounts).values({
-      storeId, planId: planId as PlanId, startedAt: now, nextInvoiceAt: addBillingMonth(now),
-      creditPaise, creditGstPaise, legacyDebtPaise, status: "active", updatedAt: now,
-    });
-  });
+  const existing = await accountFor(storeId);
+  if (existing && existing.status !== "cancelled") throw new Error("A plan is already active for this store. Contact Growpefy to change it.");
+  if (existing) await db.update(billingAccounts).set({ planId: planId as PlanId, status: "active", startedAt: now, nextInvoiceAt: addBillingMonth(now), updatedAt: now }).where(eq(billingAccounts.storeId, storeId));
+  else await db.insert(billingAccounts).values({ storeId, planId: planId as PlanId, startedAt: now, nextInvoiceAt: addBillingMonth(now), status: "active", updatedAt: now });
   return accountFor(storeId);
 }
 
@@ -171,7 +123,12 @@ export async function ensureBillingInvoices(storeId: number, now = new Date()) {
   return generated;
 }
 
-export async function billingBlocked(storeId: number, now = new Date()) {
+/** Monthly bills are gone (everything is charged from the wallet), so checkout is never blocked by a bill. */
+export async function billingBlocked(_storeId: number, _now = new Date()) {
+  return false;
+}
+
+export async function oldBillingBlocked(storeId: number, now = new Date()) {
   const [row] = await db.select({ status: billingAccounts.status }).from(billingAccounts)
     .where(eq(billingAccounts.storeId, storeId)).limit(1);
   if (!row || row.status === "cancelled") return false;
@@ -220,7 +177,23 @@ export async function invoicePayuForm(invoiceId: number, store: { id: number; na
 export async function confirmBillingInvoice(txnid: string) {
   const [row] = await db.select().from(billingInvoices).where(eq(billingInvoices.paymentTxnid, txnid)).limit(1);
   if (!row) return { status: "not_found" as const };
-  if (row.status === "paid") return { status: "paid" as const, invoice: row };
+  if (row.status === "paid") {
+    // Paid through PayU after the bill was already settled from the wallet: give that wallet debit back
+    if (!row.paymentMihpayid) {
+      const { getWallet, postTransaction } = await import("./wallet.server");
+      const w = await getWallet(row.storeId);
+      const [settled] = await db.select().from(walletTransactions).where(and(eq(walletTransactions.walletId, w.id), eq(walletTransactions.type, "bill_settled"), eq(walletTransactions.refType, "billing_invoice"), eq(walletTransactions.refId, String(row.id)))).limit(1);
+      const platform = settled ? (await db.select().from(platformSettings).where(eq(platformSettings.id, 1)).limit(1))[0] : null;
+      if (settled && platform) {
+        const v = await verifyPayment(billingPayu(platform), txnid);
+        if (v.status === "success") {
+          await postTransaction({ walletId: w.id, type: "manual_credit", amountPaise: -settled.amountPaise, refType: "billing_payment", refId: txnid, note: `Bill ${row.invoiceNo} paid online · wallet debit returned`, createdBy: "Growpefy" });
+          await db.update(billingInvoices).set({ paymentMihpayid: v.mihpayid }).where(eq(billingInvoices.id, row.id));
+        }
+      }
+    }
+    return { status: "paid" as const, invoice: row };
+  }
   const platform = (await db.select().from(platformSettings).where(eq(platformSettings.id, 1)).limit(1))[0];
   if (!platform) throw new Error("Growpefy PayU billing is not configured.");
   const v = await verifyPayment(billingPayu(platform), txnid);
@@ -241,19 +214,8 @@ export async function confirmBillingInvoice(txnid: string) {
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;
-export function startBillingWatcher() {
-  if (timer) return;
-  const run = async () => {
-    try {
-      const rows = await db.select({ storeId: billingAccounts.storeId }).from(billingAccounts)
-        .where(sql`${billingAccounts.status} <> 'cancelled'`);
-      for (const r of rows) await ensureBillingInvoices(r.storeId);
-    } catch (e) { console.error("[billing] invoice watcher:", e instanceof Error ? e.message : e); }
-  };
-  timer = setInterval(() => { void run(); }, 10 * 60_000);
-  timer.unref?.();
-  setTimeout(() => { void run(); }, 4_000).unref?.();
-}
+/** Replaced by startWalletBilling (wallet-billing.server.ts). Kept so old imports still work. */
+export function startBillingWatcher() {}
 
 export { PLANS };
 export type { BillingInvoice };

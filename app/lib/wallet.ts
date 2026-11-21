@@ -6,7 +6,8 @@ export const WALLET_GST = 0.18;
 export const DEFAULT_RATES: WalletRates = { saleFeeBps: 100, otp: 100, waConfirm: 150, waTracking: 100, waPromo: 250, waReply: 7, waFollowup: 150, waRecovery: 250 };
 
 export type TxType = "recharge" | "sale_fee" | "otp" | "wa_confirm" | "wa_tracking" | "wa_promo" | "wa_reply" | "wa_followup" | "wa_recovery" | "refund_reversal" | "manual_credit" | "manual_debit"
-  | "dropship_product" | "dropship_shipping" | "dropship_packing" | "dropship_rto" | "dropship_refund";
+  | "dropship_product" | "dropship_shipping" | "dropship_packing" | "dropship_rto" | "dropship_refund"
+  | "plan_fee" | "hosting" | "bill_settled";
 export type UsageType = "otp" | "wa_confirm" | "wa_tracking" | "wa_promo" | "wa_reply" | "wa_followup" | "wa_recovery";
 
 export const TX_LABELS: Record<TxType, string> = {
@@ -27,6 +28,9 @@ export const TX_LABELS: Record<TxType, string> = {
   dropship_packing: "Packing charge",
   dropship_rto: "RTO charge",
   dropship_refund: "Refund for cancelled order",
+  plan_fee: "Monthly plan",
+  hosting: "Hosting (server usage)",
+  bill_settled: "Earlier bill settled",
 };
 
 export const USAGE_RATE_KEY: Record<UsageType, keyof WalletRates> = { otp: "otp", wa_confirm: "waConfirm", wa_tracking: "waTracking", wa_promo: "waPromo", wa_reply: "waReply", wa_followup: "waFollowup", wa_recovery: "waRecovery" };

@@ -7,7 +7,7 @@ import {
 import { storeBilling } from "./billing.server";
 import { payuEndpoint, sha512, verifyPayment, verifyPayuResponse, type PayuCreds } from "./payu.server";
 import { orderValuePaise } from "./payment-methods";
-import { accountFor, recordBillingUsage } from "./subscription-billing.server";
+import { accountFor } from "./subscription-billing.server";
 import { planById } from "./plans";
 import {
   DEFAULT_RATES, USAGE_RATE_KEY, financialYear, mergeRates, rechargeBreakup, saleFeeFor, walletState,
@@ -94,26 +94,17 @@ async function postWithin(tx: Tx, input: PostInput) {
 export async function chargeSaleFee(store: Store, order: Order) {
   try {
     if (order.status !== "paid" && order.status !== "cod_placed") return null;
-    const billingAccount = await accountFor(store.id);
-    if (billingAccount) {
-      if (!store.smartCheckout) return null;
-      const plan = planById(billingAccount.planId);
-      const base = orderValuePaise(order);
-      const fee = plan ? saleFeeFor(base, plan.feeBps) : 0;
-      if (fee <= 0) return null;
-      return await recordBillingUsage({
-        storeId: store.id, type: "sale_fee", amountPaise: fee, refType: "order", refId: order.id,
-        note: `${(plan!.feeBps / 100).toFixed(2)}% of ₹${(base / 100).toFixed(2)} · ${order.paymentMethod === "cod" ? "COD" : order.paymentMethod === "partial" ? "Partial COD" : "Prepaid"}${order.shopifyOrderName ? ` · ${order.shopifyOrderName}` : ""}`,
-      });
-    }
     const w = await getWallet(store.id);
-    const rates = await ratesFor(w);
+    // A store on a plan pays the plan's % (only for Smart Checkout orders); otherwise the wallet's own rate
+    const plan = await accountFor(store.id).then((a) => (a && a.status !== "cancelled" ? planById(a.planId) : null));
+    if (plan && !store.smartCheckout) return null;
+    const bps = plan ? plan.feeBps : (await ratesFor(w)).saleFeeBps;
     const base = orderValuePaise(order);
-    const fee = saleFeeFor(base, rates.saleFeeBps);
+    const fee = saleFeeFor(base, bps);
     if (fee <= 0) return null;
     return await postTransaction({
       walletId: w.id, type: "sale_fee", amountPaise: -fee, refType: "order", refId: order.id,
-      note: `${(rates.saleFeeBps / 100).toFixed(2)}% of ₹${(base / 100).toFixed(2)} · ${order.paymentMethod === "cod" ? "COD" : order.paymentMethod === "partial" ? "Partial COD" : "Prepaid"}${order.shopifyOrderName ? ` · ${order.shopifyOrderName}` : ""}`,
+      note: `${(bps / 100).toFixed(2)}% of ₹${(base / 100).toFixed(2)} · ${order.paymentMethod === "cod" ? "COD" : order.paymentMethod === "partial" ? "Partial COD" : "Prepaid"}${order.shopifyOrderName ? ` · ${order.shopifyOrderName}` : ""}`,
     });
   } catch (e) {
     console.error(`[wallet] sale fee for ${order.id}:`, e instanceof Error ? e.message : e);
@@ -124,20 +115,18 @@ export async function chargeSaleFee(store: Store, order: Order) {
 /** Gives the sale fee back after a full refund, if the store's wallet allows it. */
 export async function reverseSaleFee(store: Store, order: Order) {
   try {
-    const billingAccount = await accountFor(store.id);
-    if (billingAccount) {
-      const wallet = await getWallet(store.id);
-      if (!wallet.reverseFeeOnRefund) return null;
-      const [fee] = await db.select().from(billingUsage).where(and(
-        eq(billingUsage.storeId, store.id), eq(billingUsage.type, "sale_fee"), eq(billingUsage.refType, "order"), eq(billingUsage.refId, order.id),
-      )).limit(1);
-      if (!fee) return null;
-      return await recordBillingUsage({ storeId: store.id, type: "sale_fee_reversal", amountPaise: -fee.amountPaise, refType: "order", refId: order.id, note: "Full refund · transaction fee reversed" });
-    }
     const w = await getWallet(store.id);
     if (!w.reverseFeeOnRefund) return null;
-    const [fee] = await db.select().from(walletTransactions)
+    let [fee] = await db.select().from(walletTransactions)
       .where(and(eq(walletTransactions.type, "sale_fee"), eq(walletTransactions.refType, "order"), eq(walletTransactions.refId, order.id)));
+    if (!fee) {
+      // Fee recorded under the old monthly billing and moved into the wallet later
+      const [old] = await db.select({ id: billingUsage.id }).from(billingUsage).where(and(
+        eq(billingUsage.storeId, store.id), eq(billingUsage.type, "sale_fee"), eq(billingUsage.refType, "order"), eq(billingUsage.refId, order.id),
+      )).limit(1);
+      if (old) [fee] = await db.select().from(walletTransactions)
+        .where(and(eq(walletTransactions.type, "sale_fee"), eq(walletTransactions.refType, "billing_usage"), eq(walletTransactions.refId, String(old.id))));
+    }
     if (!fee) return null;
     return await postTransaction({ walletId: w.id, type: "refund_reversal", amountPaise: -fee.amountPaise, refType: "order", refId: order.id, note: "Order fully refunded" });
   } catch (e) {
@@ -150,9 +139,8 @@ export async function reverseSaleFee(store: Store, order: Order) {
 
 /** Whether a message type may be sent. Past the negative limit only OTP and order confirmations go out. */
 export async function canUse(storeId: number, type: UsageType) {
-  if (await accountFor(storeId)) return true;
   const w = await getWallet(storeId);
-  // Monthly billing replaced the wallet: only an admin suspension still pauses promotional messages
+  // Only an admin suspension pauses promotional messages
   if (w.status === "suspended") return type === "otp" || type === "wa_confirm";
   return true;
 }
@@ -165,10 +153,6 @@ export async function chargeUsage(storeId: number, type: UsageType, refId: strin
   const w = await getWallet(storeId);
   const rate = (await ratesFor(w))[USAGE_RATE_KEY[type]] ?? 0;
   if (rate <= 0) return null;
-  if (await accountFor(storeId)) {
-    const billed = await recordBillingUsage({ storeId, type, amountPaise: rate, refType: "message", refId, note });
-    return billed ? { chargedPaise: rate } : null;
-  }
   const tx = await postTransaction({ walletId: w.id, type, amountPaise: -rate, refType: "message", refId, note });
   return tx ? { chargedPaise: Math.abs(tx.entry.amountPaise) } : null;
 }

@@ -1,4 +1,5 @@
 // Railway Usage (hosting bills): super admin writes them, stores marked "usage billing" read them.
+import { settleUsageBill } from "./wallet-billing.server";
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import { db, stores, usageBills, type UsageLine } from "~/db.server";
 import { lineAmount, resourceOf } from "./usage-bill";
@@ -50,12 +51,16 @@ export async function saveBill(input: { id?: number; storeId: number; periodStar
     const [cur] = await db.select().from(usageBills).where(and(eq(usageBills.id, input.id), eq(usageBills.storeId, input.storeId))).limit(1);
     if (!cur) return { error: "Bill not found." };
     await db.update(usageBills).set({ ...values, paidAt: status === "paid" ? cur.paidAt ?? new Date() : null }).where(eq(usageBills.id, cur.id));
+    await settleUsageBill(cur.id);
     return { id: cur.id };
   }
   const [row] = await db.insert(usageBills).values(values).returning({ id: usageBills.id });
+  await settleUsageBill(row.id);
   return { id: row.id };
 }
 
 export async function deleteBill(storeId: number, id: number) {
+  const [own] = await db.select({ id: usageBills.id }).from(usageBills).where(and(eq(usageBills.id, id), eq(usageBills.storeId, storeId))).limit(1);
+  if (own) await settleUsageBill(id, true);
   await db.delete(usageBills).where(and(eq(usageBills.id, id), eq(usageBills.storeId, storeId)));
 }

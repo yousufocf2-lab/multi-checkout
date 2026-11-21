@@ -4,7 +4,7 @@ import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParam
 import { and, count, desc, eq, ilike } from "drizzle-orm";
 import { useEffect, useState } from "react";
 import { BusyOverlay } from "~/components/Brand";
-import { Icon } from "~/components/Icons";
+import { Icon, type IconName } from "~/components/Icons";
 import { Notice, SubmitButton } from "~/components/ui";
 import { blockedCustomers, db, stores } from "~/db.server";
 import { requireStore, requireViewer } from "~/lib/auth.server";
@@ -178,10 +178,9 @@ export default function RtoSuite() {
   const blocked = Object.values(d.counts).reduce((a, b) => a + (b ?? 0), 0);
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-5xl space-y-4">
       {uploading && <BusyOverlay title="Reading your file" note="Adding customers to the block list." />}
       <Hero d={d} blocked={blocked} />
-      <UsageCard d={d} />
       {!d.codEnabled && <Notice tone="warning">Cash on Delivery is off for this store, so COD rules don't apply right now. Turn it on in <Link className="underline" to={`${storePath(d.storeId)}/payments`}>Payment methods</Link>.</Notice>}
       <CodForm d={d} msg={msg} />
       <CheckoutLimits d={d} msg={msg} />
@@ -203,32 +202,36 @@ function CheckoutLimits({ d, msg }: { d: D; msg: Msg }) {
   </section>;
 }
 
+/** Top card: every guard at a glance (on / off), each a jump link. No prices here; usage lives in Wallet. */
 function Hero({ d, blocked }: { d: D; blocked: number }) {
-  const chips: { href: string; emoji: string; label: string; value: string; on: boolean }[] = [
-    { href: "#cod", emoji: "⏳", label: "COD wait", value: d.cod.cooldownOn ? `${d.cod.cooldown.value} ${d.cod.cooldown.unit}` : "Off", on: d.cod.cooldownOn },
-    { href: "#otp", emoji: "🔐", label: "OTP", value: d.otp.on ? [d.otp.prepaid && "Prepaid", d.otp.cod && "COD"].filter(Boolean).join(" + ") : "Off", on: d.otp.on },
-    { href: "#block", emoji: "🚫", label: "Block list", value: d.block.on ? `${blocked} entr${blocked === 1 ? "y" : "ies"}` : "Off", on: d.block.on },
-    { href: "#confirm", emoji: "💬", label: "Confirmation", value: d.confirm.on ? "WhatsApp" : "Off", on: d.confirm.on },
+  const base = storePath(d.storeId);
+  const tiles: { href: string; icon: IconName; label: string; value: string; on: boolean; link?: boolean }[] = [
+    { href: "#cod", icon: "clock", label: "COD rules", value: d.cod.cooldownOn ? `Wait ${d.cod.cooldown.value} ${d.cod.cooldown.unit}` : d.cod.blockAfterPrepaid ? "Online after prepaid" : "Off", on: d.cod.cooldownOn || d.cod.blockAfterPrepaid },
+    { href: "#otp", icon: "lock", label: "OTP", value: d.otp.on ? [d.otp.prepaid && "Prepaid", d.otp.cod && "COD"].filter(Boolean).join(" + ") : "Off", on: d.otp.on },
+    { href: "#block", icon: "alert", label: "Block list", value: d.block.on ? `${blocked.toLocaleString("en-IN")} blocked` : "Off", on: d.block.on },
+    { href: "#confirm", icon: "chat", label: "Confirmation", value: d.confirm.on ? "WhatsApp" : "Off", on: d.confirm.on },
+    { href: `${base}/${d.shield.unlocked ? "rto-shield" : "logistics"}`, icon: "shield", label: "RTO Shield", value: d.shield.unlocked ? (d.shield.on ? "On" : "Off") : "Needs a courier", on: d.shield.on, link: true },
   ];
+  const used = d.usage.otp.month.count + d.usage.wa.month.count;
   return (
-    <section className="panel relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-pine px-5 py-6 text-white sm:px-7">
-      <div aria-hidden className="pointer-events-none absolute -left-10 -bottom-20 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl" />
-      <div className="relative">
-        <p className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200"><Icon name="shield" className="h-3 w-3" />RTO Suite</p>
-        <h2 className="mt-3 text-lg font-semibold sm:text-xl">Fewer fake orders. Fewer doors that don't open.</h2>
-        <p className="mt-1 max-w-xl text-xs leading-relaxed text-white/70 sm:text-[13px]">Four simple guards that run at checkout. Turn on only what you need.</p>
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-          {chips.map((c) => (
-            <a key={c.href} href={c.href} className="group rounded-xl bg-white/10 px-3 py-2.5 transition hover:bg-white/15">
-              <p className="flex items-center justify-between text-[11px] text-white/60">{c.label}<span className={`h-1.5 w-1.5 rounded-full ${c.on ? "bg-emerald-400" : "bg-white/25"}`} /></p>
-              <p className="mt-0.5 truncate text-sm font-semibold"><span className="mr-1" aria-hidden>{c.emoji}</span>{c.value}</p>
-            </a>
-          ))}
-          <Link to={`${storePath(d.storeId)}/${d.shield.unlocked ? "rto-shield" : "logistics"}`} className="col-span-2 rounded-xl bg-gradient-to-r from-emerald-400/30 to-sky-400/20 px-3 py-2.5 ring-1 ring-emerald-300/30 transition hover:from-emerald-400/40 sm:col-span-4 lg:col-span-1">
-            <p className="flex items-center justify-between text-[11px] text-emerald-100">RTO Shield<span className={`h-1.5 w-1.5 rounded-full ${d.shield.on ? "bg-emerald-400" : "bg-white/25"}`} /></p>
-            <p className="mt-0.5 truncate text-sm font-semibold">🛡️ {d.shield.unlocked ? (d.shield.on ? "On" : "Set up →") : "Connect courier →"}</p>
-          </Link>
+    <section className="panel overflow-hidden p-0">
+      <div className="flex flex-wrap items-center gap-3 px-5 pb-3 pt-4">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-pine-tint text-pine"><Icon name="shield" className="h-[18px] w-[18px]" /></span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-[17px] font-semibold tracking-tight">RTO Suite</h1>
+          <p className="text-[12.5px] text-ink-soft">Checkout guards against fake orders and refused deliveries. Turn on only what you need.</p>
         </div>
+        {used > 0 && <Link to={`${base}/wallet`} className="text-[12px] text-ink-soft hover:text-ink">This month: <b className="num font-semibold text-ink">{d.usage.otp.month.count.toLocaleString("en-IN")}</b> OTP · <b className="num font-semibold text-ink">{d.usage.wa.month.count.toLocaleString("en-IN")}</b> WhatsApp</Link>}
+      </div>
+      <div className="grid grid-cols-2 border-t border-rule sm:grid-cols-3 lg:grid-cols-5">
+        {tiles.map((t, i) => {
+          const body = (<>
+            <span className="flex items-center gap-2 text-[12px] font-medium text-ink-soft"><Icon name={t.icon} className="h-4 w-4" />{t.label}</span>
+            <span className="mt-1 flex items-center gap-1.5 text-[13.5px] font-semibold"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${t.on ? "bg-emerald-500" : "bg-rule-strong"}`} /><span className={`truncate ${t.on ? "text-ink" : "text-ink-faint"}`}>{t.value}</span></span>
+          </>);
+          const cls = `block px-5 py-3 transition hover:bg-[#fafafa] ${i > 0 ? "border-l border-rule" : ""} ${i >= 2 ? "max-sm:border-t" : ""} ${i === 2 ? "max-sm:border-l-0" : ""} ${i >= 3 ? "sm:max-lg:border-t" : ""} ${i === 3 ? "sm:max-lg:border-l-0" : ""}`;
+          return t.link ? <Link key={t.label} to={t.href} className={cls}>{body}</Link> : <a key={t.label} href={t.href} className={cls}>{body}</a>;
+        })}
       </div>
     </section>
   );
@@ -244,18 +247,17 @@ function Switch({ name, on, setOn, label }: { name: string; on: boolean; setOn: 
   );
 }
 
-/** Feature header: emoji tile, title, short text, price tag, on/off switch. */
-function Head({ emoji, title, text, on, setOn, name, price }: { emoji: string; title: string; text: string; on: boolean; setOn: (v: boolean) => void; name: string; price?: string }) {
+/** Feature header: icon tile, title, short text, on/off switch. */
+function Head({ icon, title, text, on, setOn, name }: { icon: IconName; title: string; text: string; on: boolean; setOn: (v: boolean) => void; name: string }) {
   return (
-    <div className="flex items-center gap-4">
-      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-2xl transition ${on ? "bg-pine-tint" : "bg-paper-sunk grayscale"}`} aria-hidden>{emoji}</span>
+    <div className="flex items-center gap-3.5">
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${on ? "bg-pine-tint text-pine" : "bg-paper-sunk text-ink-faint"}`} aria-hidden><Icon name={icon} className="h-5 w-5" /></span>
       <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-2 font-semibold">
+        <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
           {title}
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${on ? "bg-emerald-50 text-good" : "bg-paper-sunk text-ink-faint"}`}>{on ? "On" : "Off"}</span>
-          {price && <span className="rounded-full bg-pine-tint px-2 py-0.5 text-[10px] font-semibold text-pine">{price} · from wallet</span>}
+          <span className={`rounded px-1.5 py-px text-[10.5px] font-semibold ${on ? "bg-emerald-50 text-[#067647]" : "bg-paper-sunk text-ink-faint"}`}>{on ? "On" : "Off"}</span>
         </p>
-        <p className="text-xs text-ink-soft">{text}</p>
+        <p className="text-[12.5px] text-ink-soft">{text}</p>
       </div>
       <Switch name={name} on={on} setOn={setOn} label={title} />
     </div>
@@ -291,7 +293,7 @@ function CodForm({ d, msg }: { d: D; msg: Msg }) {
   const active = on || after;
   return (
     <Form method="post" id="cod" className="panel scroll-mt-6 space-y-4 p-5">
-      <Head emoji="⏳" title="COD rules" text="Stop the same customer from piling up Cash on Delivery orders." on={active} setOn={(v) => { setOn(v); if (!v) setAfter(false); }} name="_codMaster" />
+      <Head icon="clock" title="COD rules" text="Stop the same customer from piling up Cash on Delivery orders." on={active} setOn={(v) => { setOn(v); if (!v) setAfter(false); }} name="_codMaster" />
       <div className={`space-y-2 transition ${active ? "" : "opacity-60"}`}>
         <div className={`rounded-xl border px-4 py-3 transition ${on ? "border-brand/40 bg-pine-tint/40" : "border-rule"}`}>
           <div className="flex flex-wrap items-center gap-3">
@@ -323,11 +325,11 @@ function OtpForm({ d, msg }: { d: D; msg: Msg }) {
   return (
     <Form method="post" id="otp" className="panel scroll-mt-6 space-y-4 p-5">
       {!d.smart && <SmartNote storeId={d.storeId}>OTP verification works with Smart Checkout. On the standard checkout no OTP is sent.</SmartNote>}
-      <Head emoji="🔐" title="OTP verification" text="Customers confirm their mobile number with a code. Cuts fake numbers and prank orders." on={on} setOn={setOn} name="otpOn" price={`${rupees(d.otp.price)} per OTP`} />
+      <Head icon="lock" title="OTP verification" text="Customers confirm their mobile number with a code. Cuts fake numbers and prank orders." on={on} setOn={setOn} name="otpOn" />
       {!d.otp.ready && <Notice tone="warning">{d.isAdmin ? <>OTP sending isn't set up yet. Add the MSG91 key in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "OTP sending is being set up by Growpefy. Your settings are saved and OTP starts automatically once it's live."}</Notice>}
       <div className={`grid gap-2 sm:grid-cols-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>
-        <Row name="otpPrepaid" checked={prepaid} onChange={setPrepaid} title="💳 Prepaid" text="Before the payment page" />
-        <Row name="otpCod" checked={cod} onChange={setCod} title="💵 COD" text="Before the COD order is placed" />
+        <Row name="otpPrepaid" checked={prepaid} onChange={setPrepaid} title="Prepaid" text="Before the payment page" />
+        <Row name="otpCod" checked={cod} onChange={setCod} title="COD" text="Before the COD order is placed" />
       </div>
       <div className={`transition ${on ? "" : "pointer-events-none opacity-60"}`}>
         <span className="label">When to ask for the OTP</span>
@@ -355,7 +357,7 @@ function BlockCard({ d, msg, blocked }: { d: D; msg: Msg; blocked: number }) {
   return (
     <section id="block" className="panel scroll-mt-6">
       <Form method="post" className="space-y-4 p-5">
-        <Head emoji="🚫" title="Block customers" text="Stop customers with a bad history by mobile, email, pincode, city, state or country." on={on} setOn={setOn} name="blockOn" />
+        <Head icon="alert" title="Block customers" text="Stop customers with a bad history by mobile, email, pincode, city, state or country." on={on} setOn={setOn} name="blockOn" />
         <div className={`transition ${on ? "" : "pointer-events-none opacity-60"}`}>
           <div className="inline-flex rounded-lg border border-rule-strong p-0.5 text-xs font-medium" role="radiogroup" aria-label="What to block">
             {codOnly && <input type="hidden" name="codOnly" value="on" />}
@@ -514,14 +516,13 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
   const unlocked = d.confirm.orders >= CALL_UNLOCK_ORDERS;
   return (
     <Form method="post" id="confirm" className="panel scroll-mt-6 space-y-4 p-5">
-      <Head emoji="💬" title="Order confirmation" text="Confirm every order with the customer right after checkout, so fewer orders get refused at the door." on={on} setOn={setOn} name="confirmOn" />
+      <Head icon="chat" title="Order confirmation" text="Confirm every order with the customer right after checkout, so fewer orders get refused at the door." on={on} setOn={setOn} name="confirmOn" />
       {!d.waVerified && <Notice tone="warning">WhatsApp messages start after Growpefy verifies your store. <Link to={`${storePath(d.storeId)}/whatsapp`} className="font-medium underline">Send your stock video and documents →</Link></Notice>}
       {!d.confirm.ready && <Notice tone="warning">{d.isAdmin ? <>WhatsApp sending isn't set up yet. Add the WhatsApp Cloud API details in <Link to="/dashboard/wallets" className="underline">All wallets → Settings → Messaging</Link>.</> : "WhatsApp messages are being set up by Growpefy. Your settings are saved and messages start automatically once it's live."}</Notice>}
       <div className={`space-y-2 transition ${on ? "" : "pointer-events-none opacity-60"}`}>
-        <Row name="waOn" checked={wa} onChange={setWa} title="WhatsApp confirmation" text="Order details on WhatsApp right after the order is placed."
-          extra={<span className="rounded-full bg-pine-tint px-2 py-0.5 text-[10px] font-semibold text-pine">{rupees(d.confirm.price)}/msg</span>} />
+        <Row name="waOn" checked={wa} onChange={setWa} title="WhatsApp confirmation" text="Order details on WhatsApp right after the order is placed." />
         <div className={`ml-8 flex flex-wrap gap-2 ${wa ? "" : "hidden"}`}>
-          {([["waPrepaid", "💳 Prepaid orders", prepaid, setPrepaid], ["waCod", "💵 COD orders", cod, setCod]] as const).map(([n, l, v, set]) => (
+          {([["waPrepaid", "Prepaid orders", prepaid, setPrepaid], ["waCod", "COD orders", cod, setCod]] as const).map(([n, l, v, set]) => (
             <label key={n} className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition ${v ? "border-brand bg-pine-tint font-medium text-pine" : "border-rule-strong text-ink-soft"}`}>
               <input type="checkbox" name={n} checked={v} onChange={(e) => set(e.target.checked)} className="sr-only" />{v ? "✓ " : ""}{l}
             </label>
@@ -538,43 +539,13 @@ function ConfirmForm({ d, msg }: { d: D; msg: Msg }) {
             </label>
           </div>
         )}
-        <div className="rounded-xl border border-dashed border-rule-strong px-4 py-3">
-          <div className="flex items-center gap-3">
-            <span className="flex h-5 w-5 items-center justify-center text-sm" aria-hidden>📞</span>
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-2 text-sm font-medium">Call confirmation<span className="rounded-full bg-paper-sunk px-2 py-0.5 text-[10px] font-semibold text-ink-soft">🔒 {unlocked ? "Coming soon" : `Unlocks at ${CALL_UNLOCK_ORDERS} orders`}</span></p>
-              <p className="text-xs text-ink-faint">{unlocked ? "You've crossed 100 orders. Call confirmation will appear here soon." : `Your store has ${d.confirm.orders} of ${CALL_UNLOCK_ORDERS} orders.`}</p>
-            </div>
-          </div>
-          {!unlocked && <div className="ml-8 mt-2 h-1.5 max-w-xs overflow-hidden rounded-full bg-paper-sunk"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, (d.confirm.orders / CALL_UNLOCK_ORDERS) * 100)}%` }} /></div>}
-        </div>
+        <Link to={`${storePath(d.storeId)}/calls`} className="flex items-center gap-3 rounded-xl border border-rule px-4 py-3 hover:bg-[#fafafa]">
+          <Icon name="phone" className="h-4 w-4 text-ink-soft" />
+          <span className="min-w-0 flex-1"><span className="block text-sm font-medium">Call confirmation</span><span className="block text-xs text-ink-faint">Your calling team confirms orders on Order confirmation. Add callers in Team.</span></span>
+          <Icon name="chevron" className="h-4 w-4 -rotate-90 text-ink-faint" />
+        </Link>
       </div>
       <Save intent="confirm" label="Save confirmation settings" msg={msg} />
     </Form>
-  );
-}
-
-function UsageCard({ d }: { d: D }) {
-  const u = d.usage;
-  const Tile = ({ emoji, title, x, price }: { emoji: string; title: string; x: typeof u.otp; price: number }) => (
-    <div className="rounded-xl border border-rule bg-surface p-4">
-      <p className="flex items-center gap-2 text-sm font-medium"><span aria-hidden>{emoji}</span>{title}</p>
-      <p className="num mt-2 text-2xl font-semibold">{x.month.count.toLocaleString("en-IN")}<span className="ml-1.5 text-sm font-normal text-ink-faint">this month</span></p>
-      <p className="num text-sm text-ink-soft">{rupees(x.month.amount)} from wallet · {rupees(price)} each</p>
-      <p className="num mt-1 text-xs text-ink-faint">All time: {x.ever.count.toLocaleString("en-IN")} · {rupees(x.ever.amount)}</p>
-    </div>
-  );
-  return (
-    <section className="panel p-5" id="usage">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Messages used</h3>
-        <Link to={`${storePath(d.storeId)}/wallet`} className="num text-sm text-ink-soft hover:text-ink">Wallet balance <b className={d.usage.balance < 0 ? "text-bad" : "text-ink"}>{rupees(d.usage.balance)}</b></Link>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Tile emoji="🔐" title="OTPs sent" x={u.otp} price={d.otp.price} />
-        <Tile emoji="💬" title="WhatsApp confirmations" x={u.wa} price={d.confirm.price} />
-      </div>
-      <p className="mt-2 text-[11px] text-ink-faint">Each OTP and WhatsApp message is charged from this store's wallet when it's sent. Full list in Wallet.</p>
-    </section>
   );
 }

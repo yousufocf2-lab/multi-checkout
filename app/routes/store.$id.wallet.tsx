@@ -4,7 +4,7 @@ import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
 import { and, desc, eq, gte, lt, type SQL } from "drizzle-orm";
 import { useEffect, useState } from "react";
-import { Icon } from "~/components/Icons";
+import { Icon, type IconName } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
 import { Notice, SubmitButton } from "~/components/ui";
 import { db, stores, walletTransactions, wallets } from "~/db.server";
@@ -19,7 +19,6 @@ import { storeBilling } from "~/lib/billing.server";
 import { BILLING_FIELDS, BILLING_LABEL, type BillingField } from "~/lib/billing";
 import { storePath } from "~/lib/store-code";
 import { accountFor, invoicesFor, startSubscription, PLANS } from "~/lib/subscription-billing.server";
-import { upcomingBill } from "~/lib/billing-breakdown.server";
 import { planById, feePct, rupeesLabel } from "~/lib/plans";
 
 const PAGE = 50;
@@ -54,7 +53,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const invoices = accountRow ? await invoicesFor(store.id) : [];
   const account = accountRow ? await accountFor(store.id) : null;
   const plan = account ? planById(account.planId) : null;
-  const upcoming = account ? await upcomingBill(store.id) : null;
   const dropship = (await db.select({ dropshipEnabled: stores.dropshipEnabled }).from(stores).where(eq(stores.id, store.id)).limit(1))[0]?.dropshipEnabled ?? false;
   const creds = platformPayu(p);
 
@@ -64,7 +62,6 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     dropship,
     account: account ? { planId: account.planId, status: account.status, startedAt: account.startedAt.toISOString(), nextInvoiceAt: account.nextInvoiceAt.toISOString(), creditPaise: account.creditPaise, creditGstPaise: account.creditGstPaise, legacyDebtPaise: account.legacyDebtPaise, planName: plan?.name ?? account.planId } : null,
     plans: PLANS,
-    upcoming,
     invoices: invoices.map((i) => ({ id: i.id, invoiceNo: i.invoiceNo, planId: i.planId, periodStart: i.periodStart.toISOString(), periodEnd: i.periodEnd.toISOString(), lines: i.lines, subtotalPaise: i.subtotalPaise, gstPaise: i.gstPaise, creditPaise: i.creditPaise, creditGstPaise: i.creditGstPaise, totalPaise: i.totalPaise, duePaise: i.duePaise, status: i.status, dueAt: i.dueAt.toISOString(), paidAt: i.paidAt?.toISOString() ?? null })),
     isAdmin: viewer.role === "admin",
     wallet: {
@@ -101,15 +98,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     switch (intent) {
       case "subscribe": {
-        if (await accountFor(store.id)) return fail("A billing plan is already active for this store. Contact Growpefy to change it.");
+        const cur = await accountFor(store.id);
+        if (cur && cur.status !== "cancelled") return fail("A plan is already active for this store. Contact Growpefy to change it.");
         const planId = s("planId");
         if (!planById(planId)) return fail("Choose a Growpefy plan.");
-        if (fd.get("agree") !== "on") return fail("Confirm the monthly plan and billing terms to continue.");
+        if (fd.get("agree") !== "on") return fail("Confirm the plan terms to continue.");
         await startSubscription(store.id, planId);
-        return json({ ok: "Plan started. Your first invoice will be created on your monthly billing date.", error: null, field: intent });
+        return json({ ok: "Plan started. The monthly plan fee is taken from your wallet on your plan date each month.", error: null, field: intent });
       }
       case "recharge": {
-        if (await accountFor(store.id) && !store.dropshipEnabled) return fail("This store now uses monthly billing. Open an invoice below to pay.");
         { const g = kycGate(viewer, "adding money to your wallet"); if (g) return fail(g); }
         const credit = paise(fd.get("amount"));
         if (!Number.isFinite(credit) || credit <= 0) return fail("Enter the amount to add");
@@ -202,105 +199,181 @@ export default function WalletPage() {
   const res = useActionData<typeof action>();
   const [params] = useSearchParams();
   const rc = params.get("recharge");
-  const invoiceNotice = params.get("invoice");
   const st = STATE_UI[d.wallet.state];
-  const spentMonth = d.usage.filter((u) => u.type !== "recharge" && u.type !== "manual_credit" && u.type !== "manual_debit").reduce((n, u) => n - u.amount, 0);
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-5xl space-y-5">
       {rc === "success" && <Notice tone="success">Recharge successful. The amount has been added to your wallet.</Notice>}
       {rc === "failed" && <Notice tone="error">The payment didn't go through. No money was added. You can try again.</Notice>}
       {rc === "pending" && <Notice tone="warning">We're waiting for PayU to confirm your payment. It usually takes a minute. Use “Check status” below.</Notice>}
-      {invoiceNotice === "success" && <Notice tone="success">Invoice payment confirmed. Your billing status has been updated.</Notice>}
-      {invoiceNotice === "pending" && <Notice tone="warning">PayU is still confirming this invoice payment. Refresh shortly; the invoice will update after verification.</Notice>}
-      {invoiceNotice === "failed" && <Notice tone="error">PayU did not confirm the invoice payment. The invoice remains open; you can try again.</Notice>}
-      {invoiceNotice === "mismatch" && <Notice tone="error">The received payment amount did not match the invoice. Contact Growpefy support before retrying.</Notice>}
       {res?.ok && <Notice tone="success">{res.ok}</Notice>}
       {res?.error && <Notice tone="error">{res.error}</Notice>}
-      {d.dropship && d.wallet.status === "suspended" && <Notice tone="error">This wallet is suspended by the admin. Only OTP and order confirmation messages go out.</Notice>}
-      {d.dropship && d.wallet.state === "locked" && (
+      {d.wallet.status === "suspended" && <Notice tone="error">This wallet is suspended by Growpefy. Only OTP and order confirmation messages go out.</Notice>}
+      {d.wallet.state === "locked" && (
         <Notice tone="error">
-          Your balance is below the allowed limit of {rupees(-d.wallet.negativeLimit, 0)}. Checkout keeps working, but promotional and tracking messages are paused
-          and some dashboard features are locked. Recharge to unlock everything.
+          Your balance is below the allowed limit of {rupees(-d.wallet.negativeLimit, 0)}. Checkout keeps working, but promotional and tracking messages are paused. Add money to unlock everything.
         </Notice>
       )}
 
-      {d.account ? <BillingOverview d={d} /> : <SubscriptionPanel d={d} />}
-      {/* Existing wallet remains the fulfilment wallet for dropshipping stores. */}
-      {d.dropship && <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
+      <section className="relative overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_65%,#138a6e_100%)] p-5 text-white shadow-lift sm:p-7">
         <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-emerald-300/20 blur-3xl" />
-        <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
+              <Icon name="wallet" className="h-4 w-4 text-white/70" />
               <p className="text-sm text-white/70">Wallet balance</p>
               <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
             </div>
             <p className={`num mt-2 text-[44px] font-semibold leading-none tracking-tight sm:text-[56px] ${d.wallet.balance < 0 ? "text-red-200" : ""}`}>{rupees(d.wallet.balance)}</p>
-            <p className="mt-3 text-sm text-white/75">
-              Checkout never stops. The balance may go down to {rupees(-d.wallet.negativeLimit, 0)} before promotional and tracking messages pause.
-            </p>
+            <p className="mt-3 max-w-md text-sm text-white/75">Everything for Growpefy comes from this wallet. Checkout never stops, even if the balance runs low.</p>
           </div>
-          <dl className="grid grid-cols-2 gap-2 sm:gap-3">
-            <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Spent this month</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(spentMonth)}</dd></div>
-            <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Low balance alert</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(d.wallet.lowAlert, 0)}</dd></div>
-          </dl>
+          <a href="#add-money" className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-[#0B5D4B] shadow-sm hover:bg-emerald-50">
+            <Icon name="plus" className="h-4 w-4" />Add money
+          </a>
         </div>
-      </section>}
+        <dl className="relative mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
+          <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Spent this month</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(spentOf(d.usage))}</dd></div>
+          <div className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15"><dt className="text-[11px] text-white/70">Low balance alert</dt><dd className="num mt-0.5 text-lg font-semibold">{rupees(d.wallet.lowAlert, 0)}</dd></div>
+          <div className="col-span-2 rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15 sm:col-span-1">
+            <dt className="text-[11px] text-white/70">Plan</dt>
+            <dd className="mt-0.5 text-lg font-semibold">{d.account && d.account.status !== "cancelled" ? d.account.planName : "Pay as you go"}</dd>
+            {d.account && d.account.status !== "cancelled" && <dd className="text-[11px] text-white/70">Next plan charge {day(d.account.nextInvoiceAt)}</dd>}
+          </div>
+        </dl>
+      </section>
 
-      {d.dropship && <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <RechargeCard d={d} />
-        <section className="panel">
-          <h2 className="border-b border-rule px-5 py-4 text-[15px] font-semibold">Your rates</h2>
-          <ul className="divide-y divide-rule text-sm">
-            {[
-              ["Sale fee", `${(d.rates.saleFeeBps / 100).toFixed(2).replace(/\.00$/, "")}% of each order`, "Charged when an order is paid online or placed on COD"],
-              ["OTP", `${rupees(d.rates.otp)} per OTP`, "Only when the OTP is sent"],
-              ["WhatsApp order confirmation", `${rupees(d.rates.waConfirm)} per message`, null],
-              ["WhatsApp courier tracking", `${rupees(d.rates.waTracking)} per message`, null],
-              ["WhatsApp promotional", `${rupees(d.rates.waPromo)} per message`, null],
-              ["WhatsApp inbox reply (within 24 h)", `${rupees(d.rates.waReply ?? 7)} per reply`, null],
-              ["WhatsApp inbox follow-up (after 24 h)", `${rupees(d.rates.waFollowup ?? 150)} per message`, null],
-            ].map(([k, v, h]) => (
-              <li key={k} className="flex items-start justify-between gap-3 px-5 py-3">
-                <div><p className="font-medium">{k}</p>{h && <p className="text-xs text-ink-faint">{h}</p>}</div>
-                <p className="num shrink-0 font-semibold">{v}</p>
-              </li>
-            ))}
-          </ul>
-          <p className="border-t border-rule px-5 py-2.5 text-xs text-ink-faint">Messages are charged only when they're delivered to WhatsApp / the SMS provider. Failed sends are free.</p>
-        </section>
-      </div>}
+        <MonthCard usage={d.usage} />
+      </div>
 
-      {d.dropship && <UsageCard usage={d.usage} />}
-      {d.dropship && <Ledger d={d} />}
-      {d.dropship && <Recharges d={d} />}
+      <Ledger d={d} />
+      <Recharges d={d} />
+      <PlanAndRates d={d} />
       <Billing d={d} field={res?.field} />
       {d.isAdmin && <AdminPanel d={d} />}
     </div>
   );
 }
 
-function SubscriptionPanel({ d }: { d: D }) {
-  const [planId, setPlanId] = useState("growth");
-  const account = d.account;
-  const money = (n: number) => rupees(n);
-  return <section className="panel overflow-hidden">
-    <div className="border-b border-rule px-5 py-4"><h2 className="text-[15px] font-semibold">Plan & monthly billing</h2><p className="mt-1 text-xs text-ink-soft">Monthly plan, checkout fees and message usage appear on one GST invoice.</p></div>
-    {account ? <div className="space-y-4 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4 rounded-xl bg-paper p-4">
-        <div><p className="text-xs text-ink-soft">Current plan</p><p className="mt-1 text-lg font-semibold">{account.planName} · {rupeesLabel(d.plans.find((p) => p.id === account.planId)?.monthlyRupees ?? 0)}/month</p><p className="mt-1 text-sm text-ink-soft">{feePct(d.plans.find((p) => p.id === account.planId) ?? { feeBps: 0 })} Smart Checkout transaction fee · Renews {new Date(account.nextInvoiceAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })}</p></div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${account.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{account.status}</span>
+const GROUPS: { key: string; label: string; icon: IconName; types: string[] }[] = [
+  { key: "orders", label: "Order fees", icon: "cart", types: ["sale_fee", "refund_reversal"] },
+  { key: "messages", label: "WhatsApp & OTP", icon: "chat", types: ["otp", "wa_confirm", "wa_tracking", "wa_promo", "wa_reply", "wa_followup", "wa_recovery"] },
+  { key: "plan", label: "Monthly plan", icon: "calendar", types: ["plan_fee"] },
+  { key: "hosting", label: "Hosting", icon: "globe", types: ["hosting"] },
+  { key: "fulfilment", label: "Fulfilment", icon: "box", types: ["dropship_product", "dropship_shipping", "dropship_packing", "dropship_rto", "dropship_refund"] },
+  { key: "other", label: "Earlier bills & adjustments", icon: "layers", types: ["bill_settled", "manual_debit"] },
+];
+const SPEND_TYPES = new Set(GROUPS.flatMap((g) => g.types));
+const spentOf = (usage: D["usage"]) => usage.filter((u) => SPEND_TYPES.has(u.type)).reduce((n, u) => n - u.amount, 0);
+
+function MonthCard({ usage }: { usage: D["usage"] }) {
+  const rows = GROUPS.map((g) => {
+    const items = usage.filter((u) => g.types.includes(u.type));
+    const count = g.key === "orders" ? items.filter((u) => u.type === "sale_fee").reduce((n, u) => n + u.count, 0) : items.reduce((n, u) => n + u.count, 0);
+    return { ...g, spent: -items.reduce((n, u) => n + u.amount, 0), count };
+  }).filter((r) => r.spent !== 0 || ["orders", "messages"].includes(r.key));
+  const total = rows.reduce((n, r) => n + Math.max(0, r.spent), 0);
+  const unit: Record<string, string> = { orders: "orders", messages: "messages", plan: "month", hosting: "bill", fulfilment: "charges", other: "entries" };
+  return (
+    <section className="panel flex flex-col">
+      <div className="flex items-baseline justify-between gap-2 border-b border-rule px-5 py-4">
+        <h2 className="text-[15px] font-semibold">This month</h2>
+        <span className="num text-sm font-semibold">{rupees(spentOf(usage))}</span>
       </div>
-      {(account.creditPaise + account.creditGstPaise > 0 || account.legacyDebtPaise > 0) && <p className="text-sm text-ink-soft">Invoice credit remaining: <b>{money(account.creditPaise + account.creditGstPaise)}</b>{account.legacyDebtPaise > 0 ? ` · Previous wallet balance due: ${money(account.legacyDebtPaise)}` : ""}</p>}
-      <div><h3 className="mb-2 text-sm font-semibold">Invoices</h3>{d.invoices.length ? <div className="divide-y divide-rule rounded-xl border border-rule">{d.invoices.map((i) => <div key={i.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div><p className="text-sm font-medium">{i.invoiceNo} <span className="ml-1 text-xs text-ink-faint">· {new Date(i.periodStart).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}</span></p><p className="mt-0.5 text-xs text-ink-soft">Total {money(i.totalPaise)} · {i.status === "paid" ? "Paid" : `Due ${money(i.duePaise)} by ${new Date(i.dueAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" })}`}</p></div>
-        <div className="flex gap-2">{i.status !== "paid" && <Link className="btn-primary btn" to={storePath(d.storeId, `billing/pay/${i.id}`)}>Pay invoice</Link>}<a className="btn-secondary btn" href={storePath(d.storeId, `billing/invoice/${i.id}`)}>Download PDF</a></div>
-      </div>)}</div> : <p className="text-sm text-ink-soft">No invoice yet. Your first invoice is created on your monthly billing date.</p>}</div>
-    </div> : <div className="p-5"><p className="mb-4 max-w-2xl text-sm text-ink-soft">Choose a plan to start monthly billing. Any unused wallet balance and its previously paid GST will be credited to future invoices. Dropshipping fulfilment balances remain in the wallet.</p>
-      <Form method="post" className="space-y-4"><div className="grid gap-3 md:grid-cols-3">{d.plans.map((p) => <label key={p.id} className={`cursor-pointer rounded-xl border p-4 ${planId === p.id ? "border-pine ring-2 ring-pine/15" : "border-rule"}`}><input type="radio" name="planId" value={p.id} checked={planId === p.id} onChange={() => setPlanId(p.id)} className="sr-only"/><span className="text-sm font-semibold">{p.name}</span><span className="mt-1 block text-xl font-semibold">{rupeesLabel(p.monthlyRupees)}<small className="ml-1 text-xs font-normal text-ink-soft">/month</small></span><span className="mt-1 block text-xs text-ink-soft">{feePct(p)} per Smart Checkout order</span></label>)}</div>
-      <label className="flex items-start gap-2 text-xs text-ink-soft"><input type="checkbox" name="agree" className="mt-0.5"/><span>I agree to the monthly plan fee, transaction and message usage charges, 18% GST, PayU invoice payments, and the 7-day grace period.</span></label><SubmitButton intent="subscribe" busyText="Starting plan…">Start monthly plan</SubmitButton></Form>
-    </div>}
-  </section>;
+      <ul className="flex-1 divide-y divide-rule">
+        {rows.map((r) => (
+          <li key={r.key} className="px-5 py-3.5">
+            <div className="flex items-center gap-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-paper text-ink-soft"><Icon name={r.icon} className="h-4 w-4" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{r.label}</p>
+                <p className="num text-xs text-ink-faint">{r.count.toLocaleString("en-IN")} {r.count === 1 ? unit[r.key].replace(/s$/, "") : unit[r.key]}</p>
+              </div>
+              <p className="num text-sm font-semibold">{rupees(r.spent)}</p>
+            </div>
+            {total > 0 && r.spent > 0 && <div className="ml-12 mt-2 h-1 overflow-hidden rounded-full bg-paper-sunk"><div className="h-full rounded-full bg-pine" style={{ width: `${Math.max(2, Math.round((r.spent / total) * 100))}%` }} /></div>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PlanAndRates({ d }: { d: D }) {
+  const [open, setOpen] = useState(false);
+  const [planId, setPlanId] = useState("growth");
+  const active = d.account && d.account.status !== "cancelled" ? d.account : null;
+  const plan = active ? d.plans.find((p) => p.id === active.planId) : null;
+  const msgRates: [string, number][] = [
+    ["OTP", d.rates.otp], ["WhatsApp order confirmation", d.rates.waConfirm], ["WhatsApp courier tracking", d.rates.waTracking],
+    ["WhatsApp promotional", d.rates.waPromo], ["WhatsApp abandoned cart", d.rates.waRecovery ?? d.rates.waPromo],
+    ["WhatsApp inbox reply (within 24 h)", d.rates.waReply ?? 0], ["WhatsApp inbox follow-up (after 24 h)", d.rates.waFollowup ?? 0],
+  ];
+  return (
+    <section className="panel">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
+        <span className="flex items-center gap-3">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-paper text-ink-soft"><Icon name="tag" className="h-4 w-4" /></span>
+          <span>
+            <span className="block text-[15px] font-semibold">Plan and rates</span>
+            <span className="block text-sm text-ink-soft">{active ? `${active.planName} plan` : "Pay as you go"} · what each service costs</span>
+          </span>
+        </span>
+        <Icon name="chevron" className={`h-4 w-4 text-ink-faint transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="space-y-5 border-t border-rule p-5">
+          {plan ? (
+            <div className="rounded-xl bg-paper p-4 text-sm">
+              <p className="font-semibold">{plan.name} plan</p>
+              <p className="mt-1 text-ink-soft">{rupeesLabel(plan.monthlyRupees)} a month, taken from the wallet on {day(active!.nextInvoiceAt)} and then every month · {feePct(plan)} of each Smart Checkout order.</p>
+            </div>
+          ) : (
+            <Form method="post" className="space-y-3">
+              <p className="text-sm text-ink-soft">Today each order costs {(d.rates.saleFeeBps / 100).toFixed(2).replace(/\.00$/, "")}% from the wallet. A plan lowers the order fee for a fixed monthly amount, also taken from the wallet.</p>
+              <div className="grid gap-3 md:grid-cols-3">
+                {d.plans.map((p) => (
+                  <label key={p.id} className={`cursor-pointer rounded-xl border p-4 ${planId === p.id ? "border-pine ring-2 ring-pine/15" : "border-rule"}`}>
+                    <input type="radio" name="planId" value={p.id} checked={planId === p.id} onChange={() => setPlanId(p.id)} className="sr-only" />
+                    <span className="text-sm font-semibold">{p.name}</span>
+                    <span className="mt-1 block text-xl font-semibold">{rupeesLabel(p.monthlyRupees)}<small className="ml-1 text-xs font-normal text-ink-soft">/month</small></span>
+                    <span className="mt-1 block text-xs text-ink-soft">{feePct(p)} per Smart Checkout order</span>
+                  </label>
+                ))}
+              </div>
+              <label className="flex items-start gap-2 text-xs text-ink-soft"><input type="checkbox" name="agree" className="mt-0.5" /><span>I agree that the monthly plan fee, order fees and message charges are taken from my wallet.</span></label>
+              <SubmitButton intent="subscribe" busyText="Starting plan…">Start plan</SubmitButton>
+            </Form>
+          )}
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">Per use</h3>
+            <ul className="divide-y divide-rule rounded-xl border border-rule text-sm">
+              {!plan && <li className="flex justify-between gap-3 px-4 py-2.5"><span>Order fee</span><span className="num font-medium">{(d.rates.saleFeeBps / 100).toFixed(2).replace(/\.00$/, "")}% of each order</span></li>}
+              {msgRates.map(([k, v]) => <li key={k} className="flex justify-between gap-3 px-4 py-2.5"><span>{k}</span><span className="num font-medium">{rupees(v)}</span></li>)}
+            </ul>
+            <p className="mt-2 text-xs text-ink-faint">Messages are charged only when they're delivered to WhatsApp or the SMS provider. Failed sends are free. Wallet recharges include 18% GST.</p>
+          </div>
+          {d.invoices.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">Earlier monthly bills</h3>
+              <div className="divide-y divide-rule rounded-xl border border-rule">
+                {d.invoices.map((i) => (
+                  <div key={i.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                    <span>{i.invoiceNo} <span className="text-xs text-ink-faint">· {shortDay(i.periodStart)} – {shortDay(i.periodEnd)}</span></span>
+                    <span className="flex items-center gap-3">
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-good">Settled</span>
+                      <a className="inline-flex items-center gap-1 text-pine hover:underline" href={storePath(d.storeId, `billing/invoice/${i.id}`)}><Icon name="download" className="h-3.5 w-3.5" />PDF</a>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function RechargeCard({ d }: { d: D }) {
@@ -312,7 +385,7 @@ function RechargeCard({ d }: { d: D }) {
   const nav = useNavigation();
   const busy = nav.state !== "idle" && nav.formData?.get("intent") === "recharge";
   return (
-    <section className="panel overflow-hidden">
+    <section id="add-money" className="panel scroll-mt-20 overflow-hidden">
       <div className="flex items-center justify-between border-b border-rule px-5 py-4">
         <h2 className="text-[15px] font-semibold">Add money</h2>
         <span className="flex items-center gap-1 text-xs text-ink-faint"><Icon name="wallet" className="h-3.5 w-3.5" />Secured by PayU</span>
@@ -351,32 +424,6 @@ function RechargeCard({ d }: { d: D }) {
           {d.payuMode === "test" && d.payuReady && <b className="text-warn"> PayU is in test mode.</b>}
         </p>
       </Form>
-    </section>
-  );
-}
-
-function UsageCard({ usage }: { usage: D["usage"] }) {
-  const pick = (t: string) => usage.find((u) => u.type === t) ?? { count: 0, amount: 0 };
-  const items: [TxType, string][] = [["sale_fee", "orders"], ["otp", "OTPs"], ["wa_confirm", "messages"], ["wa_tracking", "messages"], ["wa_promo", "messages"], ["wa_recovery", "messages"]];
-  const reversed = pick("refund_reversal");
-  return (
-    <section className="panel">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-rule px-5 py-4">
-        <h2 className="text-[15px] font-semibold">Usage this month</h2>
-        {reversed.count > 0 && <span className="text-xs text-good">{reversed.count} fee{reversed.count === 1 ? "" : "s"} reversed · +{rupees(reversed.amount)}</span>}
-      </div>
-      <dl className="grid grid-cols-2 gap-px bg-rule sm:grid-cols-3">
-        {items.map(([t, unit]) => {
-          const u = pick(t);
-          return (
-            <div key={t} className="bg-surface px-5 py-4">
-              <dt className="text-xs text-ink-soft">{TX_LABELS[t]}</dt>
-              <dd className="num mt-1 text-lg font-semibold">{rupees(-u.amount)}</dd>
-              <dd className="num text-xs text-ink-faint">{u.count.toLocaleString("en-IN")} {unit}</dd>
-            </div>
-          );
-        })}
-      </dl>
     </section>
   );
 }
@@ -650,100 +697,3 @@ function AdminPanel({ d }: { d: D }) {
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
-
-function BillingOverview({ d }: { d: D }) {
-  const a = d.account!;
-  const up = d.upcoming;
-  const plan = d.plans.find((p) => p.id === a.planId);
-  const open = d.invoices.filter((i) => i.status === "open");
-  const overdue = open.filter((i) => new Date(i.dueAt).getTime() < Date.now());
-  const elapsed = up ? Math.min(1, Math.max(0, (Date.now() - new Date(up.periodStart).getTime()) / (new Date(up.billDate).getTime() - new Date(up.periodStart).getTime()))) : 0;
-  return (
-    <div className="space-y-4">
-      {open.length > 0 && (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-[13px] ${overdue.length ? "bg-[#fee9e8] text-[#8e1f0b]" : "bg-[#fff1e3] text-[#5e4200]"}`}>
-          <span><b>{overdue.length ? "Overdue bill" : "Bill ready to pay"}</b> · {rupees(open[0].duePaise)} {overdue.length ? "was due" : "due"} on {day(open[0].dueAt)}.{a.status === "paused" ? " Some features are paused until it's paid." : ""}</span>
-          <Link to={storePath(d.storeId, `billing/pay/${open[0].id}`)} className="btn-primary h-8 px-3 text-[12.5px]">Pay {rupees(open[0].duePaise)}</Link>
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <section className="panel p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[13px] font-medium text-ink-soft">Upcoming bill</p>
-              <p className="num mt-1.5 text-[34px] font-semibold leading-none tracking-tight">{up ? rupees(up.amountPaise) : "—"}</p>
-              <p className="mt-1.5 text-[12px] text-ink-faint">Estimated so far, incl. GST{up?.hasCredit ? ", after your credit" : ""}</p>
-            </div>
-            <span className="rounded-full bg-[#f1f1f1] px-2.5 py-1 text-[11.5px] font-medium text-ink-soft">Estimate</span>
-          </div>
-          {up && (
-            <>
-              <div className="mt-5">
-                <div className="flex justify-between text-[11.5px] text-ink-faint"><span>{shortDay(up.periodStart)}</span><span>{shortDay(up.billDate)}</span></div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#ececec]"><div className="h-full rounded-full bg-[#303030]" style={{ width: `${Math.round(elapsed * 100)}%` }} /></div>
-              </div>
-              <dl className="mt-5 grid grid-cols-2 gap-3 border-t border-rule pt-4 text-[13px]">
-                <div><dt className="text-ink-soft">Bill date</dt><dd className="mt-0.5 font-semibold">{day(up.billDate)}</dd></div>
-                <div><dt className="text-ink-soft">Pay by</dt><dd className="mt-0.5 font-semibold">{day(up.payBy)}</dd></div>
-              </dl>
-            </>
-          )}
-        </section>
-
-        <section className="panel p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[13px] font-medium text-ink-soft">Current plan</p>
-              <p className="mt-1.5 text-[20px] font-semibold">{a.planName}</p>
-            </div>
-            <span className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${a.status === "active" ? "bg-[#cdfee1] text-[#0c5132]" : "bg-[#fff1e3] text-[#5e4200]"}`}>{a.status === "active" ? "Active" : a.status === "paused" ? "Paused" : a.status}</span>
-          </div>
-          <ul className="mt-4 space-y-2 text-[13px]">
-            <li className="flex justify-between"><span className="text-ink-soft">Monthly price</span><span className="num font-medium">{rupeesLabel(plan?.monthlyRupees ?? 0)}</span></li>
-            <li className="flex justify-between"><span className="text-ink-soft">Transaction fee</span><span className="num font-medium">{feePct(plan ?? { feeBps: 0 })} of each order</span></li>
-            <li className="flex justify-between"><span className="text-ink-soft">Customer since</span><span className="font-medium">{day(a.startedAt)}</span></li>
-            {a.creditPaise + a.creditGstPaise > 0 && <li className="flex justify-between"><span className="text-ink-soft">Credit left</span><span className="num font-medium text-good">{rupees(a.creditPaise + a.creditGstPaise)}</span></li>}
-          </ul>
-          <p className="mt-4 border-t border-rule pt-3 text-[12px] text-ink-faint">All prices are before 18% GST. To change your plan, contact Growpefy support.</p>
-        </section>
-      </div>
-
-      <section className="panel overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4"><h2 className="text-[14px] font-semibold">Bills</h2><span className="text-[12px] text-ink-faint">{d.invoices.length} bill{d.invoices.length === 1 ? "" : "s"}</span></div>
-        {d.invoices.length === 0 ? (
-          <p className="border-t border-rule px-5 py-8 text-center text-[13px] text-ink-soft">Your first bill is created on {up ? day(up.billDate) : "your billing date"}.</p>
-        ) : (
-          <div className="overflow-x-auto border-t border-rule">
-            <table className="w-full text-[13px]">
-              <thead className="bg-[#f7f7f7] text-left text-[12px] text-ink-soft">
-                <tr><th className="px-5 py-2.5 font-medium">Bill</th><th className="px-3 py-2.5 font-medium">Period</th><th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 font-medium">Status</th><th className="px-5 py-2.5" /></tr>
-              </thead>
-              <tbody className="divide-y divide-rule">
-                {d.invoices.map((i) => {
-                  const late = i.status === "open" && new Date(i.dueAt).getTime() < Date.now();
-                  return (
-                    <tr key={i.id} className="hover:bg-[#fafafa]">
-                      <td className="px-5 py-3"><Link to={storePath(d.storeId, `billing/bill/${i.id}`)} className="font-medium hover:underline">{i.invoiceNo}</Link></td>
-                      <td className="whitespace-nowrap px-3 py-3 text-ink-soft">{shortDay(i.periodStart)} – {shortDay(i.periodEnd)}</td>
-                      <td className="num whitespace-nowrap px-3 py-3 text-right font-medium">{rupees(i.totalPaise)}</td>
-                      <td className="px-3 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-medium ${i.status === "paid" ? "bg-[#cdfee1] text-[#0c5132]" : late ? "bg-[#fee9e8] text-[#8e1f0b]" : "bg-[#fff1e3] text-[#5e4200]"}`}>
-                          {i.status === "paid" ? "Paid" : late ? "Overdue" : `Due ${shortDay(i.dueAt)}`}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3 text-right">
-                        <Link to={storePath(d.storeId, `billing/bill/${i.id}`)} className="text-[12.5px] font-medium underline-offset-2 hover:underline">View</Link>
-                        {i.status !== "paid" && <Link to={storePath(d.storeId, `billing/pay/${i.id}`)} className="btn-primary ml-3 h-7 px-2.5 text-[12px]">Pay</Link>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}

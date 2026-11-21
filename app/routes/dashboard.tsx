@@ -26,7 +26,7 @@ import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
 import { storeIdFromCode, storePath } from "~/lib/store-code";
-import { startBillingWatcher } from "~/lib/subscription-billing.server";
+import { startWalletBilling } from "~/lib/wallet-billing.server";
 
 export const links: LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -43,7 +43,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   startRecoveryWatcher();
   startWelcomeWatcher();
   startNativeOrdersWatcher();
-  startBillingWatcher();
+  startWalletBilling();
   startPaymentRecheck();
   const viewer = await requireViewer(request);
   const list = await viewerStores(viewer);
@@ -182,7 +182,7 @@ export default function DashboardLayout() {
     { label: "Restaurant", to: storeHref("restaurant"), icon: "clock", match: /\/restaurant$|next=restaurant\b/, show: focus?.businessType === "restaurant" && may("settings") },
     { label: "Customer accounts", to: storeHref("customer-accounts"), icon: "user", match: /\/customer-accounts$|next=customer-accounts/, show: may("settings") },
     { label: "Widgets", to: storeHref("widgets"), icon: "sparkle", match: /\/widgets$|next=widgets\b/, show: storefront && may("settings") },
-    { label: "Plan & billing", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing") },
+    { label: "Wallet", to: storeHref("wallet"), icon: "wallet", match: /\/wallet$|next=wallet/, show: may("billing") },
     { label: "Messages & OTP", to: storeHref("message-usage"), icon: "chat", match: /\/message-usage$|next=message-usage\b/, show: may("billing") },
     { label: "Railway Usage", to: storeHref("railway-usage"), icon: "layers", match: /\/railway-usage$|next=railway-usage\b/, show: Boolean(focus?.usageBilling) && may("billing") },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },

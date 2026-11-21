@@ -41,7 +41,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const on = (k: string) => fd.get(k) === "on";
 
   if (intent === "activate") {
-    if (!await accountFor(store.id)) return json({ ok: null, error: "Choose a monthly plan in Plan & billing before activating Smart Checkout.", intent }, { status: 400 });
+    if (!await accountFor(store.id)) return json({ ok: null, error: "Choose a plan in Wallet → Plan and rates before activating Smart Checkout.", intent }, { status: 400 });
     if (!on("agree")) return json({ ok: null, error: "Tick “I agree” to activate Smart Checkout.", intent }, { status: 400 });
     await db.update(stores).set({
       smartCheckout: true, smartActivatedAt: new Date(),
