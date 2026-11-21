@@ -11,14 +11,15 @@ import { formatINR } from "~/lib/pricing";
 import { codAmount, markShipped, ordersToShip } from "~/lib/store-fulfil.server";
 import { bookOrder } from "~/lib/auto-ship.server";
 import { and, eq } from "drizzle-orm";
-import { courierAccounts, db, orders as ordersTable } from "~/db.server";
+import { db, orders as ordersTable } from "~/db.server";
+import { firstAccountOf } from "~/lib/logistics.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
   const list = await ordersToShip(store.id);
-  const [dl] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "delhivery"))).limit(1);
+  const dl = await firstAccountOf(store.id, "delhivery");
   return json({
     autoShip: shipRuleOf(store).mode !== "off" && Boolean(dl?.creds.token && dl.creds.pickupName),
     couriers: COURIERS.filter((c) => c.id !== "other").map((c) => ({ id: c.id, name: c.name })),
@@ -36,7 +37,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (!catalogAllowed(viewer, store)) throw new Response("Not found", { status: 404 });
   const fd = await request.formData();
   if (fd.get("intent") === "book") {
-    const [dl] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "delhivery"))).limit(1);
+    const dl = await firstAccountOf(store.id, "delhivery");
     const [o] = await db.select().from(ordersTable).where(and(eq(ordersTable.storeId, store.id), eq(ordersTable.id, String(fd.get("id"))))).limit(1);
     if (!dl?.creds.token || !dl.creds.pickupName || !o) return json({ ok: null, error: "Connect Delhivery with a pickup location first (Logistics)." }, { status: 400 });
     const r = await bookOrder(store, o, dl);

@@ -586,13 +586,16 @@ export const courierAccounts = pgTable(
     id: serial("id").primaryKey(),
     storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
     courier: text("courier").notNull(), // see app/lib/courier-catalog.ts
+    name: text("name"), // the store's own name for this account, e.g. "Delhivery Surat"
+    priority: integer("priority").notNull().default(0), // booking order: 1 is tried first, then 2…
+    autoShip: boolean("auto_ship").notNull().default(true), // used for automatic booking
     creds: jsonb("creds").$type<CourierCreds>().notNull(),
     status: text("status").notNull().default("connected"), // connected | error
     lastError: text("last_error"),
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("courier_accounts_store_courier").on(t.storeId, t.courier)],
+  (t) => [index("courier_accounts_store_idx").on(t.storeId, t.priority)],
 );
 
 /** Phones the store has let through RTO Shield (manual unblock). */
@@ -906,6 +909,7 @@ export const orders = pgTable(
     confirmStatus: text("confirm_status"),
     shipError: text("ship_error"), // last automatic shipment booking error (website orders)
     shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
+    courierAccountId: integer("courier_account_id"), // which of the store's courier accounts booked / tracks it
     labelPrintedAt: timestamp("label_printed_at", { withTimezone: true }), // shipping label printed from Growpefy
     labelBatch: text("label_batch"), // which print batch it was in
     courierRef: text("courier_ref"), // the order's id in the courier's panel (e.g. Shiprocket order id)

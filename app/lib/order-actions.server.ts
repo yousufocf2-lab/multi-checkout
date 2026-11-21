@@ -15,13 +15,13 @@ export async function bookableCouriers(storeIds: number[]) {
   if (!storeIds.length) return [] as CourierAccount[];
   const rows = await db.select().from(courierAccounts).where(and(inArray(courierAccounts.storeId, storeIds), eq(courierAccounts.status, "connected")));
   return rows.filter((a) => !a.creds.viaShopify && (a.courier === "delhivery" ? Boolean(a.creds.token && a.creds.pickupName) : a.courier === "shiprocket" ? Boolean(a.creds.email && a.creds.password) : false))
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    .sort((a, b) => a.priority - b.priority || a.createdAt.getTime() - b.createdAt.getTime());
 }
 
 /** For the Orders page: { storeId: [{ id, name }] } of couriers that can take orders. */
 export async function courierChoices(storeIds: number[]) {
   const out: Record<number, { id: string; name: string }[]> = {};
-  for (const a of await bookableCouriers(storeIds)) (out[a.storeId] ??= []).push({ id: a.courier, name: courierById(a.courier)?.name ?? a.courier });
+  for (const a of await bookableCouriers(storeIds)) (out[a.storeId] ??= []).push({ id: String(a.id), name: a.name ?? courierById(a.courier)?.name ?? a.courier });
   return out;
 }
 
@@ -32,7 +32,7 @@ const name = (o: Order) => o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase(
 export async function shipOrders(store: Store, ids: string[], courier: string | null, by: string) {
   const accs = await bookableCouriers([store.id]);
   if (!accs.length) return { shipped: [] as string[], failed: [{ name: "", error: "Connect a courier first (Shipping → Shipments)." }] };
-  const acc = (courier && accs.find((a) => a.courier === courier)) || accs[0];
+  const acc = (courier && (accs.find((a) => String(a.id) === courier) ?? accs.find((a) => a.courier === courier))) || accs[0];
   const list = await db.select().from(orders).where(and(eq(orders.storeId, store.id), inArray(orders.id, ids.slice(0, 100))));
   const shipped: string[] = [], failed: { name: string; error: string }[] = [];
   for (const o of list) {
@@ -41,10 +41,10 @@ export async function shipOrders(store: Store, ids: string[], courier: string | 
     const r = await bookOrder(store, o, acc);
     if (r.ok) {
       shipped.push(name(o));
-      await db.update(orders).set({ timeline: sql`${orders.timeline} || ${JSON.stringify([stamp(by, `Shipped with ${courierById(acc.courier)?.name ?? acc.courier}`)])}::jsonb` }).where(eq(orders.id, o.id));
+      await db.update(orders).set({ timeline: sql`${orders.timeline} || ${JSON.stringify([stamp(by, `Shipped with ${acc.name ?? courierById(acc.courier)?.name ?? acc.courier}`)])}::jsonb` }).where(eq(orders.id, o.id));
     } else failed.push({ name: name(o), error: r.error ?? "The courier didn't accept it." });
   }
-  return { shipped, failed, courier: courierById(acc.courier)?.name ?? acc.courier };
+  return { shipped, failed, courier: acc.name ?? courierById(acc.courier)?.name ?? acc.courier };
 }
 
 /** What can be refunded online for an order (prepaid / Partial COD advance that was actually paid). */

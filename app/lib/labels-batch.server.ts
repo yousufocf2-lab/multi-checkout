@@ -1,7 +1,8 @@
 // Shipping label batches: "print new labels" picks every booked Delhivery shipment whose label hasn't been printed
 // from Growpefy yet, prints them as one batch and remembers it, so nothing gets printed twice or missed.
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { catalogVariants, courierAccounts, db, orders, type Store } from "~/db.server";
+import { catalogVariants, db, orders, type Store } from "~/db.server";
+import { courierAccountsFor } from "./logistics.server";
 import { GP_PREFIX } from "./catalog.server";
 import { delhiveryPackingSlips } from "./couriers/delhivery.server";
 import { resolveLabel, type LabelConfig } from "./label-config";
@@ -10,6 +11,7 @@ import { labelsPdf, loadLogo, type LabelOrder } from "./labels.server";
 const cols = {
   id: orders.id, awb: orders.awb, shopifyOrderName: orders.shopifyOrderName, paymentMethod: orders.paymentMethod, total: orders.total,
   amountPaid: orders.amountPaid, advance: orders.advance, customer: orders.customer, items: orders.items, createdAt: orders.createdAt,
+  courierAccountId: orders.courierAccountId,
 };
 /** Booked with Delhivery, not picked up, not cancelled, label not printed yet. */
 const pendingWhere = (storeId: number) => and(
@@ -34,10 +36,19 @@ async function skusFor(list: LabelOrder[]) {
   return new Map(rows.filter((r) => r.sku).map((r) => [`${GP_PREFIX}${r.id}`, r.sku!]));
 }
 
-async function render(store: Store, list: LabelOrder[], batch: string, cfgIn?: LabelConfig, slipsOverride?: Awaited<ReturnType<typeof delhiveryPackingSlips>>) {
+async function render(store: Store, list: (LabelOrder & { courierAccountId?: number | null })[], batch: string, cfgIn?: LabelConfig, slipsOverride?: Awaited<ReturnType<typeof delhiveryPackingSlips>>) {
   const cfg = cfgIn ?? resolveLabel(store.labelConfig);
-  const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "delhivery"))).limit(1);
-  const slips = slipsOverride ?? (acc?.creds.token ? await delhiveryPackingSlips(acc.creds.token, list.map((o) => o.awb!).filter(Boolean)) : new Map());
+  // Label data from each Delhivery account that booked these shipments
+  const accounts = (await courierAccountsFor(store.id)).filter((a) => a.courier === "delhivery");
+  const acc = accounts[0];
+  let slips = slipsOverride;
+  if (!slips) {
+    slips = new Map();
+    for (const a of accounts) {
+      const awbs = list.filter((o) => o.awb && (o.courierAccountId ? o.courierAccountId === a.id : a.id === acc?.id)).map((o) => o.awb!);
+      if (awbs.length && a.creds.token) for (const [k, v] of await delhiveryPackingSlips(a.creds.token, awbs)) slips.set(k, v);
+    }
+  }
   const [logo, skus] = await Promise.all([cfg.logo ? loadLogo(cfg.logoUrl) : Promise.resolve(null), skusFor(list)]);
   return labelsPdf(list, slips, cfg, { name: store.name, pickupName: acc?.creds.pickupName ?? null, logo, skus }, batch);
 }

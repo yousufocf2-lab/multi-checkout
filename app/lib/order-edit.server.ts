@@ -1,6 +1,7 @@
 // Changes to an order after it was placed: delivery address (also sent to the courier), items / prices and notes.
 import { and, eq, sql } from "drizzle-orm";
-import { courierAccounts, db, orders, type Order, type OrderCustomer, type OrderEvent, type OrderLine, type Store } from "~/db.server";
+import { accountForOrder } from "./logistics.server";
+import { db, orders, type Order, type OrderCustomer, type OrderEvent, type OrderLine, type Store } from "~/db.server";
 import { editDelhiveryAddress } from "./couriers/delhivery.server";
 import { updateShiprocketAddress } from "./couriers/shiprocket-orders.server";
 import { stateName } from "./states";
@@ -44,11 +45,11 @@ export async function updateOrderAddress(store: Store, o: Order, a: AddressInput
 
   let courierMsg = "";
   if (o.courier === "shiprocket" && o.courierRef) {
-    const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "shiprocket"))).limit(1);
+    const acc = await accountForOrder(store.id, o);
     const r = acc ? await updateShiprocketAddress(acc.creds, o.courierRef, { name: `${a.firstName} ${a.lastName}`.trim(), phone: a.phone, address1: a.address1, address2: a.address2, city: a.city, state: stateName(a.state) || a.state, pincode: a.pincode, email: a.email || undefined }) : { ok: false, error: "Shiprocket isn't connected" };
     courierMsg = r.ok ? " Updated in Shiprocket too." : ` Shiprocket didn't accept the change (${r.error}). If it's already picked up, change it with the courier.`;
   } else if (o.courier === "delhivery" && o.awb) {
-    const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "delhivery"))).limit(1);
+    const acc = await accountForOrder(store.id, o);
     const r = acc?.creds.token ? await editDelhiveryAddress(acc.creds.token, o.awb, { name: `${a.firstName} ${a.lastName}`.trim(), phone: a.phone, address: `${one(a)}` }) : { ok: false, error: "Delhivery isn't connected" };
     courierMsg = r.ok ? " Updated with Delhivery too." : ` Delhivery didn't accept the change (${r.error}). If it's already picked up, change it with the courier.`;
   } else if (o.awb) {

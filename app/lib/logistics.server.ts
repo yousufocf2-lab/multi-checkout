@@ -10,8 +10,26 @@ import { fetchFulfillmentTracking, storeConnected, type OrderTracking } from "./
 
 export { COURIERS };
 
+/** The store's courier accounts in its booking order (1 first). */
 export async function courierAccountsFor(storeId: number) {
-  return db.select().from(courierAccounts).where(eq(courierAccounts.storeId, storeId)).orderBy(asc(courierAccounts.createdAt));
+  return db.select().from(courierAccounts).where(eq(courierAccounts.storeId, storeId)).orderBy(asc(courierAccounts.priority), asc(courierAccounts.createdAt));
+}
+
+/** The account an order was booked with (or, for older orders, the store's first account of that courier). */
+export async function accountForOrder(storeId: number, o: { courier: string | null; courierAccountId?: number | null }) {
+  if (o.courierAccountId) {
+    const [a] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.id, o.courierAccountId), eq(courierAccounts.storeId, storeId))).limit(1);
+    if (a) return a;
+  }
+  if (!o.courier) return null;
+  const [a] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, o.courier)))
+    .orderBy(asc(courierAccounts.priority), asc(courierAccounts.createdAt)).limit(1);
+  return a ?? null;
+}
+
+/** First account of a courier (for courier-wide things like webhooks). */
+export async function firstAccountOf(storeId: number, courier: string) {
+  return accountForOrder(storeId, { courier });
 }
 
 /** RTO Shield unlocks once at least one courier is connected. */
@@ -20,13 +38,18 @@ export async function hasCourier(storeId: number) {
   return Number(r?.n ?? 0) > 0;
 }
 
-type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode" | "pickupName", string>>;
+type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode" | "pickupName" | "name", string>>;
 
-export async function connectCourier(store: Store, courierId: string, input: Input): Promise<{ ok: true } | { ok: false; error: string }> {
+/**
+ * Connects a courier account. `accountId` = update that account; otherwise a new account is added, even for a
+ * courier already connected (a second Delhivery account, say), at the end of the booking order.
+ */
+export async function connectCourier(store: Store, courierId: string, input: Input, accountId?: number | null): Promise<{ ok: true } | { ok: false; error: string }> {
   const info = courierById(courierId);
   if (!info) return { ok: false, error: "Pick a courier from the list" };
   const v = (k: keyof Input) => String(input[k] ?? "").trim();
-  const [existing] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, info.id))).limit(1);
+  const [existing] = accountId ? await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.id, accountId), eq(courierAccounts.courier, info.id))).limit(1) : [];
+  if (accountId && !existing) return { ok: false, error: "That courier account wasn't found" };
   let creds: CourierCreds = {};
 
   if (info.kind === "api" && v("mode") === "shopify") {
@@ -61,14 +84,40 @@ export async function connectCourier(store: Store, courierId: string, input: Inp
     creds = { label: v("label").slice(0, 60) || undefined };
   }
 
-  await db.insert(courierAccounts).values({ storeId: store.id, courier: info.id, creds, status: "connected" })
-    .onConflictDoUpdate({ target: [courierAccounts.storeId, courierAccounts.courier], set: { creds, status: "connected", lastError: null } });
+  const name = v("name").slice(0, 60) || null;
+  if (existing) {
+    await db.update(courierAccounts).set({ creds, status: "connected", lastError: null, ...(name ? { name } : {}) }).where(eq(courierAccounts.id, existing.id));
+  } else {
+    const all = await courierAccountsFor(store.id);
+    const same = all.filter((a) => a.courier === info.id).length;
+    await db.insert(courierAccounts).values({
+      storeId: store.id, courier: info.id, creds, status: "connected", priority: all.reduce((m, a) => Math.max(m, a.priority), 0) + 1,
+      name: name ?? (same ? `${info.name} ${same + 1}` : null),
+    });
+  }
   void syncStoreShipments(store).catch((e) => console.error("[logistics] first sync:", e instanceof Error ? e.message : e));
   return { ok: true };
 }
 
-export async function disconnectCourier(storeId: number, courier: string) {
-  await db.delete(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, courier)));
+/** Removes one courier account (by id; or every account of a courier when given its name, for old forms). */
+export async function disconnectCourier(storeId: number, courierOrId: string | number) {
+  const id = Number(courierOrId);
+  if (Number.isInteger(id) && id > 0) await db.delete(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.id, id)));
+  else await db.delete(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, String(courierOrId))));
+}
+
+/** Booking order and settings of the store's courier accounts. `order` = account ids, first is tried first. */
+export async function arrangeCouriers(storeId: number, order: number[], patch: Record<number, { name?: string; autoShip?: boolean }>) {
+  const all = await courierAccountsFor(storeId);
+  const ids = [...order.filter((id) => all.some((a) => a.id === id)), ...all.map((a) => a.id).filter((id) => !order.includes(id))];
+  for (let i = 0; i < ids.length; i++) {
+    const p = patch[ids[i]] ?? {};
+    await db.update(courierAccounts).set({
+      priority: i + 1,
+      ...(p.name !== undefined ? { name: p.name.trim().slice(0, 60) || null } : {}),
+      ...(p.autoShip !== undefined ? { autoShip: p.autoShip } : {}),
+    }).where(and(eq(courierAccounts.id, ids[i]), eq(courierAccounts.storeId, storeId)));
+  }
 }
 
 const FINAL: ShipStatus[] = ["rto", "returned", "cancelled"];
@@ -108,7 +157,7 @@ export function shopifyShipStatus(t: OrderTracking, awb?: string | null): TrackR
   return { awb: awb ?? "", status, raw: `Shopify · ${f.status.toLowerCase().replace(/_/g, " ")}`, at: status === "in_transit" ? null : parseDate(f.updatedAt) };
 }
 
-type Watch = { id: string; awb: string | null; courier: string | null; gid: string | null; shipStatus: ShipStatus | null };
+type Watch = { id: string; awb: string | null; courier: string | null; gid: string | null; shipStatus: ShipStatus | null; accountId?: number | null };
 
 async function saveStatus(o: Watch, r: TrackResult | null, courier?: string) {
   const now = new Date();
@@ -161,7 +210,7 @@ export async function syncStoreShipments(store: Store, opts: { force?: boolean }
   }
 
   // 2. Live status for shipped orders (push couriers update themselves through the webhook)
-  const watch: Watch[] = await db.select({ id: orders.id, awb: orders.awb, courier: orders.courier, gid: orders.shopifyOrderId, shipStatus: orders.shipStatus }).from(orders)
+  const watch: Watch[] = await db.select({ id: orders.id, awb: orders.awb, courier: orders.courier, gid: orders.shopifyOrderId, shipStatus: orders.shipStatus, accountId: orders.courierAccountId }).from(orders)
     .where(and(eq(orders.storeId, store.id), isNotNull(orders.awb), isNotNull(orders.courier), gt(orders.createdAt, since),
       PUSH_IDS.length ? notInArray(orders.courier, PUSH_IDS) : undefined,
       or(isNull(orders.shipStatus), notInArray(orders.shipStatus, FINAL)),
@@ -188,8 +237,12 @@ export async function syncStoreShipments(store: Store, opts: { force?: boolean }
   };
 
   let leftover: Watch[] = [];
+  // Each order goes to the account that booked it; older orders (no account saved) to the first account of that courier
+  const firstOf = new Map<string, number>();
+  for (const a of apiAccounts) if (!firstOf.has(a.courier)) firstOf.set(a.courier, a.id);
+  const owner = (o: Watch) => (o.accountId && apiAccounts.some((a) => a.id === o.accountId) ? o.accountId : firstOf.get(o.courier ?? "") ?? null);
   for (const acc of apiAccounts) {
-    const mine = watch.filter((o) => o.courier === acc.courier);
+    const mine = watch.filter((o) => owner(o) === acc.id);
     if (!mine.length) continue;
     const res = await track(acc, mine);
     for (const o of mine) {
@@ -200,14 +253,14 @@ export async function syncStoreShipments(store: Store, opts: { force?: boolean }
   }
   // AWBs the assigned courier didn't know: try the other connected APIs once
   for (const acc of apiAccounts) {
-    const tryList = leftover.filter((o) => o.courier !== acc.courier);
+    const tryList = leftover.filter((o) => owner(o) !== acc.id);
     if (!tryList.length || errors.has(acc.id)) continue;
     const res = await track(acc, tryList);
     if (!res.size) continue;
     const next: Watch[] = [];
     for (const o of leftover) {
-      const r = o.courier !== acc.courier ? res.get(o.awb!) : undefined;
-      if (r) updated += await saveStatus(o, r, acc.courier);
+      const r = owner(o) !== acc.id ? res.get(o.awb!) : undefined;
+      if (r) { updated += await saveStatus(o, r, acc.courier); await db.update(orders).set({ courierAccountId: acc.id }).where(eq(orders.id, o.id)); }
       else next.push(o);
     }
     leftover = next;
@@ -277,17 +330,25 @@ export async function shipmentsByCourier(storeId: number) {
   return Object.fromEntries(rows.map((r) => [r.c, Number(r.n)])) as Record<string, number>;
 }
 
-/** Delivery performance per courier over the last `days`: shipments, delivered, RTO (incl. returned) and in transit. */
+/**
+ * Delivery performance per courier account over the last `days`: shipments, delivered, RTO (incl. returned) and in
+ * transit. Older orders without a saved account count under the first account of their courier.
+ */
 export async function courierPerformance(storeId: number, days = 90) {
-  const rows = await db.select({ c: orders.courier, s: orders.shipStatus, n: count() }).from(orders)
+  const accounts = await courierAccountsFor(storeId);
+  const rows = await db.select({ c: orders.courier, a: orders.courierAccountId, s: orders.shipStatus, n: count() }).from(orders)
     .where(and(eq(orders.storeId, storeId), isNotNull(orders.shipStatus), gt(orders.createdAt, new Date(Date.now() - days * 86400_000))))
-    .groupBy(orders.courier, orders.shipStatus);
-  const by = new Map<string, { courier: string; total: number; delivered: number; rto: number; transit: number }>();
+    .groupBy(orders.courier, orders.courierAccountId, orders.shipStatus);
+  const firstOf = new Map<string, number>();
+  for (const a of accounts) if (!firstOf.has(a.courier)) firstOf.set(a.courier, a.id);
+  const by = new Map<string, { key: string; accountId: number | null; courier: string; total: number; delivered: number; rto: number; transit: number }>();
   for (const r of rows) {
-    const key = r.c ?? "other";
-    const x = by.get(key) ?? { courier: key, total: 0, delivered: 0, rto: 0, transit: 0 };
-    const n = Number(r.n);
     if (r.s === "cancelled") continue;
+    const courier = r.c ?? "other";
+    const accountId = r.a && accounts.some((a) => a.id === r.a) ? r.a : firstOf.get(courier) ?? null;
+    const key = accountId ? `a${accountId}` : `c${courier}`;
+    const x = by.get(key) ?? { key, accountId, courier, total: 0, delivered: 0, rto: 0, transit: 0 };
+    const n = Number(r.n);
     x.total += n;
     if (r.s === "delivered") x.delivered += n;
     else if (r.s === "rto" || r.s === "returned" || r.s === "rto_transit") x.rto += n;
@@ -301,8 +362,9 @@ import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
 export { SHIP_FILTERS, type ShipFilter };
 
 /** Shipped orders for the logistics page, newest first, with a status filter and search (order / AWB / phone). */
-export async function shipmentList(storeId: number, opts: { filter: ShipFilter; q: string; page: number; days?: number }) {
-  const PAGE = 50;
+export const PAGE_SIZES = [10, 20, 30, 50, 100] as const;
+export async function shipmentList(storeId: number, opts: { filter: ShipFilter; q: string; page: number; days?: number; per?: number }) {
+  const PAGE = (PAGE_SIZES as readonly number[]).includes(opts.per ?? 0) ? opts.per! : 10;
   const q = opts.q.trim().replace(/[%_]/g, "").slice(0, 40);
   const where = and(
     eq(orders.storeId, storeId), isNotNull(orders.awb),
@@ -313,9 +375,10 @@ export async function shipmentList(storeId: number, opts: { filter: ShipFilter; 
   const rows = await db.select({
     id: orders.id, name: orders.shopifyOrderName, customer: orders.customer, method: orders.paymentMethod, total: orders.total,
     awb: orders.awb, courier: orders.courier, status: orders.shipStatus, raw: orders.shipStatusRaw, at: orders.shipStatusAt, createdAt: orders.createdAt,
-    labelAt: orders.labelPrintedAt, labelBatch: orders.labelBatch,
+    labelAt: orders.labelPrintedAt, labelBatch: orders.labelBatch, accountId: orders.courierAccountId,
   }).from(orders).where(where).orderBy(sql`${orders.shipStatusAt} desc nulls last`, sql`${orders.createdAt} desc`).limit(PAGE + 1).offset((Math.max(1, opts.page) - 1) * PAGE);
-  return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE };
+  const [t] = await db.select({ n: count() }).from(orders).where(where);
+  return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE, total: Number(t?.n ?? 0), per: PAGE };
 }
 
 const SYNC_EVERY_MS = 30 * 60_000;

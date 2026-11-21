@@ -16,9 +16,11 @@ const same = (a: string, b: string) => {
 export async function action({ request, params }: ActionFunctionArgs) {
   const storeId = Number(params.storeId);
   if (!storeId) return new Response("ok");
-  const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, "shiprocket"))).limit(1);
   const key = request.headers.get("x-api-key") ?? "";
-  if (!acc?.creds.token || !key || !same(key, acc.creds.token)) return new Response("unauthorized", { status: 401 });
+  // Any of the store's Shiprocket accounts (each has its own webhook key)
+  const accs = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, "shiprocket")));
+  const acc = accs.find((a) => a.creds.token && key && same(key, a.creds.token));
+  if (!acc) return new Response("unauthorized", { status: 401 });
   const b = (await request.json().catch(() => null)) as Record<string, any> | null;
   if (!b) return new Response("ok");
   const awb = String(b.awb ?? b.awb_code ?? "").trim();

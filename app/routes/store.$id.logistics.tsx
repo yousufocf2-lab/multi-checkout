@@ -1,8 +1,8 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { platformName, storeConnected } from "~/lib/platform.server";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "@remix-run/react";
-import { useEffect, useMemo, useState } from "react";
+import { Form, Link, useActionData, useFetcher, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "@remix-run/react";
+import { useEffect, useState } from "react";
 import { CourierLogo } from "~/components/CourierLogo";
 import { Icon } from "~/components/Icons";
 import { Notice, PasswordInput, Spinner, SubmitButton } from "~/components/ui";
@@ -10,7 +10,7 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { labelSummary } from "~/lib/labels-batch.server";
 import { COURIERS, type CourierInfo } from "~/lib/courier-catalog";
 import { env } from "~/lib/env.server";
-import { connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, shipmentsByCourier, syncStoreShipments } from "~/lib/logistics.server";
+import { arrangeCouriers, connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, syncStoreShipments } from "~/lib/logistics.server";
 import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
 import { SHIP_STATUS_LABELS, type ShipStatus } from "~/lib/rto-shield";
 import { storePath } from "~/lib/store-code";
@@ -29,24 +29,25 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const days = url.searchParams.get("days") === "30" ? 30 : 90;
   const q = url.searchParams.get("q") ?? "";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-  const [accounts, summary, perCourier, performance, list, labels] = await Promise.all([
-    courierAccountsFor(store.id), shipmentSummary(store.id), shipmentsByCourier(store.id),
-    courierPerformance(store.id, days), shipmentList(store.id, { filter, q, page, days }), labelSummary(store.id),
+  const per = Number(url.searchParams.get("per")) || 10;
+  const [accounts, summary, performance, list, labels] = await Promise.all([
+    courierAccountsFor(store.id), shipmentSummary(store.id),
+    courierPerformance(store.id, days), shipmentList(store.id, { filter, q, page, days, per }), labelSummary(store.id),
   ]);
   return json({
     storeId: store.id,
     rule: shipRuleOf(store),
     waConfirm: store.confirmEnabled && store.confirmWhatsapp,
     callers: await callersFor(store).then((l) => l.length).catch(() => 0),
-    canBook: accounts.some((a) => a.status === "connected" && !a.creds.viaShopify && ((a.courier === "delhivery" && a.creds.token && a.creds.pickupName) || (a.courier === "shiprocket" && a.creds.email && a.creds.password))),
     shopify: storeConnected(store),
     platform: platformName(store),
     hookUrl: `${env.appUrl}/api/shipnex/${store.id}`,
     srHookUrl: `${env.appUrl}/api/ship-hook/${store.id}`,
     accounts: accounts.map((a) => ({
-      courier: a.courier, status: a.status, lastError: a.lastError,
+      id: a.id, courier: a.courier, name: a.name, priority: a.priority, autoShip: a.autoShip, status: a.status, lastError: a.lastError,
       viaShopify: Boolean(a.creds.viaShopify),
-      who: a.courier === "shipnex" ? null : a.creds.viaShopify ? `Tracked from ${platformName(store)}` : a.creds.token ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
+      books: a.status === "connected" && !a.creds.viaShopify && Boolean((a.courier === "delhivery" && a.creds.token && a.creds.pickupName) || (a.courier === "shiprocket" && a.creds.email && a.creds.password)),
+      who: a.courier === "shipnex" ? null : a.creds.viaShopify ? `Tracked from ${platformName(store)}` : a.creds.token && a.courier !== "shiprocket" ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
       clientName: a.creds.clientName ?? a.creds.label ?? null,
       pickupName: a.creds.pickupName ?? null,
       secret: a.courier === "shipnex" || a.courier === "shiprocket" ? a.creds.token ?? null : null,
@@ -54,9 +55,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     })),
     summary,
     labels: { ...labels, on: accounts.some((a) => a.courier === "delhivery" && a.status === "connected" && !a.creds.viaShopify) },
-    perCourier,
     performance, days,
-    shipments: { filter, q, page, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), labelAt: r.labelAt?.toISOString() ?? null })) },
+    shipments: { filter, q, page, per: list.per, total: list.total, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), labelAt: r.labelAt?.toISOString() ?? null })) },
   });
 }
 
@@ -67,10 +67,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const fd = await request.formData();
   const intent = String(fd.get("intent") ?? "");
   const courier = String(fd.get("courier") ?? "");
+  const accountId = Number(fd.get("accountId")) || null;
   const name = COURIERS.find((c) => c.id === courier)?.name ?? "Courier";
   if (intent === "connect") {
     const get = (k: string) => String(fd.get(k) ?? "");
-    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode"), pickupName: get("pickupName") });
+    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode"), pickupName: get("pickupName"), name: get("name") }, accountId);
     if (!r.ok) return json<R>({ ok: null, error: r.error, courier }, { status: 400 });
     return json<R>({ ok: "connected", error: null, courier });
   }
@@ -83,9 +84,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await db.update(stores).set({ shipRule: rule, autoShip: rule.mode !== "off" }).where(eq(stores.id, store.id));
     return json<R>({ ok: "Shipping rules saved.", error: null });
   }
+  if (intent === "arrange") {
+    let order: number[] = [], patch: Record<number, { name?: string; autoShip?: boolean }> = {};
+    try { order = JSON.parse(String(fd.get("order") ?? "[]")); patch = JSON.parse(String(fd.get("patch") ?? "{}")); } catch { /* keep */ }
+    await arrangeCouriers(store.id, order.map(Number).filter(Boolean), patch);
+    return json<R>({ ok: "Courier order saved.", error: null });
+  }
   if (intent === "disconnect") {
-    await disconnectCourier(store.id, courier);
-    return json<R>({ ok: `${name} disconnected`, error: null });
+    await disconnectCourier(store.id, accountId ?? courier);
+    return json<R>({ ok: `${name} removed`, error: null });
   }
   return json<R>({ ok: null, error: "Unknown action" }, { status: 400 });
 }
@@ -101,6 +108,8 @@ const ago = (iso: string | null) => {
   const h = Math.round(m / 60);
   return h < 24 ? `synced ${h} h ago` : `synced ${new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}`;
 };
+const courierInfo = (id: string) => COURIERS.find((c) => c.id === id);
+const accName = (a: Pick<Acc, "name" | "courier" | "clientName">) => a.name ?? (a.courier === "other" && a.clientName ? a.clientName : courierInfo(a.courier)?.name ?? a.courier);
 
 const TILES: { s: ShipStatus; dot: string }[] = [
   { s: "pickup_pending", dot: "bg-slate-400" },
@@ -123,198 +132,309 @@ const GROUPS: { key: string; title: string; text: string; test: (c: CourierInfo)
   { key: "more", title: "Other & Shipnex", text: "Not in the list? Add it as Other. Shipping with Shipnex? It pushes updates to us live.", test: (c) => c.id === "other" || c.kind === "push" },
 ];
 
+type Sheet = null | { tab: "couriers" | "rules" | "labels" } | { connect: string; accountId: number | null } | { catalog: true };
+
 export default function Logistics() {
   const d = useLoaderData<typeof loader>();
   const r = useActionData<typeof action>();
-  const [open, setOpen] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<Sheet>(null);
   useEffect(() => {
-    if (r?.ok === "connected") setOpen(r.courier === "shipnex" ? "shipnex" : null);
-    else if (r?.error && r.courier) setOpen(r.courier);
-  }, [r]);
-  const byId = useMemo(() => new Map(d.accounts.map((a) => [a.courier, a])), [d.accounts]);
-  const mine = COURIERS.filter((c) => byId.has(c.id));
+    if (r?.ok === "connected") setSheet({ tab: "couriers" });
+    else if (r?.error && r.courier && !(sheet && "connect" in sheet)) setSheet({ connect: r.courier, accountId: null });
+  }, [r]); // eslint-disable-line react-hooks/exhaustive-deps
   const total = Object.values(d.summary).reduce((a, b) => a + (b ?? 0), 0);
-  const openInfo = COURIERS.find((c) => c.id === open) ?? null;
-  const justConnected = r?.ok === "connected" ? COURIERS.find((c) => c.id === r.courier) : null;
-  const [rules, setRules] = useState(false); // auto-shipping settings live behind the gear button
+  const has = d.accounts.length > 0;
+  const canBook = d.accounts.some((a) => a.books);
 
   return (
-    <div className="space-y-5">
-      <Overview connected={mine.length} total={total} summary={d.summary} couriers={mine}
-        ruleLabel={d.canBook ? MODES.find((m) => m.id === d.rule.mode)?.title ?? null : null} onRules={d.canBook ? () => setRules(true) : undefined} />
-
-      {justConnected && (
-        <div className="panel flex flex-wrap items-center gap-4 border-emerald-200 bg-gradient-to-r from-emerald-50 to-sky-50 p-4">
-          <CourierLogo c={justConnected} size={40} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">{justConnected.name} connected. RTO Shield is unlocked.</p>
-            <p className="text-xs text-ink-soft">{justConnected.kind === "push" ? "Share the webhook link below with Shipnex." : `We pick up AWBs from your ${d.platform} orders and refresh them every hour.`}</p>
-          </div>
-          <Link to={`${storePath(d.storeId)}/rto-shield`} className="btn-primary text-sm">Set up RTO Shield →</Link>
-        </div>
-      )}
+    <div className="mx-auto w-full max-w-6xl space-y-4">
       {r?.ok && r.ok !== "connected" && <Notice tone="success">{r.ok}</Notice>}
       {r?.error && !r.courier && <Notice tone="error">{r.error}</Notice>}
-      {!d.shopify && <Notice tone="warning">Connect {d.platform} first (Setup). We read AWB numbers from your {d.platform} orders.</Notice>}
 
-      {mine.length > 0 && (
-        <section className="panel p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-[15px] font-semibold text-ink">Shipment status · last 90 days</h2>
-              <p className="text-[13px] text-ink-soft">{total ? `${total} checkout orders tracked across ${mine.length} courier${mine.length === 1 ? "" : "s"}` : "Shipments show up once orders are fulfilled in Shopify with an AWB."}</p>
-            </div>
-            <Form method="post"><SubmitButton intent="sync" className="btn-secondary h-9 px-3 text-sm" busyText="Syncing"><Icon name="trend" className="h-4 w-4" />Sync now</SubmitButton></Form>
-          </div>
-          {/* Where every shipment stands: one bar, then the numbers */}
-          {total > 0 && (
-            <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-paper-sunk" role="img" aria-label="Shipments by status">
-              {TILES.map((t) => { const n = d.summary[t.s] ?? 0; return n ? <span key={t.s} className={t.dot} style={{ width: `${(n / total) * 100}%` }} title={`${SHIP_STATUS_LABELS[t.s]}: ${n}`} /> : null; })}
-            </div>
-          )}
-          <div className="mt-4 grid grid-cols-2 overflow-hidden rounded-xl border border-rule sm:grid-cols-5">
-            {TILES.map((t, i) => {
-              const n = d.summary[t.s] ?? 0;
-              return (
-                <div key={t.s} className={`bg-white px-4 py-3 ${i > 0 ? "border-rule sm:border-l" : ""} ${i % 2 === 1 ? "border-l" : ""} ${i >= 2 ? "border-t sm:border-t-0" : ""}`}>
-                  <p className="flex items-center gap-2 text-[12.5px] font-medium text-ink-soft"><span className={`h-2 w-2 rounded-full ${t.dot}`} />{SHIP_STATUS_LABELS[t.s]}</p>
-                  <p className="mt-1 flex items-baseline gap-1.5"><span className="num text-[22px] font-semibold leading-none text-ink">{n.toLocaleString("en-IN")}</span>{total > 0 && <span className="num text-[12px] text-ink-faint">{Math.round((n / total) * 100)}%</span>}</p>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {mine.map((c) => <ConnectedCard key={c.id} c={c} a={byId.get(c.id)!} n={d.perCourier[c.id] ?? 0} hookUrl={d.hookUrl} onManage={() => setOpen(c.id)} />)}
-          </div>
+      {has ? <Overview d={d} total={total} canBook={canBook} onGear={() => setSheet({ tab: "couriers" })} /> : (
+        <section className="panel flex flex-col items-center px-6 py-14 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-pine-tint text-pine"><Icon name="shipping" className="h-6 w-6" /></span>
+          <h2 className="mt-4 text-[17px] font-semibold tracking-tight">Connect your courier</h2>
+          <p className="mt-1 max-w-md text-[13px] text-ink-soft">Book shipments automatically, track every AWB and turn on RTO Shield. Connect as many accounts as you use, even several of the same courier.</p>
+          <button type="button" onClick={() => setSheet({ catalog: true })} className="btn-primary mt-5 h-10 px-5 text-sm">Connect a courier</button>
         </section>
       )}
 
-      {rules && d.canBook && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/45 p-0 sm:items-center sm:p-4" onClick={() => setRules(false)} role="dialog" aria-modal aria-label="Auto-shipping settings">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-end px-3 pt-3"><button type="button" onClick={() => setRules(false)} className="rounded-lg p-2 text-ink-faint hover:bg-paper hover:text-ink" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button></div>
-            <div className="-mt-6"><ShipRules d={d} /></div>
-          </div>
-        </div>
-      )}
+      {has && <Shipments d={d} />}
 
-      {mine.length > 0 && <Performance d={d} />}
-      {mine.length > 0 && <Shipments d={d} />}
-
-      <section className="panel p-5">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-[15px] font-semibold">{mine.length ? "Add another courier" : "Connect your couriers"}</h2>
-            <p className="text-xs text-ink-soft">Ship with 2, 3 or 4 couriers? Connect all of them. We match every AWB to the right one.</p>
-          </div>
-          <span className="rounded-full bg-paper-sunk px-2.5 py-1 text-[11px] font-medium text-ink-soft">Optional · checkout works without it</span>
-        </div>
-        {GROUPS.map((g) => (
-          <div key={g.key} className="mt-5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{g.title}</p>
-            <p className="text-xs text-ink-soft">{g.text}</p>
-            <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {COURIERS.filter(g.test).map((c) => <CourierTile key={c.id} c={c} a={byId.get(c.id)} onClick={() => setOpen(c.id)} />)}
-            </div>
-          </div>
-        ))}
-      </section>
-
-      {openInfo && <ConnectSheet c={openInfo} a={byId.get(openInfo.id)} error={r?.courier === openInfo.id ? r.error : null} hookUrl={openInfo.id === "shiprocket" ? d.srHookUrl : d.hookUrl} onClose={() => setOpen(null)} />}
+      {sheet && "tab" in sheet && <SettingsSheet d={d} tab={sheet.tab} setTab={(t) => setSheet({ tab: t })} onClose={() => setSheet(null)}
+        onAdd={() => setSheet({ catalog: true })} onEdit={(a) => setSheet({ connect: a.courier, accountId: a.id })} />}
+      {sheet && "catalog" in sheet && <Catalog onPick={(id) => setSheet({ connect: id, accountId: null })} onClose={() => setSheet(has ? { tab: "couriers" } : null)} />}
+      {sheet && "connect" in sheet && (() => {
+        const c = courierInfo(sheet.connect);
+        if (!c) return null;
+        const a = sheet.accountId ? d.accounts.find((x) => x.id === sheet.accountId) : undefined;
+        return <ConnectSheet c={c} a={a} error={r?.courier === c.id ? r.error : null} hookUrl={c.id === "shiprocket" ? d.srHookUrl : d.hookUrl} onClose={() => setSheet(has ? { tab: "couriers" } : null)} />;
+      })()}
     </div>
   );
 }
 
-/** Top of the page: the numbers that matter, in plain dark text on white. */
-function Overview({ connected, total, summary, couriers, ruleLabel, onRules }: { connected: number; total: number; summary: Partial<Record<ShipStatus, number>>; couriers: CourierInfo[]; ruleLabel: string | null; onRules?: () => void }) {
-  const delivered = summary.delivered ?? 0;
-  const rto = (summary.rto ?? 0) + (summary.rto_transit ?? 0) + (summary.returned ?? 0);
+/** One card: the numbers, where shipments stand, and each courier account's results. */
+function Overview({ d, total, canBook, onGear }: { d: D; total: number; canBook: boolean; onGear: () => void }) {
+  const [sp, setSp] = useSearchParams();
+  const s = d.summary;
+  const delivered = s.delivered ?? 0;
+  const rto = (s.rto ?? 0) + (s.rto_transit ?? 0) + (s.returned ?? 0);
   const done = delivered + rto;
   const rate = (n: number) => (done ? `${Math.round((n / done) * 100)}%` : "–");
-  const cells: { label: string; value: string; sub: string; tone?: string }[] = [
-    { label: "Shipments", value: total.toLocaleString("en-IN"), sub: "last 90 days" },
-    { label: "Delivery rate", value: rate(delivered), sub: done ? `${delivered.toLocaleString("en-IN")} delivered` : "No results yet", tone: done ? "text-[#067647]" : "" },
-    { label: "RTO rate", value: rate(rto), sub: done ? `${rto.toLocaleString("en-IN")} returned or returning` : "No results yet", tone: done && rto / done > 0.2 ? "text-[#b42318]" : "" },
-    { label: "In transit", value: (summary.in_transit ?? 0).toLocaleString("en-IN"), sub: summary.pickup_pending ? `${summary.pickup_pending.toLocaleString("en-IN")} more waiting for pickup` : "on the way to customers" },
+  const base = storePath(d.storeId);
+  const revalidator = useRevalidator();
+  const nav = useNavigation();
+  const syncing = nav.state === "submitting" && nav.formData?.get("intent") === "sync";
+  const setDays = (v: string) => { const n = new URLSearchParams(sp); n.set("days", v); setSp(n, { preventScrollReset: true }); };
+  const cells = [
+    { label: "Shipments", value: total.toLocaleString("en-IN"), sub: "Last 90 days" },
+    { label: "Delivered", value: rate(delivered), sub: done ? `${delivered.toLocaleString("en-IN")} orders` : "No results yet", tone: done ? "text-[#067647]" : "" },
+    { label: "RTO", value: rate(rto), sub: done ? `${rto.toLocaleString("en-IN")} orders` : "No results yet", tone: done && rto / done > 0.2 ? "text-[#b42318]" : "" },
+    { label: "In transit", value: (s.in_transit ?? 0).toLocaleString("en-IN"), sub: s.pickup_pending ? `+${s.pickup_pending.toLocaleString("en-IN")} awaiting pickup` : "On the way" },
   ];
+  const accById = new Map(d.accounts.map((a) => [a.id, a]));
   return (
     <section className="panel overflow-hidden p-0">
-      <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-4">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eef4f1] text-pine"><Icon name="shipping" className="h-5 w-5" /></span>
+      <header className="flex flex-wrap items-center gap-3 px-5 pb-3 pt-4">
         <div className="min-w-0 flex-1">
-          <h2 className="text-[15px] font-semibold text-ink">Shipping overview</h2>
-          <p className="text-[13px] text-ink-soft">
-            {connected ? `${connected} courier${connected === 1 ? "" : "s"} connected. Every AWB is tracked and feeds RTO Shield.` : "Connect the couriers you ship with to track every AWB and turn on RTO Shield."}
-          </p>
+          <h1 className="text-[17px] font-semibold tracking-tight">Shipping</h1>
+          <p className="text-[12.5px] text-ink-soft">{d.accounts.length} courier account{d.accounts.length === 1 ? "" : "s"} · {canBook ? MODES.find((m) => m.id === d.rule.mode)?.short : "Tracking only"}</p>
         </div>
-        {couriers.length > 0 && (
-          <div className="flex items-center -space-x-2" aria-label="Connected couriers">
-            {couriers.slice(0, 5).map((c) => <CourierLogo key={c.id} c={c} size={32} className="ring-2 ring-white" />)}
-          </div>
-        )}
-        {onRules && (
-          <button type="button" onClick={onRules} title="Auto-shipping settings"
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-rule-strong bg-white px-3 text-[13px] font-medium text-ink hover:bg-paper">
-            <Icon name="settings" className="h-4 w-4 text-ink-soft" /><span className="hidden sm:inline">Auto-shipping:</span><span className="text-ink-soft">{ruleLabel}</span>
+        <Form method="post">
+          <button name="intent" value="sync" disabled={syncing} title="Sync now" className="flex h-9 items-center gap-1.5 rounded-lg bg-white px-3 text-[13px] font-medium text-ink shadow-[inset_0_0_0_1px_#d4d4d4] hover:bg-paper disabled:opacity-60">
+            <Icon name="refresh" className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing" : "Sync now"}
           </button>
+        </Form>
+        {d.labels.on && (
+          <form method="post" action={`${base}/logistics/labels`} target="_blank" onSubmit={(e) => { if (!d.labels.pending) { e.preventDefault(); return; } setTimeout(() => revalidator.revalidate(), 4000); }}>
+            <button type="submit" aria-label={d.labels.pending ? `Download ${d.labels.pending} new shipping labels` : "No new labels to download"} title={d.labels.pending ? `Download ${d.labels.pending} new label${d.labels.pending === 1 ? "" : "s"}` : "Every label is printed"}
+              className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-white text-ink shadow-[inset_0_0_0_1px_#d4d4d4] hover:bg-paper disabled:opacity-50">
+              <Icon name="download" className="h-4 w-4" />
+              {d.labels.pending > 0 && <span className="num absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full bg-[#d92d20] px-1 text-center text-[10.5px] font-semibold leading-[18px] text-white">{d.labels.pending > 99 ? "99+" : d.labels.pending}</span>}
+            </button>
+          </form>
         )}
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4">
+        <button type="button" onClick={onGear} aria-label="Shipping settings" title="Settings" className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-ink shadow-[inset_0_0_0_1px_#d4d4d4] hover:bg-paper">
+          <Icon name="settings" className="h-[18px] w-[18px]" />
+        </button>
+      </header>
+
+      <div className="grid grid-cols-2 border-t border-rule lg:grid-cols-4">
         {cells.map((c, i) => (
-          <div key={c.label} className={`px-5 py-4 ${i % 2 === 1 ? "border-l border-rule" : ""} ${i >= 2 ? "border-t border-rule lg:border-t-0" : ""} ${i === 2 ? "lg:border-l" : ""}`}>
-            <p className="text-[12.5px] font-medium text-ink-soft">{c.label}</p>
-            <p className={`num mt-1 text-[26px] font-semibold leading-none tracking-tight ${c.tone || "text-ink"}`}>{c.value}</p>
-            <p className="mt-1.5 text-[12px] text-ink-faint">{c.sub}</p>
+          <div key={c.label} className={`px-5 py-3.5 ${i % 2 === 1 ? "border-l border-rule" : ""} ${i >= 2 ? "border-t border-rule lg:border-t-0" : ""} ${i === 2 ? "lg:border-l" : ""}`}>
+            <p className="text-[12px] font-medium text-ink-soft">{c.label}</p>
+            <p className={`num mt-0.5 text-[22px] font-semibold leading-tight tracking-tight ${c.tone || "text-ink"}`}>{c.value}</p>
+            <p className="text-[11.5px] text-ink-faint">{c.sub}</p>
           </div>
         ))}
+      </div>
+      {total > 0 && (
+        <div className="border-t border-rule px-5 py-3">
+          <div className="flex h-2 w-full overflow-hidden rounded-full bg-paper-sunk" role="img" aria-label="Shipments by status">
+            {TILES.map((t) => { const n = s[t.s] ?? 0; return n ? <span key={t.s} className={t.dot} style={{ width: `${(n / total) * 100}%` }} title={`${SHIP_STATUS_LABELS[t.s]}: ${n}`} /> : null; })}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {TILES.map((t) => <span key={t.s} className="flex items-center gap-1.5 text-[11.5px] text-ink-soft"><span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />{SHIP_STATUS_LABELS[t.s]} <b className="num font-semibold text-ink">{(s[t.s] ?? 0).toLocaleString("en-IN")}</b></span>)}
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-rule">
+        <div className="flex items-center justify-between px-5 pb-1 pt-3">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-soft">Couriers</p>
+          <div className="inline-flex rounded-md bg-paper-sunk p-0.5" role="tablist" aria-label="Period">
+            {["30", "90"].map((v) => <button key={v} type="button" role="tab" aria-selected={String(d.days) === v} onClick={() => setDays(v)} className={`rounded px-2 py-0.5 text-[11.5px] font-medium ${String(d.days) === v ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{v}d</button>)}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-[13px]">
+            <thead><tr className="text-left text-[11.5px] text-ink-faint">
+              <th className="px-5 py-2 font-medium">Account</th><th className="px-3 py-2 text-right font-medium">Shipped</th><th className="px-3 py-2 text-right font-medium">Delivered</th>
+              <th className="px-3 py-2 text-right font-medium">RTO</th><th className="px-3 py-2 text-right font-medium">In transit</th><th className="w-[24%] px-5 py-2 font-medium">Delivery rate</th>
+            </tr></thead>
+            <tbody>
+              {d.accounts.map((a) => {
+                const p = d.performance.find((x) => x.accountId === a.id) ?? { total: 0, delivered: 0, rto: 0, transit: 0 };
+                const c = courierInfo(a.courier);
+                const rr = p.delivered + p.rto ? Math.round((p.delivered / (p.delivered + p.rto)) * 100) : null;
+                return (
+                  <tr key={a.id} className="border-t border-rule">
+                    <td className="px-5 py-2.5">
+                      <span className="flex items-center gap-2.5">
+                        {c && <CourierLogo c={c} size={26} />}
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5 font-medium">{accName(a)}{a.books && a.autoShip && <span className="num rounded bg-paper-sunk px-1 text-[10.5px] font-semibold text-ink-soft" title="Booking order">#{a.priority}</span>}</span>
+                          <span className={`block text-[11.5px] ${a.status === "connected" ? "text-ink-faint" : "text-[#b42318]"}`}>{a.status === "connected" ? ago(a.lastSyncAt) : "Needs attention"}</span>
+                        </span>
+                      </span>
+                    </td>
+                    <td className="num px-3 text-right">{p.total}</td>
+                    <td className="num px-3 text-right text-[#067647]">{p.delivered}</td>
+                    <td className="num px-3 text-right text-[#b42318]">{p.rto}</td>
+                    <td className="num px-3 text-right">{p.transit}</td>
+                    <td className="px-5">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-red-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${rr ?? 0}%` }} /></div>
+                        <span className="num w-9 text-right text-[12px] font-semibold">{rr == null ? "–" : `${rr}%`}</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {d.performance.filter((p) => !p.accountId || !accById.has(p.accountId)).map((p) => (
+                <tr key={p.key} className="border-t border-rule text-ink-soft">
+                  <td className="px-5 py-2.5">{courierInfo(p.courier)?.name ?? p.courier} <span className="text-[11.5px] text-ink-faint">(not connected)</span></td>
+                  <td className="num px-3 text-right">{p.total}</td><td className="num px-3 text-right">{p.delivered}</td><td className="num px-3 text-right">{p.rto}</td><td className="num px-3 text-right">{p.transit}</td><td className="px-5" />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {d.accounts.some((a) => a.lastError) && <div className="space-y-1 px-5 pb-3">{d.accounts.filter((a) => a.lastError).map((a) => <p key={a.id} className="rounded-lg bg-[#fdeceb] px-3 py-1.5 text-[12px] text-[#8e1f0b]"><b className="font-semibold">{accName(a)}:</b> {a.lastError}</p>)}</div>}
       </div>
     </section>
   );
 }
 
-function StatusPill({ a }: { a?: Acc }) {
-  if (!a) return null;
-  return a.status === "connected"
-    ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-good"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Connected</span>
-    : <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-bad"><span className="h-1.5 w-1.5 rounded-full bg-red-500" />Needs attention</span>;
-}
-
-function CourierTile({ c, a, onClick }: { c: CourierInfo; a?: Acc; onClick: () => void }) {
+/** Right-side settings: courier accounts (booking order), auto-shipping, labels. */
+function SettingsSheet({ d, tab, setTab, onClose, onAdd, onEdit }: { d: D; tab: "couriers" | "rules" | "labels"; setTab: (t: "couriers" | "rules" | "labels") => void; onClose: () => void; onAdd: () => void; onEdit: (a: Acc) => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", k); document.body.style.overflow = prev; };
+  }, [onClose]);
+  const tabs = [["couriers", "Couriers"], ["rules", "Auto-shipping"], ["labels", "Labels"]] as const;
   return (
-    <button type="button" onClick={onClick}
-      className={`group flex flex-col items-center rounded-2xl border px-3 pb-3 pt-4 text-center transition hover:-translate-y-0.5 hover:shadow-lift ${a ? "border-emerald-200 bg-emerald-50/40" : "border-rule bg-white"}`}>
-      <CourierLogo c={c} size={48} className="transition group-hover:scale-105" />
-      <p className="mt-2 line-clamp-1 text-[13px] font-semibold">{c.id === "other" && a?.clientName ? a.clientName : c.name}</p>
-      <p className="line-clamp-1 text-[11px] text-ink-faint">{c.tagline}</p>
-      <span className="mt-2">{a ? <StatusPill a={a} /> : <span className="rounded-full border border-rule-strong px-2 py-0.5 text-[11px] font-medium text-ink-soft group-hover:border-ink group-hover:text-ink">{c.kind === "api" ? "Connect" : "Turn on"}</span>}</span>
-    </button>
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35" onClick={onClose}>
+      <aside className="flex h-full w-full flex-col bg-white shadow-2xl sm:max-w-[34rem]" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="Shipping settings">
+        <div className="flex items-center gap-2 px-5 pb-2 pt-4">
+          <h2 className="flex-1 text-[16px] font-semibold tracking-tight">Shipping settings</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-ink-faint hover:bg-paper hover:text-ink" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>
+        </div>
+        <nav className="flex gap-1 border-b border-rule px-4" role="tablist">
+          {tabs.map(([id, l]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`border-b-2 px-3 py-2.5 text-[13px] font-medium ${tab === id ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>{l}</button>)}
+        </nav>
+        <div className="flex-1 overflow-y-auto p-5">
+          {tab === "couriers" && <CourierAccounts d={d} onAdd={onAdd} onEdit={onEdit} />}
+          {tab === "rules" && (d.accounts.some((a) => a.books) ? <ShipRules d={d} /> : <p className="text-[13px] text-ink-soft">Connect Delhivery (with a pickup location) or Shiprocket with its login to book orders automatically.</p>)}
+          {tab === "labels" && <LabelSettings d={d} />}
+        </div>
+      </aside>
+    </div>
   );
 }
 
-function ConnectedCard({ c, a, n, hookUrl, onManage }: { c: CourierInfo; a: Acc; n: number; hookUrl: string; onManage: () => void }) {
-  const tag = a.viaShopify ? KIND_TAG.shopify : KIND_TAG[c.kind];
+/** The store's accounts in booking order: the first is tried first; if it fails, the next one. */
+function CourierAccounts({ d, onAdd, onEdit }: { d: D; onAdd: () => void; onEdit: (a: Acc) => void }) {
+  const f = useFetcher<R>();
+  const [list, setList] = useState(d.accounts);
+  useEffect(() => setList(d.accounts), [d.accounts]);
+  const dirty = JSON.stringify(list.map((a) => [a.id, a.name, a.autoShip])) !== JSON.stringify(d.accounts.map((a) => [a.id, a.name, a.autoShip]));
+  const move = (i: number, step: -1 | 1) => setList((l) => { const n = [...l]; const j = i + step; if (j < 0 || j >= n.length) return l; [n[i], n[j]] = [n[j], n[i]]; return n; });
+  const save = () => f.submit({ intent: "arrange", order: JSON.stringify(list.map((a) => a.id)), patch: JSON.stringify(Object.fromEntries(list.map((a) => [a.id, { name: a.name ?? "", autoShip: a.autoShip }]))) }, { method: "post" });
+  const bookers = list.filter((a) => a.books && a.autoShip);
   return (
-    <div className={`min-w-0 rounded-2xl border p-3.5 ${a.status === "connected" ? "border-rule" : "border-red-200 bg-red-50/40"}`}>
-      <div className="flex items-center gap-3">
-        <CourierLogo c={c} size={40} />
-        <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold">{c.id === "other" && a.clientName ? a.clientName : c.name}<StatusPill a={a} /></p>
-          <p className="truncate text-[11px] text-ink-faint"><span className={`mr-1 rounded px-1 py-px text-[10px] font-semibold ${tag.cls}`}>{tag.t}</span>{a.who ? `${a.who} · ` : ""}{ago(a.lastSyncAt)}</p>
-        </div>
-        <div className="text-right">
-          <p className="num text-base font-semibold leading-none">{n}</p>
-          <p className="text-[10px] text-ink-faint">shipments</p>
-        </div>
+    <div className="space-y-4">
+      <p className="text-[12.5px] text-ink-soft">Orders are booked with the first account. If it fails (pincode, wallet, any error), the next one tries, then the next.</p>
+      <ol className="space-y-2">
+        {list.map((a, i) => {
+          const c = courierInfo(a.courier);
+          const pos = bookers.findIndex((b) => b.id === a.id);
+          return (
+            <li key={a.id} className="rounded-xl p-3 shadow-[inset_0_0_0_1px_#e3e3e3]">
+              <div className="flex items-center gap-2.5">
+                <span className={`num flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${pos >= 0 ? "bg-ink text-white" : "bg-paper-sunk text-ink-faint"}`}>{pos >= 0 ? pos + 1 : "–"}</span>
+                {c && <CourierLogo c={c} size={28} />}
+                <input value={a.name ?? ""} placeholder={accName({ ...a, name: null })} onChange={(e) => setList((l) => l.map((x) => (x.id === a.id ? { ...x, name: e.target.value } : x)))} aria-label="Account name"
+                  className="min-w-0 flex-1 rounded-md bg-transparent px-1.5 py-1 text-[13.5px] font-semibold hover:bg-paper focus:bg-white focus:outline-none focus:ring-1 focus:ring-rule-strong" />
+                <div className="flex">
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft hover:bg-paper disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-180" /></button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === list.length - 1} aria-label="Move down" className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft hover:bg-paper disabled:opacity-30"><Icon name="chevron" className="h-4 w-4" /></button>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-[34px] text-[12px]">
+                <span className={a.status === "connected" ? "text-ink-faint" : "font-medium text-[#b42318]"}>{a.status === "connected" ? [a.who, a.pickupName ? `Pickup: ${a.pickupName}` : null, ago(a.lastSyncAt)].filter(Boolean).join(" · ") : "Needs attention"}</span>
+                {a.books && (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-ink-soft"><input type="checkbox" checked={a.autoShip} onChange={(e) => setList((l) => l.map((x) => (x.id === a.id ? { ...x, autoShip: e.target.checked } : x)))} className="h-3.5 w-3.5 accent-[rgb(var(--brand))]" />Books orders</label>
+                )}
+                <span className="ml-auto flex gap-1">
+                  <button type="button" onClick={() => onEdit(a)} className="rounded-md px-2 py-1 font-medium text-[#005bd3] hover:bg-paper">Edit</button>
+                  <Form method="post" onSubmit={(e) => { if (!window.confirm(`Remove ${accName(a)}? Its shipments stop updating.`)) e.preventDefault(); }}>
+                    <input type="hidden" name="accountId" value={a.id} /><input type="hidden" name="courier" value={a.courier} />
+                    <button name="intent" value="disconnect" className="rounded-md px-2 py-1 font-medium text-[#b42318] hover:bg-[#fdeceb]">Remove</button>
+                  </Form>
+                </span>
+              </div>
+              {a.lastError && <p className="mt-2 rounded-lg bg-[#fdeceb] px-2.5 py-1.5 text-[11.5px] text-[#8e1f0b]">{a.lastError}</p>}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onAdd} className="btn-secondary h-9 flex-1 text-[13px]"><Icon name="plus" className="h-4 w-4" />Add courier account</button>
+        {dirty && <button type="button" onClick={save} disabled={f.state !== "idle"} className="btn-primary h-9 px-4 text-[13px]">{f.state !== "idle" ? "Saving…" : "Save order"}</button>}
       </div>
-      {a.lastError && <p className="mt-2 rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-bad">{a.lastError}</p>}
-      {c.kind === "push" && <p className="mt-2 truncate rounded-lg bg-paper px-2.5 py-1.5 font-mono text-[10px] text-ink-soft">{hookUrl}</p>}
-      <div className="mt-3 flex items-center gap-1.5">
-        <button type="button" onClick={onManage} className="btn-secondary h-8 flex-1 px-2 text-xs">{c.kind === "api" ? (a.viaShopify ? "Add API login" : "Update login") : "Details"}</button>
-        <Form method="post" onSubmit={(e) => { if (!window.confirm(`Disconnect ${c.name}? Tracking for its shipments stops.`)) e.preventDefault(); }}>
-          <input type="hidden" name="courier" value={c.id} />
-          <button name="intent" value="disconnect" className="btn-quiet h-8 px-2 text-xs text-bad">Disconnect</button>
-        </Form>
+      {f.data?.ok && !dirty && <p className="text-[12px] text-[#067647]">{f.data.ok}</p>}
+    </div>
+  );
+}
+
+function LabelSettings({ d }: { d: D }) {
+  const base = storePath(d.storeId);
+  return (
+    <div className="space-y-4">
+      <Link to={`${base}/logistics/label-design`} className="flex items-center gap-3 rounded-xl p-3.5 shadow-[inset_0_0_0_1px_#e3e3e3] hover:bg-paper">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-paper-sunk"><Icon name="design" className="h-[18px] w-[18px]" /></span>
+        <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">Label design</span><span className="block text-[12px] text-ink-soft">Size, logo and what your labels show</span></span>
+        <Icon name="chevron" className="h-4 w-4 -rotate-90 text-ink-faint" />
+      </Link>
+      <div>
+        <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-soft">Printed batches · last 15 days</p>
+        {d.labels.batches.length ? (
+          <ul className="divide-y divide-rule rounded-xl shadow-[inset_0_0_0_1px_#e3e3e3]">
+            {d.labels.batches.map((b) => (
+              <li key={b.batch} className="flex items-center gap-3 px-3.5 py-2.5 text-[13px]">
+                <span className="min-w-0 flex-1"><span className="font-medium">{b.batch}</span><span className="ml-2 text-ink-faint">{b.count} label{b.count === 1 ? "" : "s"}</span></span>
+                <a href={`${base}/logistics/labels?batch=${encodeURIComponent(b.batch)}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[12.5px] font-medium text-[#005bd3]"><Icon name="download" className="h-3.5 w-3.5" />Reprint</a>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-[13px] text-ink-faint">Nothing printed yet. The download button on the Shipping page prints every new label.</p>}
+      </div>
+    </div>
+  );
+}
+
+function Catalog({ onPick, onClose }: { onPick: (id: string) => void; onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal aria-label="Add a courier">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <h2 className="flex-1 text-[16px] font-semibold tracking-tight">Add a courier account</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-ink-faint hover:bg-paper hover:text-ink" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>
+        </div>
+        <p className="text-[12.5px] text-ink-soft">You can add the same courier more than once, e.g. three Delhivery accounts with their own API tokens.</p>
+        {GROUPS.map((g) => (
+          <div key={g.key} className="mt-5">
+            <p className="text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{g.title}</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              {COURIERS.filter(g.test).map((c) => (
+                <button key={c.id} type="button" onClick={() => onPick(c.id)} className="flex items-center gap-2.5 rounded-xl p-2.5 text-left shadow-[inset_0_0_0_1px_#e3e3e3] hover:bg-paper">
+                  <CourierLogo c={c} size={32} />
+                  <span className="min-w-0"><span className="block truncate text-[13px] font-semibold">{c.name}</span><span className="block truncate text-[11px] text-ink-faint">{c.tagline}</span></span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -332,13 +452,13 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
   const verb = c.kind === "api" ? "Connect" : "Turn on";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal aria-label={`${verb} ${c.name}`}>
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-4" onClick={onClose} role="dialog" aria-modal aria-label={`${verb} ${c.name}`}>
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-rule px-5 py-4">
-          <CourierLogo c={c} size={44} />
+          <CourierLogo c={c} size={40} />
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-2 font-semibold">{c.name}<span className={`rounded px-1.5 py-px text-[10px] font-semibold ${tag.cls}`}>{tag.t}</span></p>
-            <p className="text-xs text-ink-faint">{c.tagline}</p>
+            <p className="flex items-center gap-2 font-semibold">{a ? accName(a) : c.name}<span className={`rounded px-1.5 py-px text-[10px] font-semibold ${tag.cls}`}>{tag.t}</span></p>
+            <p className="text-xs text-ink-faint">{a ? "Update this account" : c.tagline}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-ink-faint hover:bg-paper hover:text-ink" aria-label="Close"><Icon name="close" className="h-4 w-4" /></button>
         </div>
@@ -359,11 +479,16 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
 
           <Form method="post" className="space-y-3">
             <input type="hidden" name="courier" value={c.id} />
+            {a && <input type="hidden" name="accountId" value={a.id} />}
             {error && <Notice tone="error">{error}</Notice>}
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium">Account name<span className="font-normal text-ink-faint"> · optional</span></span>
+              <input name="name" defaultValue={a?.name ?? ""} placeholder={`e.g. ${c.name} Surat`} maxLength={60} className="input h-10 text-sm" />
+            </label>
             {c.id === "shiprocket" && a?.secret && !a.viaShopify && (
               <div className="space-y-2 rounded-xl bg-paper p-3 text-xs">
                 <p className="font-semibold">Live status (optional, recommended)</p>
-                <p className="text-[11px] text-ink-soft">In Shiprocket open Settings → API → Webhooks, turn on the shipment-status webhook and paste these. Status then updates the moment it changes instead of every 30 minutes.</p>
+                <p className="text-[11px] text-ink-soft">In Shiprocket open Settings → API → Webhooks, turn on the shipment-status webhook and paste these.</p>
                 <Copy label="URL" value={hookUrl} />
                 <Copy label="Token (x-api-key)" value={a.secret} />
               </div>
@@ -387,23 +512,21 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
             ))}
             {!(c.kind === "push" && a) && (
               <button type="submit" name="intent" value="connect" className="btn-primary w-full py-2.5 text-sm" disabled={busy}>
-                {busy ? <><Spinner /> {c.kind === "api" ? `Checking with ${c.name}` : "Saving"}</> : a ? (c.kind === "api" ? "Save new login" : "Save") : `${verb} ${c.name}`}
+                {busy ? <><Spinner /> {c.kind === "api" ? `Checking with ${c.name}` : "Saving"}</> : a ? "Save" : `${verb} ${c.name}`}
               </button>
             )}
-            <p className="flex items-center gap-1.5 text-[11px] text-ink-faint"><Icon name="shield" className="h-3.5 w-3.5" />{c.kind === "api" ? "Passwords are encrypted. Used only to read tracking." : "Read-only. Disconnect any time."}</p>
+            <p className="flex items-center gap-1.5 text-[11px] text-ink-faint"><Icon name="shield" className="h-3.5 w-3.5" />{c.kind === "api" ? "Passwords are encrypted." : "Read-only. Remove any time."}</p>
           </Form>
-          {c.kind === "api" && (
-            <Form method="post" className="rounded-2xl border border-dashed border-rule-strong p-3.5 sm:col-span-2">
+          {c.kind === "api" && !a && (
+            <Form method="post" className="rounded-xl border border-dashed border-rule-strong p-3.5 sm:col-span-2">
               <input type="hidden" name="courier" value={c.id} />
               <input type="hidden" name="mode" value="shopify" />
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">Don't want to share an API {c.fields?.some((f) => f.name === "token") ? "token" : "login"}?</p>
-                  <p className="text-xs text-ink-soft">Just turn {c.name} on. We read each order's AWB and delivery status from your store orders, the way your {c.name} app updates them. Updates come a little slower than the live API.</p>
+                  <p className="text-sm font-semibold">No API {c.fields?.some((f) => f.name === "token") ? "token" : "login"}?</p>
+                  <p className="text-xs text-ink-soft">Track {c.name} from your store orders instead (no automatic booking; updates are a little slower).</p>
                 </div>
-                <button type="submit" name="intent" value="connect" className="btn-secondary shrink-0 px-4 py-2 text-sm" disabled={busy}>
-                  {a?.viaShopify ? "On · tracked from store orders" : "Turn on without API"}
-                </button>
+                <button type="submit" name="intent" value="connect" className="btn-secondary shrink-0 px-4 py-2 text-sm" disabled={busy}>Track without API</button>
               </div>
             </Form>
           )}
@@ -432,76 +555,9 @@ function PwOrText({ type, ...rest }: React.InputHTMLAttributes<HTMLInputElement>
 }
 
 const STATUS_DOT: Record<string, string> = { pickup_pending: "bg-slate-400", in_transit: "bg-sky-500", delivered: "bg-emerald-500", rto_transit: "bg-amber-500", rto: "bg-red-500", returned: "bg-fuchsia-500", cancelled: "bg-slate-400" };
-const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
-
-function Performance({ d }: { d: D }) {
-  const [sp, setSp] = useSearchParams();
-  const all = d.performance.reduce((a, r) => ({ total: a.total + r.total, delivered: a.delivered + r.delivered, rto: a.rto + r.rto, transit: a.transit + r.transit }), { total: 0, delivered: 0, rto: 0, transit: 0 });
-  const done = all.delivered + all.rto;
-  const setDays = (v: string) => { const n = new URLSearchParams(sp); n.set("days", v); setSp(n, { preventScrollReset: true }); };
-  return (
-    <section className="panel p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[15px] font-semibold">Delivery performance</h2>
-          <p className="text-xs text-ink-soft">Delivered and RTO out of shipments that reached a result. In-transit shipments aren't counted yet.</p>
-        </div>
-        <div className="inline-flex rounded-lg border border-rule-strong bg-surface p-0.5" role="tablist">
-          {["30", "90"].map((v) => (
-            <button key={v} type="button" role="tab" aria-selected={String(d.days) === v} onClick={() => setDays(v)}
-              className={`rounded-md px-3 py-1 text-sm ${String(d.days) === v ? "bg-ink font-medium text-white" : "text-ink-soft"}`}>{v} days</button>
-          ))}
-        </div>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Kpi label="Delivered" value={`${pct(all.delivered, done)}%`} sub={`${all.delivered} orders`} tone="text-good" />
-        <Kpi label="RTO" value={`${pct(all.rto, done)}%`} sub={`${all.rto} orders`} tone="text-bad" />
-        <Kpi label="In transit" value={String(all.transit)} sub="on the way" />
-        <Kpi label="Shipped" value={String(all.total)} sub={`last ${d.days} days`} />
-      </div>
-      {d.performance.length > 0 && (
-        <div className="mt-4 overflow-x-auto">
-          <table className="table min-w-[560px]">
-            <thead><tr><th>Courier</th><th className="text-right">Shipped</th><th className="text-right">Delivered</th><th className="text-right">RTO</th><th className="text-right">In transit</th><th className="w-[28%]">Delivery rate</th></tr></thead>
-            <tbody>
-              {d.performance.map((r) => {
-                const c = COURIERS.find((x) => x.id === r.courier);
-                const rate = pct(r.delivered, r.delivered + r.rto);
-                return (
-                  <tr key={r.courier}>
-                    <td><span className="flex items-center gap-2">{c && <CourierLogo c={c} size={24} />}<span className="font-medium">{c?.name ?? r.courier}</span></span></td>
-                    <td className="num text-right">{r.total}</td>
-                    <td className="num text-right text-good">{r.delivered}</td>
-                    <td className="num text-right text-bad">{r.rto}</td>
-                    <td className="num text-right">{r.transit}</td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-red-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${r.delivered + r.rto ? rate : 0}%` }} /></div>
-                        <span className="num w-10 text-right text-xs font-semibold">{r.delivered + r.rto ? `${rate}%` : "–"}</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function Kpi({ label, value, sub, tone = "" }: { label: string; value: string; sub: string; tone?: string }) {
-  return (
-    <div className="rounded-xl border border-rule px-3.5 py-3">
-      <p className="text-[11px] font-medium text-ink-soft">{label}</p>
-      <p className={`num mt-0.5 text-2xl font-semibold ${tone}`}>{value}</p>
-      <p className="text-[11px] text-ink-faint">{sub}</p>
-    </div>
-  );
-}
-
 const FILTER_LABEL: Record<string, string> = { all: "All", pickup_pending: "Ready for pickup", in_transit: "In transit", delivered: "Delivered", rto_transit: "RTO in transit", rto: "RTO", returned: "Returned" };
+const PER = [10, 20, 30, 50, 100];
+const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
 
 function Shipments({ d }: { d: D }) {
   const [sp, setSp] = useSearchParams();
@@ -511,58 +567,63 @@ function Shipments({ d }: { d: D }) {
     for (const [k, v] of Object.entries(patch)) { if (v == null || v === "") n.delete(k); else n.set(k, v); }
     setSp(n, { preventScrollReset: true });
   };
+  // Rows per page: the store's choice is remembered on this device
+  const key = `gp-ship-per-${d.storeId}`;
+  useEffect(() => {
+    if (sp.get("per")) return;
+    try { const v = Number(localStorage.getItem(key)); if (PER.includes(v) && v !== sh.per) go({ per: String(v), page: null }); } catch { /* storage off */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const setPer = (v: number) => { try { localStorage.setItem(key, String(v)); } catch { /* storage off */ } go({ per: String(v), page: null }); };
+  const accName2 = (id: number | null, courier: string | null) => { const a = id ? d.accounts.find((x) => x.id === id) : d.accounts.find((x) => x.courier === courier); return a ? accName(a) : courierInfo(courier ?? "")?.name ?? courier ?? "—"; };
+  const from = sh.total ? (sh.page - 1) * sh.per + 1 : 0, to = Math.min(sh.total, sh.page * sh.per);
   return (
-    <section className="panel" id="shipments">
-      {d.labels.on && <LabelsBar d={d} />}
-      <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-4">
+    <section className="panel overflow-hidden p-0" id="shipments">
+      <div className="flex flex-wrap items-center gap-3 px-5 pb-2 pt-4">
         <h2 className="mr-auto text-[15px] font-semibold">Shipments</h2>
-        <form onSubmit={(e) => { e.preventDefault(); go({ q: String(new FormData(e.currentTarget).get("q") ?? ""), page: null }); }} className="flex items-center gap-2">
-          <input name="q" defaultValue={sh.q} placeholder="Order, AWB or phone" className="input h-9 w-48 text-sm" />
-          <button className="btn-secondary h-9 px-3 text-sm">Search</button>
+        <form onSubmit={(e) => { e.preventDefault(); go({ q: String(new FormData(e.currentTarget).get("q") ?? ""), page: null }); }} className="relative">
+          <Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
+          <input name="q" defaultValue={sh.q} placeholder="Order, AWB or phone" aria-label="Search shipments" className="input h-9 w-56 !pl-8 text-[13px]" />
         </form>
       </div>
-      <div className="flex gap-1.5 overflow-x-auto px-5 py-3">
+      <div className="flex gap-1 overflow-x-auto border-b border-rule px-4" role="tablist">
         {SHIP_FILTERS.map((f) => (
-          <button key={f} type="button" onClick={() => go({ ship: f === "all" ? null : f, page: null })}
-            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${sh.filter === f ? "border-ink bg-ink text-white" : "border-rule-strong text-ink-soft hover:border-ink"}`}>
-            {f !== "all" && <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[f]}`} />}{FILTER_LABEL[f]}{f !== "all" && d.summary[f as ShipStatus] ? <span className="num opacity-70">{d.summary[f as ShipStatus]}</span> : null}
+          <button key={f} type="button" role="tab" aria-selected={sh.filter === f} onClick={() => go({ ship: f === "all" ? null : f, page: null })}
+            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2.5 text-[12.5px] font-medium ${sh.filter === f ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>
+            {FILTER_LABEL[f]}{f !== "all" && d.summary[f as ShipStatus] ? <span className="num rounded bg-paper-sunk px-1.5 text-[11px] text-ink-soft">{d.summary[f as ShipStatus]}</span> : null}
           </button>
         ))}
       </div>
       {sh.rows.length === 0 ? (
-        <p className="px-5 pb-8 pt-4 text-center text-sm text-ink-faint">No shipments here.</p>
+        <p className="px-5 py-10 text-center text-[13px] text-ink-faint">No shipments here.</p>
       ) : (<>
-        <ul className="divide-y divide-rule border-t border-rule sm:hidden">
+        <ul className="divide-y divide-rule sm:hidden">
           {sh.rows.map((r) => {
-            const c = COURIERS.find((x) => x.id === r.courier);
             const st = (r.status ?? "in_transit") as ShipStatus;
             return (
-              <li key={r.id} className="flex items-start gap-3 px-5 py-3">
-                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="flex justify-between gap-2 text-sm"><span className="num font-medium">{r.name ?? r.id}</span><span className="font-medium">{SHIP_STATUS_LABELS[st] ?? st}</span></p>
-                  <p className="truncate text-xs text-ink-soft">{r.customer.firstName} {r.customer.lastName} · {r.customer.city} · {r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</p>
-                  <LabelChip r={r} base={storePath(d.storeId)} />
-                  <p className="truncate text-[11px] text-ink-faint">{c?.name ?? r.courier} · <span className="font-mono">{r.awb}</span>{r.at ? ` · ${new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}</p>
-                </div>
+              <li key={r.id} className="px-5 py-3">
+                <p className="flex justify-between gap-2 text-[13px]"><span className="num font-semibold">{r.name ?? r.id}</span><span className="flex items-center gap-1.5 font-medium"><span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span></p>
+                <p className="truncate text-[12px] text-ink-soft">{r.customer.firstName} {r.customer.lastName} · {r.customer.city} · {r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</p>
+                <p className="flex items-center justify-between gap-2 text-[11.5px] text-ink-faint"><span className="truncate">{accName2(r.accountId, r.courier)} · <span className="font-mono">{r.awb}</span></span><LabelChip r={r} base={storePath(d.storeId)} /></p>
               </li>
             );
           })}
         </ul>
         <div className="hidden overflow-x-auto sm:block">
-          <table className="table min-w-[760px]">
-            <thead><tr><th>Order</th><th>Customer</th><th>Courier · AWB</th><th>Status</th><th>Updated</th></tr></thead>
-            <tbody>
+          <table className="w-full min-w-[760px] text-[13px]">
+            <thead><tr className="border-b border-rule bg-[#fafafa] text-left text-[11.5px] text-ink-soft">
+              <th className="px-5 py-2 font-medium">Order</th><th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Courier · AWB</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Label</th><th className="px-5 py-2 text-right font-medium">Updated</th>
+            </tr></thead>
+            <tbody className="divide-y divide-rule">
               {sh.rows.map((r) => {
-                const c = COURIERS.find((x) => x.id === r.courier);
                 const st = (r.status ?? "in_transit") as ShipStatus;
                 return (
-                  <tr key={r.id}>
-                    <td><span className="num font-medium">{r.name ?? r.id}</span><span className="block text-xs text-ink-faint">{r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} · ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</span></td>
-                    <td className="text-sm">{r.customer.firstName} {r.customer.lastName}<span className="block text-xs text-ink-faint">{r.customer.city} {r.customer.pincode}</span></td>
-                    <td className="text-sm">{c?.name ?? r.courier ?? "—"}<span className="block font-mono text-[11px] text-ink-faint">{r.awb}</span><LabelChip r={r} base={storePath(d.storeId)} /></td>
-                    <td><span className="inline-flex items-center gap-1.5 text-sm font-medium"><span className={`h-2 w-2 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span>{r.raw && <span className="block max-w-[220px] truncate text-[11px] text-ink-faint">{r.raw}</span>}</td>
-                    <td className="text-xs text-ink-soft">{r.at ? new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—"}</td>
+                  <tr key={r.id} className="hover:bg-[#fafafa]">
+                    <td className="px-5 py-2.5"><span className="num font-semibold">{r.name ?? r.id}</span><span className="block text-[11.5px] text-ink-faint">{r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} · ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</span></td>
+                    <td className="px-3">{r.customer.firstName} {r.customer.lastName}<span className="block text-[11.5px] text-ink-faint">{r.customer.city} {r.customer.pincode}</span></td>
+                    <td className="px-3">{accName2(r.accountId, r.courier)}<span className="block font-mono text-[11px] text-ink-faint">{r.awb}</span></td>
+                    <td className="px-3"><span className="inline-flex items-center gap-1.5 font-medium"><span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span>{r.raw && <span className="block max-w-[200px] truncate text-[11px] text-ink-faint">{r.raw}</span>}</td>
+                    <td className="px-3"><LabelChip r={r} base={storePath(d.storeId)} /></td>
+                    <td className="px-5 text-right text-[12px] text-ink-soft">{when(r.at)}</td>
                   </tr>
                 );
               })}
@@ -570,58 +631,37 @@ function Shipments({ d }: { d: D }) {
           </table>
         </div>
       </>)}
-      {(sh.page > 1 || sh.hasMore) && (
-        <div className="flex justify-between border-t border-rule px-5 py-3 text-sm">
-          <button type="button" className="btn-quiet" disabled={sh.page <= 1} onClick={() => go({ page: String(sh.page - 1) })}>← Newer</button>
-          <button type="button" className="btn-quiet" disabled={!sh.hasMore} onClick={() => go({ page: String(sh.page + 1) })}>Older →</button>
+      <div className="flex flex-wrap items-center gap-3 border-t border-rule px-5 py-2.5 text-[12.5px] text-ink-soft">
+        <label className="flex items-center gap-2">Rows
+          <select value={sh.per} onChange={(e) => setPer(Number(e.target.value))} className="h-7 rounded-md border border-rule bg-white px-1.5 text-[12.5px] text-ink">
+            {PER.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <span className="num ml-auto">{sh.total ? `${from}–${to} of ${sh.total.toLocaleString("en-IN")}` : "0"}</span>
+        <div className="flex">
+          <button type="button" aria-label="Previous page" disabled={sh.page <= 1} onClick={() => go({ page: String(sh.page - 1) })} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-paper disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-90" /></button>
+          <button type="button" aria-label="Next page" disabled={!sh.hasMore} onClick={() => go({ page: String(sh.page + 1) })} className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-paper disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 -rotate-90" /></button>
         </div>
-      )}
+      </div>
     </section>
-  );
-}
-
-/** 4×6 thermal labels: print every label not printed yet as one batch; reprint a past batch. */
-function LabelsBar({ d }: { d: D }) {
-  const revalidator = useRevalidator();
-  const base = storePath(d.storeId);
-  const n = d.labels.pending;
-  return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-rule bg-paper px-5 py-3">
-      <Icon name="box" className="h-4 w-4 text-ink-soft" />
-      <p className="min-w-0 flex-1 text-[13px]"><b className="font-semibold">Shipping labels (4×6)</b><span className="text-ink-soft"> · {n ? `${n} booked shipment${n === 1 ? "" : "s"} without a printed label` : "every booked shipment has its label"}</span></p>
-      <Link to={`${base}/logistics/label-design`} className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-ink-soft hover:bg-black/5">Design</Link>
-      {d.labels.batches.length > 0 && (
-        <details className="relative text-[12.5px]">
-          <summary className="cursor-pointer list-none rounded-lg px-2.5 py-1.5 font-medium text-ink-soft hover:bg-black/5">Past batches ▾</summary>
-          <ul className="absolute right-0 z-30 mt-1 w-64 rounded-xl border border-rule bg-white p-1 shadow-lg">
-            {d.labels.batches.map((b) => (
-              <li key={b.batch}><a href={`${base}/logistics/labels?batch=${encodeURIComponent(b.batch)}`} target="_blank" rel="noreferrer" className="flex justify-between rounded-lg px-2.5 py-1.5 hover:bg-paper"><span>{b.batch}</span><span className="text-ink-faint">{b.count} · Reprint</span></a></li>
-            ))}
-          </ul>
-        </details>
-      )}
-      <form method="post" action={`${base}/logistics/labels`} target="_blank" onSubmit={() => setTimeout(() => revalidator.revalidate(), 4000)}>
-        <button type="submit" disabled={!n} className="btn-primary h-9 px-3 text-sm disabled:opacity-50"><Icon name="download" className="h-4 w-4" />Print new labels{n ? ` (${n})` : ""}</button>
-      </form>
-    </div>
   );
 }
 
 function LabelChip({ r, base }: { r: { id: string; courier: string | null; awb: string | null; status: string | null; labelAt: string | null; labelBatch: string | null }; base: string }) {
   if (r.courier !== "delhivery" || !r.awb) return null;
-  if (!r.labelAt && r.status !== "pickup_pending") return null;
+  if (!r.labelAt && r.status !== "pickup_pending") return <span className="text-[11.5px] text-ink-faint">—</span>;
   return (
-    <span className="mt-0.5 flex items-center gap-1.5 text-[11px]">
-      {r.labelAt ? <span className="rounded bg-[#e3f1ea] px-1.5 py-px font-medium text-[#1f6f4a]" title={r.labelBatch ? `Batch ${r.labelBatch}` : undefined}>Label printed</span> : <span className="rounded bg-[#fff1e3] px-1.5 py-px font-medium text-[#8a4b00]">Label not printed</span>}
-      <a href={`${base}/logistics/labels?order=${encodeURIComponent(r.id)}`} target="_blank" rel="noreferrer" className="font-medium text-[#005bd3] hover:underline">{r.labelAt ? "Reprint" : "Print"}</a>
-    </span>
+    <a href={`${base}/logistics/labels?order=${encodeURIComponent(r.id)}`} target="_blank" rel="noreferrer" title={r.labelAt ? `Printed${r.labelBatch ? ` · ${r.labelBatch}` : ""}. Click to reprint.` : "Not printed. Click to print."}
+      className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-medium ${r.labelAt ? "text-[#067647] hover:bg-[#e3f1ea]" : "bg-[#fff1e3] text-[#8a4b00] hover:bg-[#ffe6cc]"}`}>
+      {r.labelAt ? <Icon name="check" className="h-3.5 w-3.5" /> : <Icon name="download" className="h-3.5 w-3.5" />}{r.labelAt ? "Printed" : "Print"}
+    </a>
   );
 }
 
-const MODES: { id: ShipRule["mode"]; title: string; text: string }[] = [
-  { id: "off", title: "Ship by hand", text: "Nothing goes to the courier on its own. Use Ship on the Orders page, one order or many." },
-  { id: "all", title: "Ship every order", text: "Every order goes to your courier 10 minutes after it's placed." },
-  { id: "confirmed", title: "Ship confirmed orders", text: "Only orders confirmed by the customer on WhatsApp or by your calling team." },
+const MODES: { id: ShipRule["mode"]; title: string; short: string; text: string }[] = [
+  { id: "off", title: "Ship by hand", short: "Ship by hand", text: "Nothing goes to the courier on its own. Use Ship on the Orders page, one order or many." },
+  { id: "all", title: "Ship every order", short: "Auto-ships every order", text: "Every order goes to your courier 10 minutes after it's placed." },
+  { id: "confirmed", title: "Ship confirmed orders", short: "Auto-ships confirmed orders", text: "Only orders confirmed by the customer on WhatsApp or by your calling team." },
 ];
 const BY: { id: ShipRule["by"]; title: string }[] = [
   { id: "whatsapp", title: "Customer on WhatsApp" }, { id: "team", title: "Calling team" }, { id: "either", title: "Either one" },
@@ -635,14 +675,11 @@ function ShipRules({ d }: { d: D }) {
   const dirty = mode !== d.rule.mode || by !== d.rule.by || prepaidNow !== d.rule.prepaidNow;
   const base = storePath(d.storeId);
   return (
-    <section className="panel p-5">
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-pine-tint text-pine"><Icon name="zap" className="h-[18px] w-[18px]" /></span>
-        <div><h2 className="text-[15px] font-semibold">Shipping rules</h2><p className="text-[12.5px] text-ink-soft">When your orders are booked with the courier on their own. The courier creates the AWB and takes the shipping charge from its wallet.</p></div>
-      </div>
+    <section>
+      <p className="text-[12.5px] text-ink-soft">When orders are booked with your courier on their own.</p>
       <Form method="post" className="mt-4 space-y-4">
         <input type="hidden" name="intent" value="shipRule" />
-        <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Shipping mode">
+        <div className="grid gap-2" role="radiogroup" aria-label="Shipping mode">
           {MODES.map((m) => (
             <label key={m.id} className={`cursor-pointer rounded-xl p-3 transition ${mode === m.id ? "bg-pine-tint/60 shadow-[inset_0_0_0_1.5px_#0B5D4B]" : "shadow-[inset_0_0_0_1px_#e3e3e3] hover:bg-black/[.015]"}`}>
               <span className="flex items-center gap-2 text-[13px] font-semibold"><input type="radio" name="mode" value={m.id} checked={mode === m.id} onChange={() => setMode(m.id)} className="h-3.5 w-3.5 accent-[#0B5D4B]" />{m.title}</span>

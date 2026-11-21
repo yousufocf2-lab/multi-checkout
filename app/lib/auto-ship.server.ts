@@ -10,6 +10,7 @@ import { mapStatusText } from "./couriers/common.server";
 import { stateName } from "./states";
 import { codAmount } from "./store-fulfil.server";
 import { ruleAllows, shipRuleOf, type ShipRule } from "./ship-rule";
+import { accountForOrder } from "./logistics.server";
 
 const RETRY_MS = 30 * 60_000; // a failed booking is tried again after 30 minutes
 const RETRY_PIN_MS = 24 * 3600_000; // the courier doesn't deliver to that pincode: try again next day, not every 30 minutes
@@ -49,12 +50,12 @@ function bookable(a: CourierAccount) {
   return false;
 }
 
-export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount, "courier" | "creds">) {
+export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount, "courier" | "creds"> & { id?: number }) {
   const { weight, skus } = await variantInfo(o);
   if (acc.courier === "shiprocket") {
     const r = await createShiprocketOrder(acc.creds, { order: o, ref: orderRef(o), codPaise: codAmount(o), weightGrams: weight, skus });
     if (r.ok) {
-      await db.update(orders).set({ courier: "shiprocket", courierRef: r.ref, awb: r.awb, shipStatusRaw: r.awb ? "AWB assigned" : "New in Shiprocket", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
+      await db.update(orders).set({ courier: "shiprocket", courierAccountId: acc.id ?? null, courierRef: r.ref, awb: r.awb, shipStatusRaw: r.awb ? "AWB assigned" : "New in Shiprocket", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
       console.log(`[auto-ship] ${store.name} ${o.id} -> Shiprocket order ${r.ref}`);
     } else {
       await db.update(orders).set({ shipError: r.error, shipBookAt: new Date() }).where(eq(orders.id, o.id));
@@ -71,7 +72,7 @@ export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount
     quantity: o.items.reduce((n, l) => n + l.quantity, 0), weightGrams: weight,
   });
   if (r.ok) {
-    await db.update(orders).set({ awb: r.awb, courier: "delhivery", shipStatus: "pickup_pending", shipStatusRaw: "Manifested", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
+    await db.update(orders).set({ awb: r.awb, courier: "delhivery", courierAccountId: acc.id ?? null, shipStatus: "pickup_pending", shipStatusRaw: "Manifested", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
     console.log(`[auto-ship] ${store.name} ${o.id} -> Delhivery ${r.awb}`);
   } else {
     await db.update(orders).set({ shipError: r.error, shipBookAt: new Date() }).where(eq(orders.id, o.id));
@@ -82,9 +83,10 @@ export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount
 
 /** Sends every waiting website order to the store's courier (the first connected one that can take orders). */
 export async function runAutoShip() {
-  const accs = (await db.select().from(courierAccounts).where(and(inArray(courierAccounts.courier, BOOKS), eq(courierAccounts.status, "connected"))).orderBy(asc(courierAccounts.createdAt)))
+  const accs = (await db.select().from(courierAccounts).where(and(inArray(courierAccounts.courier, BOOKS), eq(courierAccounts.status, "connected"), eq(courierAccounts.autoShip, true)))
+    .orderBy(asc(courierAccounts.priority), asc(courierAccounts.createdAt)))
     .filter(bookable);
-  // Every courier a store can book with, oldest connection first: the next one takes orders the first can't deliver
+  // Every account a store books with, in its chosen order: when one fails, the next one tries
   const perStore = new Map<number, CourierAccount[]>();
   for (const a of accs) perStore.set(a.storeId, [...(perStore.get(a.storeId) ?? []), a]);
   for (const [storeId, couriers] of perStore) {
@@ -116,7 +118,7 @@ function cleared(rule: ShipRule): SQL | undefined {
   return and(notCallCancelled, rule.prepaidNow ? or(confirmed, eq(orders.paymentMethod, "prepaid")) : confirmed);
 }
 
-/** Books one order with the store's couriers: the next courier only takes it when the first can't deliver to the pincode. */
+/** Books one order with the store's courier accounts in order: if the first fails (any reason), the next one tries. */
 async function bookWithCouriers(store: Store, o: Order, couriers: CourierAccount[]) {
   // Claim the order first, so the timer and an instant booking can never both send it (no double AWB)
   const claimed = await db.update(orders).set({ shipBookAt: new Date() }).where(and(
@@ -129,10 +131,12 @@ async function bookWithCouriers(store: Store, o: Order, couriers: CourierAccount
   for (const acc of couriers) {
     r = await bookOrder(store, o, acc);
     if (r.ok) break;
-    errors.push(r.error ?? "");
-    if (!isPinError(r.error ?? "")) break; // only a pincode problem moves on to the next courier
+    errors.push(couriers.length > 1 ? `${acc.name ?? acc.courier}: ${r.error ?? "failed"}` : r.error ?? "");
   }
-  if (!r.ok && errors.length && errors.every(isPinError)) {
+  if (!r.ok && couriers.length > 1 && errors.length) {
+    await db.update(orders).set({ shipError: errors.join(" · ").slice(0, 500) }).where(eq(orders.id, o.id));
+  }
+  if (!r.ok && errors.length && errors.every((e) => isPinError(e))) {
     // Wait a day before trying again (shipBookAt in the future = skipped until then)
     await db.update(orders).set({
       shipError: errors.length > 1 ? `None of your couriers deliver to pincode ${o.customer.pincode}. Book it by hand.` : errors[0],
@@ -153,7 +157,8 @@ export async function shipNowIfReady(storeId: number, orderId: string) {
   if (!o || !["paid", "cod_placed"].includes(o.status) || !o.shopifyOrderId?.startsWith("gp:") || o.awb || o.courierRef) return;
   if (o.shipBookAt && o.shipBookAt.getTime() > Date.now() - RETRY_MS) return; // being booked or waiting to retry
   if (shipsNothing(o) || !ruleAllows(shipRuleOf(store), o)) return; // confirmed orders don't wait the 10 minutes
-  const couriers = (await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), inArray(courierAccounts.courier, BOOKS), eq(courierAccounts.status, "connected"))).orderBy(asc(courierAccounts.createdAt)))
+  const couriers = (await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), inArray(courierAccounts.courier, BOOKS), eq(courierAccounts.status, "connected"), eq(courierAccounts.autoShip, true)))
+    .orderBy(asc(courierAccounts.priority), asc(courierAccounts.createdAt)))
     .filter(bookable);
   if (!couriers.length) return;
   console.log(`[auto-ship] ${store.name} ${o.id} confirmed → booking now`);
@@ -166,19 +171,20 @@ const BEFORE_PICKUP = /^(new|invoiced|ready to ship|awb assigned|label generated
 /** Reads back what changed in the Shiprocket panel: courier/AWB assigned, cancelled, picked up. */
 async function pullShiprocketChanges() {
   const since = new Date(Date.now() - 30 * 86400_000);
-  const list = await db.select({ id: orders.id, storeId: orders.storeId, ref: orders.courierRef, awb: orders.awb, raw: orders.shipStatusRaw }).from(orders).where(and(
+  const list = await db.select({ id: orders.id, storeId: orders.storeId, ref: orders.courierRef, awb: orders.awb, raw: orders.shipStatusRaw, accountId: orders.courierAccountId }).from(orders).where(and(
     eq(orders.courier, "shiprocket"), isNotNull(orders.courierRef), gt(orders.createdAt, since),
     or(isNull(orders.shipStatus), notInArray(orders.shipStatus, ["delivered", "rto", "returned", "cancelled"])),
     // AWB orders get live status from tracking; we only look until the courier picks it up
     or(isNull(orders.awb), isNull(orders.shipStatus)),
   )).limit(200);
-  const accs = new Map<number, CourierAccount | null>();
+  const accs = new Map<string, CourierAccount | null>();
   for (const o of list) {
-    if (!accs.has(o.storeId)) {
-      const [a] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, o.storeId), eq(courierAccounts.courier, "shiprocket"))).limit(1);
-      accs.set(o.storeId, a && a.status === "connected" ? a : null);
+    const key = `${o.storeId}:${o.accountId ?? ""}`;
+    if (!accs.has(key)) {
+      const a = await accountForOrder(o.storeId, { courier: "shiprocket", courierAccountId: o.accountId });
+      accs.set(key, a && a.status === "connected" ? a : null);
     }
-    const acc = accs.get(o.storeId);
+    const acc = accs.get(key);
     if (!acc) continue;
     const s = await shiprocketOrderState(acc.creds, o.ref!).catch(() => null);
     if (!s) continue;
@@ -206,10 +212,12 @@ export function startAutoShip() {
 }
 
 /** The customer cancelled (e.g. on WhatsApp): cancel it at the courier too, if it hasn't moved yet. */
-export async function cancelBookedShipment(storeId: number, o: Pick<Order, "id" | "awb" | "courier"> & { courierRef?: string | null }) {
+export async function cancelBookedShipment(storeId: number, o: Pick<Order, "id" | "awb" | "courier"> & { courierRef?: string | null; courierAccountId?: number | null }) {
+  const [saved] = await db.select({ ref: orders.courierRef, accountId: orders.courierAccountId }).from(orders).where(eq(orders.id, o.id)).limit(1);
+  const accountId = o.courierAccountId ?? saved?.accountId ?? null;
   if (o.courier === "shiprocket") {
-    const [row] = o.courierRef === undefined ? await db.select({ ref: orders.courierRef }).from(orders).where(eq(orders.id, o.id)).limit(1) : [{ ref: o.courierRef }];
-    const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, "shiprocket"))).limit(1);
+    const row = { ref: o.courierRef === undefined ? saved?.ref ?? null : o.courierRef };
+    const acc = await accountForOrder(storeId, { courier: "shiprocket", courierAccountId: accountId });
     if (!row?.ref || !acc) return;
     const r = await cancelShiprocketOrder(acc.creds, row.ref);
     if (r.ok) await db.update(orders).set({ shipStatus: "cancelled", shipStatusRaw: "Cancelled", shipStatusAt: new Date() }).where(eq(orders.id, o.id));
@@ -217,7 +225,7 @@ export async function cancelBookedShipment(storeId: number, o: Pick<Order, "id" 
     return;
   }
   if (!o.awb || o.courier !== "delhivery") return;
-  const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, storeId), eq(courierAccounts.courier, "delhivery"))).limit(1);
+  const acc = await accountForOrder(storeId, { courier: "delhivery", courierAccountId: accountId });
   if (!acc?.creds.token) return;
   const { cancelDelhiveryShipment } = await import("./couriers/delhivery.server");
   const r = await cancelDelhiveryShipment(acc.creds.token, o.awb);
@@ -239,7 +247,8 @@ export async function failedShipments(storeId: number) {
  * a pincode error moves on to the next courier. Ignores the shipping rule and the retry wait (the store asked for it).
  */
 export async function reshipOrders(store: Store, ids: string[]) {
-  const couriers = (await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), inArray(courierAccounts.courier, BOOKS))).orderBy(asc(courierAccounts.createdAt))).filter(bookable);
+  const couriers = (await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), inArray(courierAccounts.courier, BOOKS)))
+    .orderBy(asc(courierAccounts.priority), asc(courierAccounts.createdAt))).filter(bookable);
   if (!couriers.length) return { error: "Connect Delhivery (with a pickup location) or Shiprocket under Shipments first.", results: [] as { id: string; name: string; ok: boolean; message: string }[] };
   const list = ids.length ? await db.select().from(orders).where(and(
     eq(orders.storeId, store.id), inArray(orders.id, ids.slice(0, 200)), inArray(orders.status, ["paid", "cod_placed"]), isNull(orders.awb), isNull(orders.courierRef),
@@ -252,11 +261,10 @@ export async function reshipOrders(store: Store, ids: string[]) {
     let done: { ok: boolean; awb?: string; courier?: string } = { ok: false };
     for (const acc of couriers) {
       const r = await bookOrder(store, o, acc);
-      if (r.ok) { done = { ok: true, awb: "awb" in r ? (r.awb as string | undefined) : undefined, courier: acc.courier }; break; }
-      errors.push(r.error ?? "");
-      if (!isPinError(r.error ?? "")) break;
+      if (r.ok) { done = { ok: true, awb: "awb" in r ? (r.awb as string | undefined) : undefined, courier: acc.name ?? (acc.courier === "shiprocket" ? "Shiprocket" : "Delhivery") }; break; }
+      errors.push(couriers.length > 1 ? `${acc.name ?? acc.courier}: ${r.error ?? "failed"}` : r.error ?? "");
     }
-    if (done.ok) results.push({ id: o.id, name, ok: true, message: `Booked with ${done.courier === "shiprocket" ? "Shiprocket" : "Delhivery"}${done.awb ? `, AWB ${done.awb}` : ""}` });
+    if (done.ok) results.push({ id: o.id, name, ok: true, message: `Booked with ${done.courier}${done.awb ? `, AWB ${done.awb}` : ""}` });
     else {
       const msg = errors.length > 1 && errors.every(isPinError) ? `None of your couriers deliver to pincode ${o.customer.pincode}. Book it by hand.` : errors[errors.length - 1] || "Couldn't book";
       if (errors.length > 1) await db.update(orders).set({ shipError: msg }).where(eq(orders.id, o.id));
