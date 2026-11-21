@@ -1,9 +1,11 @@
 // Shipping label batches: "print new labels" picks every booked Delhivery shipment whose label hasn't been printed
 // from Growpefy yet, prints them as one batch and remembers it, so nothing gets printed twice or missed.
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { courierAccounts, db, orders, type Store } from "~/db.server";
+import { catalogVariants, courierAccounts, db, orders, type Store } from "~/db.server";
+import { GP_PREFIX } from "./catalog.server";
 import { delhiveryPackingSlips } from "./couriers/delhivery.server";
-import { labelsPdf, type LabelOrder } from "./labels.server";
+import { resolveLabel, type LabelConfig } from "./label-config";
+import { labelsPdf, loadLogo, type LabelOrder } from "./labels.server";
 
 const cols = {
   id: orders.id, awb: orders.awb, shopifyOrderName: orders.shopifyOrderName, paymentMethod: orders.paymentMethod, total: orders.total,
@@ -23,10 +25,21 @@ export async function labelSummary(storeId: number) {
   return { pending: p?.n ?? 0, batches: batches.map((b) => ({ batch: b.batch!, count: b.n, at: new Date(b.at).toISOString() })) };
 }
 
-async function render(store: Store, list: LabelOrder[], batch: string) {
+/** SKU of each Growpefy catalog variant in these orders. */
+async function skusFor(list: LabelOrder[]) {
+  const ids = [...new Set(list.flatMap((o) => o.items.map((l) => l.variantId)).filter((v) => v?.startsWith(GP_PREFIX)))];
+  const nums = ids.map((v) => parseInt(v.slice(GP_PREFIX.length), 10)).filter((n) => n > 0);
+  if (!nums.length) return new Map<string, string>();
+  const rows = await db.select({ id: catalogVariants.id, sku: catalogVariants.sku }).from(catalogVariants).where(inArray(catalogVariants.id, nums));
+  return new Map(rows.filter((r) => r.sku).map((r) => [`${GP_PREFIX}${r.id}`, r.sku!]));
+}
+
+async function render(store: Store, list: LabelOrder[], batch: string, cfgIn?: LabelConfig, slipsOverride?: Awaited<ReturnType<typeof delhiveryPackingSlips>>) {
+  const cfg = cfgIn ?? resolveLabel(store.labelConfig);
   const [acc] = await db.select().from(courierAccounts).where(and(eq(courierAccounts.storeId, store.id), eq(courierAccounts.courier, "delhivery"))).limit(1);
-  const slips = acc?.creds.token ? await delhiveryPackingSlips(acc.creds.token, list.map((o) => o.awb!).filter(Boolean)) : new Map();
-  return labelsPdf(list, slips, { name: store.name, pickup: acc?.creds.pickupName ?? null }, batch);
+  const slips = slipsOverride ?? (acc?.creds.token ? await delhiveryPackingSlips(acc.creds.token, list.map((o) => o.awb!).filter(Boolean)) : new Map());
+  const [logo, skus] = await Promise.all([cfg.logo ? loadLogo(cfg.logoUrl) : Promise.resolve(null), skusFor(list)]);
+  return labelsPdf(list, slips, cfg, { name: store.name, pickupName: acc?.creds.pickupName ?? null, logo, skus }, batch);
 }
 
 const batchName = (d: Date) => d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
@@ -59,4 +72,17 @@ export async function printOne(store: Store, orderId: string) {
   const pdf = await render(store, [o], batch);
   if (!o.labelPrintedAt) await db.update(orders).set({ labelPrintedAt: new Date(), labelBatch: batch }).where(eq(orders.id, o.id));
   return { pdf, batch, count: 1 };
+}
+
+/** Designer preview: the store's latest real order (or a sample), drawn with an unsaved design. Nothing is marked. */
+export async function previewLabel(store: Store, cfg: LabelConfig) {
+  const [real] = await db.select(cols).from(orders).where(and(eq(orders.storeId, store.id), ne(orders.status, "cancelled"), eq(orders.paymentMethod, "cod")))
+    .orderBy(desc(orders.createdAt)).limit(1);
+  const sample: LabelOrder = real ? { ...real, awb: real.awb ?? "12345678901234" } : {
+    id: "SAMPLE00000001", awb: "12345678901234", shopifyOrderName: "#1001", paymentMethod: "cod", total: 189900, amountPaid: null, advance: null, createdAt: new Date(),
+    customer: { firstName: "Rahul", lastName: "Sharma", phone: "9876543210", email: "", address1: "Flat 402, Shanti Apartments, MG Road, near City Mall", address2: "", city: "Lucknow", state: "UP", pincode: "226001" },
+    items: [{ variantId: "sample", title: "Sample product", variantTitle: "Black", image: null, quantity: 1, pricePaise: 189900, comparePaise: null }],
+  };
+  const slips = new Map([[sample.awb!, { awb: sample.awb!, sortCode: "LKO/CHB", destination: "Lucknow_Chinhat_D (Uttar Pradesh)", sellerName: null, sellerAddress: null, returnAddress: null }]]);
+  return render(store, cfg.size === "a4x4" ? [sample, sample, sample, sample] : [sample], "Preview", cfg, slips);
 }

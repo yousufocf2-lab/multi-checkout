@@ -589,6 +589,7 @@ function LabelsBar({ d }: { d: D }) {
     <div className="flex flex-wrap items-center gap-3 border-b border-rule bg-paper px-5 py-3">
       <Icon name="box" className="h-4 w-4 text-ink-soft" />
       <p className="min-w-0 flex-1 text-[13px]"><b className="font-semibold">Shipping labels (4×6)</b><span className="text-ink-soft"> · {n ? `${n} booked shipment${n === 1 ? "" : "s"} without a printed label` : "every booked shipment has its label"}</span></p>
+      <Link to={`${base}/logistics/label-design`} className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-ink-soft hover:bg-black/5">Design</Link>
       {d.labels.batches.length > 0 && (
         <details className="relative text-[12.5px]">
           <summary className="cursor-pointer list-none rounded-lg px-2.5 py-1.5 font-medium text-ink-soft hover:bg-black/5">Past batches ▾</summary>

@@ -365,6 +365,7 @@ export const stores = pgTable("stores", {
   orderStart: integer("order_start").notNull().default(1001),
   orderSeq: integer("order_seq"),
   abandonRr: integer("abandon_rr").notNull().default(0), // round-robin pointer for abandoned checkout calls
+  labelConfig: jsonb("label_config").$type<Partial<import("~/lib/label-config").LabelConfig>>(), // shipping label design
   // Collaborators: people outside the business ask for access with this code (regenerate to stop old requests)
   collabCode: text("collab_code"),
   collabOpen: boolean("collab_open").notNull().default(true),

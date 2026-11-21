@@ -156,6 +156,7 @@ export default function DashboardLayout() {
     { label: "Shipping", to: storeHref("logistics"), icon: "shipping", match: /\/(logistics|rto-shield|rto|ship-failed|remittance)$|next=(logistics|rto-shield|rto|ship-failed|remittance)\b/, show: may("rto"), children: [
       { label: "Shipments", to: storeHref("logistics"), match: /\/logistics$|next=logistics/, show: true },
       { label: "Failed shipping", to: storeHref("ship-failed"), match: /\/ship-failed$|next=ship-failed/, show: true },
+      { label: "Label design", to: storeHref("logistics/label-design"), match: /\/logistics\/label-design$|next=logistics\/label-design/, show: true },
       { label: "Remittance", to: storeHref("remittance"), match: /\/remittance$|next=remittance/, show: true },
       { label: "RTO Shield", to: storeHref("rto-shield"), match: /\/rto-shield$|next=rto-shield/, show: true },
       { label: "RTO Suite", to: storeHref("rto"), match: /\/rto$|next=rto\b/, show: true },

@@ -2,7 +2,8 @@
 // GET ?order= prints one shipment's label.
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { can, requireStore, requireViewer } from "~/lib/auth.server";
-import { printNewLabels, printOne, reprintBatch } from "~/lib/labels-batch.server";
+import { previewLabel, printNewLabels, printOne, reprintBatch } from "~/lib/labels-batch.server";
+import { resolveLabel } from "~/lib/label-config";
 
 async function storeFor(request: Request, id: string | undefined) {
   const viewer = await requireViewer(request);
@@ -26,6 +27,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const u = new URL(request.url);
   const batch = u.searchParams.get("batch");
   const order = u.searchParams.get("order");
+  const preview = u.searchParams.get("preview");
+  if (preview != null) {
+    let raw: unknown = store.labelConfig;
+    try { if (preview) raw = JSON.parse(preview); } catch { /* saved design */ }
+    return pdf({ pdf: await previewLabel(store, resolveLabel(raw)), batch: "preview" });
+  }
   const r = batch ? await reprintBatch(store, batch) : order ? await printOne(store, order) : null;
   return r ? pdf(r) : nothing("Label not found.");
 }
