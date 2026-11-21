@@ -123,3 +123,39 @@ export async function editDelhiveryAddress(token: string, awb: string, a: { name
     return { ok: false, error: e instanceof Error ? e.message : "network error" };
   }
 }
+
+export type PackingSlip = { awb: string; sortCode: string | null; destination: string | null; sellerName: string | null; sellerAddress: string | null; returnAddress: string | null };
+
+let loggedSlipKeys = false;
+/** Label data Delhivery has for booked shipments (routing / sort code, hub). Up to 100 AWBs per call. */
+export async function delhiveryPackingSlips(token: string, awbs: string[]): Promise<Map<string, PackingSlip>> {
+  const out = new Map<string, PackingSlip>();
+  const str = (v: unknown) => (v == null || v === "" ? null : String(v).trim() || null);
+  for (let i = 0; i < awbs.length; i += 100) {
+    const part = awbs.slice(i, i + 100);
+    try {
+      const res = await fetch(`${BASE()}/api/p/packing_slip?wbns=${encodeURIComponent(part.join(","))}`, { headers: headers(token), signal: AbortSignal.timeout(20_000) });
+      const body = (await res.json().catch(() => null)) as { packages?: Record<string, unknown>[] } | null;
+      if (!loggedSlipKeys && body?.packages?.[0]) {
+        loggedSlipKeys = true;
+        console.log("[labels] delhivery packing slip fields:", Object.keys(body.packages[0]).join(","));
+      }
+      for (const p of body?.packages ?? []) {
+        const awb = str(p.wbn ?? p.waybill ?? p.awb);
+        if (!awb) continue;
+        out.set(awb, {
+          awb,
+          sortCode: str(p.sort_code ?? p.sortcode ?? p.sc),
+          destination: str(p.destination ?? p.dest ?? p.destination_city),
+          sellerName: str(p.snm ?? p.seller_name ?? p.cl),
+          sellerAddress: str(p.sadd ?? p.seller_add ?? p.seller_address),
+          returnAddress: str(p.radd ?? p.return_add ?? p.rto_add),
+        });
+      }
+      if (!res.ok) console.error("[labels] packing slip", res.status);
+    } catch (e) {
+      console.error("[labels] packing slip", e instanceof Error ? e.message : e);
+    }
+  }
+  return out;
+}

@@ -313,6 +313,7 @@ export async function shipmentList(storeId: number, opts: { filter: ShipFilter; 
   const rows = await db.select({
     id: orders.id, name: orders.shopifyOrderName, customer: orders.customer, method: orders.paymentMethod, total: orders.total,
     awb: orders.awb, courier: orders.courier, status: orders.shipStatus, raw: orders.shipStatusRaw, at: orders.shipStatusAt, createdAt: orders.createdAt,
+    labelAt: orders.labelPrintedAt, labelBatch: orders.labelBatch,
   }).from(orders).where(where).orderBy(sql`${orders.shipStatusAt} desc nulls last`, sql`${orders.createdAt} desc`).limit(PAGE + 1).offset((Math.max(1, opts.page) - 1) * PAGE);
   return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE };
 }

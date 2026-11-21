@@ -1,12 +1,13 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { platformName, storeConnected } from "~/lib/platform.server";
 import { json } from "@remix-run/node";
-import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useRevalidator, useSearchParams } from "@remix-run/react";
 import { useEffect, useMemo, useState } from "react";
 import { CourierLogo } from "~/components/CourierLogo";
 import { Icon } from "~/components/Icons";
 import { Notice, PasswordInput, Spinner, SubmitButton } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
+import { labelSummary } from "~/lib/labels-batch.server";
 import { COURIERS, type CourierInfo } from "~/lib/courier-catalog";
 import { env } from "~/lib/env.server";
 import { connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, shipmentsByCourier, syncStoreShipments } from "~/lib/logistics.server";
@@ -28,9 +29,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const days = url.searchParams.get("days") === "30" ? 30 : 90;
   const q = url.searchParams.get("q") ?? "";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-  const [accounts, summary, perCourier, performance, list] = await Promise.all([
+  const [accounts, summary, perCourier, performance, list, labels] = await Promise.all([
     courierAccountsFor(store.id), shipmentSummary(store.id), shipmentsByCourier(store.id),
-    courierPerformance(store.id, days), shipmentList(store.id, { filter, q, page, days }),
+    courierPerformance(store.id, days), shipmentList(store.id, { filter, q, page, days }), labelSummary(store.id),
   ]);
   return json({
     storeId: store.id,
@@ -52,9 +53,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
     })),
     summary,
+    labels: { ...labels, on: accounts.some((a) => a.courier === "delhivery" && a.status === "connected" && !a.creds.viaShopify) },
     perCourier,
     performance, days,
-    shipments: { filter, q, page, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString() })) },
+    shipments: { filter, q, page, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), labelAt: r.labelAt?.toISOString() ?? null })) },
   });
 }
 
@@ -511,6 +513,7 @@ function Shipments({ d }: { d: D }) {
   };
   return (
     <section className="panel" id="shipments">
+      {d.labels.on && <LabelsBar d={d} />}
       <div className="flex flex-wrap items-center gap-3 border-b border-rule px-5 py-4">
         <h2 className="mr-auto text-[15px] font-semibold">Shipments</h2>
         <form onSubmit={(e) => { e.preventDefault(); go({ q: String(new FormData(e.currentTarget).get("q") ?? ""), page: null }); }} className="flex items-center gap-2">
@@ -539,6 +542,7 @@ function Shipments({ d }: { d: D }) {
                 <div className="min-w-0 flex-1">
                   <p className="flex justify-between gap-2 text-sm"><span className="num font-medium">{r.name ?? r.id}</span><span className="font-medium">{SHIP_STATUS_LABELS[st] ?? st}</span></p>
                   <p className="truncate text-xs text-ink-soft">{r.customer.firstName} {r.customer.lastName} · {r.customer.city} · {r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</p>
+                  <LabelChip r={r} base={storePath(d.storeId)} />
                   <p className="truncate text-[11px] text-ink-faint">{c?.name ?? r.courier} · <span className="font-mono">{r.awb}</span>{r.at ? ` · ${new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}</p>
                 </div>
               </li>
@@ -556,7 +560,7 @@ function Shipments({ d }: { d: D }) {
                   <tr key={r.id}>
                     <td><span className="num font-medium">{r.name ?? r.id}</span><span className="block text-xs text-ink-faint">{r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} · ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</span></td>
                     <td className="text-sm">{r.customer.firstName} {r.customer.lastName}<span className="block text-xs text-ink-faint">{r.customer.city} {r.customer.pincode}</span></td>
-                    <td className="text-sm">{c?.name ?? r.courier ?? "—"}<span className="block font-mono text-[11px] text-ink-faint">{r.awb}</span></td>
+                    <td className="text-sm">{c?.name ?? r.courier ?? "—"}<span className="block font-mono text-[11px] text-ink-faint">{r.awb}</span><LabelChip r={r} base={storePath(d.storeId)} /></td>
                     <td><span className="inline-flex items-center gap-1.5 text-sm font-medium"><span className={`h-2 w-2 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span>{r.raw && <span className="block max-w-[220px] truncate text-[11px] text-ink-faint">{r.raw}</span>}</td>
                     <td className="text-xs text-ink-soft">{r.at ? new Date(r.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—"}</td>
                   </tr>
@@ -573,6 +577,43 @@ function Shipments({ d }: { d: D }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** 4×6 thermal labels: print every label not printed yet as one batch; reprint a past batch. */
+function LabelsBar({ d }: { d: D }) {
+  const revalidator = useRevalidator();
+  const base = storePath(d.storeId);
+  const n = d.labels.pending;
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b border-rule bg-paper px-5 py-3">
+      <Icon name="box" className="h-4 w-4 text-ink-soft" />
+      <p className="min-w-0 flex-1 text-[13px]"><b className="font-semibold">Shipping labels (4×6)</b><span className="text-ink-soft"> · {n ? `${n} booked shipment${n === 1 ? "" : "s"} without a printed label` : "every booked shipment has its label"}</span></p>
+      {d.labels.batches.length > 0 && (
+        <details className="relative text-[12.5px]">
+          <summary className="cursor-pointer list-none rounded-lg px-2.5 py-1.5 font-medium text-ink-soft hover:bg-black/5">Past batches ▾</summary>
+          <ul className="absolute right-0 z-30 mt-1 w-64 rounded-xl border border-rule bg-white p-1 shadow-lg">
+            {d.labels.batches.map((b) => (
+              <li key={b.batch}><a href={`${base}/logistics/labels?batch=${encodeURIComponent(b.batch)}`} target="_blank" rel="noreferrer" className="flex justify-between rounded-lg px-2.5 py-1.5 hover:bg-paper"><span>{b.batch}</span><span className="text-ink-faint">{b.count} · Reprint</span></a></li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <form method="post" action={`${base}/logistics/labels`} target="_blank" onSubmit={() => setTimeout(() => revalidator.revalidate(), 4000)}>
+        <button type="submit" disabled={!n} className="btn-primary h-9 px-3 text-sm disabled:opacity-50"><Icon name="download" className="h-4 w-4" />Print new labels{n ? ` (${n})` : ""}</button>
+      </form>
+    </div>
+  );
+}
+
+function LabelChip({ r, base }: { r: { id: string; courier: string | null; awb: string | null; status: string | null; labelAt: string | null; labelBatch: string | null }; base: string }) {
+  if (r.courier !== "delhivery" || !r.awb) return null;
+  if (!r.labelAt && r.status !== "pickup_pending") return null;
+  return (
+    <span className="mt-0.5 flex items-center gap-1.5 text-[11px]">
+      {r.labelAt ? <span className="rounded bg-[#e3f1ea] px-1.5 py-px font-medium text-[#1f6f4a]" title={r.labelBatch ? `Batch ${r.labelBatch}` : undefined}>Label printed</span> : <span className="rounded bg-[#fff1e3] px-1.5 py-px font-medium text-[#8a4b00]">Label not printed</span>}
+      <a href={`${base}/logistics/labels?order=${encodeURIComponent(r.id)}`} target="_blank" rel="noreferrer" className="font-medium text-[#005bd3] hover:underline">{r.labelAt ? "Reprint" : "Print"}</a>
+    </span>
   );
 }
 

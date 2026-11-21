@@ -905,6 +905,8 @@ export const orders = pgTable(
     confirmStatus: text("confirm_status"),
     shipError: text("ship_error"), // last automatic shipment booking error (website orders)
     shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
+    labelPrintedAt: timestamp("label_printed_at", { withTimezone: true }), // shipping label printed from Growpefy
+    labelBatch: text("label_batch"), // which print batch it was in
     courierRef: text("courier_ref"), // the order's id in the courier's panel (e.g. Shiprocket order id)
     staffNote: text("staff_note"), // only the store owner and their team see it
     customerNote: text("customer_note"), // shown to the customer on their order page and account
