@@ -10,7 +10,11 @@ import { requireStore, requireViewer } from "~/lib/auth.server";
 import { labelSummary } from "~/lib/labels-batch.server";
 import { COURIERS, type CourierInfo } from "~/lib/courier-catalog";
 import { env } from "~/lib/env.server";
-import { arrangeCouriers, connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, syncStoreShipments } from "~/lib/logistics.server";
+import { arrangeCouriers, connectCourier, courierAccountsFor, courierPerformance, disconnectCourier, shipmentList, shipmentSummary, syncStoreShipments, type DateWindow } from "~/lib/logistics.server";
+import { addDays, rangeLabel, resolveRange } from "~/lib/dates";
+import { RangePicker } from "~/components/Overview";
+import { reattemptOrders } from "~/lib/ofd-calls.server";
+import { ordinal } from "~/lib/ofd";
 import { SHIP_FILTERS, type ShipFilter } from "~/lib/rto-shield";
 import { SHIP_STATUS_LABELS, type ShipStatus } from "~/lib/rto-shield";
 import { storePath } from "~/lib/store-code";
@@ -26,13 +30,16 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(viewer, params.id);
   const url = new URL(request.url);
   const filter = (SHIP_FILTERS as readonly string[]).includes(url.searchParams.get("ship") ?? "") ? (url.searchParams.get("ship") as ShipFilter) : "all";
-  const days = url.searchParams.get("days") === "30" ? 30 : 90;
+  const sp = new URLSearchParams(url.searchParams);
+  if (!sp.get("range")) sp.set("range", "30d");
+  const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
+  const window: DateWindow = range.preset === "max" ? { from: null, to: null } : { from: new Date(`${range.since}T00:00:00+05:30`), to: new Date(`${addDays(range.until, 1)}T00:00:00+05:30`) };
   const q = url.searchParams.get("q") ?? "";
   const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
   const per = Number(url.searchParams.get("per")) || 10;
   const [accounts, summary, performance, list, labels] = await Promise.all([
-    courierAccountsFor(store.id), shipmentSummary(store.id),
-    courierPerformance(store.id, days), shipmentList(store.id, { filter, q, page, days, per }), labelSummary(store.id),
+    courierAccountsFor(store.id), shipmentSummary(store.id, window),
+    courierPerformance(store.id, window), shipmentList(store.id, { filter, q, page, window, per }), labelSummary(store.id),
   ]);
   return json({
     storeId: store.id,
@@ -55,8 +62,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     })),
     summary,
     labels: { ...labels, on: accounts.some((a) => a.courier === "delhivery" && a.status === "connected" && !a.creds.viaShopify) },
-    performance, days,
-    shipments: { filter, q, page, per: list.per, total: list.total, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), labelAt: r.labelAt?.toISOString() ?? null })) },
+    performance, range, rangeText: rangeLabel(range),
+    shipments: { filter, q, page, per: list.per, total: list.total, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), labelAt: r.labelAt?.toISOString() ?? null, reattemptAt: r.reattemptAt?.toISOString() ?? null })) },
   });
 }
 
@@ -74,6 +81,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode"), pickupName: get("pickupName"), name: get("name") }, accountId);
     if (!r.ok) return json<R>({ ok: null, error: r.error, courier }, { status: 400 });
     return json<R>({ ok: "connected", error: null, courier });
+  }
+  if (intent === "reattempt") {
+    const viewer = await requireViewer(request);
+    const by = viewer.role === "admin" ? viewer.staff?.name ?? "Growpefy" : viewer.member?.name ?? viewer.name;
+    const r = await reattemptOrders(store, fd.getAll("orderId").map(String), by);
+    return json<R>("error" in r ? { ok: null, error: r.error ?? "Failed" } : { ok: r.ok, error: null });
   }
   if (intent === "sync") {
     const r = await syncStoreShipments(store, { force: true });
@@ -114,6 +127,8 @@ const accName = (a: Pick<Acc, "name" | "courier" | "clientName">) => a.name ?? (
 const TILES: { s: ShipStatus; dot: string }[] = [
   { s: "pickup_pending", dot: "bg-slate-400" },
   { s: "in_transit", dot: "bg-sky-500" },
+  { s: "out_for_delivery", dot: "bg-indigo-500" },
+  { s: "ndr", dot: "bg-orange-500" },
   { s: "delivered", dot: "bg-emerald-500" },
   { s: "rto_transit", dot: "bg-amber-500" },
   { s: "rto", dot: "bg-red-500" },
@@ -187,12 +202,15 @@ function Overview({ d, total, canBook, onGear }: { d: D; total: number; canBook:
   const revalidator = useRevalidator();
   const nav = useNavigation();
   const syncing = nav.state === "submitting" && nav.formData?.get("intent") === "sync";
-  const setDays = (v: string) => { const n = new URLSearchParams(sp); n.set("days", v); setSp(n, { preventScrollReset: true }); };
+  void sp; void setSp;
+  const showNdr = () => { const n = new URLSearchParams(sp); n.set("ship", "ndr"); n.delete("page"); setSp(n, { preventScrollReset: true }); document.getElementById("shipments")?.scrollIntoView({ behavior: "smooth" }); };
   const cells = [
-    { label: "Shipments", value: total.toLocaleString("en-IN"), sub: "Last 90 days" },
+    { label: "Shipments", value: total.toLocaleString("en-IN"), sub: d.rangeText },
     { label: "Delivered", value: rate(delivered), sub: done ? `${delivered.toLocaleString("en-IN")} orders` : "No results yet", tone: done ? "text-[#067647]" : "" },
     { label: "RTO", value: rate(rto), sub: done ? `${rto.toLocaleString("en-IN")} orders` : "No results yet", tone: done && rto / done > 0.2 ? "text-[#b42318]" : "" },
     { label: "In transit", value: (s.in_transit ?? 0).toLocaleString("en-IN"), sub: s.pickup_pending ? `+${s.pickup_pending.toLocaleString("en-IN")} awaiting pickup` : "On the way" },
+    { label: "Out for delivery", value: (s.out_for_delivery ?? 0).toLocaleString("en-IN"), sub: "With the delivery agent", tone: s.out_for_delivery ? "text-[#3538cd]" : "" },
+    { label: "NDR", value: (s.ndr ?? 0).toLocaleString("en-IN"), sub: s.ndr ? "Delivery failed · re-attempt" : "No failed deliveries", tone: s.ndr ? "text-[#b54708]" : "", onClick: s.ndr ? showNdr : undefined },
   ];
   const accById = new Map(d.accounts.map((a) => [a.id, a]));
   return (
@@ -202,6 +220,7 @@ function Overview({ d, total, canBook, onGear }: { d: D; total: number; canBook:
           <h1 className="text-[17px] font-semibold tracking-tight">Shipping</h1>
           <p className="text-[12.5px] text-ink-soft">{d.accounts.length} courier account{d.accounts.length === 1 ? "" : "s"} · {canBook ? MODES.find((m) => m.id === d.rule.mode)?.short : "Tracking only"}</p>
         </div>
+        <RangePicker current={d.range} align="right" />
         <Form method="post">
           <button name="intent" value="sync" disabled={syncing} title="Sync now" className="flex h-9 items-center gap-1.5 rounded-lg bg-white px-3 text-[13px] font-medium text-ink shadow-[inset_0_0_0_1px_#d4d4d4] hover:bg-paper disabled:opacity-60">
             <Icon name="refresh" className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />{syncing ? "Syncing" : "Sync now"}
@@ -221,14 +240,17 @@ function Overview({ d, total, canBook, onGear }: { d: D; total: number; canBook:
         </button>
       </header>
 
-      <div className="grid grid-cols-2 border-t border-rule lg:grid-cols-4">
-        {cells.map((c, i) => (
-          <div key={c.label} className={`px-5 py-3.5 ${i % 2 === 1 ? "border-l border-rule" : ""} ${i >= 2 ? "border-t border-rule lg:border-t-0" : ""} ${i === 2 ? "lg:border-l" : ""}`}>
+      <div className="grid grid-cols-2 gap-px border-t border-rule bg-rule sm:grid-cols-3 lg:grid-cols-6">
+        {cells.map((c) => {
+          const body = <>
             <p className="text-[12px] font-medium text-ink-soft">{c.label}</p>
             <p className={`num mt-0.5 text-[22px] font-semibold leading-tight tracking-tight ${c.tone || "text-ink"}`}>{c.value}</p>
             <p className="text-[11.5px] text-ink-faint">{c.sub}</p>
-          </div>
-        ))}
+          </>;
+          return "onClick" in c && c.onClick
+            ? <button key={c.label} type="button" onClick={c.onClick} className="bg-surface px-5 py-3.5 text-left hover:bg-[#fafafa]">{body}</button>
+            : <div key={c.label} className="bg-surface px-5 py-3.5">{body}</div>;
+        })}
       </div>
       {total > 0 && (
         <div className="border-t border-rule px-5 py-3">
@@ -244,9 +266,7 @@ function Overview({ d, total, canBook, onGear }: { d: D; total: number; canBook:
       <div className="border-t border-rule">
         <div className="flex items-center justify-between px-5 pb-1 pt-3">
           <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-soft">Couriers</p>
-          <div className="inline-flex rounded-md bg-paper-sunk p-0.5" role="tablist" aria-label="Period">
-            {["30", "90"].map((v) => <button key={v} type="button" role="tab" aria-selected={String(d.days) === v} onClick={() => setDays(v)} className={`rounded px-2 py-0.5 text-[11.5px] font-medium ${String(d.days) === v ? "bg-white text-ink shadow-sm" : "text-ink-soft"}`}>{v}d</button>)}
-          </div>
+          <span className="text-[11.5px] text-ink-faint">{d.rangeText}</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-[13px]">
@@ -554,8 +574,8 @@ function PwOrText({ type, ...rest }: React.InputHTMLAttributes<HTMLInputElement>
   return type === "password" ? <PasswordInput {...rest} /> : <input type={type} {...rest} />;
 }
 
-const STATUS_DOT: Record<string, string> = { pickup_pending: "bg-slate-400", in_transit: "bg-sky-500", delivered: "bg-emerald-500", rto_transit: "bg-amber-500", rto: "bg-red-500", returned: "bg-fuchsia-500", cancelled: "bg-slate-400" };
-const FILTER_LABEL: Record<string, string> = { all: "All", pickup_pending: "Ready for pickup", in_transit: "In transit", delivered: "Delivered", rto_transit: "RTO in transit", rto: "RTO", returned: "Returned" };
+const STATUS_DOT: Record<string, string> = { pickup_pending: "bg-slate-400", in_transit: "bg-sky-500", out_for_delivery: "bg-indigo-500", ndr: "bg-orange-500", delivered: "bg-emerald-500", rto_transit: "bg-amber-500", rto: "bg-red-500", returned: "bg-fuchsia-500", cancelled: "bg-slate-400" };
+const FILTER_LABEL: Record<string, string> = { all: "All", pickup_pending: "Ready for pickup", in_transit: "In transit", out_for_delivery: "Out for delivery", ndr: "NDR", delivered: "Delivered", rto_transit: "RTO in transit", rto: "RTO", returned: "Returned" };
 const PER = [10, 20, 30, 50, 100];
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—");
 
@@ -576,6 +596,13 @@ function Shipments({ d }: { d: D }) {
   const setPer = (v: number) => { try { localStorage.setItem(key, String(v)); } catch { /* storage off */ } go({ per: String(v), page: null }); };
   const accName2 = (id: number | null, courier: string | null) => { const a = id ? d.accounts.find((x) => x.id === id) : d.accounts.find((x) => x.courier === courier); return a ? accName(a) : courierInfo(courier ?? "")?.name ?? courier ?? "—"; };
   const from = sh.total ? (sh.page - 1) * sh.per + 1 : 0, to = Math.min(sh.total, sh.page * sh.per);
+  const ndrMode = sh.filter === "ndr";
+  const [picked, setPicked] = useState<string[]>([]);
+  useEffect(() => setPicked([]), [sh.filter, sh.page]);
+  const canRe = (r: { courier: string | null; status: string | null }) => r.courier === "delhivery" && r.status === "ndr";
+  const reRows = sh.rows.filter(canRe);
+  const nav = useNavigation();
+  const busy = nav.state !== "idle" && nav.formData?.get("intent") === "reattempt";
   return (
     <section className="panel overflow-hidden p-0" id="shipments">
       <div className="flex flex-wrap items-center gap-3 px-5 pb-2 pt-4">
@@ -593,6 +620,20 @@ function Shipments({ d }: { d: D }) {
           </button>
         ))}
       </div>
+      {ndrMode && reRows.length > 0 && (
+        <Form method="post" className="flex flex-wrap items-center gap-3 border-b border-rule bg-[#fff8f1] px-5 py-2.5 text-[12.5px]">
+          <input type="hidden" name="intent" value="reattempt" />
+          {(picked.length ? picked : []).map((id) => <input key={id} type="hidden" name="orderId" value={id} />)}
+          <label className="flex items-center gap-2 font-medium">
+            <input type="checkbox" className="h-4 w-4 accent-[#0B5D4B]" checked={picked.length === reRows.length} onChange={(e) => setPicked(e.target.checked ? reRows.map((r) => r.id) : [])} />
+            Select all {reRows.length}
+          </label>
+          <span className="text-ink-soft">Failed deliveries. Ask Delhivery to try again.</span>
+          <button type="submit" disabled={!picked.length || busy} className="btn-primary ml-auto h-8 px-3 text-[12.5px] disabled:opacity-50">
+            <Icon name="refresh" className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />{busy ? "Sending…" : `Re-attempt${picked.length ? ` ${picked.length}` : ""}`}
+          </button>
+        </Form>
+      )}
       {sh.rows.length === 0 ? (
         <p className="px-5 py-10 text-center text-[13px] text-ink-faint">No shipments here.</p>
       ) : (<>
@@ -601,7 +642,9 @@ function Shipments({ d }: { d: D }) {
             const st = (r.status ?? "in_transit") as ShipStatus;
             return (
               <li key={r.id} className="px-5 py-3">
-                <p className="flex justify-between gap-2 text-[13px]"><span className="num font-semibold">{r.name ?? r.id}</span><span className="flex items-center gap-1.5 font-medium"><span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span></p>
+                <p className="flex justify-between gap-2 text-[13px]"><span className="num font-semibold">{r.name ?? r.id}</span><span className="flex items-center gap-1.5 font-medium"><span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}<AttemptBadge n={r.attempts} status={st} /></span></p>
+                {st === "ndr" && r.ndrReason && <p className="text-[11.5px] text-[#b54708]">{r.ndrReason}</p>}
+                {ndrMode && canRe(r) && <div className="mt-1.5"><ReattemptButton id={r.id} at={r.reattemptAt} /></div>}
                 <p className="truncate text-[12px] text-ink-soft">{r.customer.firstName} {r.customer.lastName} · {r.customer.city} · {r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</p>
                 <p className="flex items-center justify-between gap-2 text-[11.5px] text-ink-faint"><span className="truncate">{accName2(r.accountId, r.courier)} · <span className="font-mono">{r.awb}</span></span><LabelChip r={r} base={storePath(d.storeId)} /></p>
               </li>
@@ -611,18 +654,20 @@ function Shipments({ d }: { d: D }) {
         <div className="hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[760px] text-[13px]">
             <thead><tr className="border-b border-rule bg-[#fafafa] text-left text-[11.5px] text-ink-soft">
-              <th className="px-5 py-2 font-medium">Order</th><th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Courier · AWB</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">Label</th><th className="px-5 py-2 text-right font-medium">Updated</th>
+              {ndrMode && <th className="w-8 pl-5" />}<th className="px-5 py-2 font-medium">Order</th><th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Courier · AWB</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 font-medium">{ndrMode ? "Action" : "Label"}</th><th className="px-5 py-2 text-right font-medium">Updated</th>
             </tr></thead>
             <tbody className="divide-y divide-rule">
               {sh.rows.map((r) => {
                 const st = (r.status ?? "in_transit") as ShipStatus;
                 return (
                   <tr key={r.id} className="hover:bg-[#fafafa]">
+                    {ndrMode && <td className="pl-5">{canRe(r) && <input type="checkbox" aria-label={`Select ${r.name ?? r.id}`} className="h-4 w-4 accent-[#0B5D4B]" checked={picked.includes(r.id)} onChange={(e) => setPicked((p) => e.target.checked ? [...p, r.id] : p.filter((x) => x !== r.id))} />}</td>}
                     <td className="px-5 py-2.5"><span className="num font-semibold">{r.name ?? r.id}</span><span className="block text-[11.5px] text-ink-faint">{r.method === "cod" ? "COD" : r.method === "partial" ? "Partial COD" : "Prepaid"} · ₹{Math.round(r.total / 100).toLocaleString("en-IN")}</span></td>
                     <td className="px-3">{r.customer.firstName} {r.customer.lastName}<span className="block text-[11.5px] text-ink-faint">{r.customer.city} {r.customer.pincode}</span></td>
                     <td className="px-3">{accName2(r.accountId, r.courier)}<span className="block font-mono text-[11px] text-ink-faint">{r.awb}</span></td>
-                    <td className="px-3"><span className="inline-flex items-center gap-1.5 font-medium"><span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}</span>{r.raw && <span className="block max-w-[200px] truncate text-[11px] text-ink-faint">{r.raw}</span>}</td>
-                    <td className="px-3"><LabelChip r={r} base={storePath(d.storeId)} /></td>
+                    <td className="px-3"><span className="inline-flex flex-wrap items-center gap-1.5 font-medium"><span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[st] ?? "bg-sky-500"}`} />{SHIP_STATUS_LABELS[st] ?? st}<AttemptBadge n={r.attempts} status={st} /></span>
+                      {st === "ndr" && r.ndrReason ? <span className="block max-w-[220px] truncate text-[11px] text-[#b54708]" title={r.ndrReason}>{r.ndrReason}</span> : r.raw && <span className="block max-w-[200px] truncate text-[11px] text-ink-faint">{r.raw}</span>}</td>
+                    <td className="px-3">{ndrMode ? (canRe(r) ? <ReattemptButton id={r.id} at={r.reattemptAt} /> : <span className="text-[11.5px] text-ink-faint">—</span>) : <LabelChip r={r} base={storePath(d.storeId)} />}</td>
                     <td className="px-5 text-right text-[12px] text-ink-soft">{when(r.at)}</td>
                   </tr>
                 );
@@ -644,6 +689,27 @@ function Shipments({ d }: { d: D }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function AttemptBadge({ n, status }: { n: number; status: string }) {
+  if (n < 2 || !["out_for_delivery", "ndr", "delivered", "in_transit"].includes(status)) return null;
+  return <span className="rounded-full bg-[#eef0ff] px-1.5 py-px text-[10.5px] font-semibold text-[#3538cd]">{ordinal(n)} attempt</span>;
+}
+
+function ReattemptButton({ id, at }: { id: string; at: string | null }) {
+  const f = useFetcher<{ ok: string | null; error: string | null }>();
+  const busy = f.state !== "idle";
+  const done = f.data?.ok;
+  return (
+    <f.Form method="post" className="inline-flex flex-col items-start">
+      <input type="hidden" name="intent" value="reattempt" /><input type="hidden" name="orderId" value={id} />
+      <button type="submit" disabled={busy} className="inline-flex items-center gap-1 rounded-md bg-[#fff1e3] px-2 py-1 text-[11.5px] font-semibold text-[#8a4b00] hover:bg-[#ffe6cc] disabled:opacity-60">
+        <Icon name="refresh" className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />{busy ? "Sending" : done ? "Requested" : "Re-attempt"}
+      </button>
+      {f.data?.error ? <span className="mt-0.5 max-w-[180px] text-[10.5px] text-[#b42318]">{f.data.error}</span>
+        : at && !done ? <span className="mt-0.5 text-[10.5px] text-ink-faint">Asked {when(at)}</span> : null}
+    </f.Form>
   );
 }
 

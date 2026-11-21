@@ -33,6 +33,7 @@ export function mapDelhivery(status: string, type: string): ShipStatus | null {
   if (t === "PU") return null;
   if (s === "delivered") return "delivered";
   if (s.includes("rto")) return "rto_transit";
+  if (t === "UD" && s === "dispatched") return "out_for_delivery";
   // Booked but the courier hasn't picked the parcel up yet
   if (/manifest|not picked|pickup|ready to ship|^open$/.test(s)) return "pickup_pending";
   return "in_transit"; // UD: in transit, pending, dispatched…
@@ -45,13 +46,45 @@ export async function trackDelhivery(token: string, awbs: string[]): Promise<Tra
   const res = await fetch(`${BASE()}/api/v1/packages/json/?waybill=${encodeURIComponent(list.join(","))}`, { headers: headers(token), signal: AbortSignal.timeout(20_000) });
   if (res.status === 401 || res.status === 403) throw new Error("Delhivery token was rejected. Reconnect Delhivery.");
   if (!res.ok) throw new Error(`Delhivery tracking error ${res.status}`);
-  const body = (await res.json().catch(() => ({}))) as { ShipmentData?: { Shipment?: { AWB?: string; Status?: { Status?: string; StatusType?: string; StatusDateTime?: string } } }[] };
+  type Scan = { ScanDetail?: { Scan?: string; ScanType?: string; Instructions?: string; ScanDateTime?: string } };
+  const body = (await res.json().catch(() => ({}))) as { ShipmentData?: { Shipment?: { AWB?: string; Status?: { Status?: string; StatusType?: string; StatusDateTime?: string; Instructions?: string }; Scans?: Scan[] } }[] };
   return (body.ShipmentData ?? []).map((d) => {
     const sh = d.Shipment ?? {};
     const st = sh.Status ?? {};
     const at = st.StatusDateTime ? new Date(st.StatusDateTime) : null;
-    return { awb: String(sh.AWB ?? ""), status: mapDelhivery(st.Status ?? "", st.StatusType ?? ""), raw: [st.StatusType, st.Status].filter(Boolean).join(" · "), at: at && !isNaN(at.getTime()) ? at : null };
+    let status = mapDelhivery(st.Status ?? "", st.StatusType ?? "");
+    // Scan history: each "Dispatched" (UD) scan is one trip out for delivery; a "Pending" scan after it is a failed attempt (NDR)
+    const scans = (sh.Scans ?? []).map((x) => x.ScanDetail ?? {}).filter((x) => x.Scan);
+    let attempts = 0, lastOfd = -1;
+    scans.forEach((x, i) => { if ((x.ScanType ?? "").toUpperCase() === "UD" && /^dispatched$/i.test(x.Scan ?? "")) { attempts++; lastOfd = i; } });
+    let ndrReason: string | null = null;
+    if (status === "in_transit" && attempts > 0 && lastOfd >= 0) {
+      const after = scans.slice(lastOfd + 1).find((x) => (x.ScanType ?? "").toUpperCase() === "UD" && x.Instructions && !/dispatched|out for delivery/i.test(x.Instructions));
+      if (after || /pending/i.test(st.Status ?? "")) { status = "ndr"; ndrReason = (after?.Instructions ?? st.Instructions ?? "").slice(0, 160) || null; }
+    }
+    if (status === "out_for_delivery" && attempts === 0) attempts = 1;
+    return { awb: String(sh.AWB ?? ""), status, raw: [st.StatusType, st.Status].filter(Boolean).join(" · "), at: at && !isNaN(at.getTime()) ? at : null, attempts: scans.length ? attempts : undefined, ndrReason };
   }).filter((r) => r.awb);
+}
+
+/** NDR action: ask Delhivery to try delivering again (up to 50 AWBs per call). */
+export async function delhiveryReattempt(token: string, awbs: string[]): Promise<{ ok: true; ref: string | null } | { ok: false; error: string }> {
+  const list = [...new Set(awbs.filter(Boolean))].slice(0, 50);
+  if (!list.length) return { ok: false, error: "No AWB" };
+  try {
+    const res = await fetch(`${BASE()}/api/p/update`, {
+      method: "POST", headers: { ...headers(token), "Content-Type": "application/json" },
+      body: JSON.stringify({ data: list.map((waybill) => ({ waybill, act: "RE-ATTEMPT" })) }), signal: AbortSignal.timeout(20_000),
+    });
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = JSON.parse(text); } catch { /* not JSON */ }
+    if (res.status === 401 || res.status === 403) return { ok: false, error: "Delhivery rejected the token." };
+    if (!res.ok || body.error || body.success === false) return { ok: false, error: String(body.error ?? body.message ?? body.rmk ?? `Delhivery error ${res.status}: ${text.slice(0, 160)}`) };
+    return { ok: true, ref: String(body.request_id ?? body.upl ?? body.UPL ?? "") || null };
+  } catch (e) {
+    return { ok: false, error: `Couldn't reach Delhivery: ${e instanceof Error ? e.message : "network error"}` };
+  }
 }
 
 export type DelhiveryShipment = {

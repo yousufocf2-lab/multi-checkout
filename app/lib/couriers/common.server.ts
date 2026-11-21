@@ -3,7 +3,13 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { env } from "../env.server";
 import type { ShipStatus } from "../rto-shield";
 
-export type TrackResult = { awb: string; status: ShipStatus | null; raw: string; at: Date | null };
+export type TrackResult = {
+  awb: string; status: ShipStatus | null; raw: string; at: Date | null;
+  /** Delivery attempts so far (times out for delivery), when the courier gives scan history */
+  attempts?: number;
+  /** Why the last delivery attempt failed (NDR remark) */
+  ndrReason?: string | null;
+};
 export type TestResult = { ok: true } | { ok: false; error: string };
 
 /** Courier status text → our status. null = no change (lost, reverse pickup in progress…). */
@@ -24,7 +30,8 @@ export function mapStatusText(text: string | null | undefined): ShipStatus | nul
   if (/\blost\b|damage|destroy|dispos/.test(s)) return null;
   // Booked, waiting for the courier to pick it up
   if (/^(new|awb assigned|label generated|manifest(ed)?|ready to ship|pickup (scheduled|generated|pending|queued|rescheduled|error|exception)|not picked|out for pickup|pending pickup)\b/.test(s)) return "pickup_pending";
-  if (/undeliver|not deliver|fail|\bndr\b|attempt|out for delivery|\bofd\b/.test(s)) return "in_transit";
+  if (/out for delivery|\bofd\b|dispatched for delivery/.test(s)) return "out_for_delivery";
+  if (/undeliver|not deliver|delivery fail|fail|\bndr\b|attempt|refused|customer not available|consignee unavailable/.test(s)) return "ndr";
   if (/deliver/.test(s)) return "delivered";
   return "in_transit";
 }

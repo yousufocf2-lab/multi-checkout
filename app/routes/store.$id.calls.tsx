@@ -28,6 +28,8 @@ import {
   ABANDON_TABS, abandonBoard, abandonCallersFor, abandonOutcome, abandonPhone, convertAbandoned, reassignAbandoned, saveAbandonEdit, type AbandonTab,
 } from "~/lib/abandoned-calls.server";
 import { searchDraftProducts } from "~/lib/drafts.server";
+import { OFD_TABS, ofdBoard, ofdCallersFor, reassignOfd, reattemptOrders, recordOfdCall, type OfdTab } from "~/lib/ofd-calls.server";
+import { OfdCalls } from "~/components/OfdCalls";
 
 /** The caller's own team-member id, or null for the owner / managers (they see everything). */
 async function whoAmI(viewer: Viewer, store: Parameters<typeof callersFor>[0]) {
@@ -41,6 +43,12 @@ async function whoAmIAbandoned(viewer: Viewer, store: Parameters<typeof abandonC
   const team = await abandonCallersFor(store);
   return team.some((t) => t.id === viewer.member!.id) ? viewer.member.id : null;
 }
+/** The caller's id on the delivery-day (out for delivery) calling team, or null. */
+async function whoAmIOfd(viewer: Viewer, store: Parameters<typeof ofdCallersFor>[0]) {
+  if (viewer.role !== "owner" || !viewer.member) return null;
+  const team = await ofdCallersFor(store);
+  return team.some((t) => t.id === viewer.member!.id) ? viewer.member.id : null;
+}
 const byName = (v: Viewer) => (v.role === "admin" ? v.staff?.name ?? "Growpefy" : v.member?.name ?? v.name);
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -49,10 +57,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const sp = new URL(request.url).searchParams;
   const me = await whoAmI(viewer, store);
   const abMe = await whoAmIAbandoned(viewer, store);
-  const manager = me === null && abMe === null && can(viewer, "orders");
-  const modes = { orders: manager || me !== null, abandoned: manager || abMe !== null };
-  if (!modes.orders && !modes.abandoned) throw new Response("Not allowed", { status: 403 });
+  const ofdMe = await whoAmIOfd(viewer, store);
+  const manager = me === null && abMe === null && ofdMe === null && can(viewer, "orders");
+  const modes = { orders: manager || me !== null, abandoned: manager || abMe !== null, ofd: manager || ofdMe !== null };
+  if (!modes.orders && !modes.abandoned && !modes.ofd) throw new Response("Not allowed", { status: 403 });
   const query = (sp.get("q") ?? "").trim().slice(0, 100);
+  // Out for delivery calling: Ready / Follow-up / Denied, NDR re-attempts and the delivery outcome charts
+  if ((sp.get("mode") === "ofd" && modes.ofd) || (!modes.orders && !modes.abandoned)) {
+    const ofdTab = (OFD_TABS as readonly string[]).includes(sp.get("tab") ?? "") ? (sp.get("tab") as OfdTab) : "to_call";
+    if (!sp.get("range")) sp.set("range", "7d");
+    const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
+    const from = range.preset === "max" ? null : new Date(`${range.since}T00:00:00+05:30`);
+    const to = range.preset === "max" ? null : new Date(new Date(`${range.until}T00:00:00+05:30`).getTime() + 86400_000);
+    const ofd = await ofdBoard(store, ofdMe, ofdTab, from, to, query);
+    return json({ mode: "ofd" as const, modes, manager, ofdTab, query, range, ofd });
+  }
   // Abandoned checkout calling: its own tabs and cards
   if ((sp.get("mode") === "abandoned" && modes.abandoned) || !modes.orders) {
     const abTab = [...ABANDON_TABS, "team"].includes(sp.get("tab") as AbandonTab) ? (sp.get("tab") as AbandonTab | "team") : "to_call";
@@ -82,11 +101,38 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export async function action({ request, params }: ActionFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
-  if (!can(viewer, "confirm") && !can(viewer, "orders") && !can(viewer, "abandoned_calls")) return json({ ok: null, error: "Not allowed" }, { status: 403 });
+  if (!can(viewer, "confirm") && !can(viewer, "orders") && !can(viewer, "abandoned_calls") && !can(viewer, "ofd_calls")) return json({ ok: null, error: "Not allowed" }, { status: 403 });
   const fd = await request.formData();
   const intent = String(fd.get("intent") ?? "");
   const id = String(fd.get("orderId") ?? "");
   const by = byName(viewer);
+  if (intent.startsWith("ofd-")) {
+    const ofdMe = await whoAmIOfd(viewer, store);
+    const ofdManager = ofdMe === null && (await whoAmI(viewer, store)) === null && (await whoAmIAbandoned(viewer, store)) === null && can(viewer, "orders");
+    if (ofdMe === null && !ofdManager) return json({ ok: null, error: "Not allowed" }, { status: 403 });
+    const out = (r: { ok?: string; error?: string }) => json(r.error ? { ok: null, error: r.error } : { ok: r.ok ?? "Done", error: null });
+    if (intent === "ofd-ready" || intent === "ofd-denied" || intent === "ofd-follow") {
+      const mins = Number(fd.get("in")) || 60;
+      const kind = intent === "ofd-ready" ? "ready" : intent === "ofd-denied" ? "denied" : "follow_up";
+      const note = [String(fd.get("reason") ?? ""), String(fd.get("note") ?? "")].filter(Boolean).join(": ");
+      return out(await recordOfdCall(store, id, ofdMe, by, kind, { note, followUpAt: kind === "follow_up" ? (mins === -1 ? tomorrow10() : new Date(Date.now() + Math.min(mins, 2 * 1440) * 60_000)) : null }));
+    }
+    if (intent === "ofd-reattempt") {
+      const ids = fd.getAll("orderId").map(String);
+      if (ofdMe !== null) {
+        const mine = await db.select({ id: orders.id }).from(orders).where(and(eq(orders.storeId, store.id), eq(orders.ofdAssignedTo, ofdMe)));
+        const own = new Set(mine.map((m) => m.id));
+        if (ids.some((x) => !own.has(x))) return out({ error: "Some of these are assigned to someone else." });
+      }
+      const r = await reattemptOrders(store, ids, by);
+      return out("error" in r ? { error: r.error } : { ok: r.ok });
+    }
+    if (intent === "ofd-reassign") {
+      if (!ofdManager) return out({ error: "Only the owner or a manager can reassign." });
+      return out(await reassignOfd(store, id, Number(fd.get("member"))));
+    }
+    return out({ error: "Unknown action" });
+  }
   if (intent.startsWith("ab-")) {
     const abMe = await whoAmIAbandoned(viewer, store);
     const abManager = abMe === null && (await whoAmI(viewer, store)) === null && can(viewer, "orders");
@@ -216,10 +262,11 @@ const ago = (iso: string) => {
 const at = (iso: string) => new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 /** Orders / Abandoned checkouts switch, for people on both calling teams (and the owner). */
-function ModeSwitch({ mode, modes }: { mode: "orders" | "abandoned"; modes: { orders: boolean; abandoned: boolean } }) {
-  if (!modes.orders || !modes.abandoned) return null;
-  return <nav aria-label="Calling" className="inline-flex rounded-xl bg-black/[.05] p-1">
-    {([["orders", "Orders", "?"], ["abandoned", "Abandoned checkouts", "?mode=abandoned"]] as const).map(([id, label, to]) => (
+function ModeSwitch({ mode, modes }: { mode: "orders" | "abandoned" | "ofd"; modes: { orders: boolean; abandoned: boolean; ofd: boolean } }) {
+  const list = ([["orders", "Orders", "?"], ["abandoned", "Abandoned checkouts", "?mode=abandoned"], ["ofd", "Out for delivery", "?mode=ofd"]] as const).filter(([id]) => modes[id]);
+  if (list.length < 2) return null;
+  return <nav aria-label="Calling" className="inline-flex max-w-full overflow-x-auto rounded-xl bg-black/[.05] p-1">
+    {list.map(([id, label, to]) => (
       <Link key={id} to={to} aria-current={mode === id ? "page" : undefined} className={`rounded-lg px-3.5 py-1.5 text-[13px] font-semibold ${mode === id ? "bg-white text-ink shadow-sm" : "text-ink-soft hover:text-ink"}`}>{label}</Link>
     ))}
   </nav>;
@@ -228,7 +275,28 @@ function ModeSwitch({ mode, modes }: { mode: "orders" | "abandoned"; modes: { or
 export default function Calls() {
   const data = useLoaderData<typeof loader>();
   if (data.mode === "abandoned") return <AbandonedPage d={data} />;
+  if (data.mode === "ofd") return <OfdPage d={data} />;
   return <OrdersPage d={data} />;
+}
+
+function OfdPage({ d }: { d: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { mode: "ofd" }> }) {
+  const revalidator = useRevalidator();
+  const [toast, setToast] = useState<{ ok?: string | null; error?: string | null } | null>(null);
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === "visible" && revalidator.state === "idle" && !document.querySelector("[data-ofd-busy]")) revalidator.revalidate(); }, 30_000);
+    return () => clearInterval(t);
+  }, [revalidator]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); }, [toast]);
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-5 pb-8">
+      <style>{CSS}</style>
+      <ModeSwitch mode="ofd" modes={d.modes} />
+      <OfdCalls data={d.ofd} tab={d.ofdTab} manager={d.manager} query={d.query} range={d.range} onToast={setToast} />
+      {toast && (toast.ok || toast.error) && (
+        <div className={`cl-pop fixed bottom-5 left-1/2 z-[80] max-w-[90vw] -translate-x-1/2 rounded-lg px-3.5 py-2 text-[13px] font-medium text-white shadow-lg ${toast.error ? "bg-[#b42318]" : "bg-[#1a1a1a]"}`} role="status">{toast.error ?? toast.ok}</div>
+      )}
+    </div>
+  );
 }
 
 function AbandonedPage({ d }: { d: Extract<ReturnType<typeof useLoaderData<typeof loader>>, { mode: "abandoned" }> }) {

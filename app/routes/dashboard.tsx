@@ -142,7 +142,7 @@ export default function DashboardLayout() {
       { label: "Ship queue", to: storeHref("to-ship"), match: /\/to-ship$|next=to-ship/, show: storefront },
     ] },
     { label: "Kitchen", to: storeHref("kitchen"), icon: "bell", match: /\/kitchen$|next=kitchen\b/, show: focus?.businessType === "restaurant" && may("orders") },
-    { label: "Order confirmation", to: storeHref("calls"), icon: "phone", match: /\/calls$|next=calls\b/, show: may("confirm") || may("abandoned_calls") },
+    { label: "Order confirmation", to: storeHref("calls"), icon: "phone", match: /\/calls$|next=calls\b/, show: may("confirm") || may("abandoned_calls") || may("ofd_calls") },
     { label: packOf(focus?.businessType).items, to: storeHref("catalog"), icon: "tag", match: /\/(catalog|collections|inventory)(\/|$)|next=(catalog|collections|inventory)\b/, show: storefront && may("products"), children: [
       { label: "Product groups", to: storeHref("collections"), match: /\/collections$|next=collections/, show: true },
       { label: "Stock", to: storeHref("inventory"), match: /\/inventory$|next=inventory/, show: true },
@@ -160,6 +160,7 @@ export default function DashboardLayout() {
       { label: "RTO Shield", to: storeHref("rto-shield"), match: /\/rto-shield$|next=rto-shield/, show: true },
       { label: "RTO Suite", to: storeHref("rto"), match: /\/rto$|next=rto\b/, show: true },
     ] },
+    { label: "Team performance", to: storeHref("team-report"), icon: "users", match: /\/team-report$|next=team-report\b/, show: may("team") || may("analytics") },
     { label: "Analytics", to: storeHref("live"), icon: "chart", match: /\/(live|funnel|diagnostics)$|next=(live|funnel|diagnostics)\b/, show: may("analytics"), children: [
       { label: "Live view", to: storeHref("live"), match: /\/live$|next=live\b/, show: true },
       { label: "Checkout funnel", to: storeHref("funnel"), match: /\/funnel$|next=funnel/, show: true },

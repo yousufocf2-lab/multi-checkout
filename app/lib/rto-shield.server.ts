@@ -4,7 +4,7 @@ import { hasCourier } from "./logistics.server";
 import { linkedCodBlocked } from "./store-connect.server";
 import { decideShield, resolveShield, type ShieldHit, type ShipCounts, type ShipStatus } from "./rto-shield";
 
-const STATUSES: ShipStatus[] = ["pickup_pending", "in_transit", "delivered", "rto_transit", "rto", "returned", "cancelled"];
+const STATUSES: ShipStatus[] = ["pickup_pending", "in_transit", "out_for_delivery", "ndr", "delivered", "rto_transit", "rto", "returned", "cancelled"];
 
 export async function isExempt(storeId: number, phone: string) {
   const [r] = await db.select({ p: rtoShieldExempt.phone }).from(rtoShieldExempt).where(and(eq(rtoShieldExempt.storeId, storeId), eq(rtoShieldExempt.phone, phone))).limit(1);

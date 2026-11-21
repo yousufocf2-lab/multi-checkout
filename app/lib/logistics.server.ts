@@ -1,6 +1,6 @@
 // Courier connections and shipment status sync (feeds RTO Shield). A store can connect any number of couriers.
 import { randomBytes } from "node:crypto";
-import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { courierAccounts, db, orders, stores, type CourierAccount, type CourierCreds, type Store } from "~/db.server";
 import { COURIERS, courierById, type CourierInfo } from "./courier-catalog";
 import { CourierAuthError, mapStatusText, parseDate, seal, type TrackResult } from "./couriers/common.server";
@@ -123,6 +123,7 @@ export async function arrangeCouriers(storeId: number, order: number[], patch: R
 const FINAL: ShipStatus[] = ["rto", "returned", "cancelled"];
 const LOOKBACK_DAYS = 90;
 const RECHECK_MS = 3 * 3600_000;
+const RECHECK_ACTIVE_MS = 25 * 60_000; // out for delivery / NDR change within the day
 const DELIVERED_WATCH_DAYS = 20; // delivered orders can still come back as returns
 const PUSH_IDS = COURIERS.filter((c) => c.kind === "push").map((c) => c.id);
 
@@ -161,12 +162,36 @@ type Watch = { id: string; awb: string | null; courier: string | null; gid: stri
 
 async function saveStatus(o: Watch, r: TrackResult | null, courier?: string) {
   const now = new Date();
+  const extra = r ? await deliveryFields(o, r, now) : {};
   if (r?.status && r.status !== o.shipStatus) {
-    await db.update(orders).set({ shipStatus: r.status, shipStatusRaw: r.raw.slice(0, 120), shipStatusAt: r.at ?? now, shipCheckedAt: now, ...(courier ? { courier } : {}) }).where(eq(orders.id, o.id));
+    await db.update(orders).set({ shipStatus: r.status, shipStatusRaw: r.raw.slice(0, 120), shipStatusAt: r.at ?? now, shipCheckedAt: now, ...extra, ...(courier ? { courier } : {}) }).where(eq(orders.id, o.id));
     return 1;
   }
-  await db.update(orders).set({ shipCheckedAt: now, ...(r?.raw ? { shipStatusRaw: r.raw.slice(0, 120) } : {}), ...(courier ? { courier } : {}) }).where(eq(orders.id, o.id));
+  await db.update(orders).set({ shipCheckedAt: now, ...extra, ...(r?.raw ? { shipStatusRaw: r.raw.slice(0, 120) } : {}), ...(courier ? { courier } : {}) }).where(eq(orders.id, o.id));
   return 0;
+}
+
+/**
+ * Out for delivery / NDR bookkeeping: counts delivery attempts (from the courier's scans, or by counting each new
+ * "out for delivery"), and on every new attempt clears the delivery-day call so the caller rings the customer again.
+ */
+async function deliveryFields(o: Watch, r: TrackResult, now: Date): Promise<Partial<typeof orders.$inferInsert>> {
+  const relevant = r.status === "out_for_delivery" || r.status === "ndr" || r.status === "delivered" || (r.attempts ?? 0) > 0;
+  if (!relevant) return {};
+  const [cur] = await db.select({ attempts: orders.ofdAttempts, ofdAt: orders.ofdAt, deliveredAt: orders.deliveredAt, ndrAt: orders.ndrAt }).from(orders).where(eq(orders.id, o.id)).limit(1);
+  if (!cur) return {};
+  const out: Partial<typeof orders.$inferInsert> = {};
+  let attempts = r.attempts ?? cur.attempts;
+  // No scan history: a fresh "out for delivery" is the next attempt
+  if (r.attempts == null && r.status === "out_for_delivery" && o.shipStatus !== "out_for_delivery") attempts = cur.attempts + 1;
+  if (r.status === "out_for_delivery" && attempts < 1) attempts = 1;
+  if (attempts > cur.attempts) {
+    Object.assign(out, { ofdAttempts: attempts, ofdAt: r.status === "out_for_delivery" ? r.at ?? now : cur.ofdAt ?? r.at ?? now, ofdCallStatus: null, ofdFollowUpAt: null });
+  } else if (r.status === "out_for_delivery" && !cur.ofdAt) out.ofdAt = r.at ?? now;
+  if (r.status === "ndr" && (o.shipStatus !== "ndr" || !cur.ndrAt)) Object.assign(out, { ndrAt: r.at ?? now, ndrReason: r.ndrReason ?? null });
+  else if (r.status === "ndr" && r.ndrReason) out.ndrReason = r.ndrReason;
+  if (r.status === "delivered" && !cur.deliveredAt) out.deliveredAt = r.at ?? now;
+  return out;
 }
 
 /** Links AWBs from Shopify fulfillments, then refreshes statuses from each courier (Shopify as the fallback). */
@@ -215,7 +240,8 @@ export async function syncStoreShipments(store: Store, opts: { force?: boolean }
       PUSH_IDS.length ? notInArray(orders.courier, PUSH_IDS) : undefined,
       or(isNull(orders.shipStatus), notInArray(orders.shipStatus, FINAL)),
       or(sql`${orders.shipStatus} is distinct from 'delivered'`, gt(orders.shipStatusAt, new Date(Date.now() - DELIVERED_WATCH_DAYS * 86400_000))),
-      opts.force ? undefined : or(isNull(orders.shipCheckedAt), lt(orders.shipCheckedAt, new Date(Date.now() - RECHECK_MS)))))
+      opts.force ? undefined : or(isNull(orders.shipCheckedAt), lt(orders.shipCheckedAt, new Date(Date.now() - RECHECK_MS)),
+        and(sql`${orders.shipStatus} in ('in_transit','out_for_delivery','ndr')`, lt(orders.shipCheckedAt, new Date(Date.now() - RECHECK_ACTIVE_MS))))))
     .orderBy(asc(orders.shipCheckedAt)).limit(1000);
 
   const apiAccounts = accounts.filter((a) => courierById(a.courier)?.kind === "api" && PROVIDERS[a.courier] && !a.creds.viaShopify);
@@ -315,9 +341,12 @@ export async function applyPushedStatuses(storeId: number, courier: string, item
 }
 
 /** Shipment status counts for a store (last 90 days) for the dashboard. */
-export async function shipmentSummary(storeId: number) {
+export type DateWindow = { from: Date | null; to: Date | null };
+const inWindow = (w?: DateWindow) => and(w?.from ? gte(orders.createdAt, w.from) : undefined, w?.to ? lt(orders.createdAt, w.to) : undefined);
+
+export async function shipmentSummary(storeId: number, w?: DateWindow) {
   const rows = await db.select({ s: orders.shipStatus, n: count() }).from(orders)
-    .where(and(eq(orders.storeId, storeId), isNotNull(orders.shipStatus), gt(orders.createdAt, new Date(Date.now() - LOOKBACK_DAYS * 86400_000))))
+    .where(and(eq(orders.storeId, storeId), isNotNull(orders.shipStatus), w ? inWindow(w) : gt(orders.createdAt, new Date(Date.now() - LOOKBACK_DAYS * 86400_000))))
     .groupBy(orders.shipStatus);
   return Object.fromEntries(rows.map((r) => [r.s, Number(r.n)])) as Partial<Record<ShipStatus, number>>;
 }
@@ -334,10 +363,10 @@ export async function shipmentsByCourier(storeId: number) {
  * Delivery performance per courier account over the last `days`: shipments, delivered, RTO (incl. returned) and in
  * transit. Older orders without a saved account count under the first account of their courier.
  */
-export async function courierPerformance(storeId: number, days = 90) {
+export async function courierPerformance(storeId: number, w: DateWindow) {
   const accounts = await courierAccountsFor(storeId);
   const rows = await db.select({ c: orders.courier, a: orders.courierAccountId, s: orders.shipStatus, n: count() }).from(orders)
-    .where(and(eq(orders.storeId, storeId), isNotNull(orders.shipStatus), gt(orders.createdAt, new Date(Date.now() - days * 86400_000))))
+    .where(and(eq(orders.storeId, storeId), isNotNull(orders.shipStatus), inWindow(w)))
     .groupBy(orders.courier, orders.courierAccountId, orders.shipStatus);
   const firstOf = new Map<string, number>();
   for (const a of accounts) if (!firstOf.has(a.courier)) firstOf.set(a.courier, a.id);
@@ -363,12 +392,12 @@ export { SHIP_FILTERS, type ShipFilter };
 
 /** Shipped orders for the logistics page, newest first, with a status filter and search (order / AWB / phone). */
 export const PAGE_SIZES = [10, 20, 30, 50, 100] as const;
-export async function shipmentList(storeId: number, opts: { filter: ShipFilter; q: string; page: number; days?: number; per?: number }) {
+export async function shipmentList(storeId: number, opts: { filter: ShipFilter; q: string; page: number; window: DateWindow; per?: number }) {
   const PAGE = (PAGE_SIZES as readonly number[]).includes(opts.per ?? 0) ? opts.per! : 10;
   const q = opts.q.trim().replace(/[%_]/g, "").slice(0, 40);
   const where = and(
     eq(orders.storeId, storeId), isNotNull(orders.awb),
-    gt(orders.createdAt, new Date(Date.now() - (opts.days ?? 90) * 86400_000)),
+    inWindow(opts.window),
     opts.filter !== "all" ? eq(orders.shipStatus, opts.filter) : undefined,
     q ? or(sql`${orders.awb} ilike ${`%${q}%`}`, sql`${orders.shopifyOrderName} ilike ${`%${q}%`}`, sql`${orders.customer}->>'phone' like ${`%${q}%`}`) : undefined,
   );
@@ -376,15 +405,24 @@ export async function shipmentList(storeId: number, opts: { filter: ShipFilter; 
     id: orders.id, name: orders.shopifyOrderName, customer: orders.customer, method: orders.paymentMethod, total: orders.total,
     awb: orders.awb, courier: orders.courier, status: orders.shipStatus, raw: orders.shipStatusRaw, at: orders.shipStatusAt, createdAt: orders.createdAt,
     labelAt: orders.labelPrintedAt, labelBatch: orders.labelBatch, accountId: orders.courierAccountId,
+    attempts: orders.ofdAttempts, ndrReason: orders.ndrReason, reattemptAt: orders.reattemptAt,
   }).from(orders).where(where).orderBy(sql`${orders.shipStatusAt} desc nulls last`, sql`${orders.createdAt} desc`).limit(PAGE + 1).offset((Math.max(1, opts.page) - 1) * PAGE);
   const [t] = await db.select({ n: count() }).from(orders).where(where);
   return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE, total: Number(t?.n ?? 0), per: PAGE };
 }
 
-const SYNC_EVERY_MS = 30 * 60_000;
+const SYNC_EVERY_MS = 20 * 60_000;
 declare global {
   // eslint-disable-next-line no-var
   var __shipmentWatcher: ReturnType<typeof setInterval> | undefined;
+}
+
+/** Log after the first sync: out for delivery / NDR counts per store (to check them against the courier panel). */
+async function ndrAudit() {
+  const rows = await db.select({ store: orders.storeId, s: orders.shipStatus, n: count(), multi: sql<number>`count(*) filter (where ${orders.ofdAttempts} >= 2)::int` }).from(orders)
+    .where(and(inArray(orders.shipStatus, ["out_for_delivery", "ndr"]), gt(orders.createdAt, new Date(Date.now() - LOOKBACK_DAYS * 86400_000))))
+    .groupBy(orders.storeId, orders.shipStatus);
+  console.log(`[ndr-audit] ${JSON.stringify(rows)}`);
 }
 
 async function syncAll() {
@@ -399,7 +437,7 @@ export function startShipmentWatcher() {
   if (globalThis.__shipmentWatcher || !process.env.DATABASE_URL) return;
   globalThis.__shipmentWatcher = setInterval(() => void syncAll().catch(() => {}), SYNC_EVERY_MS);
   globalThis.__shipmentWatcher.unref?.();
-  setTimeout(() => void syncAll().catch(() => {}), 60_000).unref?.();
+  setTimeout(() => void syncAll().then(ndrAudit).catch(() => {}), 60_000).unref?.();
 }
 
 export type { CourierAccount };

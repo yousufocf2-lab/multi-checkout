@@ -2,6 +2,7 @@ import { and, desc, eq, gte, ilike, inArray, isNotNull, lt, notInArray, not as n
 import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, stores, type Store } from "~/db.server";
 import { addDays, resolveRange, type Range } from "./dates";
+import { INDIAN_STATES } from "./states";
 import { storeBaseUrl } from "./urls.server";
 import { liveSessions } from "./live.server";
 
@@ -60,7 +61,8 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   if (f.labelStatus === "added") push("label_status", isNotNull(orders.awb));
   if (f.labelStatus === "not_added") push("label_status", sql`${orders.awb} is null`);
   if (f.deliveryMethod) push("delivery_method", eq(orders.shippingTitle, f.deliveryMethod));
-  if (range.preset !== "max") {
+  // A search looks through every date (an old order must still be found)
+  if (range.preset !== "max" && !f.q) {
     where.push(gte(orders.createdAt, new Date(`${range.since}T00:00:00+05:30`)));
     where.push(lt(orders.createdAt, new Date(`${addDays(range.until, 1)}T00:00:00+05:30`)));
   }
@@ -78,17 +80,41 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   else if (f.tag === "Shopify History") push("tag", sql`${orders.checkoutChannel} = 'shopify_history'`);
   else if (f.tag === "WhatsApp") push("tag", sql`${orders.confirmStatus} is not null or ${orders.waMessageId} is not null`);
   else if (f.tag) push("tag", sql`${orders.manualTags} @> ${JSON.stringify([f.tag])}::jsonb`);
-  if (f.q) {
-    const like = `%${f.q}%`;
-    where.push(or(
-      ilike(orders.id, like),
-      ilike(orders.shopifyOrderName, like),
-      sql`${orders.customer}->>'phone' ilike ${like}`,
-      sql`(${orders.customer}->>'firstName') || ' ' || (${orders.customer}->>'lastName') ilike ${like}`,
-      sql`${orders.customer}->>'city' ilike ${like}`,
-    )!);
-  }
+  if (f.q) where.push(searchWhere(f.q));
   return { where: and(...where)!, filters: f };
+}
+
+/**
+ * Free-text order search. Every word must match somewhere in the order: order id / number, AWB, coupon,
+ * customer (name, phone, email, address, city, state, pincode), products (title, variant, SKU), tags, notes,
+ * courier, delivery method, or the amount (₹1299 → total ₹1,299). A state's full name also matches its code.
+ */
+function searchWhere(raw: string): SQL {
+  let q = raw.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 120);
+  const terms: string[] = [];
+  for (const st of [...INDIAN_STATES].sort((a, b) => b.name.length - a.name.length)) {
+    const n = st.name.toLowerCase();
+    if (q.includes(n)) { q = q.replace(n, " "); terms.push(`state:${st.code}`); }
+  }
+  terms.push(...q.split(" ").map((t) => t.replace(/^[#₹]+|[,]+/g, "")).filter(Boolean).slice(0, 6));
+  const esc = (t: string) => `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const parts = terms.map((t) => {
+    if (t.startsWith("state:")) return sql`(${orders.customer}->>'state' = ${t.slice(6)} or ${orders.customer}->>'state' ilike ${INDIAN_STATES.find((s) => s.code === t.slice(6))?.name ?? t})`;
+    const like = esc(t);
+    const any: SQL[] = [
+      ilike(orders.id, like), ilike(orders.shopifyOrderName, like), sql`${orders.awb} ilike ${like}`, sql`${orders.couponCode} ilike ${like}`,
+      sql`${orders.customer}::text ilike ${like}`, sql`${orders.items}::text ilike ${like}`, sql`${orders.manualTags}::text ilike ${like}`,
+      sql`${orders.staffNote} ilike ${like}`, sql`${orders.courier} ilike ${like}`, sql`${orders.shippingTitle} ilike ${like}`,
+      sql`${orders.cancelReason} ilike ${like}`, sql`${orders.gatewayRef} ilike ${like}`,
+    ];
+    const digits = t.replace(/\D/g, "");
+    // Phone typed with +91 / spaces / dashes
+    if (digits.length >= 5) any.push(sql`regexp_replace(${orders.customer}->>'phone', '\\D', '', 'g') like ${`%${digits.slice(-10)}%`}`);
+    // Amount: ₹1299 or 1299.50 → order total
+    if (/^\d+(\.\d{1,2})?$/.test(t) && Number(t) > 0) any.push(sql`${orders.total} = ${Math.round(Number(t) * 100)}`);
+    return sql`(${or(...any)})`;
+  });
+  return parts.length ? and(...parts)! : sql`true`;
 }
 
 export async function loadOrders(scope: Store[], params: URLSearchParams) {

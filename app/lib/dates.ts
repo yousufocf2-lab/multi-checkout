@@ -5,6 +5,7 @@ export const PRESETS = [
   { id: "yesterday", label: "Yesterday" },
   { id: "7d", label: "Last 7 days" },
   { id: "30d", label: "Last 30 days" },
+  { id: "90d", label: "Last 90 days" },
   { id: "this_month", label: "This month" },
   { id: "last_month", label: "Last month" },
   { id: "max", label: "All time" },
@@ -41,6 +42,7 @@ export function resolveRange(params: URLSearchParams, earliest?: string): Range 
     case "yesterday": { const d = addDays(t, -1); return { preset, since: d, until: d }; }
     case "7d": return { preset, since: addDays(t, -6), until: t };
     case "30d": return { preset, since: addDays(t, -29), until: t };
+    case "90d": return { preset, since: addDays(t, -89), until: t };
     case "this_month": return { preset, since: firstOfMonth, until: t };
     case "last_month": { const end = addDays(firstOfMonth, -1); return { preset, since: `${end.slice(0, 7)}-01`, until: end }; }
     case "max": return { preset, since: earliest && earliest < t ? earliest : t, until: t };

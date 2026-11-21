@@ -103,7 +103,7 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
       )}
       {/* metrics */}
       <section className="panel grid grid-cols-2 overflow-hidden sm:grid-cols-3 lg:grid-cols-[auto_repeat(6,minmax(0,1fr))]">
-        <div className="col-span-2 flex items-center border-b border-rule px-3 py-2.5 sm:col-span-3 lg:col-span-1 lg:border-b-0 lg:border-r"><RangePicker current={f.range} /></div>
+        <div className="col-span-2 flex items-center border-b border-rule px-3 py-2.5 sm:col-span-3 lg:col-span-1 lg:border-b-0 lg:border-r">{f.q ? <span className="text-[12.5px] font-medium text-ink-soft">All dates (searching)</span> : <RangePicker current={f.range} />}</div>
         <Metric label="Orders" value={n(summary.count)} />
         <Metric label="Items ordered" value={n(summary.items)} />
         <Metric label="Sales" value={rupee(summary.value)} />
@@ -188,7 +188,7 @@ function OrdersSearchFilter({ filters, products, tags, deliveryOptions, clearAll
     { key: "status", label: "Order status", options: [["open", "Open"], ["pending", "Awaiting payment"], ["failed", "Failed"], ["refunded", "Refunded"]] },
     { key: "payment_status", label: "Payment status", options: [["paid", "Paid"], ["pending", "Payment pending"], ["partially_refunded", "Partially refunded"], ["refunded", "Refunded"], ["failed", "Failed"]] },
     { key: "fulfillment", label: "Fulfillment status", options: [["fulfilled", "Fulfilled"], ["unfulfilled", "Unfulfilled"]] },
-    { key: "delivery_status", label: "Delivery status", options: [["pickup_pending", "Ready for pickup"], ["in_transit", "In transit"], ["delivered", "Delivered"], ["rto_transit", "RTO in transit"], ["rto", "Returned to origin"], ["returned", "Returned"], ["cancelled", "Cancelled"]] },
+    { key: "delivery_status", label: "Delivery status", options: [["pickup_pending", "Ready for pickup"], ["in_transit", "In transit"], ["out_for_delivery", "Out for delivery"], ["ndr", "Delivery failed (NDR)"], ["delivered", "Delivered"], ["rto_transit", "RTO in transit"], ["rto", "Returned to origin"], ["returned", "Returned"], ["cancelled", "Cancelled"]] },
     { key: "return_status", label: "Return status", options: [["returned", "Returned"], ["not_returned", "Not returned"]] },
     { key: "label_status", label: "Shipping label status", options: [["added", "Label added"], ["not_added", "No label"]] },
     { key: "total", label: "Order total", options: [] as string[][] },
@@ -218,7 +218,7 @@ function OrdersSearchFilter({ filters, products, tags, deliveryOptions, clearAll
     <Form method="get" className="flex min-h-8 min-w-0 items-center gap-2 rounded-lg border border-rule bg-surface px-2.5 focus-within:border-[#626873] focus-within:ring-2 focus-within:ring-black/5" onSubmit={(e) => { e.preventDefault(); const p = new URLSearchParams(params); query ? p.set("q", query) : p.delete("q"); p.delete("page"); navigate(`${location.pathname}?${p}`, { preventScrollReset: true }); }}>
       {[...params.entries()].filter(([k]) => !["q", "page"].includes(k)).map(([k, v], i) => <input key={k + i} type="hidden" name={k} value={v} />)}
       <Icon name="search" className="h-4 w-4 shrink-0 text-ink-faint" />
-      <input type="search" name="q" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search and filter" onFocus={() => setOpen(true)} className="h-8 min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-faint" aria-label="Search and filter orders" />
+      <input type="search" name="q" value={query} onChange={(e) => { setQuery(e.target.value); if (e.target.value) { setOpen(false); setField(null); } }} placeholder="Search order no., phone, name, product, pincode, tag, ₹ amount…" onFocus={() => { if (!query) setOpen(true); }} className="relative z-50 h-8 min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-faint" aria-label="Search and filter orders" />
       {!!active.length && <span className="hidden items-center gap-1 lg:flex">{active.map(([k, label]) => { const summary = `${label} ${params.get(`${k}_not`) === "1" ? "is not" : "is"} ${valueLabel(k, params.get(k) ?? "")}`; return <button type="button" key={k} onClick={() => clearOne(k)} className="inline-flex max-w-40 items-center gap-1 rounded-md bg-paper-sunk px-1.5 py-0.5 text-[11px] text-ink" title={summary}><span className="truncate">{summary}</span><Icon name="close" className="h-3 w-3 shrink-0" /></button>; })}</span>}
       {(activeCount > 0 || filters.q) && <Link to={clearAll} preventScrollReset className="whitespace-nowrap text-[11px] font-medium text-ink-soft hover:text-ink">Clear</Link>}
     </Form>

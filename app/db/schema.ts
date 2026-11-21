@@ -364,6 +364,7 @@ export const stores = pgTable("stores", {
   orderSuffix: text("order_suffix").notNull().default(""),
   orderStart: integer("order_start").notNull().default(1001),
   orderSeq: integer("order_seq"),
+  ofdRr: integer("ofd_rr").notNull().default(0), // round-robin pointer for out-for-delivery calls
   abandonRr: integer("abandon_rr").notNull().default(0), // round-robin pointer for abandoned checkout calls
   labelConfig: jsonb("label_config").$type<Partial<import("~/lib/label-config").LabelConfig>>(), // shipping label design
   // Collaborators: people outside the business ask for access with this code (regenerate to stop old requests)
@@ -909,6 +910,19 @@ export const orders = pgTable(
     confirmStatus: text("confirm_status"),
     shipError: text("ship_error"), // last automatic shipment booking error (website orders)
     shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
+    // Out for delivery / NDR (from courier scans) and the delivery-day call
+    ofdAttempts: integer("ofd_attempts").notNull().default(0),
+    ofdAt: timestamp("ofd_at", { withTimezone: true }),
+    ndrReason: text("ndr_reason"),
+    ndrAt: timestamp("ndr_at", { withTimezone: true }),
+    reattemptAt: timestamp("reattempt_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    ofdAssignedTo: integer("ofd_assigned_to"),
+    ofdCallStatus: text("ofd_call_status").$type<"ready" | "follow_up" | "denied">(),
+    ofdCallAt: timestamp("ofd_call_at", { withTimezone: true }),
+    ofdCallBy: text("ofd_call_by"),
+    ofdFollowUpAt: timestamp("ofd_follow_up_at", { withTimezone: true }),
+    ofdCallAttempt: integer("ofd_call_attempt"),
     courierAccountId: integer("courier_account_id"), // which of the store's courier accounts booked / tracks it
     labelPrintedAt: timestamp("label_printed_at", { withTimezone: true }), // shipping label printed from Growpefy
     labelBatch: text("label_batch"), // which print batch it was in
@@ -991,6 +1005,19 @@ export const orderCallEvents = pgTable("order_call_events", {
   uniqueIndex("order_call_events_open_skip_idx").on(t.storeId, t.orderId, t.memberId)
     .where(sql`${t.kind} = 'skip' and ${t.resolvedAt} is null`),
 ]);
+
+/** One delivery-day call outcome (Ready / Follow-up / Denied) for an out-for-delivery attempt. */
+export const ofdCallEvents = pgTable("ofd_call_events", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  orderId: text("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  memberId: integer("member_id"),
+  actor: text("actor").notNull(),
+  attempt: integer("attempt").notNull().default(1),
+  outcome: text("outcome").$type<"ready" | "follow_up" | "denied">().notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("ofd_call_events_store_idx").on(t.storeId, t.createdAt), index("ofd_call_events_order_idx").on(t.orderId)]);
 
 export const metaSnapshots = pgTable(
   "meta_snapshots",

@@ -36,7 +36,7 @@ export async function linkedOrders(storeId: number, phone: string, group: StoreC
   const states: SQL[] = [];
   const since = new Date(Date.now() - PLACED_WINDOW_DAYS * 86400_000);
   if (group.blockOn.placed) states.push(and(isNull(orders.shipStatus), gte(orders.createdAt, since))!);
-  if (group.blockOn.inTransit) states.push(sql`${orders.shipStatus} in ('in_transit', 'pickup_pending')`);
+  if (group.blockOn.inTransit) states.push(sql`${orders.shipStatus} in ('in_transit', 'pickup_pending', 'out_for_delivery', 'ndr')`);
   if (group.blockOn.delivered) states.push(sql`${orders.shipStatus} = 'delivered'`);
   if (!states.length) return [];
   const rows = await db.select({ id: orders.id, storeId: orders.storeId, ship: orders.shipStatus, createdAt: orders.createdAt }).from(orders)
@@ -53,7 +53,7 @@ export async function linkedOrders(storeId: number, phone: string, group: StoreC
     .limit(limit);
   return rows.map((r) => ({
     orderId: r.id, storeId: r.storeId, createdAt: r.createdAt.toISOString(),
-    state: r.ship === "delivered" ? "delivered" : r.ship === "in_transit" || r.ship === "pickup_pending" ? "in_transit" : "placed",
+    state: r.ship === "delivered" ? "delivered" : r.ship === "in_transit" || r.ship === "pickup_pending" || r.ship === "out_for_delivery" || r.ship === "ndr" ? "in_transit" : "placed",
   }));
 }
 
