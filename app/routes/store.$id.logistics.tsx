@@ -217,7 +217,7 @@ function Overview({ d, total, canBook, onGear }: { d: D; total: number; canBook:
   return (
     <section className="panel overflow-hidden p-0">
       <header className="flex flex-wrap items-center gap-3 px-5 pb-3 pt-4">
-        <div className="min-w-0 flex-1">
+        <div className="w-full min-w-0 sm:w-auto sm:flex-1">
           <h1 className="text-[17px] font-semibold tracking-tight">Shipping</h1>
           <p className="text-[12.5px] text-ink-soft">{d.accounts.length} courier account{d.accounts.length === 1 ? "" : "s"} · {canBook ? MODES.find((m) => m.id === d.rule.mode)?.short : "Tracking only"}</p>
         </div>
