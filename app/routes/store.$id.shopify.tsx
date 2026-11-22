@@ -1,7 +1,12 @@
 // Settings → Shopify: the connected Shopify store and its customers (read live from Shopify), with search and CSV.
-import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, Link, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
+import { and, eq, ne, or } from "drizzle-orm";
+import { db, stores } from "~/db.server";
+import { can } from "~/lib/auth.server";
+import { beginOAuth, cleanShop, shopifySide } from "~/lib/shopify-oauth.server";
+import { clearTokenCache } from "~/lib/shopify.server";
+import { Form, Link, useActionData, useLoaderData, useNavigation, useSearchParams } from "@remix-run/react";
 import { Icon } from "~/components/Icons";
 import { PageHeader } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
@@ -10,8 +15,8 @@ import { storePath } from "~/lib/store-code";
 
 export const meta: MetaFunction = () => [{ title: "Shopify · Growpefy" }];
 
-const connected = (s: { shopDomain: string | null; adminToken: string | null; clientId: string | null; clientSecret: string | null }) =>
-  Boolean(s.shopDomain && (s.adminToken || (s.clientId && s.clientSecret)));
+const connected = (s: { platform: string; shopifyShop: string | null; shopDomain: string | null; adminToken: string | null; clientId: string | null; clientSecret: string | null }) =>
+  s.platform === "growpefy" ? Boolean(s.shopifyShop && s.adminToken) : Boolean(s.shopDomain && (s.adminToken || (s.clientId && s.clientSecret)));
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
@@ -19,13 +24,17 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const sp = new URL(request.url).searchParams;
   const q = (sp.get("q") ?? "").trim().slice(0, 100);
   const after = sp.get("after");
-  const base = { storeId: store.id, shop: store.shopDomain, q };
+  const base = {
+    storeId: store.id, shop: store.platform === "growpefy" ? store.shopifyShop : store.shopDomain, q, platform: store.platform,
+    creds: { clientId: store.clientId ?? "", hasSecret: Boolean(store.clientSecret), hasToken: Boolean(store.adminToken) },
+    canEdit: can(viewer, "settings"), justConnected: sp.get("connected") === "1",
+  };
   if (!connected(store)) return json({ ...base, connected: false, error: null as string | null, total: null as number | null, next: null as string | null, customers: [] as ShopifyCustomer[], page: 1 });
   // Phone typed as 98765 43210 / +91…: Shopify's search wants the digits
   const digits = q.replace(/\D/g, "");
   const query = digits.length >= 6 && digits.length >= q.replace(/\s/g, "").length - 3 ? `phone:*${digits.slice(-10)}*` : q;
   try {
-    const r = await fetchShopifyCustomers(store, { after, query });
+    const r = await fetchShopifyCustomers(shopifySide(store), { after, query });
     return json({ ...base, connected: true, error: null, ...r, page: Math.max(1, Number(sp.get("page")) || 1) });
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
@@ -37,11 +46,50 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 }
 
+export async function action({ request, params }: ActionFunctionArgs) {
+  const viewer = await requireViewer(request);
+  const store = await requireStore(viewer, params.id);
+  if (!can(viewer, "settings")) return json({ error: "Not allowed", ok: null }, { status: 403 });
+  const fd = await request.formData();
+  const intent = String(fd.get("intent") ?? "");
+  if (intent === "save" || intent === "save_connect") {
+    if (store.platform !== "growpefy" && store.platform !== "shopify") return json({ error: "Not available for this store.", ok: null });
+    const shop = store.platform === "shopify" ? store.shopDomain : cleanShop(String(fd.get("shop") ?? ""));
+    if (!shop) return json({ error: "Enter the store's myshopify address, e.g. tasqari.myshopify.com", ok: null });
+    const clientId = String(fd.get("clientId") ?? "").trim();
+    const secret = String(fd.get("clientSecret") ?? "").trim();
+    if (clientId.length < 10) return json({ error: "Paste the Client ID from the app's Settings in Shopify.", ok: null });
+    if (!secret && !store.clientSecret) return json({ error: "Paste the Client secret.", ok: null });
+    const [dup] = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and(or(eq(stores.shopDomain, shop), eq(stores.shopifyShop, shop)), ne(stores.id, store.id))).limit(1);
+    if (dup) return json({ error: `${shop} is already added as another store in Growpefy (${dup.name}).`, ok: null });
+    const changed = shop !== (store.platform === "growpefy" ? store.shopifyShop : store.shopDomain) || clientId !== store.clientId;
+    await db.update(stores).set({
+      ...(store.platform === "growpefy" ? { shopifyShop: shop } : {}), clientId, ...(secret ? { clientSecret: secret } : {}),
+      ...(changed ? { adminToken: null } : {}),
+    }).where(eq(stores.id, store.id));
+    clearTokenCache(store.id);
+    if (intent === "save_connect") {
+      const [fresh] = await db.select().from(stores).where(eq(stores.id, store.id)).limit(1);
+      return beginOAuth(fresh);
+    }
+    return json({ ok: "Saved. Now open the install link from Shopify (or click Connect).", error: null });
+  }
+  if (intent === "connect") return beginOAuth(store);
+  if (intent === "disconnect") {
+    if (store.platform !== "growpefy") return json({ error: "Disconnect from Store connection.", ok: null });
+    await db.update(stores).set({ adminToken: null, clientId: null, clientSecret: null, shopifyShop: null }).where(eq(stores.id, store.id));
+    clearTokenCache(store.id);
+    return json({ ok: "Shopify disconnected.", error: null });
+  }
+  return json({ error: "Unknown action", ok: null });
+}
+
 const inr = (p: number) => `₹${(p / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
 
 export default function ShopifySettings() {
   const d = useLoaderData<typeof loader>();
+  const res = useActionData<typeof action>();
   const [sp] = useSearchParams();
   const nav = useNavigation();
   const loading = nav.state === "loading" && nav.location?.pathname.endsWith("/shopify");
@@ -57,8 +105,13 @@ export default function ShopifySettings() {
           <p className="text-[15px] font-semibold">{d.shop ?? "No Shopify store"}</p>
           <p className="text-[13px] text-ink-soft">{d.connected ? (d.total != null ? `Connected · ${d.total.toLocaleString("en-IN")} customers` : "Connected") : "Not connected yet"}</p>
         </div>
-        {!d.connected && <Link to={storePath(d.storeId, "install")} className="btn-primary">Connect Shopify</Link>}
+        {!d.connected && d.platform === "shopify" && <Link to={storePath(d.storeId, "install")} className="btn-primary">Connect Shopify</Link>}
       </section>
+
+      {d.justConnected && <div className="mb-5 rounded-xl border border-[#abefc6] bg-[#ecfdf3] px-4 py-3 text-[13px] text-[#067647]">Shopify connected. Products: Catalog → Import from Shopify. Customers are below.</div>}
+      {res?.error && <div className="mb-5 rounded-xl border border-[#fecdca] bg-[#fef3f2] px-4 py-3 text-[13px] text-[#912018]">{res.error}</div>}
+      {res?.ok && <div className="mb-5 rounded-xl border border-[#abefc6] bg-[#ecfdf3] px-4 py-3 text-[13px] text-[#067647]">{res.ok}</div>}
+      {d.canEdit && (d.platform === "growpefy" || d.platform === "shopify") && (!d.connected || d.platform === "growpefy") && <ConnectForm d={d} />}
 
       {d.error && <div className="mb-5 rounded-xl border border-[#fecdca] bg-[#fef3f2] px-4 py-3 text-[13px] text-[#912018]">{d.error}</div>}
 
@@ -120,5 +173,34 @@ export default function ShopifySettings() {
         </section>
       )}
     </div>
+  );
+}
+
+/** Shopify app details (from the Shopify Dev Dashboard) and the Connect button. */
+function ConnectForm({ d }: { d: ReturnType<typeof useLoaderData<typeof loader>> }) {
+  const nav = useNavigation();
+  const busy = nav.state !== "idle" && nav.formMethod === "POST";
+  const own = d.platform === "growpefy";
+  return (
+    <section className="panel mb-5 p-5">
+      <h2 className="text-[15px] font-semibold">{d.connected ? "Shopify app" : "Connect your Shopify store"}</h2>
+      <p className="mt-0.5 text-[12.5px] text-ink-soft">From the app you made in the Shopify Dev Dashboard (Settings → Client ID and Client secret). Growpefy only reads products and customers.</p>
+      <Form method="post" className="mt-4 grid gap-3 sm:grid-cols-2">
+        {own && (
+          <label className="block sm:col-span-2"><span className="mb-1 block text-xs font-medium">Shopify store address</span>
+            <input name="shop" defaultValue={d.shop ?? ""} placeholder="yourstore.myshopify.com" className="input h-10 text-sm" autoComplete="off" spellCheck={false} /></label>
+        )}
+        <label className="block"><span className="mb-1 block text-xs font-medium">Client ID</span>
+          <input name="clientId" defaultValue={d.creds.clientId} className="input h-10 font-mono text-[12px]" autoComplete="off" spellCheck={false} /></label>
+        <label className="block"><span className="mb-1 block text-xs font-medium">Client secret</span>
+          <input name="clientSecret" type="password" placeholder={d.creds.hasSecret ? "Saved. Leave empty to keep it." : ""} className="input h-10 font-mono text-[12px]" autoComplete="new-password" spellCheck={false} /></label>
+        <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+          <button type="submit" name="intent" value="save_connect" disabled={busy} className="btn-primary">{d.connected ? "Save and reconnect" : "Save and connect with Shopify"}</button>
+          <button type="submit" name="intent" value="save" disabled={busy} className="btn-secondary">Save only</button>
+          {d.connected && own && <button type="submit" name="intent" value="disconnect" disabled={busy} className="ml-auto text-[13px] font-medium text-[#b42318] hover:underline">Disconnect</button>}
+        </div>
+        <p className="text-[11.5px] text-ink-faint sm:col-span-2">After saving, Shopify asks you to approve the app on your store. The install link from Shopify's Custom distribution also works once these are saved.</p>
+      </Form>
+    </section>
   );
 }

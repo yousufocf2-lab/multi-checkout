@@ -12,6 +12,7 @@ import {
   type ItemSort, type ItemStatus, type StockFilter,
 } from "~/lib/catalog.server";
 import { importShopifyProductsCsv } from "~/lib/catalog-csv.server";
+import { shopifySide } from "~/lib/shopify-oauth.server";
 import { formatINR } from "~/lib/pricing";
 import { storePath } from "~/lib/store-code";
 
@@ -38,7 +39,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   ]);
   const imp = imports.get(store.id);
   return json({
-    store: { id: store.id, slug: store.slug, shopify: store.platform === "shopify" && Boolean(store.adminToken || store.clientId) },
+    store: { id: store.id, slug: store.slug, shopify: store.platform === "growpefy" ? Boolean(store.shopifyShop && store.adminToken) : store.platform === "shopify" && Boolean(store.adminToken || store.clientId) },
     pack: packOf(store.businessType), counts, categories, stats, facets,
     items: items.map((i) => ({ ...i, createdAt: i.createdAt.toISOString(), updatedAt: i.updatedAt.toISOString() })),
     importing: imp && !imp.done && !imp.error ? Math.round((Date.now() - imp.startedAt) / 1000) : null,
@@ -59,7 +60,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         if (running && !running.done && !running.error) return json({ ok: "Import is already running.", error: null });
         const job: { startedAt: number; done?: { items: number; variants: number; categories: number }; error?: string } = { startedAt: Date.now() };
         imports.set(store.id, job);
-        importFromShopify(store).then((r) => { job.done = r; }).catch((e) => { job.error = e instanceof Error ? e.message : "Import failed"; console.error("[catalog-import]", store.id, e); });
+        importFromShopify(shopifySide(store)).then((r) => { job.done = r; }).catch((e) => { job.error = e instanceof Error ? e.message : "Import failed"; console.error("[catalog-import]", store.id, e); });
         return json({ ok: "Import started. Products appear here as they come in.", error: null });
       }
       case "import_csv": {

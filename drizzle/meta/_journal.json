@@ -575,6 +575,13 @@
       "when": 1796016000000,
       "tag": "0081_ofd_ndr",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1796100000000,
+      "tag": "0082_shopify_shop",
+      "breakpoints": true
     }
   ]
 }

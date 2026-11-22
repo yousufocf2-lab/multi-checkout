@@ -225,6 +225,7 @@ export const stores = pgTable("stores", {
   name: text("name").notNull(),
   platform: text("platform").$type<"shopify" | "woocommerce" | "growpefy">().notNull().default("shopify"), // growpefy = Growpefy Store (own website)
   shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com (WooCommerce: the site's host)
+  shopifyShop: text("shopify_shop"), // Growpefy store: a Shopify store connected only to read products and customers
   storefrontUrl: text("storefront_url").notNull(), // https://brand.com
   checkoutDomain: text("checkout_domain").unique(), // e.g. checkout.brand.com (CNAME -> Railway)
   // Shopify auth: either a static Admin API token (shpat_...) or client id + secret

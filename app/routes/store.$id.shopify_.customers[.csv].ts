@@ -2,6 +2,7 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { fetchShopifyCustomers, type ShopifyCustomer } from "~/lib/shopify.server";
+import { shopifySide } from "~/lib/shopify-oauth.server";
 
 const cell = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 
@@ -14,7 +15,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const all: ShopifyCustomer[] = [];
   let after: string | null = null;
   for (let i = 0; i < 100; i++) {
-    const r = await fetchShopifyCustomers(store, { after, query, first: 250 });
+    const r = await fetchShopifyCustomers(shopifySide(store), { after, query, first: 250 });
     all.push(...r.customers);
     if (!r.next) break;
     after = r.next;
@@ -22,5 +23,5 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const head = ["Name", "Mobile", "Email", "Address", "City", "State", "Pincode", "Orders", "Amount spent (INR)", "Customer since", "Tags"];
   const rows = all.map((c) => [c.name, c.phone, c.email, c.address, c.city, c.state, c.pincode, c.orders, (c.spentPaise / 100).toFixed(2), c.createdAt.slice(0, 10), c.tags.join(", ")]);
   const csv = "﻿" + [head, ...rows].map((r) => r.map(cell).join(",")).join("\n");
-  return new Response(csv, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="shopify-customers-${store.shopDomain ?? store.id}.csv"` } });
+  return new Response(csv, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="shopify-customers-${shopifySide(store).shopDomain}.csv"` } });
 }

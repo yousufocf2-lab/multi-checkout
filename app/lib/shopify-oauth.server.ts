@@ -1,5 +1,5 @@
 import { createCookie, redirect } from "@remix-run/node";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, stores, type Store } from "~/db.server";
 import { env } from "./env.server";
@@ -27,9 +27,12 @@ export function cleanShop(v: string | null) {
   return SHOP_RE.test(s) ? s : null;
 }
 
+/** A Growpefy store's connected Shopify store, as a Store whose shopDomain is that Shopify store (for API calls). */
+export const shopifySide = (s: Store): Store => (s.platform === "growpefy" && s.shopifyShop ? { ...s, shopDomain: s.shopifyShop } : s);
+
 /** The store for a Shopify domain. If the same shop was added more than once, `id` picks the right one. */
 export async function storeByShop(shop: string, id?: number | null) {
-  const rows = await db.select().from(stores).where(eq(stores.shopDomain, shop));
+  const rows = (await db.select().from(stores).where(or(eq(stores.shopDomain, shop), eq(stores.shopifyShop, shop)))).map(shopifySide);
   return rows.find((s) => s.id === id) ?? rows.find((s) => s.clientId && s.clientSecret) ?? rows[0] ?? null;
 }
 
@@ -63,7 +66,8 @@ export function verifyShopifyHmac(url: URL, secret: string) {
 }
 
 /** Redirects the browser to Shopify's permission screen (offline token). */
-export async function beginOAuth(store: Store) {
+export async function beginOAuth(storeIn: Store) {
+  const store = shopifySide(storeIn);
   if (!store.clientId || !store.clientSecret) {
     throw new Response("Save the Shopify Client ID and Client secret for this store first", { status: 400 });
   }
@@ -117,7 +121,8 @@ export async function finishOAuth(request: Request) {
   // Connected: a "Get credentials" request is done
   await db.update(stores).set({ adminToken: data.access_token, connectStatus: null }).where(eq(stores.id, store.id));
   clearTokenCache(store.id);
-  return redirect(`${storePath(store.id)}/install?connected=1`, {
+  // Growpefy stores connect Shopify only to read products and customers: back to Settings → Shopify
+  return redirect(store.platform === "growpefy" ? `${storePath(store.id)}/shopify?connected=1` : `${storePath(store.id)}/install?connected=1`, {
     headers: { "Set-Cookie": await stateCookie().serialize("", { maxAge: 0 }) },
   });
 }
