@@ -41,7 +41,7 @@ export function clearTokenCache(storeId: number) {
   tokenCache.delete(storeId);
 }
 
-async function adminGraphql<T>(store: Store, query: string, variables?: unknown): Promise<T> {
+export async function adminGraphql<T>(store: Store, query: string, variables?: unknown): Promise<T> {
   const token = await getAccessToken(store);
   const res = await fetch(
     `https://${store.shopDomain}/admin/api/${store.apiVersion}/graphql.json`,
