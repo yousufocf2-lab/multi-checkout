@@ -107,3 +107,26 @@ export async function recoverIpBlocked() {
     console.error("[recover-ipblocked]", e instanceof Error ? e.message : e);
   }
 }
+
+// One-time recovery (Fusion Prime, Zavli): checkouts stuck at the OTP step on MSG91's side ("already verified",
+// "couldn't confirm", blocked / failed sends) from 21 Nov until the permanent fix. Customers who typed a wrong OTP
+// are left out. Each order fires its Purchase on its own store's Meta pixel (finalizeOrder).
+const SYS_FROM = new Date("2026-11-20T18:30:00Z");
+const SYS_UNTIL = new Date("2026-11-22T15:30:00Z");
+let ranSys = false;
+export async function recoverOtpSystemErrors() {
+  if (ranSys) return;
+  ranSys = true;
+  try {
+    const ev = await db.select({ sessionId: checkoutEvents.sessionId, type: checkoutEvents.type, m: sql<string>`coalesce(${checkoutEvents.data}->>'m', '')` })
+      .from(checkoutEvents)
+      .where(and(inArray(checkoutEvents.type, ["otp_error", "otp_verified"]), inArray(checkoutEvents.storeId, [3, 8]), gte(checkoutEvents.at, SYS_FROM), lt(checkoutEvents.at, SYS_UNTIL)));
+    const wrong = new Set(ev.filter((e) => e.type === "otp_error" && /invalid|isn't right|incorrect|wrong|mismatch/i.test(e.m)).map((e) => e.sessionId));
+    const ids = [...new Set(ev.map((e) => e.sessionId))].filter((id) => !wrong.has(id));
+    console.log(`[recover-otp-sys] ${ids.length} checkout(s) to check, ${wrong.size} left out (wrong OTP typed)`);
+    if (!ids.length) return;
+    await recoverSessions(ids, "recover-otp-sys", "Recovered: the OTP step failed on MSG91's side (already verified / couldn't confirm / not sent), so the order wasn't placed. Call to confirm before shipping.");
+  } catch (e) {
+    console.error("[recover-otp-sys]", e instanceof Error ? e.message : e);
+  }
+}

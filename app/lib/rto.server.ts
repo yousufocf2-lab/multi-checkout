@@ -54,6 +54,7 @@ export function widgetPublic(m: MessagingSettings) {
  * Fails closed: if MSG91 doesn't tell us the number, the token is not accepted.
  * Test widget (ID "test"): tokens look like "test:9876543210".
  */
+const ALREADY = "__already__";
 export async function verifyWidgetToken(token: string): Promise<string | null> {
   const m = await messaging();
   if (otpMode(m) !== "widget" || !token) return null;
@@ -65,6 +66,8 @@ export async function verifyWidgetToken(token: string): Promise<string | null> {
     });
     const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok || String(body.type ?? "").toLowerCase() !== "success") {
+      // Our own earlier check of this token went through (the customer's screen just never got the answer)
+      if (/already verif/i.test(String(body.message ?? ""))) return ALREADY;
       console.error("[otp] widget verify:", res.status, body.message);
       return null;
     }
@@ -223,8 +226,18 @@ export async function recordWidgetSend(store: Store, sessionId: string, phone: s
 /** Widget mode: the browser verified the OTP with MSG91; we confirm the token and mark this session's phone verified. */
 export async function verifyWidgetOtp(store: Store, sessionId: string, phone: string, token: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: "Enter a valid 10-digit mobile number" };
-  const verified = await verifyWidgetToken(token);
-  if (!verified) return { ok: false, error: "Couldn't confirm the OTP. Please try again." };
+  let verified = await verifyWidgetToken(token);
+  if (verified === ALREADY) {
+    // The same token was confirmed by us a moment ago (reply lost on a weak connection, or a double tap):
+    // fine if this checkout really sent an OTP to this number
+    const [recent] = await db.select({ id: checkoutOtps.id, at: checkoutOtps.verifiedAt }).from(checkoutOtps)
+      .where(and(eq(checkoutOtps.sessionId, sessionId), eq(checkoutOtps.phone, phone), gt(checkoutOtps.createdAt, new Date(Date.now() - OTP_TTL_MS)))).limit(1);
+    if (!recent) return { ok: false, error: "Please tap Resend OTP and enter the new code." };
+    if (!recent.at) await db.update(checkoutOtps).set({ verifiedAt: new Date() }).where(eq(checkoutOtps.id, recent.id));
+    return { ok: true };
+  }
+  // MSG91 accepted the code in the browser but its server check failed (timeout, MSG91 error): not the customer's fault
+  if (!verified) return acceptAlreadyVerified(store, sessionId, phone, "MSG91 token check failed");
   if (verified !== phone) return { ok: false, error: "The OTP was for a different number." };
   // The send was already recorded (and charged): mark it verified
   const [sent] = await db.select({ id: checkoutOtps.id }).from(checkoutOtps)
@@ -293,13 +306,32 @@ export async function relaySendOtp(store: Store, sessionId: string, phone: strin
   return { ok: true, skipped: true };
 }
 
+/**
+ * The OTP widget says this number's code was already verified, but the page lost the proof (token).
+ * If this checkout sent an OTP to this number in the last minutes, let the customer through once; the order gets
+ * the "OTP skipped" tag so the calling team confirms it.
+ */
+export async function acceptAlreadyVerified(store: Store, sessionId: string, phone: string, why = "widget said already verified"): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!/^[6-9]\d{9}$/.test(phone)) return { ok: false, error: "Enter a valid 10-digit mobile number" };
+  const rows = await db.select({ id: checkoutOtps.id, hash: checkoutOtps.codeHash }).from(checkoutOtps)
+    .where(and(eq(checkoutOtps.sessionId, sessionId), eq(checkoutOtps.phone, phone), gt(checkoutOtps.createdAt, new Date(Date.now() - OTP_TTL_MS))));
+  if (!rows.length) return { ok: false, error: "Please tap Resend OTP and enter the new code." };
+  if (!rows.some((r) => r.hash === OTP_SKIPPED_HASH)) {
+    await db.insert(checkoutOtps).values({ id: crypto.randomUUID(), storeId: store.id, sessionId, phone, codeHash: OTP_SKIPPED_HASH, expiresAt: new Date(Date.now() + OTP_TTL_MS), verifiedAt: new Date() });
+  }
+  console.warn(`[otp] store ${store.id}: ${why}; customer let through (order tagged "${OTP_SKIPPED_TAG}")`);
+  return { ok: true };
+}
+
 /** Checks the code for a relayed OTP with MSG91, then confirms the access token like a normal widget OTP. */
 export async function relayVerifyOtp(store: Store, sessionId: string, phone: string, reqId: string, otp: string): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!reqId || !/^\d{4,6}$/.test(otp)) return { ok: false, error: "That OTP isn't right. Check and try again." };
   const r = await widgetApi("verifyOtp", { reqId, otp });
   if (!r.ok) {
-    if (/already verif/i.test(r.message)) return { ok: false, error: "Please tap Resend OTP and enter the new code." };
-    return { ok: false, error: /invalid|incorrect|wrong/i.test(r.message) ? "That OTP isn't right. Check and try again." : r.message && r.message.length < 80 && !/^[a-f0-9-]{20,}$/i.test(r.message) ? r.message : "Couldn't confirm the OTP. Please try again." };
+    if (/invalid|incorrect|wrong|mismatch/i.test(r.message)) return { ok: false, error: "That OTP isn't right. Check and try again." };
+    if (/expire|limit|exceed|attempt/i.test(r.message)) return { ok: false, error: "This OTP can't be used any more. Tap Resend OTP and enter the new code." };
+    // Anything else is MSG91's side (already verified, blocked, down): don't lose the order
+    return acceptAlreadyVerified(store, sessionId, phone, `MSG91 verify failed (${r.message.slice(0, 60)})`);
   }
   return verifyWidgetOtp(store, sessionId, phone, r.message);
 }

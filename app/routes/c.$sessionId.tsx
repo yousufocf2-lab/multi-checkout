@@ -11,7 +11,7 @@ import { bankOffers, checkoutSessions, db, discountRules, orders, shippingRates,
 import { guessStateFromPincode } from "~/lib/pincode";
 import { quoteShipping, withShipping, type ShipRule } from "~/lib/shipping";
 import { codBlockedMessage, codEligibility, normalizePhone, type CodStatus } from "~/lib/cod.server";
-import { BLOCK_MESSAGE, blockFor, messaging, OTP_LIMIT_MSG, otpReady, otpRequired, otpSendsLeft, otpVerified, otpWasSkipped, OTP_SKIPPED_TAG, recordWidgetSend, relaySendOtp, relayVerifyOtp, sendOtp, verifyOtp, verifyWidgetOtp, widgetPublic } from "~/lib/rto.server";
+import { acceptAlreadyVerified, BLOCK_MESSAGE, blockFor, messaging, OTP_LIMIT_MSG, otpReady, otpRequired, otpSendsLeft, otpVerified, otpWasSkipped, OTP_SKIPPED_TAG, recordWidgetSend, relaySendOtp, relayVerifyOtp, sendOtp, verifyOtp, verifyWidgetOtp, widgetPublic } from "~/lib/rto.server";
 import { codeLength, widgetRetry, widgetSend, widgetVerify, type WidgetConfig } from "~/components/msg91-widget";
 import { shieldFor } from "~/lib/rto-shield.server";
 import { SHIELD_MESSAGE } from "~/lib/rto-shield";
@@ -64,7 +64,7 @@ export const shouldRevalidate: ShouldRevalidateFunction = ({ formData, actionRes
   // Order placed: the page is about to leave for the payment / thank-you page. Reloading the checkout's data now
   // would be cut off by that navigation ("Load failed") and used to crash the page.
   if (actionResult && typeof actionResult === "object" && "top" in actionResult && (actionResult as { top?: unknown }).top) return false;
-  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify" || intent === "otp_widget" || intent === "otp_widget_sent" || intent === "otp_relay_send" || intent === "otp_relay_verify" || intent === "addr_lookup" || intent === "addr_reveal") return false;
+  if (intent === "draft" || intent === "eligibility" || intent === "coupon" || intent === "otp_send" || intent === "otp_verify" || intent === "otp_widget" || intent === "otp_widget_already" || intent === "otp_widget_sent" || intent === "otp_relay_send" || intent === "otp_relay_verify" || intent === "addr_lookup" || intent === "addr_reveal") return false;
   return defaultShouldRevalidate;
 };
 
@@ -230,6 +230,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   if (intent === "otp_widget_allow") {
     const left = await otpSendsLeft(store, normalizePhone(String(fd.get("phone") ?? "")));
     return json({ ok: left > 0, left, error: left > 0 ? null : OTP_LIMIT_MSG });
+  }
+  if (intent === "otp_widget_already") {
+    const r = await acceptAlreadyVerified(store, session.id, normalizePhone(String(fd.get("phone") ?? "")));
+    return json({ otp: "verify" as const, ...r });
   }
   if (intent === "otp_widget") {
     const r = await verifyWidgetOtp(store, session.id, normalizePhone(String(fd.get("phone") ?? "")), String(fd.get("token") ?? ""));
@@ -445,7 +449,7 @@ export async function clientAction({ request, serverAction }: ClientActionFuncti
       case "addr_reveal": return { address: null, error: again };
       case "coupon": return { error: again };
       case "cart": return { cart: false };
-      case "otp_send": case "otp_verify": case "otp_widget": return { ok: false, error: again };
+      case "otp_send": case "otp_verify": case "otp_widget": case "otp_widget_already": return { ok: false, error: again };
       case "otp_widget_sent": return { ok: false };
       case "otp_relay_send": case "otp_relay_verify": return { ok: false, error: again };
       default: throw e;
@@ -1715,8 +1719,8 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
         if (relay.current) return relaySend(w.reqId).then((id) => ({ id, viaRelay: true }));
         const viaWidget = w.reqId ? widgetRetry(widget, w.reqId).then(() => w.reqId!, () => widgetSend(widget, phone)) : widgetSend(widget, phone);
         return viaWidget.then((id) => ({ id, viaRelay: false }), (e: Error) => {
-          // MSG91 refused this customer's network: our server sends the OTP instead
-          if (!/IPBlocked/i.test(e.message)) throw e;
+          // The widget couldn't send (blocked network, script didn't load, MSG91 error): our server sends instead,
+          // and if MSG91 can't send at all the customer goes on without OTP (order tagged)
           track("otp_error", { stage: "send", m: e.message.slice(0, 120) });
           relay.current = true;
           return relaySend(null).then((id) => ({ id, viaRelay: true }));
@@ -1752,7 +1756,7 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
   useEffect(() => { if (wait <= 0) return; const t = setTimeout(() => setWait((x) => x - 1), 1000); return () => clearTimeout(t); }, [wait]);
   useEffect(() => {
     if (verify.data?.ok) { track("otp_verified", { secs: Math.round((Date.now() - opened.current) / 1000) }); onVerified(); }
-    else if (verify.data && !verify.data.ok) { token.current = null; track("otp_error", { stage: "verify", m: String(verify.data.error ?? "").slice(0, 120) }); }
+    else if (verify.data && !verify.data.ok) { if (/different number|resend/i.test(String(verify.data.error ?? ""))) token.current = null; track("otp_error", { stage: "verify", m: String(verify.data.error ?? "").slice(0, 120) }); }
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [verify.data]);
   useEffect(() => { if (send.data) track(send.data.ok ? "otp_sent" : "otp_error", send.data.ok ? { widget: false } : { stage: "send", m: String(send.data.error ?? "").slice(0, 120) }); }, [send.data]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1770,10 +1774,24 @@ function OtpDialog({ phone, widget, onClose, onVerified }: { phone: string; widg
       .catch((e: Error) => {
         track("otp_error", { stage: "verify", m: e.message.slice(0, 120) });
         // Verified already in an earlier try (or by the phone's auto-fill): a fresh code gets the customer through
-        if (/already verif/i.test(e.message)) { setW((x) => ({ ...x, busy: null, error: "Please tap Resend OTP and enter the new code." })); setWait(0); return; }
-        // MSG91 refused the check from this network: our server checks the same code
-        if (/IPBlocked/i.test(e.message)) { relay.current = true; setW((x) => ({ ...x, busy: null })); relayVerify(v); return; }
-        setW((x) => ({ ...x, busy: null, error: e.message }));
+        if (/already verif/i.test(e.message)) {
+          // MSG91 accepted this code before (auto-fill, double tap or a lost reply): don't make the customer start over
+          setW((x) => ({ ...x, busy: "verify" }));
+          post<{ ok: boolean; error?: string }>({ intent: "otp_widget_already", phone })
+            .then((r) => {
+              if (r.ok) { setW((x) => ({ ...x, busy: null, error: null })); track("otp_verified", { secs: Math.round((Date.now() - opened.current) / 1000), already: true }); onVerified(); }
+              else { setW((x) => ({ ...x, busy: null, error: r.error ?? "Please tap Resend OTP and enter the new code." })); setWait(0); }
+            }, () => { setW((x) => ({ ...x, busy: null, error: "Connection lost. Please try again." })); });
+          return;
+        }
+        // A wrong code or too many tries: the customer fixes it
+        if (/isn't right|invalid|incorrect|wrong|mismatch|expire|limit|exceed|attempt/i.test(e.message)) {
+          setW((x) => ({ ...x, busy: null, error: /expire|limit|exceed|attempt/i.test(e.message) ? "This OTP can't be used any more. Tap Resend OTP and enter the new code." : "That OTP isn't right. Check and try again." }));
+          if (/expire|limit|exceed|attempt/i.test(e.message)) setWait(0);
+          return;
+        }
+        // Anything else is on MSG91's side (blocked network, script didn't load, timeout): our server checks the same code
+        relay.current = true; setW((x) => ({ ...x, busy: null })); relayVerify(v);
       });
   };
   const error = w.error ?? (verify.data && !verify.data.ok ? verify.data.error : send.data && !send.data.ok && !send.data.resendIn ? send.data.error : null);

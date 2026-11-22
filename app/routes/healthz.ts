@@ -3,10 +3,9 @@ import { startAutoShip } from "~/lib/auto-ship.server";
 import { startCatalogWatcher } from "~/lib/meta-catalog.server";
 import { ensureFallback, syncWorker } from "~/lib/cloudflare.server";
 import { logFunnelAudit } from "~/lib/diagnostics.server";
-import { recoverIpBlocked, recoverOtpStuck } from "~/lib/recover-otp.server";
+import { recoverIpBlocked, recoverOtpStuck, recoverOtpSystemErrors } from "~/lib/recover-otp.server";
 import { logOtpBlockAudit } from "~/lib/otp-block-audit.server";
 import { fixApexDomains } from "~/lib/domain-fix.server";
-import { logFusionAudit } from "~/lib/fusion-audit.server";
 
 // Railway's health check (and the server itself) hits this right after every deploy: a good moment to start
 // background jobs, so they run even when nobody opens the dashboard or a checkout.
@@ -19,7 +18,7 @@ export const loader = () => {
   setTimeout(() => void recoverOtpStuck(), 60_000).unref?.();
   setTimeout(() => void logOtpBlockAudit(), 75_000).unref?.();
   setTimeout(() => void recoverIpBlocked(), 90_000).unref?.();
+  setTimeout(() => void recoverOtpSystemErrors(), 75_000).unref?.();
   setTimeout(() => void fixApexDomains(), 30_000).unref?.();
-  setTimeout(() => void logFusionAudit(), 25_000).unref?.();
   return new Response("ok");
 };
