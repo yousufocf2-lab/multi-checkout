@@ -55,12 +55,6 @@
     </div>
     {%- endif -%}
 
-    {%- if settings.pdp_social_proof != blank -%}
-    {%- assign n = product.id | abs | times: 37 | modulo: 900 | plus: 120 -%}
-    {%- assign nn = n | append: '' -%}{%- if n >= 1000 -%}{%- assign nn = n | divided_by: 100 | divided_by: 10.0 | append: 'k' -%}{%- endif -%}
-    <p class="pdp__buzz">{% render 'snippets/icon', name: 'fire' %}{{ settings.pdp_social_proof | replace: '[n]', nn }}</p>
-    {%- endif -%}
-
     <form class="pdp__form" data-product-form>
       {%- for option in product.options -%}
       {%- assign oi = forloop.index0 -%}

@@ -311,12 +311,6 @@
     "default": "Inclusive of all taxes"
    },
    {
-    "id": "pdp_social_proof",
-    "type": "text",
-    "label": "Buzz line (use [n] for a number; empty = hide)",
-    "default": "[n] people ordered this in the last 24 hours"
-   },
-   {
     "id": "pdp_pincode",
     "type": "checkbox",
     "label": "Show pincode delivery check",

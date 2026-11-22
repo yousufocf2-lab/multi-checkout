@@ -1,6 +1,6 @@
 // One-off: dump Tasqari's website setup (theme, menus, pages) and its old Shopify store's pages/policies/contact,
 // so the new site's pages can be written from them.
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, storeMenus, storePages, storeThemes, stores, catalogCategories } from "~/db.server";
 import { adminGraphql } from "./shopify.server";
 import { shopifySide } from "./shopify-oauth.server";
@@ -15,7 +15,19 @@ export async function dumpSite() {
   if (done) return;
   done = true;
   try {
-    for (const id of [23, 8]) {
+    {
+      const [t] = await db.select().from(storeThemes).where(eq(storeThemes.storeId, 23)).limit(1);
+      out("store23.index", t?.live?.templates?.index);
+      out("store23.templates", Object.keys(t?.live?.templates ?? {}));
+      const [t8] = await db.select().from(storeThemes).where(eq(storeThemes.storeId, 8)).limit(1);
+      out("store8.index", t8?.live?.templates?.index);
+      const n = await db.execute(sql`select count(*)::int n, count(*) filter (where status = 'active')::int active from catalog_items where store_id = 23`);
+      out("store23.products", n);
+      out("store23.productList", await db.execute(sql`select title, handle, product_type, status from catalog_items where store_id = 23 order by id limit 60`));
+      const pg = await db.select({ h: storePages.handle, body: storePages.bodyHtml }).from(storePages).where(eq(storePages.storeId, 8));
+      out("store8.pagebodies", pg);
+    }
+    for (const id of [23]) {
       const [t] = await db.select().from(storeThemes).where(eq(storeThemes.storeId, id)).limit(1);
       const live = t?.live;
       out(`store${id}.theme`, { theme: t?.theme, settings: live?.settings, groups: live?.groups, indexOrder: live?.templates?.index?.order });

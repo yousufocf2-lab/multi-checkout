@@ -612,12 +612,16 @@ export async function loadCategories(ctx: ShopContext) {
   return rows.map((c) => ({ id: c.id, title: c.title, handle: c.handle, description: c.description, image: c.imageUrl ?? fallback.get(c.id) ?? null, url: categoryPath(ctx.root, c.handle) }));
 }
 
+const linkSet = (links: { url: string; links?: { url: string }[] }[]) => new Set(links.flatMap((l) => [l.url, ...(l.links ?? []).map((x) => x.url)]));
+
 /** Everything every page gets: shop, routes, menu categories. */
 export async function baseScope(ctx: ShopContext) {
   const [collections, pageRows, nav] = await Promise.all([loadCategories(ctx), footerPages(ctx.store.id), menusForTheme(ctx.store.id, ctx.root)]);
   const pages = isDemo(ctx)
     ? [{ title: "About us", url: `${ctx.root}/pages/about-us` }, { title: "Contact us", url: `${ctx.root}/pages/contact-us` }, { title: "Shipping & returns", url: `${ctx.root}/pages/shipping-returns` }]
-    : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }));
+    : pageRows.map((p) => ({ title: p.title, url: `${ctx.root}/pages/${p.handle}` }))
+      // Pages already in the footer menu aren't listed a second time
+      .filter((p) => !nav.footer_menu || !linkSet(nav.footer_menu.links).has(p.url));
   return {
     shop: { name: ctx.store.name, slug: ctx.store.slug, favicon: storeIcon(ctx.store, (ctx.look?.data?.settings ?? null) as Record<string, unknown> | null), meta_pixel: /^\d{5,20}$/.test(ctx.store.metaPixelId ?? "") ? ctx.store.metaPixelId : null, logo: ctx.store.logoUrl, phone: ctx.store.supportPhone, brand_color: ctx.store.primaryColor || "#111827", currency: ctx.store.currency },
     routes: { root: ctx.root || "/", base: ctx.root, all: allProductsPath(ctx.root), cart: `${ctx.root}/cart`, search: `${ctx.root}/search`, account: accountsOn(ctx.store) ? `${ctx.root}/account` : null },
