@@ -130,7 +130,7 @@ function Kpis({ s }: { s: MemberStats }) {
   return (
     <section className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
       {cards.map((c) => (
-        <div key={c.label} className={`rounded-2xl p-4 ${c.strong ? "bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_70%,#138a6e_100%)] text-white shadow-lift" : "panel"}`}>
+        <div key={c.label} className={`rounded-2xl p-4 ${c.strong ? "col-span-2 md:col-span-1 " : ""}${c.strong ? "bg-[linear-gradient(135deg,#0E1714_0%,#0B5D4B_70%,#138a6e_100%)] text-white shadow-lift" : "panel"}`}>
           <p className={`flex items-center gap-1.5 text-[12px] font-medium ${c.strong ? "text-white/75" : "text-ink-soft"}`}><Icon name={c.icon} className="h-3.5 w-3.5" />{c.label}</p>
           <p className="num mt-1.5 text-[24px] font-semibold leading-none tracking-tight">{c.value}</p>
           <p className={`mt-1.5 truncate text-[11.5px] ${c.strong ? "text-white/70" : "text-ink-faint"}`} title={c.sub}>{c.sub}</p>
@@ -232,7 +232,8 @@ function Trend({ daily, range, title }: { daily: D["daily"]; range: D["range"]; 
         <div><h2 className="text-[15px] font-semibold">{title}</h2><p className="text-[12px] text-ink-faint">Calls and outcomes per {monthly ? "month" : "day"}</p></div>
         <Legend />
       </div>
-      <div className="relative mt-3">
+      <div className="-mx-5 mt-3 overflow-x-auto px-5 sm:mx-0 sm:px-0">
+      <div className="relative min-w-[600px] sm:min-w-0">
         <svg viewBox={`0 0 ${W} ${H}`} className="h-[230px] w-full" role="img" aria-label={title} onMouseLeave={() => setHover(null)}>
           {[0, 0.25, 0.5, 0.75, 1].map((f) => { const y = T + (H - T - B) * (1 - f); return <g key={f}><line x1={L} x2={W} y1={y} y2={y} stroke="#eaecf0" strokeWidth="1" /><text x={L - 6} y={y + 3.5} textAnchor="end" fontSize="10" fill="#98a2b3">{Math.round(nice * f)}</text></g>; })}
           {keys.map((k, i) => {
@@ -261,6 +262,7 @@ function Trend({ daily, range, title }: { daily: D["daily"]; range: D["range"]; 
             <p className="mt-1 flex justify-between border-t border-white/15 pt-1 font-semibold"><span>Total</span><span className="num">{totals[hover!]}</span></p>
           </div>
         )}
+      </div>
       </div>
     </section>
   );
@@ -298,7 +300,7 @@ function Comparison({ members, link }: { members: MemberStats[]; link: (id: numb
               {cols.map((c) => <th key={c.key} className="px-3 py-1.5 text-right font-medium">{c.group}</th>)}
             </tr>
             <tr className="border-b border-rule text-left text-[11.5px] text-ink-soft">
-              <th className="sticky left-0 bg-surface px-5 py-2 font-medium">Member</th>
+              <th className="sticky left-0 min-w-[150px] bg-surface px-5 py-2 font-medium">Member</th>
               {cols.map((c) => <th key={c.key} className="px-3 py-2 text-right font-medium"><button type="button" onClick={() => setSort(c.key)} className={`whitespace-nowrap ${sort === c.key ? "font-semibold text-ink" : "hover:text-ink"}`}>{c.label}{sort === c.key ? " ↓" : ""}</button></th>)}
             </tr>
           </thead>

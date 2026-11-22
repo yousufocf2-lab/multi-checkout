@@ -52,8 +52,9 @@ export function OfdCalls({ data, tab, manager, query, range, onToast }: { data: 
     </div>;
   }
   return (
-    <>
-      <Insights s={data.stats} />
+    // Phone: the list comes first (that's the work); the charts follow. Computer: charts on top.
+    <div className="flex flex-col gap-4 md:gap-5">
+      <div className="order-last md:order-first"><Insights s={data.stats} /></div>
       <section className="panel relative z-20 rounded-xl p-0">
         <div className="flex flex-wrap items-center gap-3 border-b border-rule p-3 sm:px-4">
           <RangePicker current={range} />
@@ -77,7 +78,7 @@ export function OfdCalls({ data, tab, manager, query, range, onToast }: { data: 
           ))}
         </nav>
       </section>
-      <p className="px-1 text-[12px] text-ink-faint">To call, Follow-up and NDR show every open parcel. The other tabs and the charts follow the dates above (day the parcel went out for delivery).</p>
+      <p className="hidden px-1 text-[12px] text-ink-faint md:block">To call, Follow-up and NDR show every open parcel. The other tabs and the charts follow the dates above (day the parcel went out for delivery).</p>
       {data.items.length === 0 ? (
         <div className="panel flex flex-col items-center px-6 py-12 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-pine-tint text-pine"><Icon name="check" className="h-5 w-5" /></span>
@@ -90,7 +91,7 @@ export function OfdCalls({ data, tab, manager, query, range, onToast }: { data: 
         </div>
       )}
       {openId && <OfdSheet key={openId} items={data.items} startId={openId} team={data.team} manager={manager} onClose={() => setOpenId(null)} onToast={onToast} />}
-    </>
+    </div>
   );
 }
 
@@ -113,15 +114,15 @@ function Insights({ s }: { s: OfdData["stats"] }) {
   return (
     <section className="panel overflow-hidden p-0">
       <div className="grid grid-cols-2 gap-px bg-rule sm:grid-cols-3 lg:grid-cols-5">
-        {kpis.map((k) => (
-          <div key={k.label} className="bg-surface px-4 py-3.5">
+        {kpis.map((k, i) => (
+          <div key={k.label} className={`bg-surface px-4 py-3 md:py-3.5 ${i === kpis.length - 1 ? "col-span-2 sm:col-span-1" : ""}`}>
             <p className="text-[12px] font-medium text-ink-soft">{k.label}</p>
             <p className={`num mt-0.5 text-[22px] font-semibold leading-tight tracking-tight ${k.tone || "text-ink"}`}>{k.value}</p>
             <p className="truncate text-[11.5px] text-ink-faint">{k.sub}</p>
           </div>
         ))}
       </div>
-      <div className="grid gap-px border-t border-rule bg-rule md:grid-cols-3">
+      <div className="flex snap-x snap-mandatory gap-px overflow-x-auto border-t border-rule bg-rule md:grid md:grid-cols-3 md:overflow-visible">
         <DonutCard title="Said Ready" hint="Of customers who said they'll take it" center={done(s.ready) ? `${pct(s.ready.delivered, done(s.ready))}%` : "–"} centerSub="delivered"
           parts={[{ label: "Delivered", n: s.ready.delivered, color: C.green }, { label: "Returned (RTO)", n: s.ready.rto, color: C.red }, { label: "Still open", n: s.ready.open, color: C.grey }]} />
         <DonutCard title="Denied" hint="Of customers who refused on the call" center={done(s.denied) ? `${pct(s.denied.delivered, done(s.denied))}%` : "–"} centerSub="still delivered"
@@ -135,8 +136,8 @@ function Insights({ s }: { s: OfdData["stats"] }) {
 function DonutCard({ title, hint, center, centerSub, parts }: { title: string; hint: string; center: string; centerSub: string; parts: { label: string; n: number; color: string }[] }) {
   const total = parts.reduce((a, p) => a + p.n, 0);
   return (
-    <div className="flex items-center gap-4 bg-surface px-5 py-4">
-      <Donut parts={parts} center={center} sub={centerSub} />
+    <div className="flex w-[86%] shrink-0 snap-start items-center gap-4 bg-surface px-4 py-4 md:w-auto md:px-5">
+      <Donut parts={parts} center={center} sub={centerSub} size={96} />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold">{title}</p>
         <p className="text-[11.5px] text-ink-faint">{hint}</p>
