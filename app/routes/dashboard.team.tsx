@@ -17,8 +17,14 @@ import { logTeam, teamLog } from "~/lib/team-activity.server";
 
 export const meta: MetaFunction = () => [{ title: "Team & access · Growpefy" }];
 
-function scopeOf(v: Viewer): { scope: Scope; ownerId: number | null; selfId: number | null } {
-  if (v.role === "admin") return { scope: "platform", ownerId: null, selfId: v.staff?.id ?? null };
+/** Growpefy admins open a client's team with ?owner=<user id> (from that store's settings); otherwise their own staff. */
+function scopeOf(v: Viewer, request: Request): { scope: Scope; ownerId: number | null; selfId: number | null } {
+  if (v.role === "admin") {
+    const owner = Number(new URL(request.url).searchParams.get("owner")) || null;
+    const allowed = !v.staff || v.staff.perms.includes("stores") || v.staff.perms.includes("clients");
+    if (owner && allowed) return { scope: "owner", ownerId: owner, selfId: null };
+    return { scope: "platform", ownerId: null, selfId: v.staff?.id ?? null };
+  }
   return { scope: "owner", ownerId: v.userId, selfId: v.member?.id ?? null };
 }
 const actorOf = (v: Viewer) => (v.role === "admin" ? v.staff?.name ?? "Super admin" : v.member?.name ?? v.name);
@@ -28,7 +34,7 @@ const mine = (scope: Scope, ownerId: number | null) =>
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const v = await requireViewer(request); // the "team" permission is checked for team logins
-  const { scope, ownerId, selfId } = scopeOf(v);
+  const { scope, ownerId, selfId } = scopeOf(v, request);
   const [list, storeRows, log, owner] = await Promise.all([
     db.select().from(teamMembers).where(mine(scope, ownerId)).orderBy(asc(teamMembers.name)),
     scope === "owner" ? db.select().from(stores).where(eq(stores.ownerId, ownerId!)).orderBy(asc(stores.name)) : Promise.resolve([]),
@@ -57,7 +63,7 @@ const expiryFrom = (days: string) => (Number(days) > 0 ? new Date(Date.now() + N
 
 export async function action({ request }: ActionFunctionArgs) {
   const v = await requireViewer(request);
-  const { scope, ownerId, selfId } = scopeOf(v);
+  const { scope, ownerId, selfId } = scopeOf(v, request);
   const actor = actorOf(v);
   const fd = await request.formData();
   const intent = String(fd.get("intent") ?? "");

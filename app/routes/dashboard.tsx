@@ -87,7 +87,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       isTeam: Boolean(team),
     },
     idleMs: IDLE_MS,
-    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType, usageBilling: s.usageBilling, live: isLive(s) })),
+    stores: list.map((s) => ({ id: s.id, name: s.name, active: s.active, logoUrl: s.logoUrl, domain: s.shopDomain, profitEnabled: s.profitEnabled, storefront: s.storefrontEnabled, platform: s.platform, businessType: s.businessType, usageBilling: s.usageBilling, ownerId: s.ownerId, live: isLive(s) })),
     selected,
   }, { headers });
 }
@@ -187,6 +187,7 @@ export default function DashboardLayout() {
     { label: "Messages & OTP", to: storeHref("message-usage"), icon: "chat", match: /\/message-usage$|next=message-usage\b/, show: may("billing") },
     { label: "Railway Usage", to: storeHref("railway-usage"), icon: "layers", match: /\/railway-usage$|next=railway-usage\b/, show: Boolean(focus?.usageBilling) && may("billing") },
     { label: "Team & access", to: "/dashboard/team", icon: "users", show: !isAdmin && may("team") },
+    { label: "Team & access", to: `/dashboard/team?owner=${focus?.ownerId ?? ""}`, icon: "users", match: (p, q) => p === "/dashboard/team" && q.includes(`owner=${focus?.ownerId}`), show: isAdmin && Boolean(focus?.ownerId) && may("stores") },
     { label: "Payments", to: storeHref("payments"), icon: "rupee", match: /\/payments$|next=payments/, show: may("settings") },
     { label: "Checkout experience", to: storeHref("checkout"), icon: "cart", match: /\/(checkout|design|payment-rules)$|next=(checkout|design|payment-rules)\b/, show: may("settings") },
     { label: "Delivery setup", to: storeHref("shipping"), icon: "shipping", match: /\/shipping$|next=shipping\b/, show: may("rto") },
