@@ -24,7 +24,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const url = new URL(request.url);
-  if (!url.searchParams.get("range")) url.searchParams.set("range", "max");
+  if (!url.searchParams.get("range")) url.searchParams.set("range", "today");
   const range = resolveRange(url.searchParams, store.createdAt.toISOString().slice(0, 10));
   const excluded = new Set((url.searchParams.get("xs") ?? "").split(",").map((s) => s.trim().toUpperCase()).filter(Boolean));
   const w = url.searchParams.get("why");

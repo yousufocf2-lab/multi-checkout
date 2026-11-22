@@ -12,7 +12,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const w = await getWallet(store.id);
   const url = new URL(request.url);
   const sp = new URLSearchParams(url.searchParams);
-  if (!sp.get("range")) sp.set("range", "30d");
+  if (!sp.get("range")) sp.set("range", "today");
   const range = resolveRange(sp);
   const where: SQL[] = [
     eq(walletTransactions.walletId, w.id),

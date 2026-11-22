@@ -18,7 +18,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const sp = new URL(request.url).searchParams;
-  if (!sp.get("range")) sp.set("range", "30d");
+  if (!sp.get("range")) sp.set("range", "today");
   const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);

@@ -65,7 +65,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Out for delivery calling: Ready / Follow-up / Denied, NDR re-attempts and the delivery outcome charts
   if ((sp.get("mode") === "ofd" && modes.ofd) || (!modes.orders && !modes.abandoned)) {
     const ofdTab = (OFD_TABS as readonly string[]).includes(sp.get("tab") ?? "") ? (sp.get("tab") as OfdTab) : "to_call";
-    if (!sp.get("range")) sp.set("range", "7d");
+    if (!sp.get("range")) sp.set("range", "today");
     const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
     const from = range.preset === "max" ? null : new Date(`${range.since}T00:00:00+05:30`);
     const to = range.preset === "max" ? null : new Date(new Date(`${range.until}T00:00:00+05:30`).getTime() + 86400_000);
@@ -79,7 +79,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return json({ mode: "abandoned" as const, modes, manager, abTab, query, ab: abTab === "team" ? { ...ab, items: [] } : ab });
   }
   const tab = [...CALL_TABS, "team"].includes(sp.get("tab") as CallTab) ? (sp.get("tab") as CallTab | "team") : "to_call";
-  if (!sp.get("range")) sp.set("range", "max"); // nothing hidden by default
+  if (!sp.get("range")) sp.set("range", "today");
   const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
   const board = await callBoard(store, me, tab === "team" ? "to_call" : tab, range.since, range.until, query, tab === "team" ? 1 : Number(sp.get("page") ?? 1));
   const showSkips = manager && sp.get("activity") === "skips";

@@ -16,7 +16,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const sp = new URL(request.url).searchParams;
-  if (!sp.has("range")) sp.set("range", "30d");
+  if (!sp.has("range")) sp.set("range", "today");
   const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
   // ISO strings: raw SQL parameters can't be Date objects
   const from = new Date(`${range.since}T00:00:00+05:30`).toISOString();

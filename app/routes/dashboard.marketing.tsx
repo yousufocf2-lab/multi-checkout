@@ -22,7 +22,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const url = new URL(request.url);
   const sp = new URLSearchParams(url.searchParams);
-  if (!sp.get("range")) sp.set("range", "7d");
+  if (!sp.get("range")) sp.set("range", "today");
   const range = resolveRange(sp, await earliestLead());
   const m = await getMarketing();
   const view = marketingView(m);

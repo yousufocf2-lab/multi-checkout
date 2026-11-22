@@ -104,7 +104,8 @@ export async function ofdBoard(store: Store, me: number | null, tab: OfdTab, fro
     call: orders.ofdCallStatus, callAt: orders.ofdCallAt, callBy: orders.ofdCallBy, followUpAt: orders.ofdFollowUpAt, assignedTo: orders.ofdAssignedTo,
     timeline: orders.timeline, tab: bucket,
   }).from(orders).where(and(scopeFor(tab), match))
-    .orderBy(tab === "follow_up" ? sql`${orders.ofdFollowUpAt} asc nulls last` : desc(orders.ofdAt), desc(orders.id)).limit(200);
+    // Fresh parcels (1st attempt) first, then 2nd, 3rd… attempts
+    .orderBy(asc(orders.ofdAttempts), tab === "follow_up" ? sql`${orders.ofdFollowUpAt} asc nulls last` : desc(orders.ofdAt), desc(orders.id)).limit(200);
 
   const stats = await ofdStats(store.id, me, from, to);
   return {

@@ -19,7 +19,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const url = new URL(request.url);
-  if (!url.searchParams.get("range")) url.searchParams.set("range", "30d");
+  if (!url.searchParams.get("range")) url.searchParams.set("range", "today");
   const range = resolveRange(url.searchParams, store.createdAt.toISOString().slice(0, 10));
   const p = url.searchParams.get("pay");
   const pay: PayFilter = p === "cod" || p === "prepaid" ? p : "all";

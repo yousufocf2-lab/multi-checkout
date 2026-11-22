@@ -29,7 +29,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const [w, p] = await Promise.all([getWallet(store.id), getPlatform()]);
   const url = new URL(request.url);
   const sp = new URLSearchParams(url.searchParams);
-  if (!sp.get("range")) sp.set("range", "30d");
+  if (!sp.get("range")) sp.set("range", "today");
   const range = resolveRange(sp);
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);

@@ -15,7 +15,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const store = await requireStore(viewer, params.id);
   const url = new URL(request.url);
-  if (!url.searchParams.get("range")) url.searchParams.set("range", "this_month");
+  if (!url.searchParams.get("range")) url.searchParams.set("range", "today");
   const range = resolveRange(url.searchParams, store.createdAt.toISOString().slice(0, 10));
   const f = url.searchParams.get("type") as MsgFilter | null;
   const filter: MsgFilter = f && (FILTERS as readonly string[]).includes(f) ? f : "all";

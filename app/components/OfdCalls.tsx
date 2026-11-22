@@ -2,7 +2,7 @@
 // Follow-up or Denied. Failed deliveries (NDR) can be sent for a re-attempt one by one or all at once.
 // The charts show what happened next: of the customers who said ready / denied, how many took the parcel.
 import { Form, Link, useFetcher, useSearchParams } from "@remix-run/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "~/components/Icons";
 import { RangePicker } from "~/components/Overview";
 import { formatINR as inr } from "~/lib/pricing";
@@ -30,6 +30,8 @@ const C = { green: "#12b76a", red: "#f04438", grey: "#d0d5dd", indigo: "#6172f3"
 
 export function OfdCalls({ data, tab, manager, query, range, onToast }: { data: OfdData; tab: string; manager: boolean; query: string; range: RangeLike; onToast: (r: Res) => void }) {
   const [params] = useSearchParams();
+  const [openId, setOpenId] = useState<string | null>(null);
+  useEffect(() => setOpenId(null), [tab, query]);
   const tabLink = (t: string) => { const p = new URLSearchParams(params); p.set("mode", "ofd"); p.set("tab", t); return `?${p}`; };
   const c = data.counts;
   const tabs = [
@@ -82,11 +84,12 @@ export function OfdCalls({ data, tab, manager, query, range, onToast }: { data: 
           <p className="mt-3 text-[14px] font-semibold">{tab === "to_call" ? "All caught up" : "Nothing here"}</p>
           <p className="mt-1 max-w-xs text-[12.5px] text-ink-faint">{tab === "to_call" ? "Parcels show up here when the courier takes them out for delivery." : "Try another date range."}</p>
         </div>
-      ) : tab === "ndr" ? <NdrList items={data.items} manager={manager} team={data.team} onToast={onToast} /> : (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {data.items.map((o) => <OfdCard key={o.id} o={o} manager={manager} team={data.team} onToast={onToast} />)}
+      ) : tab === "ndr" ? <NdrList items={data.items} manager={manager} team={data.team} onToast={onToast} onOpen={setOpenId} /> : (
+        <div className="panel overflow-hidden rounded-xl p-0">
+          <ul className="divide-y divide-rule">{data.items.map((o) => <li key={o.id}><OfdRow o={o} manager={manager} onOpen={() => setOpenId(o.id)} /></li>)}</ul>
         </div>
       )}
+      {openId && <OfdSheet key={openId} items={data.items} startId={openId} team={data.team} manager={manager} onClose={() => setOpenId(null)} onToast={onToast} />}
     </>
   );
 }
@@ -200,6 +203,72 @@ function Phone({ o }: { o: OfdItem }) {
   </span>;
 }
 
+/** One line of the list; tapping it opens the call card. */
+function OfdRow({ o, manager, onOpen }: { o: OfdItem; manager: boolean; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-3.5 text-left transition hover:bg-paper md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_1.75rem] md:gap-4 md:px-5">
+      <span className="flex min-w-0 items-center gap-3">
+        <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-rule bg-paper text-ink-soft"><Icon name="shipping" className="h-4 w-4" /></span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-ink">{o.customer.name || <span className="text-ink-faint">No name</span>} <span className="num font-normal text-ink-faint">{o.name}</span></span>
+          <span className="block truncate text-xs text-ink-soft">{[o.customer.city, o.items.join(", ")].filter(Boolean).join(" · ")}</span>
+        </span>
+      </span>
+      <span className="text-right md:text-left">
+        <span className="block text-sm font-semibold tabular-nums">{inr(o.toCollect || o.total)}</span>
+        <span className="block text-xs text-ink-soft">{o.toCollect ? "Collect (COD)" : "Prepaid"}</span>
+      </span>
+      <span className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-12 md:col-span-1 md:block md:pl-0">
+        <Pills o={o} />
+        <span className="block text-xs text-ink-soft md:mt-1">{o.call === "follow_up" && o.followUpAt ? (Date.parse(o.followUpAt) <= Date.now() ? "Call now" : `Call back ${at(o.followUpAt)}`) : o.ship === "ndr" && o.ndrReason ? o.ndrReason : o.ofdAt ? `Out ${at(o.ofdAt)}` : ""}</span>
+      </span>
+      <span className="col-span-2 truncate pl-12 text-xs text-ink-soft md:col-span-1 md:pl-0 md:text-sm">{manager ? o.assignee ?? "Unassigned" : ""}</span>
+      <Icon name="chevron" className="ml-auto hidden h-4 w-4 shrink-0 -rotate-90 text-ink-faint group-hover:text-pine md:block" />
+    </button>
+  );
+}
+
+/** Side panel (full screen on a phone) with the call card. After Ready / Follow-up / Denied the next parcel opens. */
+function OfdSheet({ items, startId, team, manager, onClose, onToast }: { items: OfdItem[]; startId: string; team: OfdData["team"]; manager: boolean; onClose: () => void; onToast: (r: Res) => void }) {
+  const [cur, setCur] = useState(startId);
+  const lastIdx = useRef(Math.max(0, items.findIndex((a) => a.id === startId)));
+  let i = items.findIndex((a) => a.id === cur);
+  if (i < 0) i = Math.min(lastIdx.current, items.length - 1); // moved to another tab: show the one that took its place
+  useEffect(() => {
+    if (i >= 0) lastIdx.current = i;
+    const a = items[i];
+    if (!a) { onClose(); return; }
+    if (a.id !== cur) setCur(a.id);
+  }, [items, i, cur, onClose]);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    const prev = document.body.style.overflow; document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", k); document.body.style.overflow = prev; };
+  }, [onClose]);
+  const o = items[i];
+  if (!o) return null;
+  const go = (step: 1 | -1) => { const j = Math.max(0, Math.min(items.length - 1, i + step)); if (items[j]) setCur(items[j].id); };
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end bg-slate-950/35" onClick={onClose}>
+      <aside className="cl-sheet flex h-full w-full flex-col border-l border-rule bg-paper sm:max-w-[38rem] sm:shadow-2xl" onClick={(e) => e.stopPropagation()} aria-label="Out for delivery call">
+        <div className="flex items-center gap-2 border-b border-rule bg-surface px-4 py-4">
+          <button type="button" onClick={onClose} className="flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-ink-soft hover:bg-black/5"><Icon name="chevron" className="h-4 w-4 rotate-90" />List</button>
+          <p className="min-w-0 flex-1 text-center text-[12.5px] font-medium"><span className="num">{i + 1}</span> of <span className="num">{items.length}</span></p>
+          <button type="button" onClick={() => go(-1)} disabled={i === 0} aria-label="Previous" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 rotate-90" /></button>
+          <button type="button" onClick={() => go(1)} disabled={i >= items.length - 1} aria-label="Next" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft shadow-[inset_0_0_0_1px_#e3e3e3] disabled:opacity-30"><Icon name="chevron" className="h-4 w-4 -rotate-90" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          <OfdCard key={o.id} o={o} manager={manager} team={team} onToast={(r) => {
+            onToast(r);
+            if (r.ok && i < items.length - 1) setCur(items[i + 1].id);
+          }} />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function OfdCard({ o, manager, team, onToast }: { o: OfdItem; manager: boolean; team: OfdData["team"]; onToast: (r: Res) => void }) {
   const f = useFetcher<Res>();
   const [panel, setPanel] = useState<null | "follow" | "deny">(null);
@@ -279,7 +348,7 @@ function Reassign({ id, team, onToast }: { id: string; team: OfdData["team"]; on
 }
 
 /** NDR: failed deliveries with a re-attempt button each, and select-all for one click. */
-function NdrList({ items, manager, team, onToast }: { items: OfdItem[]; manager: boolean; team: OfdData["team"]; onToast: (r: Res) => void }) {
+function NdrList({ items, manager, team, onToast, onOpen }: { items: OfdItem[]; manager: boolean; team: OfdData["team"]; onToast: (r: Res) => void; onOpen: (id: string) => void }) {
   const f = useFetcher<Res>();
   const [picked, setPicked] = useState<string[]>([]);
   const eligible = items.filter((o) => o.courier === "delhivery" && o.ship === "ndr");
@@ -304,7 +373,7 @@ function NdrList({ items, manager, team, onToast }: { items: OfdItem[]; manager:
           return (
             <li key={o.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
               <input type="checkbox" disabled={!can} aria-label={`Select ${o.name}`} className="mt-1 h-4 w-4 accent-[#0B5D4B] disabled:opacity-30" checked={picked.includes(o.id)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, o.id] : p.filter((x) => x !== o.id)))} />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onOpen(o.id)}>
                 <p className="flex flex-wrap items-center gap-2"><span className="num font-semibold">{o.name}</span><Pills o={o} /></p>
                 <p className="text-[12.5px]">{o.customer.name} · {o.customer.city} {o.customer.pincode} · <span className="num font-medium">{inr(o.toCollect || o.total)}</span>{o.toCollect ? " COD" : " prepaid"}</p>
                 {o.ndrReason && <p className="mt-0.5 text-[12px] text-[#b54708]">{o.ndrReason}</p>}

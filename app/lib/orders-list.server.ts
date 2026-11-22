@@ -21,7 +21,7 @@ export type OrderFilters = {
 export async function orderFilters(scope: Store[], params: URLSearchParams) {
   const ids = scope.map((s) => s.id);
   const p = new URLSearchParams(params);
-  if (!p.get("range")) p.set("range", "max");
+  if (!p.get("range")) p.set("range", "today");
   const [first] = ids.length
     ? await db.select({ d: sql<string | null>`to_char(min(${orders.createdAt}) at time zone 'Asia/Kolkata', 'YYYY-MM-DD')` }).from(orders).where(inArray(orders.storeId, ids))
     : [{ d: null }];
@@ -172,7 +172,7 @@ export async function loadOrders(scope: Store[], params: URLSearchParams) {
 export async function loadAbandoned(scope: Store[], params: URLSearchParams, onlyTrue = false) {
   const ids = scope.map((s) => s.id);
   const p = new URLSearchParams(params);
-  if (!p.get("range")) p.set("range", "7d");
+  if (!p.get("range")) p.set("range", "today");
   const range = resolveRange(p);
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);

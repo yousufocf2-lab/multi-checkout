@@ -21,7 +21,7 @@ import { storePath } from "~/lib/store-code";
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireAdmin(request);
   const sp = new URLSearchParams(new URL(request.url).searchParams);
-  if (!sp.get("range")) sp.set("range", "this_month");
+  if (!sp.get("range")) sp.set("range", "today");
   const range = resolveRange(sp);
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);

@@ -18,7 +18,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!store.profitEnabled && viewer.role !== "admin") throw new Response("Not found", { status: 404 });
   const raw = await profitReport(store);
   const sp = new URL(request.url).searchParams;
-  if (!sp.has("range")) sp.set("range", "max"); // the whole partnership by default
+  if (!sp.has("range")) sp.set("range", "today");
   const r = resolveRange(sp, raw.since);
   const range = { ...r, since: r.since < raw.since ? raw.since : r.since };
   const admin = viewer.role === "admin";

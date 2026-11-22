@@ -406,7 +406,10 @@ export async function shipmentList(storeId: number, opts: { filter: ShipFilter; 
     awb: orders.awb, courier: orders.courier, status: orders.shipStatus, raw: orders.shipStatusRaw, at: orders.shipStatusAt, createdAt: orders.createdAt,
     labelAt: orders.labelPrintedAt, labelBatch: orders.labelBatch, accountId: orders.courierAccountId,
     attempts: orders.ofdAttempts, ndrReason: orders.ndrReason, reattemptAt: orders.reattemptAt,
-  }).from(orders).where(where).orderBy(sql`${orders.shipStatusAt} desc nulls last`, sql`${orders.createdAt} desc`).limit(PAGE + 1).offset((Math.max(1, opts.page) - 1) * PAGE);
+  }).from(orders).where(where).orderBy(
+    // Out for delivery / NDR: fresh (1st attempt) first, then 2nd, 3rd…
+    ...(opts.filter === "ndr" || opts.filter === "out_for_delivery" ? [asc(orders.ofdAttempts)] : []),
+    sql`${orders.shipStatusAt} desc nulls last`, sql`${orders.createdAt} desc`).limit(PAGE + 1).offset((Math.max(1, opts.page) - 1) * PAGE);
   const [t] = await db.select({ n: count() }).from(orders).where(where);
   return { rows: rows.slice(0, PAGE), hasMore: rows.length > PAGE, total: Number(t?.n ?? 0), per: PAGE };
 }
