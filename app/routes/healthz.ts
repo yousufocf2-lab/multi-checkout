@@ -6,6 +6,7 @@ import { logFunnelAudit } from "~/lib/diagnostics.server";
 import { recoverIpBlocked, recoverOtpStuck } from "~/lib/recover-otp.server";
 import { logOtpBlockAudit } from "~/lib/otp-block-audit.server";
 import { fixApexDomains } from "~/lib/domain-fix.server";
+import { logCppAudit } from "~/lib/cpp-audit.server";
 
 // Railway's health check (and the server itself) hits this right after every deploy: a good moment to start
 // background jobs, so they run even when nobody opens the dashboard or a checkout.
@@ -19,5 +20,6 @@ export const loader = () => {
   setTimeout(() => void logOtpBlockAudit(), 75_000).unref?.();
   setTimeout(() => void recoverIpBlocked(), 90_000).unref?.();
   setTimeout(() => void fixApexDomains(), 30_000).unref?.();
+  setTimeout(() => void logCppAudit(), 50_000).unref?.();
   return new Response("ok");
 };
