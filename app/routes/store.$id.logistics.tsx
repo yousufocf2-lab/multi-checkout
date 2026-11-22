@@ -57,6 +57,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       who: a.courier === "shipnex" ? null : a.creds.viaShopify ? `Tracked from ${platformName(store)}` : a.creds.token && a.courier !== "shiprocket" ? `Token ••••${a.creds.token.slice(-4)}` : maskEmail(a.creds.email) ?? a.creds.username ?? a.creds.label ?? null,
       clientName: a.creds.clientName ?? a.creds.label ?? null,
       pickupName: a.creds.pickupName ?? null,
+      srPick: a.creds.srPick ?? "cheapest",
       secret: a.courier === "shipnex" || a.courier === "shiprocket" ? a.creds.token ?? null : null,
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
     })),
@@ -78,7 +79,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const name = COURIERS.find((c) => c.id === courier)?.name ?? "Courier";
   if (intent === "connect") {
     const get = (k: string) => String(fd.get(k) ?? "");
-    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode"), pickupName: get("pickupName"), name: get("name") }, accountId);
+    const r = await connectCourier(store, courier, { token: get("token"), clientName: get("clientName"), email: get("email"), password: get("password"), clientId: get("clientId"), username: get("username"), label: get("label"), mode: get("mode"), pickupName: get("pickupName"), srPick: get("srPick"), name: get("name") }, accountId);
     if (!r.ok) return json<R>({ ok: null, error: r.error, courier }, { status: 400 });
     return json<R>({ ok: "connected", error: null, courier });
   }
@@ -530,6 +531,18 @@ function ConnectSheet({ c, a, error, hookUrl, onClose }: { c: CourierInfo; a?: A
                 {f.hint && <span className="mt-1 block text-[11px] text-ink-faint">{f.hint}</span>}
               </label>
             ))}
+            {c.id === "shiprocket" && (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium">Courier for each order</span>
+                <select name="srPick" defaultValue={a?.srPick ?? "cheapest"} className="input h-10 text-sm">
+                  <option value="cheapest">Cheapest courier for the pincode</option>
+                  <option value="recommended">Shiprocket's recommended courier</option>
+                  <option value="fastest">Fastest delivery</option>
+                  <option value="manual">I'll choose in Shiprocket</option>
+                </select>
+                <span className="mt-1 block text-[11px] text-ink-faint">Growpefy creates the order in Shiprocket, assigns this courier (AWB) and asks for pickup. The courier charge comes from your Shiprocket wallet.</span>
+              </label>
+            )}
             {!(c.kind === "push" && a) && (
               <button type="submit" name="intent" value="connect" className="btn-primary w-full py-2.5 text-sm" disabled={busy}>
                 {busy ? <><Spinner /> {c.kind === "api" ? `Checking with ${c.name}` : "Saving"}</> : a ? "Save" : `${verb} ${c.name}`}

@@ -580,7 +580,9 @@ export const blockedCustomers = pgTable(
 /** Courier login. Passwords are sealed (AES-GCM) before saving. Shopify-tracked couriers have no creds. */
 export type CourierCreds = { token?: string; clientName?: string; email?: string; password?: string; clientId?: string; username?: string; label?: string; viaShopify?: boolean;
   /** Book shipments for website orders automatically (Delhivery: registered pickup location / warehouse name). */
-  pickupName?: string };
+  pickupName?: string;
+  /** Shiprocket: which courier gets the AWB. cheapest (default) | recommended (Shiprocket's pick) | fastest | manual (choose in the panel). */
+  srPick?: "cheapest" | "recommended" | "fastest" | "manual" };
 export const courierAccounts = pgTable(
   "courier_accounts",
   {

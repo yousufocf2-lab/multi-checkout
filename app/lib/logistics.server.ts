@@ -38,7 +38,7 @@ export async function hasCourier(storeId: number) {
   return Number(r?.n ?? 0) > 0;
 }
 
-type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode" | "pickupName" | "name", string>>;
+type Input = Partial<Record<"token" | "clientName" | "email" | "password" | "clientId" | "username" | "label" | "mode" | "pickupName" | "name" | "srPick", string>>;
 
 /**
  * Connects a courier account. `accountId` = update that account; otherwise a new account is added, even for a
@@ -72,6 +72,7 @@ export async function connectCourier(store: Store, courierId: string, input: Inp
         password: v("password") ? seal(v("password")) : existing?.creds.password,
         ...(info.id === "shiprocket" ? {
           pickupName: v("pickupName").slice(0, 80) || undefined,
+          srPick: (["cheapest", "recommended", "fastest", "manual"].includes(v("srPick")) ? v("srPick") : existing?.creds.srPick ?? "cheapest") as "cheapest" | "recommended" | "fastest" | "manual",
           token: existing?.creds.token || randomBytes(20).toString("hex"), // key for Shiprocket's status webhook
         } : {}),
       };

@@ -5,7 +5,7 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, like, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { catalogVariants, courierAccounts, db, orders, stores, type CourierAccount, type Order, type Store } from "~/db.server";
 import { createDelhiveryShipment } from "./couriers/delhivery.server";
-import { cancelShiprocketOrder, createShiprocketOrder, shiprocketOrderState } from "./couriers/shiprocket-orders.server";
+import { assignShiprocketCourier, cancelShiprocketOrder, createShiprocketOrder, shiprocketOrderState } from "./couriers/shiprocket-orders.server";
 import { mapStatusText } from "./couriers/common.server";
 import { stateName } from "./states";
 import { codAmount } from "./store-fulfil.server";
@@ -57,6 +57,8 @@ export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount
     if (r.ok) {
       await db.update(orders).set({ courier: "shiprocket", courierAccountId: acc.id ?? null, courierRef: r.ref, awb: r.awb, shipStatusRaw: r.awb ? "AWB assigned" : "New in Shiprocket", shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null, shipBookAt: new Date() }).where(eq(orders.id, o.id));
       console.log(`[auto-ship] ${store.name} ${o.id} -> Shiprocket order ${r.ref}`);
+      // Pick the courier (cheapest by default) and get the AWB straight away
+      if (!r.awb) await assignSr(store.name, o.id, acc.creds, r.ref, r.shipmentId);
     } else {
       await db.update(orders).set({ shipError: r.error, shipBookAt: new Date() }).where(eq(orders.id, o.id));
       console.warn(`[auto-ship] ${store.name} ${o.id}: ${r.error}`);
@@ -79,6 +81,19 @@ export async function bookOrder(store: Store, o: Order, acc: Pick<CourierAccount
     console.warn(`[auto-ship] ${store.name} ${o.id}: ${r.error}`);
   }
   return r;
+}
+
+/** Assigns a courier in Shiprocket and saves the AWB on the order (or the reason it couldn't). */
+async function assignSr(storeName: string, orderId: string, creds: CourierAccount["creds"], ref: string, shipmentId?: string | null) {
+  const a = await assignShiprocketCourier(creds, ref, shipmentId);
+  if (a.ok) {
+    await db.update(orders).set({ awb: a.awb, shipStatus: "pickup_pending", shipStatusRaw: `AWB assigned · ${a.courierName}`.slice(0, 120), shipStatusAt: new Date(), shipCheckedAt: new Date(0), shipError: null }).where(eq(orders.id, orderId));
+    console.log(`[auto-ship] ${storeName} ${orderId} -> ${a.courierName} ${a.awb}${a.ratePaise ? ` (₹${a.ratePaise / 100})` : ""}`);
+  } else if (!a.skip) {
+    await db.update(orders).set({ shipError: a.error.slice(0, 500), shipBookAt: new Date() }).where(eq(orders.id, orderId));
+    console.warn(`[auto-ship] ${storeName} ${orderId}: ${a.error}`);
+  }
+  return a;
 }
 
 /** Sends every waiting website order to the store's courier (the first connected one that can take orders). */
@@ -171,7 +186,7 @@ const BEFORE_PICKUP = /^(new|invoiced|ready to ship|awb assigned|label generated
 /** Reads back what changed in the Shiprocket panel: courier/AWB assigned, cancelled, picked up. */
 async function pullShiprocketChanges() {
   const since = new Date(Date.now() - 30 * 86400_000);
-  const list = await db.select({ id: orders.id, storeId: orders.storeId, ref: orders.courierRef, awb: orders.awb, raw: orders.shipStatusRaw, accountId: orders.courierAccountId }).from(orders).where(and(
+  const list = await db.select({ id: orders.id, storeId: orders.storeId, ref: orders.courierRef, awb: orders.awb, raw: orders.shipStatusRaw, accountId: orders.courierAccountId, bookAt: orders.shipBookAt }).from(orders).where(and(
     eq(orders.courier, "shiprocket"), isNotNull(orders.courierRef), gt(orders.createdAt, since),
     or(isNull(orders.shipStatus), notInArray(orders.shipStatus, ["delivered", "rto", "returned", "cancelled"])),
     // AWB orders get live status from tracking; we only look until the courier picks it up
@@ -188,6 +203,13 @@ async function pullShiprocketChanges() {
     if (!acc) continue;
     const s = await shiprocketOrderState(acc.creds, o.ref!).catch(() => null);
     if (!s) continue;
+    // Still no courier in Shiprocket: try assigning one (every 30 minutes at most)
+    if (!s.awb && !o.awb && /^new$/i.test(s.status.trim()) && (acc.creds.srPick ?? "cheapest") !== "manual" && (!o.bookAt || o.bookAt.getTime() < Date.now() - 30 * 60_000)) {
+      const [st] = await db.select({ name: stores.name }).from(stores).where(eq(stores.id, o.storeId)).limit(1);
+      await db.update(orders).set({ shipBookAt: new Date() }).where(eq(orders.id, o.id));
+      const a = await assignSr(st?.name ?? String(o.storeId), o.id, acc.creds, o.ref!);
+      if (a.ok) continue;
+    }
     const raw = s.status.slice(0, 100) || o.raw || null;
     const status = /cancel/i.test(s.status) ? "cancelled" : BEFORE_PICKUP.test(s.status.trim()) ? null : mapStatusText(s.status);
     if (raw === o.raw && (s.awb ?? null) === (o.awb ?? null) && !status) continue;
