@@ -74,11 +74,15 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   const dayStart = istStart().toISOString();
   const from = new Date(`${since}T00:00:00+05:30`);
   const to = new Date(new Date(`${until}T00:00:00+05:30`).getTime() + 86400_000);
+  // Orders nobody has acted on yet stay on the board whatever dates are picked, so a caller can't forget them:
+  // not called yet (and not shipped) from the last 14 days, and every follow-up from the last 30 days.
+  const carried = sql`(${bucket} = 'to_call' and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.courierRef} is null and ${orders.createdAt} >= now() - interval '14 days')
+    or (${bucket} = 'follow_up' and ${orders.status} in ('paid','cod_placed') and ${orders.createdAt} >= now() - interval '30 days')`;
   const base = and(
     eq(orders.storeId, store.id),
     me == null ? undefined : eq(orders.assignedTo, me), // owner / managers: every order of the store
     inArray(orders.status, ["paid", "cod_placed", "cancelled"]),
-    gte(orders.createdAt, from), lt(orders.createdAt, to),
+    or(and(gte(orders.createdAt, from), lt(orders.createdAt, to)), carried),
   );
   const cols = {
     id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status, manualTags: orders.manualTags,

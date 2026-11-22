@@ -258,3 +258,16 @@
 .admin[data-theme="dark"] .btn-primary { background: #e2e5eb; color: #171a20; }
 .admin[data-theme="dark"] .btn-primary:hover { background: #fff; }
 .admin[data-theme="dark"] .text-\[\#19372c\], .admin[data-theme="dark"] .text-\[\#29483b\] { color: rgb(var(--ink)) !important; }
+
+/* Follow-up reminder: a short shake every few seconds so it's hard to miss */
+@keyframes followup-nudge {
+  0%, 78%, 100% { transform: translateX(0) rotate(0); }
+  81% { transform: translateX(-5px) rotate(-2.5deg); }
+  84% { transform: translateX(5px) rotate(2.5deg); }
+  87% { transform: translateX(-4px) rotate(-1.5deg); }
+  90% { transform: translateX(4px) rotate(1.5deg); }
+  93% { transform: translateX(-2px) rotate(-.5deg); }
+  96% { transform: translateX(1px) rotate(0); }
+}
+.followup-nudge { animation: followup-nudge 2.6s ease-in-out infinite; }
+.followup-nudge:hover, .followup-nudge:focus-within { animation-play-state: paused; }

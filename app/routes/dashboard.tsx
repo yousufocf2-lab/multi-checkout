@@ -25,6 +25,7 @@ import { PasskeyPrompt } from "~/components/Passkey";
 import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { pendingConnectCount } from "~/lib/connect.server";
 import { DemoBar, type NextDemo } from "~/components/DemoBar";
+import { FollowUpAlert } from "~/components/FollowUpAlert";
 import { storeIdFromCode, storePath } from "~/lib/store-code";
 import { startWalletBilling } from "~/lib/wallet-billing.server";
 
@@ -327,6 +328,7 @@ export default function DashboardLayout() {
       <main className="admin-main relative min-h-[calc(100vh-56px)] min-w-0 bg-[#f3f4f6] lg:my-2 lg:mr-2 lg:min-h-0 lg:overflow-y-auto lg:rounded-2xl">
         <ActionLoader stores={stores} />
         {nextDemo && <DemoBar demo={nextDemo} login={login} />}
+        {viewer.role === "owner" && (!viewer.perms || viewer.perms.includes("confirm")) && <FollowUpAlert />}
         {idleMs > 0 && <IdleLogout idleMs={idleMs} />}
         <div className={`mx-auto px-4 pb-24 pt-5 sm:px-7 lg:px-8 lg:pb-12 lg:pt-7 ${inSettings ? "max-w-[960px]" : "max-w-[1320px]"}`}>
           {kycPending && (
