@@ -531,3 +531,41 @@ export async function fetchCatalogPage(store: Store, after: string | null) {
   );
   return data.products;
 }
+
+
+/** One customer from the store's Shopify admin (Settings → Shopify). */
+export type ShopifyCustomer = {
+  id: string; name: string; email: string | null; phone: string | null; city: string | null; state: string | null; pincode: string | null;
+  address: string | null; orders: number; spentPaise: number; createdAt: string; tags: string[];
+};
+
+/** A page of the store's Shopify customers, newest first. `query` uses Shopify's customer search (name, email, phone…). */
+export async function fetchShopifyCustomers(store: Store, opts: { after?: string | null; query?: string; first?: number } = {}) {
+  type Node = {
+    id: string; displayName: string; email: string | null; phone: string | null; numberOfOrders: string; createdAt: string; tags: string[];
+    amountSpent: { amount: string } | null;
+    defaultAddress: { address1: string | null; address2: string | null; city: string | null; province: string | null; zip: string | null; phone: string | null } | null;
+  };
+  const data = await adminGraphql<{ customers: { nodes: Node[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }; customersCount: { count: number } | null }>(store, `
+    query ($first: Int!, $after: String, $query: String) {
+      customersCount { count }
+      customers(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
+        nodes {
+          id displayName email phone numberOfOrders createdAt tags
+          amountSpent { amount }
+          defaultAddress { address1 address2 city province zip phone }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`, { first: Math.min(250, opts.first ?? 50), after: opts.after ?? null, query: opts.query?.trim() || null });
+  return {
+    total: data.customersCount?.count ?? null,
+    next: data.customers.pageInfo.hasNextPage ? data.customers.pageInfo.endCursor : null,
+    customers: data.customers.nodes.map((c): ShopifyCustomer => ({
+      id: c.id.split("/").pop() ?? c.id, name: c.displayName, email: c.email, phone: c.phone ?? c.defaultAddress?.phone ?? null,
+      city: c.defaultAddress?.city ?? null, state: c.defaultAddress?.province ?? null, pincode: c.defaultAddress?.zip ?? null,
+      address: [c.defaultAddress?.address1, c.defaultAddress?.address2].filter(Boolean).join(", ") || null,
+      orders: Number(c.numberOfOrders) || 0, spentPaise: Math.round(Number(c.amountSpent?.amount ?? 0) * 100), createdAt: c.createdAt, tags: c.tags,
+    })),
+  };
+}

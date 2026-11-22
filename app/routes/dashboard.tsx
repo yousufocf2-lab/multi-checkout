@@ -195,6 +195,7 @@ export default function DashboardLayout() {
     { label: "WhatsApp inbox", to: storeHref("inbox"), icon: "inbox", match: /\/inbox$|next=inbox/, show: may("inbox") },
     { label: "Domains", to: storeHref("website"), icon: "globe", match: /\/website$|next=website/, show: may("settings") },
     { label: "Integrations", to: storeHref("integrations"), icon: "plug", match: /\/integrations$|next=integrations/, show: storefront && may("developer") },
+    { label: "Shopify", to: storeHref("shopify"), icon: "plug", match: /\/shopify$|next=shopify\b/, show: may("settings") },
     { label: "Store connection", to: storeHref("install"), icon: "setup", match: /\/install$|next=install/, show: may("developer") && !own },
     { label: "Stores", to: "/dashboard/stores", icon: "layers", match: (p, q) => (p === "/dashboard/stores" && !q.includes("next=")) || p === "/dashboard/stores/new" || p === "/dashboard/stores/create", show: !isAdmin },
     { label: "Login & security", to: "/dashboard/security", icon: "lock", show: true },
