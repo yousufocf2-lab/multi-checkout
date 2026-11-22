@@ -182,3 +182,45 @@ export async function assignShiprocketCourier(c: CourierCreds, ref: string, ship
     return { ok: false, error: e instanceof Error ? e.message : "Shiprocket didn't respond" };
   }
 }
+
+/**
+ * Shiprocket's own shipping labels (the courier's format, in the label size set in Shiprocket → Settings → Label)
+ * for these Shiprocket order ids, as one PDF. Orders without a courier/AWB yet are skipped.
+ */
+export async function shiprocketLabelsPdf(c: CourierCreds, refs: string[]): Promise<{ pdf: Uint8Array | null; missing: string[] }> {
+  const missing: string[] = [];
+  if (!refs.length) return { pdf: null, missing };
+  return session(c, async (token) => {
+    const shipIds: { ref: string; id: string }[] = [];
+    for (const ref of refs) {
+      const o = await http(`${SR()}/orders/show/${encodeURIComponent(ref)}`, { headers: bearer(token), label: "Shiprocket" });
+      if (o.status === 401) throw new CourierAuthError("Shiprocket session expired");
+      const ship = Array.isArray(o.body?.data?.shipments) ? o.body?.data?.shipments[0] : o.body?.data?.shipments;
+      if (ship?.id && ship?.awb) shipIds.push({ ref, id: String(ship.id) }); else missing.push(ref);
+    }
+    if (!shipIds.length) return { pdf: null, missing };
+    const parts: Uint8Array[] = [];
+    for (let i = 0; i < shipIds.length; i += 50) {
+      const chunk = shipIds.slice(i, i + 50);
+      const r = await http(`${SR()}/courier/generate/label`, { method: "POST", headers: bearer(token), body: JSON.stringify({ shipment_id: chunk.map((s) => Number(s.id) || s.id) }), label: "Shiprocket" });
+      if (r.status === 401) throw new CourierAuthError("Shiprocket session expired");
+      const url = r.body?.label_url;
+      if (!url) { missing.push(...chunk.map((s) => s.ref)); console.warn("[labels] shiprocket label:", msg(r.body) || r.status); continue; }
+      const file = await fetch(String(url), { signal: AbortSignal.timeout(30_000) });
+      if (!file.ok) { missing.push(...chunk.map((s) => s.ref)); continue; }
+      parts.push(new Uint8Array(await file.arrayBuffer()));
+    }
+    return { pdf: parts.length ? await mergePdfs(parts) : null, missing };
+  });
+}
+
+export async function mergePdfs(parts: Uint8Array[]): Promise<Uint8Array> {
+  if (parts.length === 1) return parts[0];
+  const { PDFDocument } = await import("pdf-lib");
+  const out = await PDFDocument.create();
+  for (const p of parts) {
+    const src = await PDFDocument.load(p, { ignoreEncryption: true });
+    for (const page of await out.copyPages(src, src.getPageIndices())) out.addPage(page);
+  }
+  return out.save();
+}

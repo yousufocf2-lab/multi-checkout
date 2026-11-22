@@ -62,7 +62,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       lastSyncAt: a.lastSyncAt?.toISOString() ?? null,
     })),
     summary,
-    labels: { ...labels, on: accounts.some((a) => a.courier === "delhivery" && a.status === "connected" && !a.creds.viaShopify) },
+    labels: { ...labels, on: accounts.some((a) => (a.courier === "delhivery" || a.courier === "shiprocket") && a.status === "connected" && !a.creds.viaShopify) },
     performance, range, rangeText: rangeLabel(range),
     shipments: { filter, q, page, per: list.per, total: list.total, hasMore: list.hasMore, rows: list.rows.map((r) => ({ ...r, at: r.at?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), labelAt: r.labelAt?.toISOString() ?? null, reattemptAt: r.reattemptAt?.toISOString() ?? null })) },
   });
@@ -727,7 +727,7 @@ function ReattemptButton({ id, at }: { id: string; at: string | null }) {
 }
 
 function LabelChip({ r, base }: { r: { id: string; courier: string | null; awb: string | null; status: string | null; labelAt: string | null; labelBatch: string | null }; base: string }) {
-  if (r.courier !== "delhivery" || !r.awb) return null;
+  if ((r.courier !== "delhivery" && r.courier !== "shiprocket") || !r.awb) return null;
   if (!r.labelAt && r.status !== "pickup_pending") return <span className="text-[11.5px] text-ink-faint">—</span>;
   return (
     <a href={`${base}/logistics/labels?order=${encodeURIComponent(r.id)}`} target="_blank" rel="noreferrer" title={r.labelAt ? `Printed${r.labelBatch ? ` · ${r.labelBatch}` : ""}. Click to reprint.` : "Not printed. Click to print."}

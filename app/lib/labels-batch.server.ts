@@ -5,17 +5,19 @@ import { catalogVariants, db, orders, type Store } from "~/db.server";
 import { courierAccountsFor } from "./logistics.server";
 import { GP_PREFIX } from "./catalog.server";
 import { delhiveryPackingSlips } from "./couriers/delhivery.server";
+import { mergePdfs, shiprocketLabelsPdf } from "./couriers/shiprocket-orders.server";
 import { resolveLabel, type LabelConfig } from "./label-config";
 import { labelsPdf, loadLogo, type LabelOrder } from "./labels.server";
 
 const cols = {
   id: orders.id, awb: orders.awb, shopifyOrderName: orders.shopifyOrderName, paymentMethod: orders.paymentMethod, total: orders.total,
   amountPaid: orders.amountPaid, advance: orders.advance, customer: orders.customer, items: orders.items, createdAt: orders.createdAt,
-  courierAccountId: orders.courierAccountId,
+  courierAccountId: orders.courierAccountId, courier: orders.courier, courierRef: orders.courierRef,
 };
-/** Booked with Delhivery, not picked up, not cancelled, label not printed yet. */
+/** Booked with Delhivery or Shiprocket, not picked up, not cancelled, label not printed yet. */
+const LABEL_COURIERS = ["delhivery", "shiprocket"];
 const pendingWhere = (storeId: number) => and(
-  eq(orders.storeId, storeId), eq(orders.courier, "delhivery"), isNotNull(orders.awb), isNull(orders.labelPrintedAt),
+  eq(orders.storeId, storeId), inArray(orders.courier, LABEL_COURIERS), isNotNull(orders.awb), isNull(orders.labelPrintedAt),
   eq(orders.shipStatus, "pickup_pending"), ne(orders.status, "cancelled"),
 );
 
@@ -36,7 +38,29 @@ async function skusFor(list: LabelOrder[]) {
   return new Map(rows.filter((r) => r.sku).map((r) => [`${GP_PREFIX}${r.id}`, r.sku!]));
 }
 
-async function render(store: Store, list: (LabelOrder & { courierAccountId?: number | null })[], batch: string, cfgIn?: LabelConfig, slipsOverride?: Awaited<ReturnType<typeof delhiveryPackingSlips>>) {
+type Row = LabelOrder & { courierAccountId?: number | null; courier?: string | null; courierRef?: string | null };
+
+/** Delhivery labels in Growpefy's design; Shiprocket labels straight from Shiprocket (the courier's format); one PDF. */
+async function render(store: Store, list: Row[], batch: string, cfgIn?: LabelConfig, slipsOverride?: Awaited<ReturnType<typeof delhiveryPackingSlips>>) {
+  const sr = list.filter((o) => o.courier === "shiprocket" && o.courierRef);
+  const own = list.filter((o) => !sr.includes(o));
+  const parts: Uint8Array[] = [];
+  if (own.length) parts.push(new Uint8Array(await renderOwn(store, own, batch, cfgIn, slipsOverride)));
+  if (sr.length) {
+    const accounts = (await courierAccountsFor(store.id)).filter((a) => a.courier === "shiprocket");
+    for (const a of accounts) {
+      const mine = sr.filter((o) => (o.courierAccountId ? o.courierAccountId === a.id : a.id === accounts[0]?.id));
+      if (!mine.length) continue;
+      const r = await shiprocketLabelsPdf(a.creds, mine.map((o) => o.courierRef!)).catch((e) => { console.error("[labels] shiprocket", e); return { pdf: null, missing: mine.map((o) => o.courierRef!) }; });
+      if (r.pdf) parts.push(r.pdf);
+      if (r.missing.length) console.warn(`[labels] store ${store.id}: no Shiprocket label for ${r.missing.length} order(s)`);
+    }
+  }
+  if (!parts.length) throw new Response("Couldn't get the labels from the courier. Try again in a minute.", { status: 502 });
+  return Buffer.from(await mergePdfs(parts));
+}
+
+async function renderOwn(store: Store, list: Row[], batch: string, cfgIn?: LabelConfig, slipsOverride?: Awaited<ReturnType<typeof delhiveryPackingSlips>>) {
   const cfg = cfgIn ?? resolveLabel(store.labelConfig);
   // Label data from each Delhivery account that booked these shipments
   const accounts = (await courierAccountsFor(store.id)).filter((a) => a.courier === "delhivery");
@@ -78,7 +102,7 @@ export async function reprintBatch(store: Store, batch: string) {
 export async function printOne(store: Store, orderId: string) {
   const [o] = await db.select({ ...cols, labelPrintedAt: orders.labelPrintedAt, labelBatch: orders.labelBatch, courier: orders.courier }).from(orders)
     .where(and(eq(orders.storeId, store.id), eq(orders.id, orderId))).limit(1);
-  if (!o?.awb || o.courier !== "delhivery") return null;
+  if (!o?.awb || !LABEL_COURIERS.includes(o.courier ?? "")) return null;
   const batch = o.labelBatch ?? `Single ${batchName(new Date())}`;
   const pdf = await render(store, [o], batch);
   if (!o.labelPrintedAt) await db.update(orders).set({ labelPrintedAt: new Date(), labelBatch: batch }).where(eq(orders.id, o.id));
