@@ -8,7 +8,8 @@ import { db, stores, type Store } from "~/db.server";
 import { env } from "~/lib/env.server";
 import { storeCode } from "~/lib/store-code";
 
-export const PIN_LENGTHS = [4, 6] as const;
+export { PIN_LENGTHS } from "~/lib/store-pin";
+import { PIN_LENGTHS } from "~/lib/store-pin";
 const UNLOCK_HOURS = 12;
 const MAX_TRIES = 5;
 const LOCK_MINUTES = 15;

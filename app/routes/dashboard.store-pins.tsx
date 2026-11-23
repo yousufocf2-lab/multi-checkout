@@ -10,7 +10,8 @@ import { db, stores, users } from "~/db.server";
 import { adminEmail, requireSuperAdmin } from "~/lib/auth.server";
 import { parseContact } from "~/lib/owner-otp.server";
 import { storeCode } from "~/lib/store-code";
-import { checkPin, lockedFor, maskContact, PIN_LENGTHS, removePin, rightTry, savePin, validPin, weakPin, wrongTry } from "~/lib/store-pin.server";
+import { PIN_LENGTHS } from "~/lib/store-pin";
+import { checkPin, lockedFor, maskContact, removePin, rightTry, savePin, validPin, weakPin, wrongTry } from "~/lib/store-pin.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   await requireSuperAdmin(request);
