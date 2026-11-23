@@ -74,8 +74,8 @@ export async function teamReport(store: Store, from: Date, to: Date) {
         union select call_assigned_to, call_order_id from checkout_sessions where store_id = ${S} and call_assigned_to in (${idList}) and call_order_id is not null and call_order_id <> 'pending' and call_at >= ${F}::timestamptz and call_at < ${T}::timestamptz
         union select member_id, order_id from ofd_call_events where store_id = ${S} and member_id in (${idList}) and created_at >= ${F}::timestamptz and created_at < ${T}::timestamptz
       ) t join orders o on o.id = t.oid where o.ship_status = 'delivered' group by 1`),
-    rows(sql`select to_char(at at time zone 'Asia/Kolkata', 'YYYY-MM-DD') day, m, kind, count(*)::int n from (
-        select call_at at, assigned_to m, 'confirm' kind from orders where store_id = ${S} and assigned_to in (${idList}) and call_at >= ${F}::timestamptz and call_at < ${T}::timestamptz and call_status is not null
+    rows(sql`select to_char(x.ts at time zone 'Asia/Kolkata', 'YYYY-MM-DD') as day, x.m, x.kind, count(*)::int as n from (
+        select call_at as ts, assigned_to as m, 'confirm' as kind from orders where store_id = ${S} and assigned_to in (${idList}) and call_at >= ${F}::timestamptz and call_at < ${T}::timestamptz and call_status is not null
         union all select created_at, member_id, 'confirm' from order_call_events where store_id = ${S} and member_id in (${idList}) and kind in ('manual','provider') and created_at >= ${F}::timestamptz and created_at < ${T}::timestamptz
         union all select call_at, call_assigned_to, 'abandoned' from checkout_sessions where store_id = ${S} and call_assigned_to in (${idList}) and call_at >= ${F}::timestamptz and call_at < ${T}::timestamptz and call_status is not null
         union all select created_at, member_id, 'ofd' from ofd_call_events where store_id = ${S} and member_id in (${idList}) and created_at >= ${F}::timestamptz and created_at < ${T}::timestamptz
