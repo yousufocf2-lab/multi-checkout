@@ -49,7 +49,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
 
   if (f.method === "prepaid" || f.method === "cod" || f.method === "partial") push("method", eq(orders.paymentMethod, f.method));
   if (f.paymentStatus === "paid") push("payment_status", sql`${orders.status} = 'paid'`);
-  if (f.paymentStatus === "pending") push("payment_status", sql`${orders.paymentMethod} = 'cod' or ${orders.status} in ('pending_payment','cod_placing')`);
+  if (f.paymentStatus === "pending") push("payment_status", sql`(${orders.paymentMethod} = 'cod' or ${orders.status} in ('pending_payment','cod_placing'))`);
   if (f.paymentStatus === "refunded") push("payment_status", sql`${orders.refundStatus} = 'full'`);
   if (f.paymentStatus === "partially_refunded") push("payment_status", sql`${orders.refundStatus} = 'partial'`);
   if (f.paymentStatus === "failed") push("payment_status", eq(orders.status, "failed"));
@@ -57,7 +57,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   if (f.fulfillment === "unfulfilled") push("fulfillment", sql`${orders.status} in ${OK} and ${orders.awb} is null`);
   if (f.deliveryStatus) push("delivery_status", sql`${orders.shipStatus} = ${f.deliveryStatus}`);
   if (f.returnStatus === "returned") push("return_status", sql`${orders.shipStatus} in ('rto','rto_transit','returned')`);
-  if (f.returnStatus === "not_returned") push("return_status", sql`${orders.shipStatus} is null or ${orders.shipStatus} not in ('rto','rto_transit','returned')`);
+  if (f.returnStatus === "not_returned") push("return_status", sql`(${orders.shipStatus} is null or ${orders.shipStatus} not in ('rto','rto_transit','returned'))`);
   if (f.labelStatus === "added") push("label_status", isNotNull(orders.awb));
   if (f.labelStatus === "not_added") push("label_status", sql`${orders.awb} is null`);
   if (f.deliveryMethod) push("delivery_method", eq(orders.shippingTitle, f.deliveryMethod));
@@ -76,9 +76,9 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   else if (f.tag === "bank") push("tag", sql`${orders.bankDiscount} > 0`);
   else if (f.tag === "paid_shipping") push("tag", sql`${orders.shipping} > 0`);
   else if (f.tag === "free_shipping") push("tag", sql`${orders.shipping} = 0`);
-  else if (f.tag === "Smart Checkout") push("tag", sql`${orders.checkoutChannel} = 'premium_checkout' or (${orders.checkoutChannel} is null and ${orders.sessionId} is not null and exists (select 1 from stores st where st.id = ${orders.storeId} and st.smart_checkout = true))`);
+  else if (f.tag === "Smart Checkout") push("tag", sql`(${orders.checkoutChannel} = 'premium_checkout' or (${orders.checkoutChannel} is null and ${orders.sessionId} is not null and exists (select 1 from stores st where st.id = ${orders.storeId} and st.smart_checkout = true)))`);
   else if (f.tag === "Shopify History") push("tag", sql`${orders.checkoutChannel} = 'shopify_history'`);
-  else if (f.tag === "WhatsApp") push("tag", sql`${orders.confirmStatus} is not null or ${orders.waMessageId} is not null`);
+  else if (f.tag === "WhatsApp") push("tag", sql`(${orders.confirmStatus} is not null or ${orders.waMessageId} is not null)`);
   else if (f.tag) push("tag", sql`${orders.manualTags} @> ${JSON.stringify([f.tag])}::jsonb`);
   if (f.q) where.push(searchWhere(f.q));
   return { where: and(...where)!, filters: f };

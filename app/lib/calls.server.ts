@@ -76,8 +76,8 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   const to = new Date(new Date(`${until}T00:00:00+05:30`).getTime() + 86400_000);
   // Orders nobody has acted on yet stay on the board whatever dates are picked, so a caller can't forget them:
   // not called yet (and not shipped) from the last 14 days, and every follow-up from the last 30 days.
-  const carried = sql`(${bucket} = 'to_call' and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.courierRef} is null and ${orders.createdAt} >= now() - interval '14 days')
-    or (${bucket} = 'follow_up' and ${orders.status} in ('paid','cod_placed') and ${orders.createdAt} >= now() - interval '30 days')`;
+  const carried = sql`((${bucket} = 'to_call' and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.courierRef} is null and ${orders.createdAt} >= now() - interval '14 days')
+    or (${bucket} = 'follow_up' and ${orders.status} in ('paid','cod_placed') and ${orders.createdAt} >= now() - interval '30 days'))`;
   const base = and(
     eq(orders.storeId, store.id),
     me == null ? undefined : eq(orders.assignedTo, me), // owner / managers: every order of the store
@@ -98,7 +98,7 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     sql`trim(concat_ws(' ', ${orders.customer}->>'firstName', ${orders.customer}->>'lastName')) ilike ${`%${term}%`}`,
     mobile.length === 10 ? sql`${orders.customer}->>'phone' = ${mobile}` : undefined,
   ) : undefined;
-  const shipped = sql`${orders.awb} is not null or ${orders.courierRef} is not null`;
+  const shipped = sql`(${orders.awb} is not null or ${orders.courierRef} is not null)`;
   const tabScope = tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`);
   const listScope = and(tabScope, match);
   const [counts, [ship], searchCount] = await Promise.all([

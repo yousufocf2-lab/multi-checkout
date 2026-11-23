@@ -43,7 +43,7 @@ export async function listItems(storeId: number, opts: ListOpts = {}) {
   const tracked = sql<boolean>`bool_or(${catalogVariants.stock} is not null)`;
   const having = opts.stock === "out" ? sql`bool_or(${catalogVariants.stock} is not null) and coalesce(sum(${catalogVariants.stock}),0) <= 0`
     : opts.stock === "low" ? sql`bool_or(${catalogVariants.stock} is not null) and sum(${catalogVariants.stock}) between 1 and ${LOW_STOCK}`
-    : opts.stock === "in" ? sql`(not bool_or(${catalogVariants.stock} is not null)) or sum(${catalogVariants.stock}) > 0`
+    : opts.stock === "in" ? sql`((not bool_or(${catalogVariants.stock} is not null)) or sum(${catalogVariants.stock}) > 0)`
     : opts.stock === "untracked" ? sql`not coalesce(bool_or(${catalogVariants.stock} is not null), false)` : undefined;
   const order = {
     newest: [desc(catalogItems.createdAt), desc(catalogItems.id)], oldest: [asc(catalogItems.createdAt)], updated: [desc(catalogItems.updatedAt)],
