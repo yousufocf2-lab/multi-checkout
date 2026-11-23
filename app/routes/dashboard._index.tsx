@@ -1,4 +1,5 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
+import { requireStore } from "~/lib/auth.server";
 import { json, redirect } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { useEffect, useState } from "react";
@@ -85,9 +86,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const viewer = await requireViewer(request);
   const all = await viewerStores(viewer);
   // Admin's own panel unless a client's store is open (then the store's overview, as the owner sees it)
-  if (viewer.role === "admin" && !(await selectedStore(request))) {
+  const openStore = viewer.role === "admin" ? await selectedStore(request) : null;
+  if (viewer.role === "admin" && !openStore) {
     return json({ admin: await adminHome(request, viewer, all) } as const);
   }
+  if (openStore) await requireStore(viewer, openStore); // a store with a super admin PIN asks for it first
   // A store employee without access to orders starts on the first page they can use
   if (viewer.role === "owner" && viewer.member && !can(viewer, "orders")) {
     const first = ([["inbox", "/dashboard/stores?next=inbox"], ["ads", "/dashboard/ads"], ["offers", "/dashboard/stores?next=promotions"], ["rto", "/dashboard/stores?next=shipping"],

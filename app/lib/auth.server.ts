@@ -1,4 +1,6 @@
 import { createCookieSessionStorage, redirect } from "@remix-run/node";
+import { clearUnlocksHeader, guardStore, readUnlocks } from "~/lib/store-pin.server";
+type Unlocks = Awaited<ReturnType<typeof readUnlocks>>;
 import { and, asc, eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import { promisify } from "node:util";
@@ -67,7 +69,7 @@ export type Staff = { id: number; name: string; perms: string[] };
 export type Member = { id: number; name: string; perms: string[]; storeIds: number[] | null };
 
 export type Viewer =
-  | { role: "admin"; name: string; email: string; staff?: Staff }
+  | { role: "admin"; name: string; email: string; staff?: Staff; /** stores opened with their super admin PIN, and this page */ unlocked?: Unlocks; path?: string }
   | { role: "owner"; name: string; email: string; userId: number; kycStatus: string; kycDone: boolean; member?: Member };
 
 /** Super admin or the store owner themself (not a team login). */
@@ -134,6 +136,11 @@ export async function requireViewer(request: Request) {
     throw redirect(`/login?${expired}next=${encodeURIComponent(to.pathname + to.search)}`);
   }
   if (memberBlocked(v, request)) throw new Response("You don't have access to this page. Ask your admin to give you access.", { status: 403 });
+  if (v.role === "admin") {
+    const u = new URL(request.url);
+    v.unlocked = await readUnlocks(request);
+    v.path = u.pathname + u.search;
+  }
   return v;
 }
 
@@ -167,6 +174,7 @@ export async function requireStore(v: Viewer, id: string | number | undefined): 
   const [s] = await db.select().from(stores).where(where).limit(1);
   if (!s) throw new Response("Store not found", { status: 404 });
   if (v.role === "owner" && v.member?.storeIds && !v.member.storeIds.includes(s.id)) throw new Response("Store not found", { status: 404 });
+  guardStore(v, s); // super admin PIN on this store
   return s;
 }
 
@@ -318,7 +326,7 @@ export async function loginStamp(request: Request) {
 export async function endSession(request: Request, reason?: string) {
   const st = getStorage();
   const s = await st.getSession(request.headers.get("Cookie"));
-  return redirect(reason === "idle" ? "/login?expired=1" : reason === "closed" ? "/login?closed=1" : "/login", { headers: { "Set-Cookie": await st.destroySession(s) } });
+  return redirect(reason === "idle" ? "/login?expired=1" : reason === "closed" ? "/login?closed=1" : "/login", { headers: [["Set-Cookie", await st.destroySession(s)], ["Set-Cookie", await clearUnlocksHeader()]] });
 }
 
 /** Marks the session as active now. Returns a Set-Cookie value, or null if the session is gone or idle. */

@@ -589,6 +589,13 @@
       "when": 1796200000000,
       "tag": "0083_shipped_at",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1796300000000,
+      "tag": "0084_store_admin_pin",
+      "breakpoints": true
     }
   ]
 }

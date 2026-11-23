@@ -222,6 +222,7 @@ export default function DashboardLayout() {
     { label: "Team", to: "/dashboard/team", icon: "users", show: may("team") },
     { label: "Owner accounts", to: "/dashboard/owners", icon: "lock", show: may("clients") },
     { label: "Store domains", to: "/dashboard/cloudflare", icon: "globe", show: !viewer.isTeam },
+    { label: "Store PINs", to: "/dashboard/store-pins", icon: "lock", show: !viewer.isTeam }, // super admin only
     { label: "Special logic", to: "/dashboard/special-logic", icon: "sparkle", show: !viewer.isTeam }, // super admin only, never shown to stores or team
     { label: "Demo stores", to: "/dashboard/demo-stores", icon: "stores", show: !viewer.isTeam },
     { label: "Railway Usage", to: "/dashboard/railway-usage", icon: "layers", show: !viewer.isTeam },

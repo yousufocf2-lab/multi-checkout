@@ -8,6 +8,7 @@ import {
   jsonb,
   pgTable,
   serial,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -225,6 +226,11 @@ export const stores = pgTable("stores", {
   name: text("name").notNull(),
   platform: text("platform").$type<"shopify" | "woocommerce" | "growpefy">().notNull().default("shopify"), // growpefy = Growpefy Store (own website)
   shopDomain: text("shop_domain").notNull(), // xyz.myshopify.com (WooCommerce: the site's host)
+  // Super admin PIN (4 or 6 digits) the Growpefy admin must enter to open this store; OTP to the recovery contact if forgotten
+  adminPinHash: text("admin_pin_hash"),
+  adminPinLen: smallint("admin_pin_len"),
+  adminPinContact: text("admin_pin_contact"),
+  adminPinSetAt: timestamp("admin_pin_set_at", { withTimezone: true }),
   shopifyShop: text("shopify_shop"), // Growpefy store: a Shopify store connected only to read products and customers
   storefrontUrl: text("storefront_url").notNull(), // https://brand.com
   checkoutDomain: text("checkout_domain").unique(), // e.g. checkout.brand.com (CNAME -> Railway)
