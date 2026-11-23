@@ -582,6 +582,13 @@
       "when": 1796100000000,
       "tag": "0082_shopify_shop",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1796200000000,
+      "tag": "0083_shipped_at",
+      "breakpoints": true
     }
   ]
 }

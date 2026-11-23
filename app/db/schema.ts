@@ -913,6 +913,7 @@ export const orders = pgTable(
     confirmStatus: text("confirm_status"),
     shipError: text("ship_error"), // last automatic shipment booking error (website orders)
     shipBookAt: timestamp("ship_book_at", { withTimezone: true }), // last automatic booking attempt
+    shippedAt: timestamp("shipped_at", { withTimezone: true }), // first got an AWB / courier order (set by a DB trigger)
     // Out for delivery / NDR (from courier scans) and the delivery-day call
     ofdAttempts: integer("ofd_attempts").notNull().default(0),
     ofdAt: timestamp("ofd_at", { withTimezone: true }),

@@ -1,7 +1,7 @@
 // Calling team: employees who phone customers to confirm orders. New orders are shared out round-robin;
 // each caller sees full details (with the mobile number) only for their own orders, and a summary of teammates' work.
 import { OUTSOURCE_TAG } from "./order-route";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { db, orderCallEvents, orders, stores, teamMembers, type Order, type OrderEvent, type Store } from "~/db.server";
 import { cancelOrders } from "./order-actions.server";
 
@@ -66,7 +66,9 @@ const bucket = sql<CallTab>`case
 
 /**
  * Everything the calling page shows. `me` = the caller's team member id (null for the owner / a manager, who see all,
- * phone numbers included). `since`/`until` are IST dates (YYYY-MM-DD) on when the order was placed.
+ * phone numbers included). `since`/`until` are IST dates (YYYY-MM-DD). Each tab counts by the day of its own event:
+ * To call / Follow-up / All by when the order came in, Confirmed / Cancelled by when it was confirmed or cancelled,
+ * Shipped by when it shipped — an order placed on the 17th and confirmed on the 20th counts on the 20th.
  */
 export async function callBoard(store: Store, me: number | null, tab: CallTab, since: string, until: string, query = "", requestedPage = 1) {
   await assignCalls(store);
@@ -78,12 +80,18 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   // not called yet (and not shipped) from the last 14 days, and every follow-up from the last 30 days.
   const carried = sql`((${bucket} = 'to_call' and ${orders.status} in ('paid','cod_placed') and ${orders.awb} is null and ${orders.courierRef} is null and ${orders.createdAt} >= now() - interval '14 days')
     or (${bucket} = 'follow_up' and ${orders.status} in ('paid','cod_placed') and ${orders.createdAt} >= now() - interval '30 days'))`;
-  const base = and(
+  // The day an order belongs to in each tab
+  const when = sql`(case
+    when ${bucket} = 'confirmed' then coalesce(${orders.callAt}, ${orders.createdAt})
+    when ${bucket} = 'cancelled' then coalesce(case when ${orders.callStatus} = 'cancelled' then ${orders.callAt} end, ${orders.cancelledAt}, ${orders.createdAt})
+    else ${orders.createdAt} end)`;
+  const inRange = (at: SQL) => sql`(${at} >= ${from.toISOString()}::timestamptz and ${at} < ${to.toISOString()}::timestamptz)`;
+  const mine = and(
     eq(orders.storeId, store.id),
     me == null ? undefined : eq(orders.assignedTo, me), // owner / managers: every order of the store
     inArray(orders.status, ["paid", "cod_placed", "cancelled"]),
-    or(and(gte(orders.createdAt, from), lt(orders.createdAt, to)), carried),
   );
+  const base = and(mine, or(inRange(when), carried));
   const cols = {
     id: orders.id, shopifyOrderName: orders.shopifyOrderName, createdAt: orders.createdAt, paymentMethod: orders.paymentMethod, status: orders.status, manualTags: orders.manualTags,
     total: orders.total, subtotal: orders.subtotal, shipping: orders.shipping, advance: orders.advance, amountPaid: orders.amountPaid, items: orders.items, customer: orders.customer, confirmStatus: orders.confirmStatus,
@@ -98,12 +106,12 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
     sql`trim(concat_ws(' ', ${orders.customer}->>'firstName', ${orders.customer}->>'lastName')) ilike ${`%${term}%`}`,
     mobile.length === 10 ? sql`${orders.customer}->>'phone' = ${mobile}` : undefined,
   ) : undefined;
-  const shipped = sql`(${orders.awb} is not null or ${orders.courierRef} is not null)`;
-  const tabScope = tab === "all" ? base : tab === "shipped" ? and(base, shipped) : and(base, sql`${bucket} = ${tab}`);
+  const shipped = and(mine, sql`(${orders.awb} is not null or ${orders.courierRef} is not null)`, inRange(sql`coalesce(${orders.shippedAt}, ${orders.createdAt})`));
+  const tabScope = tab === "all" ? base : tab === "shipped" ? shipped : and(base, sql`${bucket} = ${tab}`);
   const listScope = and(tabScope, match);
   const [counts, [ship], searchCount] = await Promise.all([
     db.select({ tab: bucket, n: sql<number>`count(*)::int` }).from(orders).where(base).groupBy(bucket),
-    db.select({ n: sql<number>`count(*)::int` }).from(orders).where(and(base, shipped)),
+    db.select({ n: sql<number>`count(*)::int` }).from(orders).where(shipped),
     match ? db.select({ n: sql<number>`count(*)::int` }).from(orders).where(listScope) : null,
   ]);
   const n = Object.fromEntries(counts.map((c) => [c.tab, c.n])) as Partial<Record<CallTab, number>>;
@@ -113,7 +121,9 @@ export async function callBoard(store: Store, me: number | null, tab: CallTab, s
   const page = Number.isSafeInteger(requestedPage) ? Math.max(1, Math.min(requestedPage, pages)) : 1;
   const offset = (page - 1) * CALL_PAGE_SIZE;
   const list = await db.select({ ...cols, tab: bucket }).from(orders).where(listScope)
-    .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last` : desc(orders.createdAt), desc(orders.id))
+    .orderBy(tab === "follow_up" ? sql`${orders.followUpAt} asc nulls last`
+      : tab === "shipped" ? sql`coalesce(${orders.shippedAt}, ${orders.createdAt}) desc`
+      : tab === "confirmed" || tab === "cancelled" ? sql`${when} desc` : desc(orders.createdAt), desc(orders.id))
     .limit(CALL_PAGE_SIZE).offset(offset);
 
   // Team summary: per caller, open work now and what they did today

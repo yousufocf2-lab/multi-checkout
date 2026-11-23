@@ -446,7 +446,13 @@ function OrdersPage({ d }: { d: D }) {
         </nav>
       </section>
 
-      {(d.tab === "to_call" || d.tab === "follow_up") && <p className="px-1 text-[12px] text-ink-faint">{d.tab === "to_call" ? "Orders not called yet always show here, whatever dates you pick." : "Every follow-up always shows here, whatever dates you pick. When one is due you get a yellow reminder."}</p>}
+      {d.tab !== "team" && d.tab !== "all" && <p className="px-1 text-[12px] text-ink-faint">{{
+        to_call: "Orders not called yet always show here, whatever dates you pick.",
+        follow_up: "Every follow-up always shows here, whatever dates you pick. When one is due you get a yellow reminder.",
+        confirmed: "Counted on the day the call confirmed it, not the day the order came in.",
+        cancelled: "Counted on the day it was cancelled, not the day the order came in.",
+        shipped: "Counted on the day it shipped, not the day the order came in.",
+      }[d.tab]}</p>}
       {d.tab !== "team" && d.rule.mode === "confirmed" && d.rule.by !== "whatsapp" && <p className="px-1 text-[12px] text-ink-faint">Orders you confirm go to the courier automatically{d.rule.prepaidNow ? "; prepaid orders ship without a call" : ""}.</p>}
 
       {d.tab === "team" ? <Team d={d} /> : d.board.orders.length === 0 ? (
