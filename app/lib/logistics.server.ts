@@ -122,6 +122,8 @@ export async function arrangeCouriers(storeId: number, order: number[], patch: R
 }
 
 const FINAL: ShipStatus[] = ["rto", "returned", "cancelled"];
+/** A shipment cancelled after pickup can still turn into an RTO at the courier, so keep watching it for a while */
+const CANCELLED_WATCH_DAYS = 15;
 const LOOKBACK_DAYS = 90;
 const RECHECK_MS = 3 * 3600_000;
 const RECHECK_ACTIVE_MS = 25 * 60_000; // out for delivery / NDR change within the day
@@ -239,7 +241,8 @@ export async function syncStoreShipments(store: Store, opts: { force?: boolean }
   const watch: Watch[] = await db.select({ id: orders.id, awb: orders.awb, courier: orders.courier, gid: orders.shopifyOrderId, shipStatus: orders.shipStatus, accountId: orders.courierAccountId }).from(orders)
     .where(and(eq(orders.storeId, store.id), isNotNull(orders.awb), isNotNull(orders.courier), gt(orders.createdAt, since),
       PUSH_IDS.length ? notInArray(orders.courier, PUSH_IDS) : undefined,
-      or(isNull(orders.shipStatus), notInArray(orders.shipStatus, FINAL)),
+      or(isNull(orders.shipStatus), notInArray(orders.shipStatus, FINAL),
+        and(eq(orders.shipStatus, "cancelled"), gt(orders.shipStatusAt, new Date(Date.now() - CANCELLED_WATCH_DAYS * 86400_000)))),
       or(sql`${orders.shipStatus} is distinct from 'delivered'`, gt(orders.shipStatusAt, new Date(Date.now() - DELIVERED_WATCH_DAYS * 86400_000))),
       opts.force ? undefined : or(isNull(orders.shipCheckedAt), lt(orders.shipCheckedAt, new Date(Date.now() - RECHECK_MS)),
         and(sql`${orders.shipStatus} in ('in_transit','out_for_delivery','ndr')`, lt(orders.shipCheckedAt, new Date(Date.now() - RECHECK_ACTIVE_MS))))))
