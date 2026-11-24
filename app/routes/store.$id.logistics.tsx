@@ -31,7 +31,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const filter = (SHIP_FILTERS as readonly string[]).includes(url.searchParams.get("ship") ?? "") ? (url.searchParams.get("ship") as ShipFilter) : "all";
   const sp = new URLSearchParams(url.searchParams);
-  if (!sp.get("range")) sp.set("range", "today");
+  if (!sp.get("range")) sp.set("range", "this_month"); // Shipments opens on this month; every other page opens on today
   const range = resolveRange(sp, store.createdAt.toISOString().slice(0, 10));
   const window: DateWindow = range.preset === "max" ? { from: null, to: null } : { from: new Date(`${range.since}T00:00:00+05:30`), to: new Date(`${addDays(range.until, 1)}T00:00:00+05:30`) };
   const q = url.searchParams.get("q") ?? "";

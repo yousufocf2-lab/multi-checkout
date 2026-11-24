@@ -2,6 +2,7 @@ import { startPaymentRecheck } from "~/lib/gateways/index.server";
 import { startAutoShip } from "~/lib/auto-ship.server";
 import { startCatalogWatcher } from "~/lib/meta-catalog.server";
 import { ensureFallback, syncWorker } from "~/lib/cloudflare.server";
+import { rtoAudit } from "~/lib/rto-audit.server";
 import { logFunnelAudit } from "~/lib/diagnostics.server";
 import { recoverIpBlocked, recoverOtpStuck, recoverOtpSystemErrors } from "~/lib/recover-otp.server";
 import { logOtpBlockAudit } from "~/lib/otp-block-audit.server";
@@ -20,5 +21,6 @@ export const loader = () => {
   setTimeout(() => void recoverIpBlocked(), 90_000).unref?.();
   setTimeout(() => void recoverOtpSystemErrors(), 75_000).unref?.();
   setTimeout(() => void fixApexDomains(), 30_000).unref?.();
+  setTimeout(() => void rtoAudit(), 25_000).unref?.();
   return new Response("ok");
 };
