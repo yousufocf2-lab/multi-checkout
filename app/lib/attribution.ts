@@ -45,6 +45,9 @@ export const channelLabel = (c: string | null | undefined) => CHANNELS[(c ?? "un
 
 const PAID = /^(cpc|ppc|paid|paid[_-]?social|paidsocial|ads?|cpm|display|sponsored)$/i;
 const META_SRC = /^(facebook|fb|instagram|ig|meta|messenger|an|audience[_-]?network)$/i;
+/** Every placement Meta can put in utm_source with {{site_source_name}}: fb, ig, msg (Messenger), an (Audience Network),
+ *  wa (WhatsApp), threads. With a paid medium or a Meta click ID these are all Meta ads. */
+const META_AD_SRC = /^(facebook|fb|instagram|ig|meta|messenger|msg|an|audience[_-]?network|wa|whatsapp|threads)$/i;
 const GOOGLE_SRC = /^(google|adwords|googleads|youtube)$/i;
 
 /** Decides the channel for one visit. */
@@ -54,11 +57,11 @@ export function channelOf(t: Touch | undefined): Channel {
   if (t.k === "gclid" || t.k === "gbraid" || t.k === "wbraid") return "google_ads";
   if (s && PAID.test(m)) {
     if (GOOGLE_SRC.test(s)) return "google_ads";
-    if (META_SRC.test(s)) return "meta_ads";
+    if (META_AD_SRC.test(s)) return "meta_ads";
     return "other_ads";
   }
   if (t.k === "msclkid") return "other_ads";
-  if (META_SRC.test(s) && t.k === "fbclid" && m) return "meta_ads"; // Meta ad links with utm_source=facebook&utm_medium=anything + fbclid
+  if (META_AD_SRC.test(s) && t.k === "fbclid" && m) return "meta_ads"; // Meta ad links with utm_source=facebook&utm_medium=anything + fbclid
   if (s === "whatsapp" || s === "wa" || /whatsapp|wa\.me/.test(r)) return "whatsapp";
   if (m === "email" || s === "email" || s === "newsletter") return "email";
   if (s) return META_SRC.test(s) || /^(linkedin|twitter|x|youtube|telegram)$/.test(s) ? "social" : "campaign";

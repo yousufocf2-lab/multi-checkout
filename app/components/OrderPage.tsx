@@ -479,10 +479,15 @@ function SourceCard({ d }: { d: Data }) {
             <p className="text-[11.5px] text-ink-soft">{s.paid ? "This order came from an ad" : s.channel === "direct" ? "Not from an ad" : s.channel === "unknown" ? "Source not recorded" : "Not a paid ad"}</p>
           </div>
         </div>
+        {s.placement && <KV k="Ad shown on" v={s.placement} />}
         {s.campaign && <KV k="Campaign" v={s.campaign} />}
         {s.detail && <KV k="Tags" v={s.campaign ? s.detail.replace(` · ${s.campaign}`, "") : s.detail} />}
         {landing && <KV k="Checkout from" v={`${landing.host}${landing.path === "/" ? "" : landing.path}`} />}
         {s.hint && <p className="flex items-start gap-1.5 text-[11.5px] leading-snug text-ink-faint"><Icon name="help" className="mt-px h-3.5 w-3.5 shrink-0" />{s.hint}</p>}
+        <div className="space-y-2 border-t border-rule pt-2.5">
+          <KV k="Meta Purchase event" v={d.order.capiSentAt ? <span className="text-[#0c5132]">Sent · {longDate(d.order.capiSentAt)}</span> : <span className="text-ink-faint">Not sent</span>} />
+          {d.order.googleSentAt && <KV k="Google Ads purchase" v={<span className="text-[#0c5132]">Sent · {longDate(d.order.googleSentAt)}</span>} />}
+        </div>
       </div>
     </Card>
   );

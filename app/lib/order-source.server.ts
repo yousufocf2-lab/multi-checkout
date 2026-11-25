@@ -33,6 +33,29 @@ async function fillOnce() {
   return done;
 }
 
+/**
+ * Once after this deploy: orders saved as "other_ads" are worked out again (Meta ads shown on WhatsApp / Messenger,
+ * utm_source=wa / msg, were filed as other ads). Remove after it has run.
+ */
+async function refileOtherAds() {
+  const rows = await db.select({ id: orders.id, tracking: orders.tracking, channel: orders.checkoutChannel }).from(orders)
+    .where(sql`${orders.tracking}->>'ch' = 'other_ads'`).limit(20_000);
+  const groups = new Map<string, string[]>();
+  for (const r of rows) {
+    const ch = orderSource(r.tracking, r.channel).channel;
+    if (ch !== "other_ads") groups.set(ch, [...(groups.get(ch) ?? []), r.id]);
+  }
+  let n = 0;
+  for (const [ch, ids] of groups) {
+    for (let i = 0; i < ids.length; i += 1000) {
+      const part = ids.slice(i, i + 1000);
+      await db.execute(sql`update orders set tracking = tracking || jsonb_build_object('ch', ${ch}::text) where id in (${sql.join(part.map((id) => sql`${id}`), sql`, `)})`);
+      n += part.length;
+    }
+  }
+  console.log(`[order-source] refiled ${n} of ${rows.length} "other ads" orders`);
+}
+
 const g = globalThis as unknown as { __gpSourceFill?: ReturnType<typeof setInterval> };
 /** Starts the fill-in job once per server. */
 export function startSourceFill() {
@@ -41,6 +64,7 @@ export function startSourceFill() {
     .then((n) => { if (n) console.log(`[order-source] filled source for ${n} orders`); })
     .catch((e) => console.error("[order-source]", e instanceof Error ? e.message : e));
   setTimeout(run, 50_000).unref?.();
+  setTimeout(() => void refileOtherAds().catch((e) => console.error("[order-source] refile:", e instanceof Error ? e.message : e)), 70_000).unref?.();
   g.__gpSourceFill = setInterval(run, 15 * 60_000);
   g.__gpSourceFill.unref?.();
 }

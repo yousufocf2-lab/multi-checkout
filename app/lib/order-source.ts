@@ -10,6 +10,7 @@ export type OrderSource = {
   campaign?: string; // utm_campaign
   detail?: string; // "facebook / paid · Diwali sale"
   hint?: string; // why we're not sure, shown as a tooltip
+  placement?: string; // where Meta showed the ad: Facebook, Instagram, WhatsApp…
   color: string;
 };
 
@@ -41,6 +42,9 @@ export const SOURCE_FILTERS: { id: string; label: string; channels: (Channel | "
   { id: "unknown", label: "Not tracked", channels: ["unknown"] },
 ];
 
+const PLACEMENTS: Record<string, string> = { fb: "Facebook", facebook: "Facebook", ig: "Instagram", instagram: "Instagram", wa: "WhatsApp", whatsapp: "WhatsApp", msg: "Messenger", messenger: "Messenger", an: "Audience Network", threads: "Threads" };
+const placementOf = (ch: string, s?: string) => (ch === "meta_ads" && s ? PLACEMENTS[s.toLowerCase()] : undefined);
+
 const SOCIAL_SRC = /^(facebook|fb|instagram|ig|meta|messenger)$/i;
 
 function fromUrl(raw: string | undefined): Touch | undefined {
@@ -67,7 +71,7 @@ export function orderSource(t: TrackingInfo | null | undefined, checkoutChannel?
     const a = attributionOf(t.attr.f, t.attr.l);
     const pick = a.last && (a.last.s || a.last.k || a.last.r) ? a.last : a.first ?? a.last;
     return make(a.channel, {
-      campaign: pick?.c, detail: touchSummary(pick) || undefined,
+      campaign: pick?.c, detail: touchSummary(pick) || undefined, placement: placementOf(a.channel, pick?.s),
       hint: a.channel === "social" && pick?.k === "fbclid" ? "Came from a Facebook / Instagram link without ad tags. Add UTM tags to your Meta ads to tell ads apart from posts." : undefined,
     });
   }
@@ -86,7 +90,7 @@ export function orderSource(t: TrackingInfo | null | undefined, checkoutChannel?
   const hint = ch === "social" && touch.k === "fbclid"
     ? "Came from a Facebook / Instagram link (ad or post). Add UTM tags to your Meta ads to see the campaign here."
     : ch === "direct" && !fromLink && !src ? "No ad click or referrer was found for this order." : undefined;
-  return make(ch, { campaign: touch.c, detail: touch.s || touch.r ? touchSummary(touch) : undefined, hint });
+  return make(ch, { campaign: touch.c, detail: touch.s || touch.r ? touchSummary(touch) : undefined, hint, placement: placementOf(ch, touch.s) });
 }
 
 /** Saved channel (tracking.ch) when there is one, otherwise worked out now. */
