@@ -1,5 +1,9 @@
 import { Form, Link, useLocation, useSearchParams } from "@remix-run/react";
-import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+// Measures before paint in the browser (no flash), plain effect on the server
+const useBrowserLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import type { Overview as OverviewData } from "~/lib/stats.server";
 import { PRESETS, rangeLabel } from "~/lib/dates";
 import { compactINR } from "~/lib/pricing";
@@ -24,15 +28,34 @@ export function RangePicker({ current, align = "left" }: { current: RangeLike; a
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(current.preset === "custom");
   const ref = useRef<HTMLDivElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  // Computer: the list opens on top of the page (in <body>), placed under the button, so a card with
+  // overflow-hidden around the picker can't cut it off. Phone: a sheet at the bottom of the screen.
+  const [place, setPlace] = useState<{ top: number; left: number; maxH: number } | null>(null);
   useEffect(() => setOpen(false), [location.search]);
-  useEffect(() => {
+  useBrowserLayoutEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const close = (e: MouseEvent) => { const t = e.target as Node; if (!ref.current?.contains(t) && !pop.current?.contains(t)) setOpen(false); };
     const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const measure = () => {
+      if (!window.matchMedia("(min-width: 640px)").matches) { setPlace(null); return; }
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      const w = 260;
+      const left = Math.max(8, Math.min(window.innerWidth - w - 8, align === "right" ? r.right - w : r.left));
+      const top = r.bottom + 6;
+      setPlace({ top, left, maxH: Math.max(200, window.innerHeight - top - 12) });
+    };
+    measure();
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
-  }, [open]);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc);
+      window.removeEventListener("resize", measure); window.removeEventListener("scroll", measure, true);
+    };
+  }, [open, align]);
 
   const keep = [...params.entries()].filter(([k]) => !["range", "from", "to", "page"].includes(k));
   const href = (id: string) => {
@@ -54,9 +77,11 @@ export function RangePicker({ current, align = "left" }: { current: RangeLike; a
       </button>
       {/* Phone: a sheet at the bottom of the screen, so it never runs off the edge; computer: a dropdown under the button */}
       {open && <div className="fixed inset-0 z-40 bg-slate-950/30 sm:hidden" aria-hidden="true" />}
-      {open && (
-        <div className={`fixed inset-x-3 bottom-3 z-50 max-h-[80vh] overflow-y-auto animate-fadein rounded-2xl border border-rule bg-surface p-2 shadow-lift sm:absolute sm:inset-x-auto sm:bottom-auto sm:z-40 sm:mt-1.5 sm:max-h-none sm:w-[260px] sm:overflow-visible sm:rounded-xl sm:p-1.5 ${align === "right" ? "sm:right-0" : "sm:left-0"}`} role="dialog" aria-label="Date range">
-          <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-faint sm:hidden">Date range</p>
+      {open && typeof document !== "undefined" && createPortal(
+        <div ref={pop} style={place ? { top: place.top, left: place.left, maxHeight: place.maxH } : undefined}
+          className={place ? "fixed z-[60] w-[260px] overflow-y-auto animate-fadein rounded-xl border border-rule bg-surface p-1.5 shadow-lift"
+            : "fixed inset-x-3 bottom-3 z-50 max-h-[80vh] overflow-y-auto animate-fadein rounded-2xl border border-rule bg-surface p-2 shadow-lift"} role="dialog" aria-label="Date range">
+          {!place && <p className="px-2.5 pb-1.5 pt-1 text-[12px] font-semibold uppercase tracking-wide text-ink-faint">Date range</p>}
           {PRESETS.map((p) => {
             const on = current.preset === p.id && !custom;
             return (
@@ -81,7 +106,8 @@ export function RangePicker({ current, align = "left" }: { current: RangeLike; a
               <button className="btn-primary w-full py-2">Apply</button>
             </Form>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
