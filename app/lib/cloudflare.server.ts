@@ -45,6 +45,9 @@ const WORKER_JS = `export default {
     headers.set("x-gp-host", url.hostname);
     headers.set("x-gp-key", env.PROXY_KEY);
     headers.set("x-gp-ip", request.headers.get("cf-connecting-ip") || "");
+    // The visitor's city from Cloudflare (no extra cost): Live view's globe and the order page use it
+    const cf = request.cf || {};
+    try { headers.set("x-gp-geo", encodeURIComponent(JSON.stringify({ city: cf.city, region: cf.region, cc: cf.country, postal: cf.postalCode, lat: cf.latitude, lon: cf.longitude, tz: cf.timezone, isp: cf.asOrganization }))); } catch (e) {}
     headers.delete("host");
     const target = new URL(url.pathname + url.search, env.ORIGIN);
     // Files like /favicon.ico would come from Cloudflare's cache for growpefy.com: give them the store's own cache key

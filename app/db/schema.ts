@@ -857,6 +857,12 @@ export type TrackingInfo = {
   sourceUrl?: string;
   proxyOrigin?: string; // https://<store domain> when the checkout ran on the store's domain (Shopify App Proxy)
   src?: string; // where the website visit came from (utm_source / referrer), for Live view
+  /** First and latest marketing visit on the store's website (utm tags, ad click, referrer) — see lib/attribution.ts */
+  attr?: { f?: import("~/lib/attribution").Touch; l?: import("~/lib/attribution").Touch };
+  /** Order source channel worked out when the order was placed (lib/order-source.ts), used by the Source filter */
+  ch?: string;
+  /** City-level location of the customer's IP when the order was placed */
+  geo?: import("~/lib/geo").Geo;
   giftWrap?: boolean; // customer requested gift wrapping on the storefront
   /** Restaurants: how the food reaches the customer, worked out when checkout started */
   rest?: { mode: import("~/lib/restaurant").Fulfilment; table: string | null; km: number | null; feePaise: number; freeAbove: number | null; eta: number };
@@ -876,7 +882,7 @@ export type OrderCustomer = {
 };
 
 /** Something that happened to an order after it was placed (address changed, note edited…). */
-export type OrderEvent = { at: string; by: string; text: string };
+export type OrderEvent = { at: string; by: string; text: string; kind?: "comment" };
 
 export type OrderLine = {
   variantId: string;

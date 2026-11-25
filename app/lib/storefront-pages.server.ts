@@ -7,6 +7,8 @@ import { joinAddons, splitAddons } from "./dish";
 import { deliveryFee, distanceKm, FULFILMENT_LABEL, openNow, resolveRestaurant, type Fulfilment } from "./restaurant";
 import type { TrackingInfo } from "~/db/schema";
 import { clientIp } from "./orders.server";
+import { readTouches, STORE_ATTR_COOKIE } from "./attribution";
+import { geoFromHeaders } from "./geo.server";
 import { pageByHandle, publishedPage } from "./store-pages.server";
 import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
 import { PAGE_BLOCKS_CSS } from "./page-blocks";
@@ -251,6 +253,8 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
     tracking: {
       ip: clientIp(request), ua: request.headers.get("user-agent")?.slice(0, 500) ?? undefined, sourceUrl: request.headers.get("referer")?.slice(0, 500) ?? undefined,
       ...metaCookies(request),
+      ...(() => { const a = readTouches(request, STORE_ATTR_COOKIE); return a ? { attr: a } : {}; })(),
+      ...(() => { const g = geoFromHeaders(request); return g ? { geo: g } : {}; })(),
       ...(typeof body.src === "string" && body.src ? { src: body.src.replace(/[^\w.\- ]/g, "").slice(0, 60) } : {}),
       ...(body.giftWrap === true ? { giftWrap: true } : {}),
       ...(rest ? { rest } : {}),

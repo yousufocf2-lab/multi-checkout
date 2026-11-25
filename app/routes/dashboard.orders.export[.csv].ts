@@ -6,6 +6,8 @@ import { requireViewer, viewerStores } from "~/lib/auth.server";
 import { orderFilters } from "~/lib/orders-list.server";
 import { dashboardScope } from "~/lib/selection.server";
 import { stateName } from "~/lib/states";
+import { orderSource } from "~/lib/order-source";
+import { shortPlace } from "~/lib/geo";
 
 /** CSV of the orders matching the current filters (up to 20,000 rows). */
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -20,13 +22,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const head = ["Date (IST)", "Order", "Shopify order", "Store", "Status", "Payment", "Customer", "Phone", "Email", "City", "State", "Pincode",
-    "Items", "Item total", "Payment discount", "Coupon", "Coupon discount", "Bank discount", "Mix & Match discount", "Shipping", "Amount", "Refunded"];
+    "Items", "Item total", "Payment discount", "Coupon", "Coupon discount", "Bank discount", "Mix & Match discount", "Shipping", "Amount", "Refunded", "Source", "Campaign", "IP address", "IP location"];
   const lines = rows.map((o) => [
     o.createdAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }), o.id, o.shopifyOrderName ?? "", names.get(o.storeId) ?? "",
     o.status, o.paymentMethod === "cod" ? "COD" : o.paymentMethod === "partial" ? `Partial COD (advance ${((o.amountPaid ?? o.advance ?? 0) / 100).toFixed(2)})` : "Prepaid", `${o.customer.firstName} ${o.customer.lastName}`.trim(), o.customer.phone, o.customer.email,
     o.customer.city, stateName(o.customer.state), o.customer.pincode,
     o.items.map((l) => `${l.title}${l.variantTitle ? ` (${l.variantTitle})` : ""} x${l.quantity}`).join("; "),
     rs(o.subtotal), rs(o.paymentDiscount), o.couponCode ?? "", rs(o.couponDiscount), rs(o.bankDiscount), rs(o.offerDiscount), rs(o.shipping), rs(orderValuePaise(o)), rs(o.refunded),
+    ...(() => { const src = orderSource(o.tracking, o.checkoutChannel); return [src.label, src.campaign ?? "", o.tracking?.ip ?? "", shortPlace(o.tracking?.geo)]; })(),
   ].map(esc).join(","));
   const csv = "﻿" + [head.join(","), ...lines].join("\n");
   return new Response(csv, {

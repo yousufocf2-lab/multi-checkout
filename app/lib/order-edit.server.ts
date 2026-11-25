@@ -8,7 +8,7 @@ import { stateName } from "./states";
 
 const clean = (v: unknown, max = 120) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const event = (by: string, text: string): OrderEvent => ({ at: new Date().toISOString(), by, text });
-const withEvent = (o: Pick<Order, "timeline">, e: OrderEvent) => [...(o.timeline ?? []), e].slice(-50);
+const withEvent = (o: Pick<Order, "timeline">, e: OrderEvent) => [...(o.timeline ?? []), e].slice(-80);
 
 export type AddressInput = Pick<OrderCustomer, "firstName" | "lastName" | "phone" | "email" | "address1" | "address2" | "city" | "state" | "pincode">;
 

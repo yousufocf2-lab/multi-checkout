@@ -4,6 +4,8 @@ import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "~/components/Icons";
+import { LiveGlobe, type GlobeHandle } from "~/components/LiveGlobe";
+import { PlacesPanel } from "~/components/LivePlaces";
 import { Notice } from "~/components/ui";
 import { requireStore, requireViewer } from "~/lib/auth.server";
 import { liveSnapshot, type LiveSnapshot, type Stage } from "~/lib/live.server";
@@ -130,6 +132,9 @@ export default function LiveView() {
         </div>
       </section>
 
+      {/* ---------- live globe ---------- */}
+      <GlobeSection data={data} />
+
       {/* ---------- where visitors are ---------- */}
       <section className="panel p-0">
         <div className="flex items-center justify-between border-b border-rule px-4 py-3 sm:px-5">
@@ -158,7 +163,7 @@ export default function LiveView() {
                     {v.known ? (
                       <p className="flex min-w-0 items-center gap-1.5 text-[13px]"><b key={v.name} className="lv-glow truncate font-semibold">{v.name}</b>{v.place && <span key={v.place} className="lv-glow flex min-w-0 items-center gap-0.5 truncate text-[12px] text-ink-soft"><Icon name="route" className="h-3 w-3 shrink-0" />{v.place}</span>}</p>
                     ) : <p className="truncate text-[13px] font-medium">{v.page}</p>}
-                    <p className="truncate text-[11.5px] text-ink-faint">{v.stage === "checkout" && v.step ? `On ${STEP[v.step as 1 | 2 | 3]} · ` : ""}{v.source} · {v.device === "desktop" ? "Desktop" : "Mobile"}{v.stage !== "checkout" ? ` · ${v.pages} page${v.pages === 1 ? "" : "s"}` : ""}{v.cartQty ? ` · ${v.cartQty} in cart${v.cartPaise ? ` (${inr(v.cartPaise)})` : ""}` : ""}</p>
+                    <p className="truncate text-[11.5px] text-ink-faint">{v.where ? `${v.flag ? `${v.flag} ` : ""}${v.where} · ` : ""}{v.stage === "checkout" && v.step ? `On ${STEP[v.step as 1 | 2 | 3]} · ` : ""}{v.source} · {v.device === "desktop" ? "Desktop" : "Mobile"}{v.stage !== "checkout" ? ` · ${v.pages} page${v.pages === 1 ? "" : "s"}` : ""}{v.cartQty ? ` · ${v.cartQty} in cart${v.cartPaise ? ` (${inr(v.cartPaise)})` : ""}` : ""}</p>
                   </div>
                   <span className="hidden shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline" style={{ color: STAGE[v.stage].color, background: `${STAGE[v.stage].color}14` }}>{STAGE[v.stage].label}</span>
                   <span className="num w-12 shrink-0 text-right text-[11px] text-ink-faint sm:w-14 sm:text-[11.5px]">{ago(t - v.since)}</span>
@@ -196,6 +201,22 @@ export default function LiveView() {
         <Bars title="Where they came from" rows={data.sources} total={data.total} color="#5b6cf0" />
       </div>
     </div>
+  );
+}
+
+function GlobeSection({ data }: { data: LiveSnapshot }) {
+  const globe = useRef<GlobeHandle>(null);
+  return (
+    <section className="panel overflow-hidden p-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-4 py-3 sm:px-5">
+        <h2 className="flex items-center gap-2 text-[14px] font-semibold"><Icon name="globe" className="h-4 w-4 text-ink-soft" />Live map</h2>
+        <span className="text-[11.5px] text-ink-faint">Drag to turn the globe · tap a dot for details</span>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <div className="lv-globe-bg border-b border-rule lg:border-b-0 lg:border-r"><LiveGlobe ref={globe} points={data.points} orders={data.orderPoints} height={420} /></div>
+        <PlacesPanel data={data} onPick={(lat, lon) => globe.current?.focus(lat, lon)} />
+      </div>
+    </section>
   );
 }
 
@@ -342,6 +363,8 @@ const CSS = `
 @keyframes lv-draw { from { stroke-dashoffset: 1 } to { stroke-dashoffset: 0 } }
 @keyframes lv-glow { 0% { background: rgba(31,143,95,.18); border-radius: 4px } 100% { background: transparent } }
 @keyframes lv-fade { from { opacity: 0 } to { opacity: 1 } }
+.lv-globe-bg { background: radial-gradient(70% 80% at 50% 45%, rgba(56,189,248,.08), transparent 70%); }
+[data-theme="dark"] .lv-globe-bg { background: radial-gradient(70% 80% at 50% 45%, rgba(56,189,248,.10), transparent 70%); }
 .lv-hero { background: radial-gradient(120% 140% at 0% 0%, rgba(31,143,95,.07), transparent 55%), #fff; }
 .lv-ring { animation: lv-ring 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
 .lv-ping { animation: lv-ping 1.6s ease-out infinite; }

@@ -20,6 +20,8 @@ import type { SavedAddressPreview } from "~/lib/addresses";
 import { findCoupon, listVisibleCoupons } from "~/lib/coupons.server";
 import { freeGiftsFor, type FreeLine, type OfferHint } from "~/lib/offers.server";
 import { clientIp, finalizeOrder, newOrderId } from "~/lib/orders.server";
+import { geoFromHeaders } from "~/lib/geo.server";
+import { withSource } from "~/lib/order-source.server";
 import { fromMetaAd, OUTSOURCE_TAG, routeTarget, takeSourceStock } from "~/lib/order-route.server";
 import { dropshipBlock } from "~/lib/dropship.server";
 import {
@@ -392,13 +394,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
         fulfilment: restInfo.mode, tableNo: restInfo.table,
         kitchenStatus: resolveRestaurant(store.restaurant).kitchen.autoAccept ? "preparing" as const : "new" as const, kitchenAt: new Date(),
       } : {}),
-      tracking: {
+      tracking: withSource({
         ...(session.tracking ?? {}),
         ...(proxyOrigin ? { proxyOrigin } : {}),
         ip: clientIp(request) ?? session.tracking?.ip,
         ua: request.headers.get("user-agent")?.slice(0, 500) ?? session.tracking?.ua,
+        ...(() => { const g = geoFromHeaders(request) ?? session.tracking?.geo; return g ? { geo: g } : {}; })(),
         ...(routedTo ? { outsource: { from: store.id } } : {}),
-      },
+      }, store.smartCheckout ? "premium_checkout" : "native"),
       ...(routedTo || otpSkipped ? { manualTags: [...(routedTo ? [OUTSOURCE_TAG] : []), ...(otpSkipped ? [OTP_SKIPPED_TAG] : [])] } : {}),
     })
     .returning();

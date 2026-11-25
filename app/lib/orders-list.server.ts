@@ -5,6 +5,7 @@ import { addDays, resolveRange, type Range } from "./dates";
 import { INDIAN_STATES } from "./states";
 import { storeBaseUrl } from "./urls.server";
 import { liveSessions } from "./live.server";
+import { SOURCE_FILTERS } from "./order-source";
 
 export const PAGE = 50;
 
@@ -14,7 +15,7 @@ const amountCol = orderValueSql;
 
 export type OrderFilters = {
   status: string; method: string; tag: string; product: string; state: string; q: string;
-  min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; range: Range;
+  min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; source: string; range: Range;
 };
 
 /** WHERE clause for the orders list, the summary and the CSV export. Every filter combines with AND. */
@@ -32,6 +33,7 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
     min: (params.get("min") ?? "").replace(/[^\d]/g, ""), max: (params.get("max") ?? "").replace(/[^\d]/g, ""), range,
     paymentStatus: params.get("payment_status") ?? "", fulfillment: params.get("fulfillment") ?? "", deliveryStatus: params.get("delivery_status") ?? "",
     returnStatus: params.get("return_status") ?? "", labelStatus: params.get("label_status") ?? "", deliveryMethod: params.get("delivery_method") ?? "",
+    source: SOURCE_FILTERS.some((x) => x.id === params.get("source")) ? params.get("source")! : "",
   };
 
   const where: SQL[] = [inArray(orders.storeId, ids.length ? ids : [-1])];
@@ -61,6 +63,9 @@ export async function orderFilters(scope: Store[], params: URLSearchParams) {
   if (f.labelStatus === "added") push("label_status", isNotNull(orders.awb));
   if (f.labelStatus === "not_added") push("label_status", sql`${orders.awb} is null`);
   if (f.deliveryMethod) push("delivery_method", eq(orders.shippingTitle, f.deliveryMethod));
+  // Order source (Meta ad, Google ad, direct…): saved on each order as tracking.ch
+  const src = SOURCE_FILTERS.find((x) => x.id === f.source);
+  if (src) push("source", sql`(coalesce(${orders.tracking}->>'ch', 'unknown') in (${sql.join(src.channels.map((c) => sql`${c}`), sql`, `)}))`);
   // A search looks through every date (an old order must still be found)
   if (range.preset !== "max" && !f.q) {
     where.push(gte(orders.createdAt, new Date(`${range.since}T00:00:00+05:30`)));
@@ -341,6 +346,13 @@ export async function handleOrderAction(viewer: Viewer, fd: FormData) {
   if (intent === "address") {
     const r = await updateOrderAddress(store, o, readAddress(fd), by);
     return "error" in r ? json({ ok: null, error: r.error }) : json({ ok: r.ok, error: null });
+  }
+  if (intent === "comment") {
+    const text = String(fd.get("comment") ?? "").trim().replace(/\s+\n/g, "\n").slice(0, 1000);
+    if (!text) return json({ ok: null, error: "Write a comment first." });
+    const timeline = [...(o.timeline ?? []), { at: new Date().toISOString(), by, text, kind: "comment" as const }].slice(-80);
+    await db.update(orders).set({ timeline, updatedAt: new Date() }).where(eq(orders.id, o.id));
+    return json({ ok: "Comment added.", error: null });
   }
   if (intent === "notes") {
     const r = await updateOrderNotes(o, { staff: String(fd.get("staffNote") ?? ""), customer: String(fd.get("customerNote") ?? "") }, by);

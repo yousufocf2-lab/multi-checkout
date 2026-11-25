@@ -207,6 +207,7 @@ export default function DashboardLayout() {
   // ---- Growpefy admin panel ----
   const adminMain: NavNode[] = [
     { label: "Home", to: adminHome, icon: "home", match: (p) => p === "/dashboard", show: true },
+    { label: "Live globe", to: "/dashboard/live", icon: "globe", show: may("analytics") || may("stores") },
     { label: "Leads", to: "/dashboard/leads", icon: "target", show: may("leads") },
     { label: "Clients", to: "/dashboard/clients", icon: "users", show: may("clients") },
     { label: "Support inbox", to: "/dashboard/support", icon: "help", show: may("support"), badge: support || undefined },

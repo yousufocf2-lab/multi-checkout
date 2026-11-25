@@ -1,7 +1,9 @@
 // Live view heartbeat from Growpefy Store websites and the checkout page. Always answers 204.
 // Body (text/plain JSON): { s: store slug | c: checkout session id, u: tab id, p: path, r: root, d: device, t: title, src, q: cart qty, v: cart paise, e: "leave" }
 import type { ActionFunctionArgs } from "@remix-run/node";
-import { heartbeat, storeForSession } from "~/lib/live.server";
+import { heartbeat, setVisitorGeo, storeForSession } from "~/lib/live.server";
+import { cachedGeo, geoFromHeaders, lookupIp } from "~/lib/geo.server";
+import { clientIp } from "~/lib/orders.server";
 import { storeBySlug } from "~/lib/storefront.server";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
@@ -45,14 +47,21 @@ export async function action({ request }: ActionFunctionArgs) {
     }
     if (!storeId || !visitor) return done();
 
-    heartbeat(storeId, {
-      visitor, path,
+    // Where the visitor is: from Cloudflare when the store's domain goes through it, else the IP (looked up once)
+    const ip = clientIp(request);
+    const geo = geoFromHeaders(request) ?? cachedGeo(ip) ?? null;
+    const needsGeo = heartbeat(storeId, {
+      visitor, path, geo,
       title: typeof b.t === "string" ? b.t : undefined,
       device: b.d === "desktop" ? "desktop" : "mobile",
       source, session, step: Number(b.st) || undefined,
       cartQty: Number(b.q) || 0, cartPaise: Number(b.v) || 0,
       leave: b.e === "leave",
     });
+    if (needsGeo && !geo && ip) {
+      const sid = storeId, who = visitor;
+      void lookupIp(ip).then((g) => setVisitorGeo(sid, who, g)).catch(() => null);
+    }
   } catch { /* ignore bad beacons */ }
   return done();
 }

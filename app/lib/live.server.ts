@@ -3,6 +3,7 @@
 // (one app instance): nothing personal is kept — a random per-tab id, the page, device and where they came from.
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { checkoutSessions, db, orders } from "~/db.server";
+import { flagOf, hasPoint, shortPlace, type Geo } from "./geo";
 
 export type Stage = "home" | "browsing" | "product" | "cart" | "checkout";
 export const STAGES: Stage[] = ["home", "browsing", "product", "cart", "checkout"];
@@ -12,6 +13,7 @@ type Visitor = {
   source: string; cartQty: number; cartPaise: number; firstSeen: number; lastSeen: number; expires: number; pages: number;
   // Checkout only: what the customer has typed so far, and the step they're on
   name?: string; place?: string; step?: 1 | 2 | 3; session?: string;
+  geo?: Geo | null; // city of the visitor's IP (Cloudflare or a lookup)
 };
 type LiveEvent = { id: number; at: number; kind: "join" | "cart" | "checkout" | "order" | "details" | "left"; text: string; sub?: string; session?: string };
 type StoreLive = { visitors: Map<string, Visitor>; events: LiveEvent[]; history: { minute: number; n: number }[]; peak: { day: string; n: number; at: number } };
@@ -80,14 +82,15 @@ export function sourceLabel(raw: string) {
   return raw.replace(/^www\./, "").slice(0, 30) || "Direct";
 }
 
-export type Beat = { visitor: string; path: string; title?: string; device?: string; source?: string; cartQty?: number; cartPaise?: number; leave?: boolean; step?: number; session?: string };
+export type Beat = { visitor: string; path: string; title?: string; device?: string; source?: string; cartQty?: number; cartPaise?: number; leave?: boolean; step?: number; session?: string; geo?: Geo | null };
 
-export function heartbeat(storeId: number, beat: Beat) {
+/** Records a heartbeat. Returns true when the visitor still has no location (the caller may look the IP up). */
+export function heartbeat(storeId: number, beat: Beat): boolean {
   const b = bucket(storeId);
   const now = Date.now();
   const v = b.visitors.get(beat.visitor);
-  if (beat.leave) { if (v) v.expires = Math.min(v.expires, now + LEAVE_GRACE_MS); return; }
-  if (!v && b.visitors.size >= MAX_VISITORS) return;
+  if (beat.leave) { if (v) v.expires = Math.min(v.expires, now + LEAVE_GRACE_MS); return false; }
+  if (!v && b.visitors.size >= MAX_VISITORS) return false;
   const path = beat.path || "/";
   const stage = stageOf(path);
   const title = clean(beat.title, 120);
@@ -95,16 +98,66 @@ export function heartbeat(storeId: number, beat: Beat) {
   const cartPaise = Math.max(0, Math.min(1e10, Math.round(Number(beat.cartPaise) || 0)));
   if (!v) {
     const source = sourceLabel(clean(beat.source, 60));
-    b.visitors.set(beat.visitor, { id: beat.visitor, path, title, stage, device: beat.device === "desktop" ? "desktop" : "mobile", source, cartQty, cartPaise, firstSeen: now, lastSeen: now, expires: now + ALIVE_MS, pages: 1, session: beat.session, step: stepOf(beat.step) });
-    if (stage === "checkout") push(b, { kind: "checkout", text: "Started checkout", sub: cartPaise ? inr(cartPaise) : undefined });
-    else push(b, { kind: "join", text: `New visitor from ${source}`, sub: title || pageName(path) });
+    b.visitors.set(beat.visitor, { id: beat.visitor, path, title, stage, device: beat.device === "desktop" ? "desktop" : "mobile", source, cartQty, cartPaise, firstSeen: now, lastSeen: now, expires: now + ALIVE_MS, pages: 1, session: beat.session, step: stepOf(beat.step), geo: beat.geo ?? null });
+    const where = shortPlace(beat.geo);
+    if (stage === "checkout") push(b, { kind: "checkout", text: "Started checkout", sub: [where, cartPaise ? inr(cartPaise) : ""].filter(Boolean).join(" · ") || undefined });
+    else push(b, { kind: "join", text: `New visitor from ${source}`, sub: [where, title || pageName(path)].filter(Boolean).join(" · ") });
   } else {
     if (v.path !== path) v.pages++;
     if (cartQty > v.cartQty) push(b, { kind: "cart", text: "Added to cart", sub: `${cartQty} item${cartQty === 1 ? "" : "s"}${cartPaise ? ` · ${inr(cartPaise)}` : ""}` });
     if (stage === "checkout" && v.stage !== "checkout") push(b, { kind: "checkout", text: "Started checkout", sub: cartPaise ? inr(cartPaise) : undefined });
     Object.assign(v, { path, title: title || v.title, stage, cartQty, cartPaise: cartPaise || (cartQty ? v.cartPaise : 0), lastSeen: now, expires: now + ALIVE_MS, step: stepOf(beat.step) ?? v.step });
+    if (!v.geo && beat.geo) v.geo = beat.geo;
   }
   prune(b, now);
+  return !b.visitors.get(beat.visitor)?.geo;
+}
+
+/** A location looked up after the heartbeat came in. */
+export function setVisitorGeo(storeId: number, visitor: string, geo: Geo | null) {
+  const v = live.get(storeId)?.visitors.get(visitor);
+  if (v && geo && !v.geo) v.geo = geo;
+}
+
+/** One visitor as a point on the globe (only those with a known location). */
+function pointOf(v: Visitor, store?: string) {
+  if (!hasPoint(v.geo)) return null;
+  return {
+    k: v.id.slice(-10), lat: v.geo.lat, lon: v.geo.lon, place: shortPlace(v.geo), cc: v.geo.cc ?? "", stage: v.stage, device: v.device,
+    page: v.title || pageName(v.path), source: v.source, since: v.firstSeen, cartPaise: v.cartQty ? v.cartPaise : 0, name: v.name ?? null, store: store ?? null,
+  };
+}
+export type LivePoint = NonNullable<ReturnType<typeof pointOf>>;
+
+/** Visitors per place ("Hyderabad, Telangana · 3"), biggest first. */
+function placesOf(list: Visitor[]) {
+  const m = new Map<string, { label: string; cc: string; flag: string; n: number; lat: number | null; lon: number | null }>();
+  let unknown = 0;
+  for (const v of list) {
+    const label = shortPlace(v.geo);
+    if (!label) { unknown++; continue; }
+    const hit = m.get(label);
+    if (hit) hit.n++;
+    else m.set(label, { label, cc: v.geo?.cc ?? "", flag: flagOf(v.geo?.cc), n: 1, lat: hasPoint(v.geo) ? v.geo.lat : null, lon: hasPoint(v.geo) ? v.geo.lon : null });
+  }
+  const countries = new Map<string, number>();
+  for (const v of list) if (v.geo?.cc) countries.set(v.geo.cc, (countries.get(v.geo.cc) ?? 0) + 1);
+  return {
+    places: [...m.values()].sort((a, b) => b.n - a.n).slice(0, 12),
+    countries: [...countries.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([cc, n]) => ({ cc, flag: flagOf(cc), n })),
+    unknown,
+  };
+}
+
+type OrderPoint = { id: string; lat: number; lon: number; place: string; at: number; amountPaise: number; store: string | null };
+function orderPoints(rows: { id: string; total: number; createdAt: Date; tracking: { geo?: Geo } | null; storeId: number }[], names?: Map<number, string>): OrderPoint[] {
+  const out: OrderPoint[] = [];
+  for (const o of rows) {
+    const g = o.tracking?.geo;
+    if (!hasPoint(g)) continue;
+    out.push({ id: o.id.slice(-8), lat: g.lat, lon: g.lon, place: shortPlace(g), at: o.createdAt.getTime(), amountPaise: o.total, store: names?.get(o.storeId) ?? null });
+  }
+  return out;
 }
 
 const stepOf = (n: unknown) => (n === 1 || n === 2 || n === 3 ? n : undefined);
@@ -184,7 +237,7 @@ export async function liveSnapshot(storeId: number) {
 
   // Orders placed in the last 30 minutes join the activity feed
   const since = new Date(now - 30 * 60_000);
-  const recent = await db.select({ id: orders.id, sessionId: orders.sessionId, total: orders.total, method: orders.paymentMethod, status: orders.status, createdAt: orders.createdAt, customer: orders.customer })
+  const recent = await db.select({ id: orders.id, sessionId: orders.sessionId, total: orders.total, method: orders.paymentMethod, status: orders.status, createdAt: orders.createdAt, customer: orders.customer, tracking: orders.tracking, storeId: orders.storeId })
     .from(orders).where(and(eq(orders.storeId, storeId), gte(orders.createdAt, since), inArray(orders.status, ["paid", "cod_placed"])))
     .orderBy(desc(orders.createdAt)).limit(10).catch(() => []);
   const orderEvents = recent.map((o, i) => ({
@@ -211,13 +264,16 @@ export async function liveSnapshot(storeId: number) {
     sources: tally((v) => v.source),
     visitors: list.sort((a, b) => a.firstSeen - b.firstSeen).slice(0, 60).map((v) => ({
       key: v.id.slice(-10), name: v.name || `Visitor ${v.id.replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase()}`, known: Boolean(v.name), hue: avatarHue(v.id),
-      place: v.place ?? null, step: v.step ?? null,
+      place: v.place ?? null, step: v.step ?? null, where: shortPlace(v.geo), flag: flagOf(v.geo?.cc),
       page: v.title || pageName(v.path), stage: v.stage, device: v.device, source: v.source,
       since: v.firstSeen, pages: v.pages, cartQty: v.cartQty, cartPaise: v.cartPaise,
     })),
     events,
     history,
     peak: { n: b.peak.n, at: b.peak.at },
+    points: list.map((v) => pointOf(v)).filter((p): p is LivePoint => Boolean(p)).slice(0, 600),
+    orderPoints: orderPoints(recent),
+    ...placesOf(list),
   };
 }
 export type LiveSnapshot = Awaited<ReturnType<typeof liveSnapshot>>;
@@ -229,3 +285,53 @@ export function liveCount(storeId: number) {
   prune(b);
   return b.visitors.size;
 }
+
+/**
+ * Super admin: everyone on every store's website right now, for the all-stores globe.
+ * Same shape as a store's snapshot where it matters (points, places, sources), plus visitors per store.
+ */
+export async function liveSnapshotAll(storeList: { id: number; name: string }[]) {
+  const now = Date.now();
+  const names = new Map(storeList.map((s) => [s.id, s.name]));
+  const all: { v: Visitor; storeId: number }[] = [];
+  const perStore: { id: number; name: string; n: number; checkout: number; cartPaise: number }[] = [];
+  const history = Array.from({ length: HISTORY_MIN }, () => 0);
+  const minute = Math.floor(now / 60_000);
+  for (const [id, b] of live) {
+    if (!names.has(id)) continue;
+    prune(b, now);
+    const vs = [...b.visitors.values()];
+    for (const v of vs) all.push({ v, storeId: id });
+    if (vs.length) perStore.push({ id, name: names.get(id) ?? `Store ${id}`, n: vs.length, checkout: vs.filter((v) => v.stage === "checkout").length, cartPaise: vs.reduce((a, v) => a + (v.cartQty ? v.cartPaise : 0), 0) });
+    const byMinute = new Map(b.history.map((h) => [h.minute, h.n]));
+    for (let i = 0; i < HISTORY_MIN; i++) history[i] += byMinute.get(minute - (HISTORY_MIN - 1 - i)) ?? 0;
+  }
+  history[HISTORY_MIN - 1] = Math.max(history[HISTORY_MIN - 1], all.length);
+  const list = all.map((x) => x.v);
+  const count = (f: (v: Visitor) => boolean) => list.filter(f).length;
+  const tally = (key: (v: Visitor) => string) => {
+    const m = new Map<string, number>();
+    for (const v of list) m.set(key(v), (m.get(key(v)) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([label, n]) => ({ label, n }));
+  };
+  const ids = storeList.map((s) => s.id);
+  const recent = ids.length ? await db.select({ id: orders.id, total: orders.total, createdAt: orders.createdAt, tracking: orders.tracking, storeId: orders.storeId })
+    .from(orders).where(and(inArray(orders.storeId, ids), gte(orders.createdAt, new Date(now - 30 * 60_000)), inArray(orders.status, ["paid", "cod_placed"])))
+    .orderBy(desc(orders.createdAt)).limit(200).catch(() => []) : [];
+  return {
+    now,
+    total: list.length,
+    stages: Object.fromEntries(STAGES.map((s) => [s, count((v) => v.stage === s)])) as Record<Stage, number>,
+    devices: { mobile: count((v) => v.device === "mobile"), desktop: count((v) => v.device === "desktop") },
+    cartValuePaise: list.reduce((a, v) => a + (v.cartQty ? v.cartPaise : 0), 0),
+    sources: tally((v) => v.source),
+    stores: perStore.sort((a, b) => b.n - a.n).slice(0, 30),
+    ordersLast30: recent.length,
+    salesLast30Paise: recent.reduce((a, o) => a + o.total, 0),
+    history,
+    points: all.map(({ v, storeId }) => pointOf(v, names.get(storeId))).filter((p): p is LivePoint => Boolean(p)).slice(0, 1500),
+    orderPoints: orderPoints(recent, names),
+    ...placesOf(list),
+  };
+}
+export type LiveAllSnapshot = Awaited<ReturnType<typeof liveSnapshotAll>>;

@@ -137,13 +137,21 @@ export function parseRaw(raw: string): { f?: Touch; l?: Touch } | null {
   } catch { return null; }
 }
 
-/** Server side: reads the cookie from a request. Null when the visitor has none (e.g. cookies blocked). */
-export function readAttribution(request: Request): Attribution | null {
-  const m = (request.headers.get("Cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${ATTR_COOKIE}=([^;]*)`));
+/** Same record on a store's own website (written by the theme), read when the shopper starts checkout. */
+export const STORE_ATTR_COOKIE = "gp_vs";
+
+/** Server side: the raw first / latest visits from a request's cookie. */
+export function readTouches(request: Request, name = ATTR_COOKIE): { f?: Touch; l?: Touch } | null {
+  const m = (request.headers.get("Cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
   if (!m) return null;
   let raw = m[1];
   try { raw = decodeURIComponent(raw); } catch { return null; }
-  const p = parseRaw(raw);
+  return parseRaw(raw);
+}
+
+/** Server side: reads the cookie from a request. Null when the visitor has none (e.g. cookies blocked). */
+export function readAttribution(request: Request): Attribution | null {
+  const p = readTouches(request);
   return p ? attributionOf(p.f, p.l) : null;
 }
 

@@ -99,6 +99,18 @@
     function send(){if(sent)return;sent=true;v.cls=Math.round(v.cls*1000)/1000;var body=JSON.stringify(v);if(!navigator.sendBeacon||!navigator.sendBeacon('/api/vitals',body))fetch('/api/vitals',{method:'POST',body:body,keepalive:true,mode:'no-cors'})}
     addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')send()});addEventListener('pagehide',send);
   }catch(e){}})();
+  /* Order source: the first and latest marketing visit (utm tags, ad click, referrer), read by the checkout */
+  (function(){try{
+    var q=new URLSearchParams(location.search),ref='',host=location.hostname.replace(/^www\./,'');
+    try{ref=document.referrer?new URL(document.referrer).hostname.replace(/^www\./,''):''}catch(e){}
+    if(ref===host||/growpefy|payu|razorpay|cashfree|phonepe|paytm|shiprocket|delhivery/i.test(ref))ref='';
+    var k=['gclid','gbraid','wbraid','fbclid','msclkid'].filter(function(x){return q.get(x)})[0];
+    function c(v,n){return v?String(v).replace(/[^\w .:\/@+-]/g,'').slice(0,n)||undefined:undefined}
+    var t={s:c(q.get('utm_source'),40),m:c(q.get('utm_medium'),40),c:c(q.get('utm_campaign'),80),t:c(q.get('utm_term'),80),k:k,r:c(ref,60),lp:c(location.pathname,60),at:Date.now()};
+    var m=document.cookie.match(/(?:^|; )gp_vs=([^;]*)/),old=null;try{old=m?JSON.parse(decodeURIComponent(m[1])):null}catch(e){}
+    if(old&&!(t.s||t.k||t.r))return;
+    document.cookie='gp_vs='+encodeURIComponent(JSON.stringify({f:(old&&old.f)||t,l:t}))+'; Max-Age=7776000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');
+  }catch(e){}})();
   /* Live view: a small heartbeat while the page is open (random tab id, page, device, where the visit came from, cart size) */
   (function(){try{
     var u=sessionStorage.getItem('gp_visit_id');if(!u)return;

@@ -1,27 +1,27 @@
 import { OUTSOURCE_TAG } from "~/lib/order-route";
-import { ItemsEditor } from "~/components/ItemsEditor";
 import { usePincodeFormFill } from "~/components/pincode-fill";
-import { gatewayName } from "~/lib/gateways/catalog";
 import { courierById } from "~/lib/courier-catalog";
 import { SHIP_STATUS_LABELS } from "~/lib/rto-shield";
-import { orderValuePaise, toCollectPaise } from "~/lib/payment-methods";
+import { orderValuePaise } from "~/lib/payment-methods";
+import { channelForOrder, orderSource, SOURCE_FILTERS, SOURCE_META } from "~/lib/order-source";
+import type { TrackingInfo } from "~/db/schema";
 import { Form, Link, useFetcher, useLocation, useNavigation, useSearchParams, useNavigate } from "@remix-run/react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { OrderCustomer, OrderLine } from "~/db/schema";
 import { INDIAN_STATES } from "~/lib/states";
 import { Icon } from "./Icons";
 import { RangePicker } from "./Overview";
-import { EmptyState, StatusBadge, SubmitButton } from "./ui";
+import { EmptyState, StatusBadge } from "./ui";
 
 import { formatINR as inr } from "~/lib/pricing";
-const when = (d: string) => new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+export const when = (d: string) => new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 
 export type OrderRow = {
   id: string; storeId: number; storeName: string; status: string; paymentMethod: string; customer: OrderCustomer; items: OrderLine[];
   subtotal: number; paymentDiscount: number; couponCode: string | null; couponDiscount: number; bankDiscount: number; offerDiscount: number;
   shipping: number; shippingTitle: string | null; total: number; amountPaid: number | null; advance: number | null; paymentFee: number; tip?: number; confirmStatus: string | null; refunded: number; refundStatus: string | null;
   payuMihpayid: string | null; awb?: string | null; courier?: string | null; shipStatus?: string | null; shipStatusRaw?: string | null; shipError?: string | null; courierRef?: string | null; staffNote?: string | null; customerNote?: string | null; timeline?: { at: string; by: string; text: string }[]; gateway?: string | null; gatewayRef?: string | null; shopifyOrderId: string | null; shopifyOrderName: string | null; error: string | null; createdAt: string;
-  manualTags: string[]; tags: string[]; channel: string;
+  manualTags: string[]; tags: string[]; channel: string; tracking?: TrackingInfo | null; checkoutChannel?: string | null;
   cancelledAt?: string | null; cancelReason?: string | null; cancelledBy?: string | null;
 };
 
@@ -51,7 +51,7 @@ export function PaymentTag({ method, status }: { method: string; status: string 
     : <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-semibold text-[#1c5cab]">Paid</span>;
 }
 
-export type OrdersFilterState = { status: string; method: string; tag: string; product: string; state: string; q: string; min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; range: { preset: string; since: string; until: string } };
+export type OrdersFilterState = { status: string; method: string; tag: string; product: string; state: string; q: string; min: string; max: string; paymentStatus: string; fulfillment: string; deliveryStatus: string; returnStatus: string; labelStatus: string; deliveryMethod: string; source?: string; range: { preset: string; since: string; until: string } };
 export type OrdersSummary = { count: number; cancelled?: number; value: number; prepaid: number; cod: number; aov: number; items: number; fulfilled: number; delivered: number; returned: number };
 
 const rupee = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
@@ -75,8 +75,8 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
   };
   const link = useLink();
   const navigate = useNavigate();
-  const extra = [f.status, f.method, f.min || f.max, f.product, f.tag, f.state, f.paymentStatus, f.fulfillment, f.deliveryStatus, f.returnStatus, f.labelStatus, f.deliveryMethod].filter(Boolean).length;
-  const clearAll = link({ min: "", max: "", product: "", tag: "", state: "", q: "", status: "", status_not: "", method: "", payment_status: "", payment_status_not: "", fulfillment: "", fulfillment_not: "", delivery_status: "", delivery_status_not: "", return_status: "", return_status_not: "", label_status: "", label_status_not: "", delivery_method: "", delivery_method_not: "", state_not: "", product_not: "", tag_not: "" });
+  const extra = [f.status, f.method, f.min || f.max, f.product, f.tag, f.state, f.paymentStatus, f.fulfillment, f.deliveryStatus, f.returnStatus, f.labelStatus, f.deliveryMethod, f.source].filter(Boolean).length;
+  const clearAll = link({ min: "", max: "", product: "", tag: "", state: "", q: "", status: "", status_not: "", method: "", payment_status: "", payment_status_not: "", fulfillment: "", fulfillment_not: "", delivery_status: "", delivery_status_not: "", return_status: "", return_status_not: "", label_status: "", label_status_not: "", delivery_method: "", delivery_method_not: "", state_not: "", product_not: "", tag_not: "", source: "", source_not: "" });
   const views = [
     { label: "All", patch: { status: "", method: "" }, on: !f.status && !f.method },
     { label: "Prepaid", patch: { status: "", method: "prepaid" }, on: !f.status && f.method === "prepaid" },
@@ -143,8 +143,8 @@ export function OrdersView({ orders, hasMore, page, showStore, filters: f, summa
           <>
             <ul className="divide-y divide-rule sm:hidden">{orders.map((o) => <OrderCard key={o.id} o={o} showStore={showStore} />)}</ul>
             <div className="hidden overflow-x-auto sm:block">
-              <table className="table min-w-[1420px]">
-                <thead><tr><th className="w-8"><input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? new Set() : new Set(orders.map((o) => o.id)))} className="h-4 w-4" aria-label="Select all orders" /></th><th>Order</th><th>Date</th><th>Customer</th>{showStore && <th>Store</th>}<th>Fulfill by</th><th>Channel</th><th className="text-right">Total</th><th>Payment status</th><th>Fulfillment status</th><th>Items</th><th>Delivery status</th><th>Delivery method</th><th>Tags</th></tr></thead>
+              <table className="table min-w-[1540px]">
+                <thead><tr><th className="w-8"><input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? new Set() : new Set(orders.map((o) => o.id)))} className="h-4 w-4" aria-label="Select all orders" /></th><th>Order</th><th>Date</th><th>Customer</th>{showStore && <th>Store</th>}<th>Fulfill by</th><th>Channel</th><th>Source</th><th className="text-right">Total</th><th>Payment status</th><th>Fulfillment status</th><th>Items</th><th>Delivery status</th><th>Delivery method</th><th>Tags</th></tr></thead>
                 <tbody>{orders.map((o) => <OrderRowView key={o.id} o={o} showStore={showStore} />)}</tbody>
               </table>
             </div>
@@ -191,6 +191,7 @@ function OrdersSearchFilter({ filters, products, tags, deliveryOptions, clearAll
     { key: "delivery_status", label: "Delivery status", options: [["pickup_pending", "Ready for pickup"], ["in_transit", "In transit"], ["out_for_delivery", "Out for delivery"], ["ndr", "Delivery failed (NDR)"], ["delivered", "Delivered"], ["rto_transit", "RTO in transit"], ["rto", "Returned to origin"], ["returned", "Returned"], ["cancelled", "Cancelled"]] },
     { key: "return_status", label: "Return status", options: [["returned", "Returned"], ["not_returned", "Not returned"]] },
     { key: "label_status", label: "Shipping label status", options: [["added", "Label added"], ["not_added", "No label"]] },
+    { key: "source", label: "Order source (ad / direct)", options: SOURCE_FILTERS.map((x) => [x.id, x.label]) },
     { key: "total", label: "Order total", options: [] as string[][] },
     { key: "delivery_method", label: "Delivery method", options: deliveryOptions.map((x) => [x, x]) },
     { key: "state", label: "Destination", options: INDIAN_STATES.map((s) => [s.code, s.name]) },
@@ -211,7 +212,7 @@ function OrdersSearchFilter({ filters, products, tags, deliveryOptions, clearAll
     navigate(`${location.pathname}?${p}`, { preventScrollReset: true });
   };
   const active = [
-    ["status", "Order status"], ["payment_status", "Payment status"], ["fulfillment", "Fulfillment status"], ["delivery_status", "Delivery status"], ["return_status", "Return status"], ["label_status", "Label status"], ["delivery_method", "Delivery method"], ["state", "Destination"], ["product", "Product"], ["tag", "Tag"],
+    ["status", "Order status"], ["payment_status", "Payment status"], ["fulfillment", "Fulfillment status"], ["delivery_status", "Delivery status"], ["return_status", "Return status"], ["label_status", "Label status"], ["delivery_method", "Delivery method"], ["state", "Destination"], ["product", "Product"], ["tag", "Tag"], ["source", "Source"],
   ].filter(([k]) => params.has(k)) as [string, string][];
   const valueLabel = (key: string, value: string) => fields.find((x) => x.key === key)?.options.find(([v]) => v === value)?.[1] ?? value;
   return <div className="relative min-w-[200px] flex-1">
@@ -296,7 +297,7 @@ function OptionList({ options, current, to, searchable }: { options: { id: strin
 }
 
 const itemsLabel = (o: OrderRow) => { const n = o.items.reduce((a, l) => a + l.quantity, 0); return `${n} item${n === 1 ? "" : "s"}`; };
-const shortWhen = (d: string) => {
+export const shortWhen = (d: string) => {
   const t = new Date(d);
   const now = new Date();
   const ist = (x: Date) => x.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
@@ -314,7 +315,7 @@ const PILL: Record<string, string> = {
 function Pill({ tone, children, title }: { tone: keyof typeof PILL; children: React.ReactNode; title?: string }) {
   return <span title={title} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-0.5 text-[12px] font-medium ${PILL[tone]}`}><span aria-hidden className="h-1.5 w-1.5 rounded-full border-[1.5px] border-current" />{children}</span>;
 }
-function PaymentPill({ o }: { o: OrderRow }) {
+export function PaymentPill({ o }: { o: OrderRow }) {
   if (o.status === "cancelled") return <Pill tone="gray" title={o.cancelReason ?? undefined}>{o.refundStatus === "full" ? "Refunded" : o.refundStatus === "pending" ? "Refund pending" : "Cancelled"}</Pill>;
   if (o.status === "failed") return <Pill tone="red">Failed</Pill>;
   if (o.status === "pending_payment" || o.status === "cod_placing") return <Pill tone="gray">Awaiting payment</Pill>;
@@ -324,7 +325,7 @@ function PaymentPill({ o }: { o: OrderRow }) {
   if (o.paymentMethod === "partial") return <Pill tone="orange" title="Advance paid, rest on delivery">Partially paid</Pill>;
   return <Pill tone="gray">Paid</Pill>;
 }
-function FulfillPill({ o }: { o: OrderRow }) {
+export function FulfillPill({ o }: { o: OrderRow }) {
   if (o.status === "cancelled") return <Pill tone="gray" title={o.cancelReason ?? undefined}>Cancelled</Pill>;
   const ok = o.status === "paid" || o.status === "cod_placed";
   if (!ok) return <span className="text-ink-faint">—</span>;
@@ -342,17 +343,17 @@ function FulfillPill({ o }: { o: OrderRow }) {
   if (o.shipError) return <Pill tone="red" title={o.shipError}>Courier error</Pill>;
   return <Pill tone="yellow">Unfulfilled</Pill>;
 }
-function FulfillmentStatusPill({ o }: { o: OrderRow }) {
+export function FulfillmentStatusPill({ o }: { o: OrderRow }) {
   if (!["paid", "cod_placed"].includes(o.status)) return <span className="text-ink-faint">—</span>;
   return o.awb ? <Pill tone="gray">Fulfilled</Pill> : <Pill tone="yellow">Unfulfilled</Pill>;
 }
 /** Orders routed in from another store (special logic): a bright badge so the team spots them at a glance */
-const isOutsource = (o: OrderRow) => o.manualTags.includes(OUTSOURCE_TAG);
-function OutsourceBadge({ o }: { o: OrderRow }) {
+export const isOutsource = (o: OrderRow) => o.manualTags.includes(OUTSOURCE_TAG);
+export function OutsourceBadge({ o }: { o: OrderRow }) {
   if (!isOutsource(o)) return null;
   return <span title={OUTSOURCE_TAG} className="ml-1 inline-flex items-center rounded-md bg-[#7c3aed] px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-white">Outsource</span>;
 }
-function Tags({ o, compact = false }: { o: OrderRow; compact?: boolean }) {
+export function Tags({ o, compact = false }: { o: OrderRow; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const tags = o.tags.filter((t) => t !== OUTSOURCE_TAG); // shown as its own badge
   if (!tags.length) return <span className="text-ink-faint">—</span>;
@@ -370,131 +371,82 @@ function FulfilledBy({ o }: { o: OrderRow }) {
   if (!o.courier) return <span className="text-ink-faint">—</span>;
   return <span className="whitespace-nowrap text-[12px] text-ink">{courierById(o.courier)?.name ?? o.courier}</span>;
 }
-function ConfirmIcon({ s }: { s: string | null }) {
+export function ConfirmIcon({ s }: { s: string | null }) {
   if (!s) return null;
   const v = s === "confirmed" ? ["text-good", "Confirmed on WhatsApp"] : s === "cancelled" ? ["text-bad", "Cancelled on WhatsApp"] : ["text-ink-faint", "Waiting for WhatsApp reply"];
   return <span title={v[1]} className={v[0]}><Icon name="chat" className="h-3.5 w-3.5" /><span className="sr-only">{v[1]}</span></span>;
 }
 
+/** Where the order came from (Meta ad, Google ad, direct…), as a small colored chip. */
+export function SourceBadge({ o, campaign = false }: { o: Pick<OrderRow, "tracking" | "checkoutChannel">; campaign?: boolean }) {
+  const src = orderSource(o.tracking, o.checkoutChannel);
+  const ch = channelForOrder(o.tracking, o.checkoutChannel);
+  const meta = SOURCE_META[ch] ?? SOURCE_META.unknown;
+  const title = [meta.label, src.campaign ? `Campaign: ${src.campaign}` : null, src.detail, src.hint].filter(Boolean).join("\n");
+  return (
+    <span title={title} className="inline-flex max-w-[220px] items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-medium" style={{ color: meta.color, background: `${meta.color}14`, boxShadow: `inset 0 0 0 1px ${meta.color}2e` }}>
+      {meta.paid && <span className="rounded-[3px] px-[3px] text-[8.5px] font-bold uppercase leading-[13px] tracking-wide text-white" style={{ background: meta.color }}>Ad</span>}
+      <span className="truncate">{meta.label}{campaign && src.campaign ? ` · ${src.campaign}` : ""}</span>
+    </span>
+  );
+}
+
+/** Link to the order's own page, keeping the list's filters (for Back and next / previous). */
+function useOrderHref() {
+  const { search } = useLocation();
+  return (o: OrderRow) => `/dashboard/orders/${encodeURIComponent(o.id)}${search}`;
+}
+
 function OrderCard({ o, showStore }: { o: OrderRow; showStore: boolean }) {
-  const [open, setOpen] = useState(false);
   const paid = orderValuePaise(o);
+  const href = useOrderHref();
   return (
     <li>
-      <button type="button" className="flex w-full items-start gap-3 px-3.5 py-3 text-left" onClick={() => setOpen((x) => !x)} aria-expanded={open}>
+      <Link to={href(o)} className="flex w-full items-start gap-3 px-3.5 py-3 text-left active:bg-paper">
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5"><span className="num text-[13px] font-semibold">{o.shopifyOrderName ?? o.id}</span><OutsourceBadge o={o} /><ConfirmIcon s={o.confirmStatus} /></p>
           <p className="mt-0.5 truncate text-[13px]">{o.customer.firstName} {o.customer.lastName}<span className="text-ink-faint"> · {o.customer.city}</span></p>
           <p className="truncate text-[12px] text-ink-faint">{showStore && `${o.storeName} · `}{shortWhen(o.createdAt)}</p>
-          <div className="mt-1.5 flex flex-wrap gap-1"><PaymentPill o={o} /><FulfillPill o={o} /></div>
+          <div className="mt-1.5 flex flex-wrap gap-1"><PaymentPill o={o} /><FulfillPill o={o} /><SourceBadge o={o} /></div>
           <p className="mt-1 text-[11px] text-ink-faint">{o.channel} · {o.courier ? courierById(o.courier)?.name ?? o.courier : "Fulfillment not assigned"}</p>
           <div className="mt-1"><Tags o={o} compact /></div>
         </div>
-        <div className="text-right"><p className="num text-[13px] font-semibold">{inr(paid - o.refunded)}</p><p className="text-[12px] text-ink-faint">{itemsLabel(o)}</p></div>
-      </button>
-      {open && <div className="border-t border-rule bg-paper px-3.5 py-3"><OrderDetails o={o} /></div>}
+        <div className="flex items-start gap-1.5 text-right"><div><p className="num text-[13px] font-semibold">{inr(paid - o.refunded)}</p><p className="text-[12px] text-ink-faint">{itemsLabel(o)}</p></div><Icon name="chevron" className="mt-0.5 h-4 w-4 -rotate-90 text-ink-faint" /></div>
+      </Link>
     </li>
   );
 }
 
 function OrderRowView({ o, showStore }: { o: OrderRow; showStore: boolean }) {
-  const [open, setOpen] = useState(false);
   const actions = useContext(OrderActions);
+  const navigate = useNavigate();
+  const href = useOrderHref()(o);
   const paid = orderValuePaise(o);
   const gone = o.refundStatus === "full" || o.status === "failed" || o.status === "cancelled";
   const strike = gone ? "text-ink-faint line-through" : "";
+  const open = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("a,button,input,label,select")) return;
+    if (e.metaKey || e.ctrlKey) { window.open(href, "_blank"); return; }
+    navigate(href);
+  };
   return (
-    <>
-      <tr className={`cursor-pointer ${isOutsource(o) ? "[&>td:first-child]:shadow-[inset_3px_0_0_#7c3aed]" : ""} ${open ? "[&>td]:bg-paper" : ""} ${actions.sel.has(o.id) ? "[&>td]:bg-[#f3f7fd]" : ""}`} onClick={() => setOpen((x) => !x)} aria-expanded={open}>
-        <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={actions.sel.has(o.id)} onChange={() => actions.toggle(o.id)} className="h-4 w-4" aria-label={`Select order ${o.shopifyOrderName ?? o.id}`} /></td>
-        <td className="whitespace-nowrap"><span className={`num font-semibold ${strike}`}>{o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`}</span><OutsourceBadge o={o} /> <ConfirmIcon s={o.confirmStatus} /></td>
-        <td className={`whitespace-nowrap ${strike}`}>{shortWhen(o.createdAt)}</td>
-        <td className={`max-w-[200px] truncate ${strike}`} title={`${o.customer.phone}, ${o.customer.city}`}>{o.customer.firstName} {o.customer.lastName}</td>
-        {showStore && <td className={`max-w-[160px] truncate ${strike}`}>{o.storeName}</td>}
-        <td><FulfilledBy o={o} /></td>
-        <td><span className="rounded-md border border-rule bg-paper px-1.5 py-0.5 text-[11px] text-ink-soft">{o.channel}</span></td>
-        <td className={`num whitespace-nowrap text-right ${strike}`}>{inr(paid - o.refunded)}</td>
-        <td><PaymentPill o={o} /></td>
-        <td><FulfillmentStatusPill o={o} /></td>
-        <td className={`whitespace-nowrap ${strike}`}>{itemsLabel(o)}</td>
-        <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}><span className="inline-flex items-center gap-1 align-middle"><FulfillPill o={o} /><ShipButton o={o} /></span></td>
-        <td className={`max-w-[160px] truncate ${strike}`}>{o.shipping ? o.shippingTitle ?? "Standard" : "Free delivery"}</td>
-        <td><Tags o={o} compact /></td>
-      </tr>
-      {open && (
-        <tr className="[&>td]:bg-paper"><td colSpan={showStore ? 14 : 13}><div className="py-2"><OrderDetails o={o} /></div></td></tr>
-      )}
-    </>
-  );
-}
-
-function OrderDetails({ o }: { o: OrderRow }) {
-  return (
-    <div className="space-y-4">
-      <OrderDetailsGrid o={o} />
-      <div className="grid gap-4 border-t border-rule pt-4 sm:grid-cols-2">
-        <NotesBlock o={o} />
-        <Timeline o={o} />
-      </div>
-    </div>
-  );
-}
-
-function OrderDetailsGrid({ o }: { o: OrderRow }) {
-  const paid = orderValuePaise(o);
-  const okStatus = o.status === "paid" || o.status === "cod_placed";
-  return (
-    <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-      <div>
-        <p className="mb-2 text-xs font-medium text-ink-soft">Items</p>
-        <ul className="space-y-1.5 text-sm">
-          {o.items.map((l, i) => <li key={i} className="flex justify-between gap-3"><span className="line-clamp-2 min-w-0 break-words sm:truncate">{l.title}{l.variantTitle ? `, ${l.variantTitle}` : ""} ×{l.quantity}</span><span className="num">{l.free ? <b className="text-good">FREE</b> : inr(l.pricePaise * l.quantity)}</span></li>)}
-        </ul>
-        {o.status !== "cancelled" && <div className="mt-2"><ItemsEditor lines={o.items} total={o.total} subtotal={o.subtotal} shipping={o.shipping} hidden={{ orderId: o.id, storeId: String(o.storeId) }}
-          blocked={o.paymentMethod !== "cod" || o.status !== "cod_placed" ? "Only cash on delivery orders can be changed (a paid order's amount is fixed)." : o.awb ? `Already booked with the courier (AWB ${o.awb}), so the amount to collect can't change now.` : null} compact /></div>}
-      </div>
-      <dl className="num space-y-1 text-sm">
-        <p className="mb-2 text-xs font-medium text-ink-soft">Payment</p>
-        <div className="flex justify-between"><dt className="text-ink-soft">Items</dt><dd>{inr(o.subtotal)}</dd></div>
-        {o.paymentDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "cod" ? "COD" : o.paymentMethod === "partial" ? "Partial COD" : "Online"} discount</dt><dd>−{inr(o.paymentDiscount)}</dd></div>}
-        {o.couponCode && <div className="flex justify-between"><dt className="text-ink-soft">{o.couponCode}</dt><dd>−{inr(o.couponDiscount)}</dd></div>}
-        {o.offerDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Mix & Match</dt><dd>−{inr(o.offerDiscount)}</dd></div>}
-        {o.bankDiscount > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Bank offer</dt><dd>−{inr(o.bankDiscount)}</dd></div>}
-        <div className="flex justify-between"><dt className="text-ink-soft">{o.shippingTitle ?? "Delivery"}</dt><dd>{o.shipping ? inr(o.shipping) : "Free"}</dd></div>
-        {o.paymentFee > 0 && <div className="flex justify-between"><dt className="text-ink-soft">{o.paymentMethod === "prepaid" ? "Online payment" : o.paymentMethod === "partial" ? "Partial COD" : "COD"} fee</dt><dd>{inr(o.paymentFee)}</dd></div>}
-        {(o.tip ?? 0) > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Tip</dt><dd>{inr(o.tip ?? 0)}</dd></div>}
-        {o.paymentMethod === "partial" ? (
-          <>
-            <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>Advance paid</dt><dd>{inr(o.amountPaid ?? o.advance ?? 0)}</dd></div>
-            <div className="flex justify-between font-medium"><dt>To collect</dt><dd>{inr(toCollectPaise(o))}</dd></div>
-          </>
-        ) : (
-          <div className="flex justify-between border-t border-rule pt-1 font-medium"><dt>{o.paymentMethod === "cod" ? "To collect" : "Paid"}</dt><dd>{inr(paid)}</dd></div>
-        )}
-        {o.refunded > 0 && <div className="flex justify-between text-bad"><dt>Refunded</dt><dd>−{inr(o.refunded)}</dd></div>}
-      </dl>
-      <div className="space-y-2 text-sm">
-        <AddressBlock o={o} />
-        <div><p className="mb-1 text-xs font-medium text-ink-soft">Tags</p><div className="flex flex-wrap items-center gap-1">{isOutsource(o) && <span className="rounded-md bg-[#7c3aed] px-1.5 py-0.5 text-[10.5px] font-bold text-white">{OUTSOURCE_TAG}</span>}<Tags o={o} /></div></div>
-        <Form method="post" className="flex gap-1.5"><input type="hidden" name="intent" value="tagAdd"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input name="tag" maxLength={32} placeholder="Add a manual tag" className="input min-w-0 py-1.5 text-[12px]"/><button className="btn-secondary px-2.5 py-1.5 text-xs">Add</button></Form>
-        {o.manualTags.map((tag) => <Form key={tag} method="post" className="inline-flex"><input type="hidden" name="intent" value="tagRemove"/><input type="hidden" name="orderId" value={o.id}/><input type="hidden" name="storeId" value={o.storeId}/><input type="hidden" name="tag" value={tag}/><button className="rounded-md border border-rule px-2 py-1 text-[11px] text-ink-soft hover:bg-paper">Remove “{tag}”</button></Form>)}
-        {(o.gatewayRef || o.payuMihpayid) && <p className="text-xs text-ink-faint">{gatewayName(o.gateway ?? "payu")} ID {o.gatewayRef ?? o.payuMihpayid}, checkout ID {o.id}</p>}
-        {o.error && <p className="break-words text-xs text-bad">{o.error}</p>}
-        {o.status === "cancelled" && <p className="text-xs text-ink-soft">Cancelled{o.cancelledAt ? ` on ${when(o.cancelledAt)}` : ""}{o.cancelledBy ? ` by ${o.cancelledBy}` : ""}{o.cancelReason ? `: ${o.cancelReason}` : ""}</p>}
-        <div className="flex flex-wrap gap-2 pt-1">
-          <ShipButton o={o} big />
-          <CancelButton o={o} />
-          {okStatus && !o.shopifyOrderId && (
-            <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
-              <SubmitButton intent="retry" className="btn-secondary px-3 py-1.5 text-xs" busyText="Sending">Send to store</SubmitButton></Form>
-          )}
-          {o.paymentMethod !== "cod" && (
-            <Form method="post"><input type="hidden" name="orderId" value={o.id} /><input type="hidden" name="storeId" value={o.storeId} />
-              <SubmitButton intent="verify" className="btn-secondary px-3 py-1.5 text-xs" busyText="Checking">Check payment</SubmitButton></Form>
-          )}
-        </div>
-      </div>
-    </div>
+    <tr className={`cursor-pointer ${isOutsource(o) ? "[&>td:first-child]:shadow-[inset_3px_0_0_#7c3aed]" : ""} ${actions.sel.has(o.id) ? "[&>td]:bg-[#f3f7fd]" : ""}`} onClick={open}>
+      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={actions.sel.has(o.id)} onChange={() => actions.toggle(o.id)} className="h-4 w-4" aria-label={`Select order ${o.shopifyOrderName ?? o.id}`} /></td>
+      <td className="whitespace-nowrap"><Link to={href} className={`num font-semibold hover:underline ${strike}`}>{o.shopifyOrderName ?? `#${o.id.slice(-6).toUpperCase()}`}</Link><OutsourceBadge o={o} /> <ConfirmIcon s={o.confirmStatus} /></td>
+      <td className={`whitespace-nowrap ${strike}`}>{shortWhen(o.createdAt)}</td>
+      <td className={`max-w-[200px] truncate ${strike}`} title={`${o.customer.phone}, ${o.customer.city}`}>{o.customer.firstName} {o.customer.lastName}</td>
+      {showStore && <td className={`max-w-[160px] truncate ${strike}`}>{o.storeName}</td>}
+      <td><FulfilledBy o={o} /></td>
+      <td><span className="rounded-md border border-rule bg-paper px-1.5 py-0.5 text-[11px] text-ink-soft">{o.channel}</span></td>
+      <td><SourceBadge o={o} /></td>
+      <td className={`num whitespace-nowrap text-right ${strike}`}>{inr(paid - o.refunded)}</td>
+      <td><PaymentPill o={o} /></td>
+      <td><FulfillmentStatusPill o={o} /></td>
+      <td className={`whitespace-nowrap ${strike}`}>{itemsLabel(o)}</td>
+      <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}><span className="inline-flex items-center gap-1 align-middle"><FulfillPill o={o} /><ShipButton o={o} /></span></td>
+      <td className={`max-w-[160px] truncate ${strike}`}>{o.shipping ? o.shippingTitle ?? "Standard" : "Free delivery"}</td>
+      <td><Tags o={o} compact /></td>
+    </tr>
   );
 }
 
@@ -583,7 +535,7 @@ function CopyLink({ url }: { url: string }) {
   );
 }
 
-function AddressBlock({ o }: { o: OrderRow }) {
+export function AddressBlock({ o }: { o: OrderRow }) {
   const [edit, setEdit] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   usePincodeFormFill(formRef);
@@ -629,7 +581,7 @@ function AddressBlock({ o }: { o: OrderRow }) {
   );
 }
 
-function NotesBlock({ o }: { o: OrderRow }) {
+export function NotesBlock({ o }: { o: OrderRow }) {
   const nav = useNavigation();
   const saving = nav.state !== "idle" && nav.formData?.get("intent") === "notes" && nav.formData?.get("orderId") === o.id;
   return (
@@ -648,26 +600,6 @@ function NotesBlock({ o }: { o: OrderRow }) {
   );
 }
 
-function Timeline({ o }: { o: OrderRow }) {
-  const list = [...(o.timeline ?? [])].reverse();
-  return (
-    <div>
-      <p className="mb-2 text-xs font-medium text-ink-soft">History</p>
-      {list.length === 0 ? <p className="text-[12.5px] text-ink-faint">No changes since the order was placed.</p> : (
-        <ol className="space-y-2.5 border-l border-rule pl-3">
-          {list.slice(0, 12).map((e, i) => (
-            <li key={i} className="relative text-[12.5px]">
-              <span className="absolute -left-[17px] top-1.5 h-2 w-2 rounded-full bg-ink-faint" />
-              <p className="text-ink">{e.text}</p>
-              <p className="text-[11px] text-ink-faint">{e.by} · {new Date(e.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</p>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
-}
-
 function AddrField({ name, label, value, wide, ...rest }: { name: string; label: string; value: string; wide?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) {
   return <label className={`block text-[11.5px] font-medium text-ink-soft ${wide ? "col-span-2" : ""}`}>{label}<input name={name} defaultValue={value} className="input mt-1 py-1.5 text-[13px]" {...rest} /></label>;
 }
@@ -675,16 +607,16 @@ function AddrField({ name, label, value, wide, ...rest }: { name: string; label:
 
 // ---------------- ship / cancel ----------------
 
-type OrderActionsCtx = {
+export type OrderActionsCtx = {
   couriers: Record<number, { id: string; name: string }[]>; busy: boolean; sel: Set<string>; toggle: (id: string) => void;
   ship: (ids: string[], courier?: string) => void; cancel: (ids: string[]) => void;
 };
-const OrderActions = createContext<OrderActionsCtx>({ couriers: {}, busy: false, sel: new Set(), toggle: () => {}, ship: () => {}, cancel: () => {} });
+export const OrderActions = createContext<OrderActionsCtx>({ couriers: {}, busy: false, sel: new Set(), toggle: () => {}, ship: () => {}, cancel: () => {} });
 
 /** Small inline "Ship" next to the status pill: text-sized, same height as the pill. */
 const SHIP_LINK = "inline-flex h-[22px] items-center gap-0.5 whitespace-nowrap rounded-md px-1.5 text-[11.5px] font-medium leading-none text-[#005bd3] transition hover:bg-[#005bd3]/[.08] disabled:opacity-40";
-const canShip = (o: OrderRow) => (o.status === "paid" || o.status === "cod_placed") && !o.awb && !o.courierRef && o.confirmStatus !== "cancelled";
-const canCancel = (o: OrderRow) => ["paid", "cod_placed", "pending_payment", "cod_placing"].includes(o.status) && o.shipStatus !== "delivered";
+export const canShip = (o: OrderRow) => (o.status === "paid" || o.status === "cod_placed") && !o.awb && !o.courierRef && o.confirmStatus !== "cancelled";
+export const canCancel = (o: OrderRow) => ["paid", "cod_placed", "pending_payment", "cod_placing"].includes(o.status) && o.shipStatus !== "delivered";
 /** Online money that a cancel can send back (prepaid, or a Partial COD advance). */
 const refundablePaise = (o: OrderRow) => {
   if (o.paymentMethod === "cod") return 0;
@@ -722,7 +654,7 @@ function CourierMenu({ label, choices, onPick, disabled, small }: { label: strin
 }
 
 /** "Ship" next to an unfulfilled order: books it with the store's courier (a menu when there's more than one). */
-function ShipButton({ o, big }: { o: OrderRow; big?: boolean }) {
+export function ShipButton({ o, big }: { o: OrderRow; big?: boolean }) {
   const a = useContext(OrderActions);
   const list = a.couriers[o.storeId] ?? [];
   if (!canShip(o) || !list.length) return null;
@@ -731,13 +663,13 @@ function ShipButton({ o, big }: { o: OrderRow; big?: boolean }) {
   return <button type="button" disabled={a.busy} onClick={() => a.ship([o.id], list[0].id)} className="btn-secondary btn h-7 px-3 text-xs"><Icon name="shipping" className="h-3.5 w-3.5" />Ship with {list[0].name}</button>;
 }
 
-function CancelButton({ o }: { o: OrderRow }) {
+export function CancelButton({ o }: { o: OrderRow }) {
   const a = useContext(OrderActions);
   if (!canCancel(o)) return null;
   return <button type="button" disabled={a.busy} onClick={() => a.cancel([o.id])} className="btn h-7 px-3 text-xs text-bad hover:bg-red-50"><Icon name="close" className="h-3.5 w-3.5" />Cancel order</button>;
 }
 
-function CancelDialog({ ids, orders, reasons, busy, onClose, onConfirm }: { ids: string[]; orders: OrderRow[]; reasons: string[]; busy: boolean; onClose: () => void; onConfirm: (reason: string, refund: boolean) => void }) {
+export function CancelDialog({ ids, orders, reasons, busy, onClose, onConfirm }: { ids: string[]; orders: OrderRow[]; reasons: string[]; busy: boolean; onClose: () => void; onConfirm: (reason: string, refund: boolean) => void }) {
   const list = reasons.length ? reasons : ["Customer changed their mind", "Other"];
   const [reason, setReason] = useState(list[0]);
   const [other, setOther] = useState("");

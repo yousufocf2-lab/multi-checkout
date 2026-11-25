@@ -42,8 +42,14 @@ app.use((req, _res, next) => {
     req.headers["x-forwarded-proto"] = "https";
     const ip = String(req.headers["x-gp-ip"] || "");
     if (/^[\d.:a-fA-F]{3,45}$/.test(ip)) req.headers["x-forwarded-for"] = ip;
+    // Visitor's city from Cloudflare (trusted only here, with the key): read by app/lib/geo.server.ts
+    const geo = String(req.headers["x-gp-geo"] || "");
+    if (geo && geo.length < 1200) req.headers["x-geo"] = geo;
+    else delete req.headers["x-geo"];
+  } else {
+    delete req.headers["x-geo"];
   }
-  delete req.headers["x-gp-key"]; delete req.headers["x-gp-host"]; delete req.headers["x-gp-ip"];
+  delete req.headers["x-gp-key"]; delete req.headers["x-gp-host"]; delete req.headers["x-gp-ip"]; delete req.headers["x-gp-geo"];
   next();
 });
 
