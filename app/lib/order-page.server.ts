@@ -48,9 +48,9 @@ export async function loadOrderPage(viewer: Viewer, orderId: string, scope: Stor
       : Promise.resolve([]),
     db.select({ actor: orderCallEvents.actor, kind: orderCallEvents.kind, provider: orderCallEvents.provider, at: orderCallEvents.createdAt })
       .from(orderCallEvents).where(eq(orderCallEvents.orderId, o.id)).orderBy(desc(orderCallEvents.createdAt)).limit(20),
-    db.select({ id: orders.id }).from(orders).where(and(where, sql`(${orders.createdAt}, ${orders.id}) > (${o.createdAt}, ${o.id})`))
+    db.select({ id: orders.id }).from(orders).where(and(where, sql`(${orders.createdAt}, ${orders.id}) > (${o.createdAt.toISOString()}::timestamptz, ${o.id})`))
       .orderBy(asc(orders.createdAt), asc(orders.id)).limit(1),
-    db.select({ id: orders.id }).from(orders).where(and(where, sql`(${orders.createdAt}, ${orders.id}) < (${o.createdAt}, ${o.id})`))
+    db.select({ id: orders.id }).from(orders).where(and(where, sql`(${orders.createdAt}, ${orders.id}) < (${o.createdAt.toISOString()}::timestamptz, ${o.id})`))
       .orderBy(desc(orders.createdAt), desc(orders.id)).limit(1),
     courierChoices([o.storeId]),
     o.assignedTo || o.ofdAssignedTo
