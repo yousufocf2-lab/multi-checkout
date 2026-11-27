@@ -178,7 +178,12 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams, onl
   const ids = scope.map((s) => s.id);
   const p = new URLSearchParams(params);
   if (!p.get("range")) p.set("range", "today");
-  const range = resolveRange(p);
+  // "All time" starts at the first checkout of these stores (IST day); without it the range fell back to today
+  const [first] = p.get("range") === "max" && ids.length
+    ? await db.select({ d: sql<string | null>`to_char(min(${checkoutSessions.createdAt}) at time zone 'Asia/Kolkata', 'YYYY-MM-DD')` })
+        .from(checkoutSessions).where(inArray(checkoutSessions.storeId, ids))
+    : [];
+  const range = resolveRange(p, first?.d ?? undefined);
   const from = new Date(`${range.since}T00:00:00+05:30`);
   const to = new Date(`${addDays(range.until, 1)}T00:00:00+05:30`);
   const asked = params.get("view") ?? (params.get("all") === "1" ? "all" : "true");
