@@ -66,14 +66,25 @@ export const payUrl = (store: Pick<Store, "storefrontUrl" | "payuViaStorefront">
 export async function payViaStore(store: Pick<Store, "id" | "payViaStoreId" | "ownerId">) {
   if (!store.payViaStoreId || store.payViaStoreId === store.id) return null;
   const [via] = await db.select().from(stores).where(eq(stores.id, store.payViaStoreId)).limit(1);
-  if (!via || via.platform !== "shopify" || !via.storefrontUrl || via.ownerId !== store.ownerId) return null;
+  if (!via || via.ownerId !== store.ownerId || !payViaBase(via)) return null;
   return via;
+}
+
+/**
+ * Where payments run on the lending store's domain: its own website on Growpefy (https://zavli.in),
+ * else its Shopify website through App Proxy (https://brand.com/apps/growpefy). Null when it has neither.
+ */
+export function payViaBase(via: Store) {
+  const own = ownSiteHost(via);
+  if (own) return `https://${own}`;
+  return via.platform === "shopify" && via.storefrontUrl ? proxyBase(via) : null;
 }
 
 /** Where the customer goes to pay, taking "Take payments through another store" into account. */
 export async function payUrlFor(store: Store, orderId: string, retry = false) {
   const via = await payViaStore(store);
-  return via ? `${proxyBase(via)}/pay/${orderId}${retry ? "?retry=1" : ""}` : payUrl(store, orderId, retry);
+  const base = via ? payViaBase(via) : null;
+  return base ? `${base}/pay/${orderId}${retry ? "?retry=1" : ""}` : payUrl(store, orderId, retry);
 }
 
 /** Each try gets its own id; the first try uses the order id (max 22 chars, fits every gateway). */

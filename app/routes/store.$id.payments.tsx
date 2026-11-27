@@ -13,7 +13,7 @@ import { Notice, SubmitButton } from "~/components/ui";
 import { db, stores } from "~/db.server";
 import { kycGate, requireStore, requireViewer } from "~/lib/auth.server";
 import { GATEWAYS } from "~/lib/gateways/catalog";
-import { onlineReady, ownSiteHost } from "~/lib/gateways/index.server";
+import { onlineReady, ownSiteHost, payViaBase } from "~/lib/gateways/index.server";
 import { METHOD_LABEL, resolvePaymentMethods, type PayMethod } from "~/lib/payment-methods";
 import { storePath } from "~/lib/store-code";
 import { parseGateways } from "~/lib/store-form.server";
@@ -25,13 +25,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const view = storeForClient(store);
   const pm = resolvePaymentMethods(store.paymentMethods, store);
-  // Other Shopify stores of the same owner whose website can take this store's payments
-  const viaChoices = store.ownerId
-    ? await db.select({ id: stores.id, name: stores.name, site: stores.storefrontUrl }).from(stores)
-        .where(and(eq(stores.ownerId, store.ownerId), eq(stores.platform, "shopify"), ne(stores.id, store.id))).orderBy(asc(stores.id))
-    : [];
+  // Other stores of the same owner whose website can take this store's payments
+  // (website on Growpefy with a live domain, or a Shopify website with App Proxy)
+  const viaChoices = (store.ownerId
+    ? await db.select().from(stores).where(and(eq(stores.ownerId, store.ownerId), ne(stores.id, store.id))).orderBy(asc(stores.id))
+    : []).map((c) => ({ id: c.id, name: c.name, base: payViaBase(c) })).filter((c): c is { id: number; name: string; base: string } => Boolean(c.base));
   return json({
-    payViaStoreId: store.payViaStoreId, viaChoices: viaChoices.filter((c) => c.site).map((c) => ({ id: c.id, name: c.name, site: c.site.replace(/^https?:\/\//, "").replace(/\/+$/, "") })),
+    payViaStoreId: store.payViaStoreId, viaChoices: viaChoices.map((c) => ({ id: c.id, name: c.name, site: c.base.replace(/^https?:\/\//, "").replace(/\/+$/, "") })),
     storeId: store.id, smart: store.smartCheckout, online: onlineReady(store), platform: store.platform,
     storefrontUrl: store.storefrontUrl, payuViaStorefront: store.payuViaStorefront, ownSite: ownSiteHost(store),
     gateways: view.gatewayViews, webhookBase: view.webhookBase,
@@ -56,9 +56,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const viaRaw = Number(fd.get("payViaStoreId") ?? 0);
     let payViaStoreId: number | null = null;
     if (viaRaw && viaRaw !== store.id && store.ownerId) {
-      const [via] = await db.select({ id: stores.id }).from(stores)
-        .where(and(eq(stores.id, viaRaw), eq(stores.ownerId, store.ownerId), eq(stores.platform, "shopify"))).limit(1);
-      if (!via) return json({ ok: null, error: "That store can't take this store's payments.", kyc: false, errors: {} as Record<string, string> }, { status: 400 });
+      const [via] = await db.select().from(stores).where(and(eq(stores.id, viaRaw), eq(stores.ownerId, store.ownerId))).limit(1);
+      if (!via || !payViaBase(via)) return json({ ok: null, error: "That store can't take this store's payments.", kyc: false, errors: {} as Record<string, string> }, { status: 400 });
       payViaStoreId = via.id;
     }
     await db.update(stores).set({
@@ -177,8 +176,8 @@ function PayVia({ d }: { d: { payViaStoreId: number | null; viaChoices: { id: nu
       </label>
       {pick && (
         <p className="mt-2 text-[12px] leading-relaxed text-ink-soft">
-          Payments will start at <b className="font-medium text-ink">{pick.site}/apps/growpefy/pay/…</b> and PayU returns to <b className="font-medium text-ink">{pick.site}/apps/growpefy/pg/payu/return</b>.
-          {pick.name}'s Shopify app needs App Proxy (<a href={`https://${pick.site}/apps/growpefy/ping`} target="_blank" rel="noreferrer" className="font-medium text-pine underline">test it</a>), and the gateway keys above must be the account registered for {pick.site}.
+          Payments will start at <b className="font-medium text-ink">{pick.site}/pay/…</b> and PayU returns to <b className="font-medium text-ink">{pick.site}/pg/payu/return</b>.
+          {pick.site.includes("/apps/") && <>{pick.name}'s Shopify app needs App Proxy (<a href={`https://${pick.site}/ping`} target="_blank" rel="noreferrer" className="font-medium text-pine underline">test it</a>). </>}The gateway keys above must be the account registered for {pick.site.split("/")[0]}.
         </p>
       )}
     </div>
