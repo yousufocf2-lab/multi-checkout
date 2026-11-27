@@ -863,6 +863,8 @@ export type TrackingInfo = {
   attr?: { f?: import("~/lib/attribution").Touch; l?: import("~/lib/attribution").Touch };
   /** Order source channel worked out when the order was placed (lib/order-source.ts), used by the Source filter */
   ch?: string;
+  /** Brought in from another system (e.g. "old_checkout": the old Fusion checkout's abandoned carts) */
+  import?: string;
   /** City-level location of the customer's IP when the order was placed */
   geo?: import("~/lib/geo").Geo;
   giftWrap?: boolean; // customer requested gift wrapping on the storefront
