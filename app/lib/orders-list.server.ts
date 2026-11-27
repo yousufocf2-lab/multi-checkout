@@ -205,7 +205,7 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams, onl
     // Filter the whole range (block list, RTO Shield, ordered later), then page in memory
     const { filterTrueAbandoned } = await import("./abandoned-calls.server");
     const cands = await db.select({ id: checkoutSessions.id, storeId: checkoutSessions.storeId, customer: checkoutSessions.customer, createdAt: checkoutSessions.createdAt, updatedAt: checkoutSessions.updatedAt, cartValue: checkoutSessions.cartValue })
-      .from(checkoutSessions).where(and(...where)).orderBy(desc(checkoutSessions.updatedAt)).limit(5000);
+      .from(checkoutSessions).where(and(...where)).orderBy(desc(checkoutSessions.updatedAt)).limit(15000);
     const real = await filterTrueAbandoned(cands);
     count = real.length;
     value = real.reduce((sum, r) => sum + (r.cartValue ?? 0), 0) / 100;
