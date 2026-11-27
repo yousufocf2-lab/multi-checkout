@@ -7,6 +7,7 @@ import { recoverIpBlocked, recoverOtpStuck, recoverOtpSystemErrors } from "~/lib
 import { logOtpBlockAudit } from "~/lib/otp-block-audit.server";
 import { fixApexDomains } from "~/lib/domain-fix.server";
 import { startSourceFill } from "~/lib/order-source.server";
+import { importPermBlocks } from "~/lib/oneoff-perm-block.server";
 
 // Railway's health check (and the server itself) hits this right after every deploy: a good moment to start
 // background jobs, so they run even when nobody opens the dashboard or a checkout.
@@ -15,6 +16,7 @@ export const loader = () => {
   startAutoShip();
   startCatalogWatcher();
   startSourceFill();
+  setTimeout(() => void importPermBlocks(), 30_000);
   void ensureFallback().then(() => syncWorker()).catch((e) => console.error("[cloudflare] setup:", e instanceof Error ? e.message : e));
   setTimeout(() => void logFunnelAudit(), 45_000).unref?.();
   setTimeout(() => void recoverOtpStuck(), 60_000).unref?.();

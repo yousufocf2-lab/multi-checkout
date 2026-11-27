@@ -487,7 +487,7 @@ function BlockList({ d, msg, totalAll }: { d: D; msg: Msg; totalAll: number }) {
             <li key={b.id} className="flex items-center gap-3 px-3.5 py-2.5">
               <span className="w-20 shrink-0 rounded-md bg-paper-sunk px-1.5 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide text-ink-soft">{BLOCK_LABELS[b.kind]}</span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{b.label}</span>
-              <span className="hidden text-[11px] text-ink-faint sm:block">{new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} · {b.source === "csv" ? "CSV" : "Manual"}</span>
+              <span className="hidden text-[11px] text-ink-faint sm:block">{new Date(b.at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })} · {b.source === "csv" ? "CSV" : b.source === "old_checkout" ? "Old checkout" : "Manual"}</span>
               <Form method="post" preventScrollReset><input type="hidden" name="id" value={b.id} />
                 <button name="intent" value="blockDelete" className="btn-quiet h-7 px-2 text-[11px]" aria-label={`Unblock ${b.label}`}>Unblock</button>
               </Form>
