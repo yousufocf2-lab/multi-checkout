@@ -33,7 +33,7 @@ import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
 import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
 import { checkoutDetails } from "~/lib/live.server";
-import { onlineReady, payUrl, primaryGatewayName } from "~/lib/gateways/index.server";
+import { onlineReady, payUrlFor, primaryGatewayName } from "~/lib/gateways/index.server";
 import { env } from "~/lib/env.server";
 import { PROXY_PATH, cleanProxyOrigin, isProxied } from "~/lib/proxy-checkout.server";
 import { legacyMethod, methodShows, paymentLimitReason, partialAdvance, resolvePaymentMethods, type PaymentMethodsSettings } from "~/lib/payment-methods";
@@ -427,7 +427,8 @@ export async function action({ request, params }: ActionFunctionArgs) {
     await finalizeOrder(store, order, { status: "cod_placed" });
     return embedded ? json({ top: abs(`/order/${order.id}`) }) : redirect(`/order/${order.id}`);
   }
-  return embedded ? json({ top: abs(payUrl(store, order.id)) }) : redirect(payUrl(store, order.id));
+  const to = await payUrlFor(store, order.id);
+  return embedded ? json({ top: abs(to) }) : redirect(to);
 }
 
 /**

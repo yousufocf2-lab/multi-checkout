@@ -3,7 +3,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, Link, useActionData, useLoaderData, useNavigation } from "@remix-run/react";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { useState } from "react";
 import { GatewaysEditor } from "~/components/GatewaysEditor";
 import { Icon } from "~/components/Icons";
@@ -25,7 +25,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const store = await requireStore(await requireViewer(request), params.id);
   const view = storeForClient(store);
   const pm = resolvePaymentMethods(store.paymentMethods, store);
+  // Other Shopify stores of the same owner whose website can take this store's payments
+  const viaChoices = store.ownerId
+    ? await db.select({ id: stores.id, name: stores.name, site: stores.storefrontUrl }).from(stores)
+        .where(and(eq(stores.ownerId, store.ownerId), eq(stores.platform, "shopify"), ne(stores.id, store.id))).orderBy(asc(stores.id))
+    : [];
   return json({
+    payViaStoreId: store.payViaStoreId, viaChoices: viaChoices.filter((c) => c.site).map((c) => ({ id: c.id, name: c.name, site: c.site.replace(/^https?:\/\//, "").replace(/\/+$/, "") })),
     storeId: store.id, smart: store.smartCheckout, online: onlineReady(store), platform: store.platform,
     storefrontUrl: store.storefrontUrl, payuViaStorefront: store.payuViaStorefront, ownSite: ownSiteHost(store),
     gateways: view.gatewayViews, webhookBase: view.webhookBase,
@@ -46,7 +52,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const gate = g.gateways.some((x) => !before.has(x.id)) ? kycGate(viewer, "adding a payment gateway") : null;
     if (gate) return json({ ok: null, error: gate, kyc: true, errors: g.errors }, { status: 400 });
     if (Object.keys(g.errors).length) return json({ ok: null, error: "Fix the highlighted gateway and save again.", kyc: false, errors: g.errors }, { status: 400 });
+    // "Take payments through another store's website": only a Shopify store of the same owner
+    const viaRaw = Number(fd.get("payViaStoreId") ?? 0);
+    let payViaStoreId: number | null = null;
+    if (viaRaw && viaRaw !== store.id && store.ownerId) {
+      const [via] = await db.select({ id: stores.id }).from(stores)
+        .where(and(eq(stores.id, viaRaw), eq(stores.ownerId, store.ownerId), eq(stores.platform, "shopify"))).limit(1);
+      if (!via) return json({ ok: null, error: "That store can't take this store's payments.", kyc: false, errors: {} as Record<string, string> }, { status: 400 });
+      payViaStoreId = via.id;
+    }
     await db.update(stores).set({
+      payViaStoreId,
       gateways: g.gateways, payuKey: g.payuKey, payuSalt: g.payuSalt, payuMode: g.payuMode,
       ...(store.platform === "shopify" ? { payuViaStorefront: fd.get("payuViaStorefront") === "on" } : {}),
     }).where(eq(stores.id, store.id));
@@ -105,6 +121,7 @@ export default function Payments() {
                 <span className="block text-[12px] text-ink-faint">For gateways that only accept your registered website (PayU, Cashfree, CCAvenue). Payments start from {d.storefrontUrl.replace(/^https?:\/\//, "")}/apps/growpefy/…</span></span>
             </label>
           )}
+          {d.viaChoices.length > 0 && <PayVia d={d} />}
           <div className="flex justify-end"><SubmitButton intent="gateways" className="btn-primary btn" busyText="Saving">Save gateways</SubmitButton></div>
         </Form>
       </Card>
@@ -141,6 +158,29 @@ export default function Payments() {
           </div>
         </Form>
       </Card>
+    </div>
+  );
+}
+
+/** Take this store's online payments through another store's website, e.g. to test with that store's PayU account. */
+function PayVia({ d }: { d: { payViaStoreId: number | null; viaChoices: { id: number; name: string; site: string }[] } }) {
+  const [via, setVia] = useState(String(d.payViaStoreId ?? ""));
+  const pick = d.viaChoices.find((c) => String(c.id) === via);
+  return (
+    <div className={`rounded-lg px-3 py-2.5 ${pick ? "bg-[#fff8eb] shadow-[inset_0_0_0_1px_#f3dfb5]" : "shadow-[inset_0_0_0_1px_#ebebeb]"}`}>
+      <label className="block text-[13px]"><b className="font-medium">Take payments through another store's website</b>
+        <span className="block text-[12px] text-ink-faint">For using another of your stores' gateway account (for example while testing). The payment page and the gateway's return URL (PayU surl / furl) use that store's domain. Orders stay in this store.</span>
+        <select name="payViaStoreId" value={via} onChange={(e) => setVia(e.target.value)} className="input mt-2 max-w-sm py-1.5 text-[13px]">
+          <option value="">Off: this store's own website</option>
+          {d.viaChoices.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.site}</option>)}
+        </select>
+      </label>
+      {pick && (
+        <p className="mt-2 text-[12px] leading-relaxed text-ink-soft">
+          Payments will start at <b className="font-medium text-ink">{pick.site}/apps/growpefy/pay/…</b> and PayU returns to <b className="font-medium text-ink">{pick.site}/apps/growpefy/pg/payu/return</b>.
+          {pick.name}'s Shopify app needs App Proxy (<a href={`https://${pick.site}/apps/growpefy/ping`} target="_blank" rel="noreferrer" className="font-medium text-pine underline">test it</a>), and the gateway keys above must be the account registered for {pick.site}.
+        </p>
+      )}
     </div>
   );
 }

@@ -300,6 +300,8 @@ export const stores = pgTable("stores", {
   payuSalt: text("payu_salt"),
   payuMode: text("payu_mode").notNull().default("test"), // test | live
   payuViaStorefront: boolean("payu_via_storefront").notNull().default(false), // open PayU from the store's own website (Shopify App Proxy)
+  // Take online payments through another store's website (its Shopify App Proxy): payment page and return URL on that domain
+  payViaStoreId: integer("pay_via_store_id"),
   // Online payment gateways in priority order (max 3): primary, then backups. Secrets live in creds.
   gateways: jsonb("gateways").$type<StoreGateway[]>().notNull().default([]),
   // Meta (Facebook) ads

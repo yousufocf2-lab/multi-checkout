@@ -596,6 +596,13 @@
       "when": 1796300000000,
       "tag": "0084_store_admin_pin",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1796400000000,
+      "tag": "0085_pay_via_store",
+      "breakpoints": true
     }
   ]
 }
