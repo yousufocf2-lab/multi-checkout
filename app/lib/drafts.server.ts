@@ -6,7 +6,7 @@ import { catalogItems, catalogVariants, checkoutSessions, db, draftOrders, order
 import { coverOf, GP_PREFIX } from "./catalog.server";
 import { finalizeOrder, newOrderId } from "./orders.server";
 import { searchProducts } from "./platform.server";
-import { storeBaseUrl } from "./urls.server";
+import { checkoutBaseUrl } from "./urls.server";
 import { draftName, draftTotals } from "./drafts";
 
 const own = (s: Store) => s.platform === "growpefy";
@@ -101,7 +101,7 @@ export async function sendDraftLink(store: Store, id: number) {
   const sid = crypto.randomBytes(12).toString("base64url");
   await db.insert(checkoutSessions).values({ id: sid, storeId: store.id, items, customer: d.customer, tracking: { sourceUrl: `draft:${draftName(d.number)}` } });
   await db.update(draftOrders).set({ status: "link_sent", sessionId: sid, updatedAt: new Date() }).where(eq(draftOrders.id, d.id));
-  const url = `${storeBaseUrl(store)}/c/${sid}`;
+  const url = `${checkoutBaseUrl(store)}/c/${sid}`;
   const skipped = d.items.length - items.length;
   return { url, note: skipped ? `${skipped} custom item${skipped > 1 ? "s were" : " was"} left out of the link.` : null, discountNote: d.discount ? "The draft discount isn't added to the link; share a coupon code if you want to give it." : null };
 }

@@ -14,7 +14,7 @@ import { renderCustomLiquid, sanitize } from "./custom-liquid.server";
 import { PAGE_BLOCKS_CSS } from "./page-blocks";
 import { applyFilters } from "./filters.server";
 import { baseScope, withCategories, demoProducts, frameVars, html, loadProduct, loadProducts, loadProductsByIds, renderPage, sampleProduct, SAMPLE, sectionData, themeLook, themeOf, isDemo, type ShopContext } from "./storefront.server";
-import { requestHost, storeBaseUrl } from "./urls.server";
+import { checkoutBaseUrl, requestHost } from "./urls.server";
 import { reviewsForProduct } from "./reviews.server";
 import { widgetSettings } from "./widgets";
 import { searchProducts, suggest } from "./search.server";
@@ -261,7 +261,7 @@ export async function startCheckout(request: Request, ctx: ShopContext) {
     },
   });
   const sum = (xs: { quantity: number }[]) => xs.reduce((n, x) => n + x.quantity, 0);
-  return reply({ url: `${storeBaseUrl(ctx.store)}/c/${id}`, note: sum(lines) < sum(items) ? "Some items were sold out and were left out." : null });
+  return reply({ url: `${checkoutBaseUrl(ctx.store)}/c/${id}`, note: sum(lines) < sum(items) ? "Some items were sold out and were left out." : null });
 }
 
 /** Search results: forgiving matches; when nothing is close, the nearest products and then the rest (never empty). */

@@ -11,7 +11,7 @@ import { orderFilters } from "./orders-list.server";
 import { orderSource } from "./order-source";
 import { stateName } from "./states";
 import { trackingUrl } from "./customer-accounts";
-import { storeBaseUrl } from "./urls.server";
+import { checkoutBaseUrl } from "./urls.server";
 
 export async function loadOrderPage(viewer: Viewer, orderId: string, scope: Store[], listParams: URLSearchParams) {
   const [o] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
@@ -90,7 +90,7 @@ export async function loadOrderPage(viewer: Viewer, orderId: string, scope: Stor
     calls: calls.map((c) => ({ ...c, at: c.at.toISOString() })),
     assigned: { confirm: memberName(o.assignedTo), ofd: memberName(o.ofdAssignedTo) },
     trackUrl: trackingUrl(o.courier, o.awb),
-    customerLink: `${storeBaseUrl(store)}/order/${o.id}`,
+    customerLink: `${checkoutBaseUrl(store)}/order/${o.id}`,
     nav: { newer: newer[0]?.id ?? null, older: older[0]?.id ?? null },
     couriers,
     cancelReasons: [...CANCEL_REASONS],

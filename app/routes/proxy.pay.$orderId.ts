@@ -7,7 +7,7 @@ import { db, orders } from "~/db.server";
 import { getOrderWithStore } from "~/lib/orders.server";
 import { PROXY_PATH, htmlResponse, orderPageUrl, payPage, payViaStore, proxyBase, startPayment } from "~/lib/gateways/index.server";
 import { verifyProxySignature } from "~/lib/payu-flow.server";
-import { storeBaseUrl } from "~/lib/urls.server";
+import { checkoutBaseUrl } from "~/lib/urls.server";
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const url = new URL(request.url);
@@ -31,7 +31,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   // Checkout on the store's domain: the gateway returns there too, and "back" goes to that checkout
   const origin = site === store ? order.tracking?.proxyOrigin : undefined;
   const out = await startPayment(store, order, origin ? `${origin}${PROXY_PATH}` : proxyBase(site), { retry });
-  const back = origin ? `${origin}${PROXY_PATH}/c/${order.sessionId ?? ""}` : `${storeBaseUrl(store)}/c/${order.sessionId ?? ""}`;
+  const back = origin ? `${origin}${PROXY_PATH}/c/${order.sessionId ?? ""}` : `${checkoutBaseUrl(store)}/c/${order.sessionId ?? ""}`;
   // text/html (not application/liquid) so Shopify returns the page as it is, without the theme
   return htmlResponse(payPage(store, order, out, back));
 }

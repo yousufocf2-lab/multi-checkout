@@ -31,7 +31,7 @@ import {
 import { fetchLines, fetchUpsellProducts } from "~/lib/platform.server";
 import { INDIAN_STATES, stateCodeFromName } from "~/lib/states";
 import { FONTS, FONT_SCALE, buttonText, resolveTheme, themeVars, type CheckoutTheme } from "~/lib/theme";
-import { ensureStoreHost, frameAncestors, storeBaseUrl } from "~/lib/urls.server";
+import { checkoutBaseUrl, ensureStoreHost, frameAncestors } from "~/lib/urls.server";
 import { checkoutDetails } from "~/lib/live.server";
 import { onlineReady, payUrlFor, primaryGatewayName } from "~/lib/gateways/index.server";
 import { env } from "~/lib/env.server";
@@ -409,7 +409,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     console.log(`[route] order ${order.id} → store ${routedTo.id}`);
     await takeSourceStock(store.id, order.items);
     await finalizeOrder(routedTo, order, { status: "cod_placed" });
-    return fd.get("embed") === "1" ? json({ top: `${storeBaseUrl(store)}/order/${order.id}` }) : redirect(`/order/${order.id}`);
+    return fd.get("embed") === "1" ? json({ top: `${checkoutBaseUrl(store)}/order/${order.id}` }) : redirect(`/order/${order.id}`);
   }
 
   await db.update(checkoutSessions).set({ customer, paymentAttempted: true, updatedAt: new Date() }).where(eq(checkoutSessions.id, session.id));
@@ -422,7 +422,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     return json({ top: `${PROXY_PATH}/pay/${order.id}` });
   }
   const embedded = fd.get("embed") === "1";
-  const abs = (to: string) => (/^https?:\/\//.test(to) ? to : `${storeBaseUrl(store)}${to}`);
+  const abs = (to: string) => (/^https?:\/\//.test(to) ? to : `${checkoutBaseUrl(store)}${to}`);
   if (method === "cod") {
     await finalizeOrder(store, order, { status: "cod_placed" });
     return embedded ? json({ top: abs(`/order/${order.id}`) }) : redirect(`/order/${order.id}`);

@@ -5,7 +5,7 @@ import { redirect } from "@remix-run/node";
 import { eq } from "drizzle-orm";
 import { checkoutSessions, db, stores } from "~/db.server";
 import { env } from "~/lib/env.server";
-import { storeBaseUrl } from "~/lib/urls.server";
+import { checkoutBaseUrl, liveSiteHost } from "~/lib/urls.server";
 import { PROXY_PATH, proxyCheckoutReady } from "~/lib/proxy-checkout.server";
 
 export async function loader({ params }: LoaderFunctionArgs) {
@@ -16,14 +16,16 @@ export async function loader({ params }: LoaderFunctionArgs) {
         store: {
           id: stores.id, slug: stores.slug, checkoutDomain: stores.checkoutDomain, platform: stores.platform, shopDomain: stores.shopDomain,
           proxyCheckout: stores.proxyCheckout, clientSecret: stores.clientSecret, storefrontUrl: stores.storefrontUrl,
+          storefrontEnabled: stores.storefrontEnabled, storefrontDomain: stores.storefrontDomain, storefrontDomainStatus: stores.storefrontDomainStatus,
         },
       })
       .from(checkoutSessions).innerJoin(stores, eq(stores.id, checkoutSessions.storeId)).where(eq(checkoutSessions.id, id)).limit(1)
     : [];
   if (!row) throw redirect(env.appUrl);
   // On the store's own domain when its App Proxy works (same as new checkouts)
-  let base = storeBaseUrl(row.store);
-  if (proxyCheckoutReady(row.store)) {
+  // Website on Growpefy with its own domain: checkout opens there (zavli.in/c/…)
+  let base = checkoutBaseUrl(row.store);
+  if (!liveSiteHost(row.store) && proxyCheckoutReady(row.store)) {
     try { base = `${new URL(row.store.storefrontUrl).origin}${PROXY_PATH}`; } catch { /* keep the Growpefy address */ }
   }
   return redirect(`${base}/c/${row.id}?utm_source=whatsapp&utm_medium=recovery`);

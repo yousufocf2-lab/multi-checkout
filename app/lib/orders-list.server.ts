@@ -3,7 +3,7 @@ import { orderValueSql } from "~/lib/order-value.server";
 import { checkoutSessions, db, orders, stores, type Store } from "~/db.server";
 import { addDays, resolveRange, type Range } from "./dates";
 import { INDIAN_STATES } from "./states";
-import { storeBaseUrl } from "./urls.server";
+import { checkoutBaseUrl } from "./urls.server";
 import { liveSessions } from "./live.server";
 import { SOURCE_FILTERS } from "./order-source";
 
@@ -247,7 +247,7 @@ export async function loadAbandoned(scope: Store[], params: URLSearchParams, onl
     value,
     items: rowsAll.map(({ s, store }) => {
       const c = s.customer ?? {};
-      const link = `${storeBaseUrl(store)}/c/${s.id}`;
+      const link = `${checkoutBaseUrl(store)}/c/${s.id}`;
       const expired = Date.now() - s.createdAt.getTime() > 7 * 86400_000;
       return {
         id: s.id,

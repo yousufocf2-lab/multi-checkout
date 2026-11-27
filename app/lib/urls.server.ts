@@ -42,6 +42,21 @@ export function storeBaseUrl(store: Pick<Store, "checkoutDomain" | "slug">) {
   return host ? `https://${host}` : env.appUrl;
 }
 
+type OwnSite = Partial<Pick<Store, "storefrontEnabled" | "storefrontDomain" | "storefrontDomainStatus">>;
+/** The store's own live domain when its website runs on Growpefy (zavli.in), else null. */
+export function liveSiteHost(store: OwnSite) {
+  return store.storefrontEnabled && store.storefrontDomainStatus === "live" && store.storefrontDomain ? store.storefrontDomain.toLowerCase() : null;
+}
+
+/**
+ * Where a store's checkout opens: its own domain when the website runs on Growpefy (https://zavli.in/c/…),
+ * otherwise its Growpefy checkout address.
+ */
+export function checkoutBaseUrl(store: Pick<Store, "checkoutDomain" | "slug"> & OwnSite) {
+  const own = liveSiteHost(store);
+  return own ? `https://${own}` : storeBaseUrl(store);
+}
+
 /** Hostname the request came in on (Railway sets x-forwarded-host). */
 export function requestHost(request: Request) {
   const h = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
@@ -72,11 +87,14 @@ export function cleanDomain(v: string) {
 /**
  * Customer pages are served on the store's subdomain; anything else (an old own domain too) redirects there.
  */
-export function ensureStoreHost(request: Request, store: Pick<Store, "checkoutDomain" | "slug">) {
+export function ensureStoreHost(request: Request, store: Pick<Store, "checkoutDomain" | "slug"> & OwnSite) {
   const want = storeHost(store);
   if (!want) return;
   const host = requestHost(request);
   if (host === want || host === "localhost" || host === "127.0.0.1") return;
+  // The store's own website domain is always fine (checkout opens there)
+  const own = liveSiteHost(store);
+  if (own && (host === own || host === `www.${own}` || `www.${host}` === own)) return;
   throw new Response(null, { status: 302, headers: { Location: sameUrlOn(storeBaseUrl(store), request) } });
 }
 
